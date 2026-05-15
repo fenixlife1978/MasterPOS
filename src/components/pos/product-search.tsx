@@ -15,7 +15,7 @@ export default function ProductSearch({ products, onAdd }: ProductSearchProps) {
   const [isFocused, setIsFocused] = useState(false);
 
   const results = useMemo(() => {
-    if (!query.trim()) return products; // Mostramos todos por defecto si no hay búsqueda
+    if (!query.trim()) return products;
     const q = query.toLowerCase();
     return products.filter(p => 
       p.name.toLowerCase().includes(q) || 
@@ -34,11 +34,12 @@ export default function ProductSearch({ products, onAdd }: ProductSearchProps) {
   }, [results]);
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="p-4 sticky top-0 bg-background/80 backdrop-blur-md z-10 border-b border-border/50">
-        <div className={cn(
-          "flex items-center bg-card border border-border rounded-xl px-4 transition-all duration-300 shadow-inner",
-          isFocused && "border-primary ring-1 ring-primary/20 bg-card/80"
+    <div className="flex flex-col h-full bg-[#0C0B0A]">
+      <div className="p-4 bg-[#111111] border-b border-border">
+         <h2 className="text-[10px] font-black uppercase tracking-[0.3em] text-primary/60 mb-4">Búsqueda Inteligente</h2>
+         <div className={cn(
+          "flex items-center bg-card border border-border rounded-xl px-4 transition-all duration-300 shadow-2xl",
+          isFocused && "border-primary ring-1 ring-primary/20"
         )}>
           <Search size={18} className="text-muted" />
           <input 
@@ -48,44 +49,42 @@ export default function ProductSearch({ products, onAdd }: ProductSearchProps) {
             onChange={(e) => setQuery(e.target.value)}
             onFocus={() => setIsFocused(true)}
             onBlur={() => setTimeout(() => setIsFocused(false), 200)}
-            placeholder="Nombre, marca o código..."
-            className="flex-1 bg-transparent border-none text-foreground px-3 py-3.5 text-sm focus:outline-none font-body placeholder:text-muted/50"
+            placeholder="Escanear o escribir..."
+            className="flex-1 bg-transparent border-none text-foreground px-3 py-4 text-sm focus:outline-none font-body placeholder:text-muted/30 uppercase font-bold"
           />
-          <Barcode size={20} className="text-primary/60 animate-pulse-scan" />
+          <Barcode size={20} className="text-primary/40" />
         </div>
       </div>
 
-      <div className="flex-1 p-2 space-y-4">
+      <div className="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin">
         {results.length === 0 ? (
-          <div className="text-center py-20 text-muted opacity-50 flex flex-col items-center gap-3">
-            <Search size={40} />
-            <p className="text-sm font-medium italic">No se encontraron licores</p>
+          <div className="text-center py-20 text-muted opacity-30 flex flex-col items-center gap-4">
+            <Search size={48} strokeWidth={1} />
+            <p className="text-xs font-black uppercase tracking-widest italic">Sin resultados</p>
           </div>
         ) : (
           Object.entries(groups).map(([cat, prods]) => (
-            <div key={cat} className="space-y-1">
-              <div className="flex items-center gap-2 px-3 py-2">
-                <div className="h-px flex-1 bg-border/40" />
-                <span className="text-[10px] uppercase tracking-[0.2em] text-muted font-black">{cat}</span>
-                <div className="h-px flex-1 bg-border/40" />
+            <div key={cat} className="space-y-2">
+              <div className="flex items-center gap-3">
+                <span className="text-[9px] uppercase tracking-[0.4em] text-primary/50 font-black whitespace-nowrap">{cat}</span>
+                <div className="h-px w-full bg-border/40" />
               </div>
               
-              <div className="grid grid-cols-1 gap-1">
+              <div className="grid grid-cols-1 gap-1.5">
                 {prods.map(p => (
                   <button 
                     key={p.id}
-                    onClick={() => { onAdd(p.id); }}
-                    className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-primary/5 text-left group border border-transparent hover:border-primary/20 transition-all duration-200 bg-card/30"
+                    onClick={() => onAdd(p.id)}
+                    className="w-full flex items-center gap-3 p-3 rounded-xl bg-card/30 border border-transparent hover:border-primary/20 hover:bg-primary/5 transition-all group text-left"
                   >
-                    <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center text-primary group-hover:scale-110 transition-transform">
+                    <div className="w-9 h-9 rounded-lg bg-secondary flex items-center justify-center text-primary/60 group-hover:text-primary transition-colors">
                       <CategoryIcon category={p.category} />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="text-sm font-bold truncate text-foreground/90 group-hover:text-primary transition-colors">{p.name}</div>
-                      <div className="flex items-center gap-2 mt-0.5">
+                      <div className="text-xs font-bold truncate text-foreground group-hover:text-primary transition-colors uppercase tracking-tight">{p.name}</div>
+                      <div className="flex items-center gap-3 mt-1">
                         <span className="text-[11px] font-black text-primary">BS {p.priceBs.toFixed(2)}</span>
-                        <span className="text-[10px] text-muted font-medium">|</span>
-                        <span className="text-[10px] text-muted uppercase font-bold tracking-tighter">Stock: {p.stock}</span>
+                        <span className="text-[9px] text-muted font-bold uppercase tracking-tighter">Stock: {p.stock}</span>
                       </div>
                     </div>
                   </button>

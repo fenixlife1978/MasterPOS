@@ -106,7 +106,7 @@ export default function CartPanel({ cart, onUpdateQty, onRemove, onCobrar, excha
         <button 
           disabled={cart.length === 0 || !isRegisterOpen}
           onClick={onCobrar}
-          className="w-full py-4 bg-gradient-to-r from-primary to-accent-dark rounded-xl text-background font-black text-base flex items-center justify-center gap-3 hover:brightness-110 active:scale-[0.98] transition-all shadow-2xl shadow-primary/10 disabled:opacity-30 disabled:pointer-events-none"
+          className="w-full py-4 bg-primary rounded-xl text-background font-black text-base flex items-center justify-center gap-3 hover:brightness-110 active:scale-[0.98] transition-all shadow-2xl shadow-primary/10 disabled:opacity-30 disabled:pointer-events-none"
         >
           <Banknote size={20} /> COBRAR AHORA
         </button>

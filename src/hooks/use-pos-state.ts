@@ -122,6 +122,25 @@ export function usePOSState() {
     const total = subtotal + iva;
     const totalUsd = total / exchangeRate;
 
+    let targetClientId = paymentData.clientId;
+    let targetClientName = paymentData.clientName;
+    let targetClientCedula = paymentData.clientCedula;
+
+    // Handle new client registration during credit sale
+    if (type === 'credito' && paymentData.isNewClient) {
+      const nextClientId = clients.length ? Math.max(...clients.map(c => c.id)) + 1 : 1;
+      const newCli: Client = {
+        id: nextClientId,
+        name: paymentData.clientName,
+        cedula: paymentData.clientCedula,
+        phone: paymentData.clientPhone || '',
+        address: paymentData.clientAddress || '',
+        debt: 0
+      };
+      setClients(prev => [...prev, newCli]);
+      targetClientId = nextClientId;
+    }
+
     const tx: Transaction = {
       id: transactions.length + 1,
       date: new Date().toISOString(),
@@ -134,8 +153,8 @@ export function usePOSState() {
       payMethod: paymentData.method,
       paidBs: paymentData.amount || total,
       change: Math.max(0, (paymentData.amount || total) - total),
-      clientId: paymentData.clientId,
-      clientName: paymentData.clientName
+      clientId: targetClientId,
+      clientName: targetClientName
     };
 
     setTransactions(prev => [...prev, tx]);
@@ -146,14 +165,14 @@ export function usePOSState() {
       return cartItem ? { ...p, stock: p.stock - cartItem.qty } : p;
     }));
 
-    if (type === 'credito' && paymentData.clientId) {
+    if (type === 'credito') {
       const acc: Account = {
         id: accounts.length + 1,
         txId: tx.id,
         date: tx.date,
-        clientId: paymentData.clientId,
-        clientName: paymentData.clientName,
-        clientCedula: paymentData.clientCedula,
+        clientId: targetClientId,
+        clientName: targetClientName,
+        clientCedula: targetClientCedula,
         products: cart.map(i => `${i.name} x${i.qty}`).join(', '),
         amountBs: total,
         amountUsd: totalUsd,
@@ -161,11 +180,11 @@ export function usePOSState() {
         status: 'pendiente'
       };
       setAccounts(prev => [...prev, acc]);
-      setClients(prev => prev.map(c => c.id === paymentData.clientId ? { ...c, debt: c.debt + total } : c));
+      setClients(prev => prev.map(c => c.id === targetClientId ? { ...c, debt: c.debt + total } : c));
     }
 
     setCart([]);
-  }, [cart, register, exchangeRate, transactions.length, accounts.length]);
+  }, [cart, register, exchangeRate, transactions.length, accounts.length, clients]);
 
   const applyAbono = useCallback((clientId: number, amount: number) => {
     if (!register || !register.isOpen) return;

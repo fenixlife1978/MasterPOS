@@ -4,45 +4,35 @@
 
 @layer base {
   :root {
-    /* Paleta Original LicoPOS */
-    --bg: 0 0% 4%;            /* #0A0A0A */
-    --bg2: 0 0% 7%;           /* #111111 */
-    --card-hex: 0 0% 9%;      /* #161616 */
-    --card2-hex: 0 0% 11%;    /* #1C1C1C */
-    --hover-hex: 0 0% 13%;    /* #222222 */
-    --accent-hex: 43 80% 46%; /* #D4A017 */
-    --accent-light: 41 78% 61%; /* #E8B84D */
-    --accent-dark: 45 100% 33%; /* #A67C00 */
-    --fg: 36 29% 94%;         /* #F5F0E8 */
-    --fg2: 36 12% 75%;        /* #C8C0B4 */
-    --muted-hex: 26 6% 39%;   /* #6B6560 */
-    --border-hex: 30 13% 15%; /* #2A2520 */
-    --success-hex: 145 63% 49%; /* #2ECC71 */
-    --danger-hex: 6 78% 57%;  /* #E74C3C */
-    --warning-hex: 38 92% 50%; /* #F39C12 */
+    /* Paleta de colores inspirada en la imagen */
+    --background: 0 0% 100%;
+    --foreground: 210 33% 15%;
     
-    /* ShadCN Mappings */
-    --background: var(--bg);
-    --foreground: var(--fg);
-    --primary: var(--accent-hex);
-    --primary-foreground: var(--bg);
-    --secondary: var(--bg2);
-    --secondary-foreground: var(--fg2);
-    --muted: var(--muted-hex);
-    --muted-foreground: var(--muted-hex);
-    --accent: var(--accent-hex);
-    --accent-foreground: var(--bg);
-    --destructive: var(--danger-hex);
-    --destructive-foreground: var(--fg);
-    --border: var(--border-hex);
-    --input: var(--border-hex);
-    --ring: var(--accent-hex);
-    --radius: 10px;
+    --card: 0 0% 98%;
+    --card-foreground: 210 33% 15%;
     
-    --card: var(--card-hex);
-    --card-foreground: var(--fg);
-    --popover: var(--card-hex);
-    --popover-foreground: var(--fg);
+    --popover: 0 0% 100%;
+    --popover-foreground: 210 33% 15%;
+    
+    --primary: 50 100% 50%; /* Amarillo Brillante */
+    --primary-foreground: 0 0% 0%;
+    
+    --secondary: 199 91% 64%; /* Azul Claro Topbar */
+    --secondary-foreground: 0 0% 100%;
+    
+    --muted: 0 0% 96%;
+    --muted-foreground: 0 0% 45%;
+    
+    --accent: 210 33% 15%; /* Azul Marino Botón Ver Cliente */
+    --accent-foreground: 0 0% 100%;
+    
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 98%;
+    
+    --border: 0 0% 92%;
+    --input: 0 0% 92%;
+    --ring: 199 91% 64%;
+    --radius: 12px;
   }
 }
 
@@ -51,7 +41,7 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground font-body antialiased selection:bg-primary selection:text-background overflow-hidden;
+    @apply bg-background text-foreground font-body antialiased selection:bg-primary selection:text-foreground overflow-hidden;
   }
 }
 
@@ -78,8 +68,8 @@
   width: 5px;
 }
 .scrollbar-thin::-webkit-scrollbar-track {
-  @apply bg-secondary;
+  @apply bg-muted;
 }
 .scrollbar-thin::-webkit-scrollbar-thumb {
-  @apply bg-muted rounded-full;
+  @apply bg-border rounded-full;
 }

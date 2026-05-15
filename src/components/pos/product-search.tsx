@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from 'react';
 import { Product, Client } from '@/lib/types';
-import { Search, Barcode, UserCircle, X } from 'lucide-react';
+import { Search, Barcode, UserCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import ClientPanel from './client-panel';
 import { usePOSState } from '@/hooks/use-pos-state';
@@ -38,13 +38,13 @@ export default function ProductSearch({ state, onAdd }: ProductSearchProps) {
   }, [query, state.clients]);
 
   return (
-    <div className="flex flex-col h-full bg-background relative">
-      <div className="p-4 bg-background z-50">
+    <div className="flex flex-col h-full bg-white relative">
+      <div className="p-6 bg-white z-50 border-b border-muted">
         <div className={cn(
-          "flex items-center bg-secondary border border-border rounded-xl px-4 transition-all duration-300",
-          isFocused && "border-primary ring-1 ring-primary/20"
+          "flex items-center bg-muted border border-border rounded-2xl px-5 transition-all duration-300",
+          isFocused && "border-secondary ring-2 ring-secondary/20 bg-white"
         )}>
-          <Search size={18} className="text-muted" />
+          <Search size={20} className="text-muted-foreground" />
           <input 
             id="pos-search-input"
             type="text" 
@@ -53,9 +53,9 @@ export default function ProductSearch({ state, onAdd }: ProductSearchProps) {
             onFocus={() => setIsFocused(true)}
             onBlur={() => setTimeout(() => setIsFocused(false), 200)}
             placeholder={isClientSearch ? "Buscar cliente..." : "Buscar producto o escanear..."}
-            className="flex-1 bg-transparent border-none text-foreground px-3 py-4 text-sm focus:outline-none font-body placeholder:text-muted/50 uppercase font-bold"
+            className="flex-1 bg-transparent border-none text-foreground px-4 py-5 text-base focus:outline-none font-body placeholder:text-muted-foreground/60 font-medium"
           />
-          <Barcode size={20} className="text-primary/60 animate-pulse-scan" />
+          <Barcode size={22} className="text-secondary animate-pulse-scan" />
         </div>
 
         <button 
@@ -65,19 +65,20 @@ export default function ProductSearch({ state, onAdd }: ProductSearchProps) {
             setViewingClient(null);
           }}
           className={cn(
-            "w-full mt-3 flex items-center justify-center gap-2 p-3 rounded-xl border border-border text-xs font-black transition-all",
-            isClientSearch || viewingClient ? "bg-primary/10 border-primary text-primary" : "bg-secondary text-foreground hover:border-primary/50"
+            "w-full mt-4 flex items-center justify-center gap-3 p-5 rounded-2xl font-black text-base transition-all shadow-md",
+            isClientSearch || viewingClient 
+              ? "bg-primary text-black" 
+              : "bg-accent text-white hover:brightness-110 active:scale-[0.98]"
           )}
         >
-          <UserCircle size={18} />
+          <UserCircle size={24} />
           {viewingClient ? 'CAMBIAR CLIENTE' : isClientSearch ? 'CANCELAR BÚSQUEDA' : 'VER CLIENTE'}
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-2 scrollbar-thin">
-        {/* Resultados de Productos */}
+      <div className="flex-1 overflow-y-auto px-6 pb-6 space-y-3 scrollbar-thin mt-4">
         {!isClientSearch && !viewingClient && query && (
-          <div className="space-y-1.5 animate-in fade-in slide-in-from-top-2">
+          <div className="space-y-2 animate-in fade-in slide-in-from-top-2">
             {productResults.map(p => (
               <button 
                 key={p.id}
@@ -85,29 +86,28 @@ export default function ProductSearch({ state, onAdd }: ProductSearchProps) {
                   onAdd(p.id);
                   setQuery('');
                 }}
-                className="w-full flex items-center gap-3 p-3 rounded-xl bg-secondary/50 border border-transparent hover:border-primary/20 hover:bg-primary/5 transition-all group text-left"
+                className="w-full flex items-center gap-4 p-4 rounded-2xl bg-muted border border-transparent hover:border-secondary hover:bg-white hover:shadow-lg transition-all group text-left"
               >
-                <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center text-primary/60 group-hover:text-primary border border-border">
-                  <Barcode size={18} />
+                <div className="w-12 h-12 rounded-xl bg-white flex items-center justify-center text-secondary border border-border shadow-sm group-hover:scale-110 transition-transform">
+                  <Barcode size={24} />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-[13px] font-bold truncate uppercase">{p.name}</div>
-                  <div className="flex items-center gap-3 mt-0.5">
-                    <span className="text-[12px] font-black text-primary">BS {p.priceBs.toFixed(2)}</span>
-                    <span className="text-[10px] text-muted font-bold">STOCK: {p.stock}</span>
+                  <div className="text-sm font-bold truncate uppercase text-foreground">{p.name}</div>
+                  <div className="flex items-center gap-4 mt-1">
+                    <span className="text-base font-black text-secondary">BS {p.priceBs.toFixed(2)}</span>
+                    <span className="text-xs text-muted-foreground font-bold uppercase tracking-tighter">STOCK: {p.stock}</span>
                   </div>
                 </div>
               </button>
             ))}
             {productResults.length === 0 && (
-              <div className="text-center py-10 opacity-30 italic text-xs">Sin resultados</div>
+              <div className="text-center py-16 opacity-40 italic text-sm">Sin resultados encontrados</div>
             )}
           </div>
         )}
 
-        {/* Resultados de Clientes */}
         {isClientSearch && !viewingClient && (
-          <div className="space-y-1.5 animate-in fade-in slide-in-from-top-2">
+          <div className="space-y-2 animate-in fade-in slide-in-from-top-2">
             {clientResults.map(c => (
               <button 
                 key={c.id}
@@ -116,20 +116,19 @@ export default function ProductSearch({ state, onAdd }: ProductSearchProps) {
                   setIsClientSearch(false);
                   setQuery('');
                 }}
-                className="w-full flex items-center gap-3 p-3 rounded-xl bg-secondary/50 border border-transparent hover:border-primary/20 transition-all text-left"
+                className="w-full flex items-center gap-4 p-4 rounded-2xl bg-muted border border-transparent hover:border-secondary transition-all text-left group"
               >
-                <UserCircle size={24} className="text-primary" />
+                <UserCircle size={28} className="text-secondary group-hover:scale-110 transition-transform" />
                 <div className="flex-1">
-                  <div className="text-[13px] font-bold">{c.name}</div>
-                  <div className="text-[11px] text-muted">{c.cedula}</div>
-                  {c.debt > 0 && <div className="text-[11px] text-destructive font-bold">DEUDA: BS {c.debt.toFixed(2)}</div>}
+                  <div className="text-sm font-bold text-foreground">{c.name}</div>
+                  <div className="text-xs text-muted-foreground">{c.cedula}</div>
+                  {c.debt > 0 && <div className="text-xs text-destructive font-bold mt-1">DEUDA: BS {c.debt.toFixed(2)}</div>}
                 </div>
               </button>
             ))}
           </div>
         )}
 
-        {/* Panel de Información del Cliente */}
         {viewingClient && (
           <ClientPanel 
             client={viewingClient} 

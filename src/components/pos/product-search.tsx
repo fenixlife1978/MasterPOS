@@ -28,6 +28,15 @@ export default function ProductSearch({ state, onAdd }: ProductSearchProps) {
     );
   }, [query, state.products]);
 
+  const groupedProductResults = useMemo(() => {
+    const groups: Record<string, Product[]> = {};
+    productResults.forEach(p => {
+      if (!groups[p.category]) groups[p.category] = [];
+      groups[p.category].push(p);
+    });
+    return groups;
+  }, [productResults]);
+
   const clientResults = useMemo(() => {
     if (!query.trim()) return state.clients;
     const q = query.toLowerCase();
@@ -67,7 +76,7 @@ export default function ProductSearch({ state, onAdd }: ProductSearchProps) {
           className={cn(
             "w-full mt-4 flex items-center justify-center gap-3 p-5 rounded-2xl font-black text-base transition-all shadow-md",
             isClientSearch || viewingClient 
-              ? "bg-primary text-black" 
+              ? "bg-primary text-accent" 
               : "bg-accent text-white hover:brightness-110 active:scale-[0.98]"
           )}
         >
@@ -78,27 +87,36 @@ export default function ProductSearch({ state, onAdd }: ProductSearchProps) {
 
       <div className="flex-1 overflow-y-auto px-6 pb-6 space-y-3 scrollbar-thin mt-4">
         {!isClientSearch && !viewingClient && query && (
-          <div className="space-y-2 animate-in fade-in slide-in-from-top-2">
-            {productResults.map(p => (
-              <button 
-                key={p.id}
-                onClick={() => {
-                  onAdd(p.id);
-                  setQuery('');
-                }}
-                className="w-full flex items-center gap-4 p-4 rounded-2xl bg-muted border border-transparent hover:border-secondary hover:bg-white hover:shadow-lg transition-all group text-left"
-              >
-                <div className="w-12 h-12 rounded-xl bg-white flex items-center justify-center text-secondary border border-border shadow-sm group-hover:scale-110 transition-transform">
-                  <Barcode size={24} />
+          <div className="space-y-6 animate-in fade-in slide-in-from-top-2">
+            {Object.entries(groupedProductResults).map(([category, items]) => (
+              <div key={category} className="space-y-2">
+                <div className="flex justify-start mb-2">
+                  <span className="bg-primary text-accent px-4 py-1.5 rounded-full text-[11px] font-black uppercase tracking-widest shadow-sm">
+                    {category}
+                  </span>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-bold truncate uppercase text-foreground">{p.name}</div>
-                  <div className="flex items-center gap-4 mt-1">
-                    <span className="text-base font-black text-secondary">BS {p.priceBs.toFixed(2)}</span>
-                    <span className="text-xs text-muted-foreground font-bold uppercase tracking-tighter">STOCK: {p.stock}</span>
-                  </div>
-                </div>
-              </button>
+                {items.map(p => (
+                  <button 
+                    key={p.id}
+                    onClick={() => {
+                      onAdd(p.id);
+                      setQuery('');
+                    }}
+                    className="w-full flex items-center gap-4 p-4 rounded-2xl bg-muted border border-transparent hover:border-secondary hover:bg-white hover:shadow-lg transition-all group text-left"
+                  >
+                    <div className="w-12 h-12 rounded-xl bg-white flex items-center justify-center text-secondary border border-border shadow-sm group-hover:scale-110 transition-transform">
+                      <Barcode size={24} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-bold truncate uppercase text-foreground">{p.name}</div>
+                      <div className="flex items-center gap-4 mt-1">
+                        <span className="text-base font-black text-secondary">BS {p.priceBs.toFixed(2)}</span>
+                        <span className="text-xs text-muted-foreground font-bold uppercase tracking-tighter">STOCK: {p.stock}</span>
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
             ))}
             {productResults.length === 0 && (
               <div className="text-center py-16 opacity-40 italic text-sm">Sin resultados encontrados</div>

@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { intelligentInventoryForecast, IntelligentInventoryForecastOutput } from '@/ai/flows/intelligent-inventory-forecast';
 import { useToast } from '@/hooks/use-toast';
+import { cn } from '@/lib/utils';
 
 interface InventoryModuleProps {
   state: ReturnType<typeof usePOSState>;
@@ -30,7 +31,6 @@ export default function InventoryModule({ state }: InventoryModuleProps) {
 
     setLoadingForecast(productId);
     try {
-      // Create mock sales history from transactions
       const history = state.transactions
         .filter(t => t.items.some(i => i.productId === productId))
         .map(t => ({
@@ -69,7 +69,7 @@ export default function InventoryModule({ state }: InventoryModuleProps) {
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
-          <Button className="bg-primary hover:bg-primary/90 text-background font-black">
+          <Button className="bg-primary hover:bg-primary/90 text-accent font-black">
             <Plus size={18} className="mr-2" /> AGREGAR PRODUCTO
           </Button>
         </div>
@@ -93,7 +93,7 @@ export default function InventoryModule({ state }: InventoryModuleProps) {
                 <TableCell className="font-mono text-[11px] text-muted-foreground">{p.barcode}</TableCell>
                 <TableCell className="font-bold text-sm text-foreground">{p.name}</TableCell>
                 <TableCell>
-                  <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-bold border border-primary/20">
+                  <span className="bg-primary text-accent px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest shadow-sm">
                     {p.category}
                   </span>
                 </TableCell>
@@ -147,5 +147,3 @@ export default function InventoryModule({ state }: InventoryModuleProps) {
     </div>
   );
 }
-
-import { cn } from '@/lib/utils';

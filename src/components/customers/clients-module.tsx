@@ -5,6 +5,7 @@ import { UserPlus, Search, Phone, MapPin } from 'lucide-react';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { cn } from '@/lib/utils';
 
 interface ClientsModuleProps {
   state: ReturnType<typeof usePOSState>;
@@ -50,14 +51,16 @@ export default function ClientsModule({ state }: ClientsModuleProps) {
                 </TableCell>
                 <TableCell>
                   <span className={cn(
-                    "px-2 py-0.5 rounded-full text-[10px] font-bold border",
-                    c.debt > 0 ? "bg-[#E74C3C1A] text-[#E74C3C] border-[#E74C3C33]" : "bg-[#2ECC711A] text-[#2ECC71] border-[#2ECC7133]"
+                    "px-3 py-1 rounded-full text-[10px] font-black border shadow-sm",
+                    c.debt > 0 
+                      ? "bg-[#FF0000] text-black border-red-700" 
+                      : "bg-[#00FF00] text-black border-green-700"
                   )}>
                     BS {c.debt.toFixed(2)}
                   </span>
                 </TableCell>
                 <TableCell className="text-right">
-                  <Button variant="ghost" size="sm" className="text-xs text-primary font-bold hover:bg-primary/10">DETALLES</Button>
+                  <Button variant="ghost" size="sm" className="text-xs text-accent font-black hover:bg-accent/10">DETALLES</Button>
                 </TableCell>
               </TableRow>
             ))}
@@ -67,5 +70,3 @@ export default function ClientsModule({ state }: ClientsModuleProps) {
     </div>
   );
 }
-
-import { cn } from '@/lib/utils';

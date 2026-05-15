@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from 'react';
-import { Client, Account } from '@/lib/types';
-import { UserCircle, X, Banknote, HandCoins, History } from 'lucide-react';
+import { Client } from '@/lib/types';
+import { UserCircle, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { usePOSState } from '@/hooks/use-pos-state';
 
@@ -53,10 +53,15 @@ export default function ClientPanel({ client, state, onClose }: ClientPanelProps
 
       <div className="space-y-6">
         <div>
-          <div className="text-[10px] font-black text-muted uppercase tracking-widest mb-2">Deuda Actual</div>
+          <div className="text-[10px] font-black text-muted uppercase tracking-widest mb-2">Estado Financiero</div>
           <div className="bg-secondary border border-border rounded-2xl p-6 text-center shadow-xl">
             <div className="text-[10px] text-muted font-bold uppercase tracking-widest">Saldo Pendiente</div>
-            <div className="text-3xl font-black text-destructive mt-1">BS {totalDebt.toFixed(2)}</div>
+            <div className={cn(
+              "text-3xl font-black mt-1",
+              totalDebt > 0 ? "text-[#FF0000]" : "text-[#00FF00]"
+            )}>
+              BS {totalDebt.toFixed(2)}
+            </div>
             <div className="text-sm text-primary font-bold mt-1">USD {(totalDebt / state.exchangeRate).toFixed(2)}</div>
           </div>
         </div>
@@ -68,13 +73,13 @@ export default function ClientPanel({ client, state, onClose }: ClientPanelProps
               <div className="flex gap-2">
                 <button 
                   onClick={handleFullPay}
-                  className="flex-1 py-3 bg-success/10 border border-success/30 text-success text-[11px] font-black rounded-xl hover:bg-success/20 transition-all"
+                  className="flex-1 py-3 bg-[#00FF00]/10 border border-[#00FF00]/30 text-[#00FF00] text-[11px] font-black rounded-xl hover:bg-[#00FF00]/20 transition-all uppercase"
                 >
                   PAGAR TOTAL
                 </button>
                 <button 
                   onClick={() => document.getElementById('abono-field')?.focus()}
-                  className="flex-1 py-3 bg-primary/10 border border-primary/30 text-primary text-[11px] font-black rounded-xl hover:bg-primary/20 transition-all"
+                  className="flex-1 py-3 bg-primary/10 border border-primary/30 text-accent text-[11px] font-black rounded-xl hover:bg-primary/20 transition-all uppercase"
                 >
                   ABONAR
                 </button>
@@ -90,7 +95,7 @@ export default function ClientPanel({ client, state, onClose }: ClientPanelProps
                 />
                 <button 
                   onClick={handleProcessAbono}
-                  className="w-full py-3 bg-primary text-background text-[11px] font-black rounded-xl hover:brightness-110 transition-all uppercase tracking-widest"
+                  className="w-full py-4 bg-primary text-accent text-[12px] font-black rounded-xl hover:brightness-110 transition-all uppercase tracking-widest shadow-lg"
                 >
                   Confirmar
                 </button>
@@ -102,7 +107,7 @@ export default function ClientPanel({ client, state, onClose }: ClientPanelProps
 
         <div>
           <div className="text-[10px] font-black text-muted uppercase tracking-widest mb-3 flex items-center justify-between">
-            <span>Transacciones de Crédito</span>
+            <span>Historial de Crédito</span>
             <span className="bg-secondary px-2 py-0.5 rounded text-[9px]">{clientAccounts.length} TXS</span>
           </div>
           <div className="space-y-2">
@@ -122,13 +127,13 @@ export default function ClientPanel({ client, state, onClose }: ClientPanelProps
                     <div className="text-right shrink-0">
                       <div className={cn(
                         "text-[12px] font-black",
-                        a.status === 'pagada' ? "text-success" : a.status === 'parcial' ? "text-warning" : "text-destructive"
+                        a.status === 'pagada' ? "text-[#00FF00]" : a.status === 'parcial' ? "text-[#F39C12]" : "text-[#FF0000]"
                       )}>
                         BS {remaining.toFixed(2)}
                       </div>
                       <span className={cn(
-                        "text-[9px] font-black px-1.5 py-0.5 rounded uppercase",
-                        a.status === 'pagada' ? "bg-success/10 text-success" : a.status === 'parcial' ? "bg-warning/10 text-warning" : "bg-destructive/10 text-destructive"
+                        "text-[9px] font-black px-1.5 py-0.5 rounded uppercase border",
+                        a.status === 'pagada' ? "bg-[#00FF00] text-black border-green-700" : a.status === 'parcial' ? "bg-[#F39C12] text-black border-yellow-700" : "bg-[#FF0000] text-black border-red-700"
                       )}>
                         {a.status}
                       </span>

@@ -111,7 +111,7 @@ export default function ProductSearch({ state, onAdd }: ProductSearchProps) {
                       <div className="text-sm font-bold truncate uppercase text-foreground">{p.name}</div>
                       <div className="flex items-center gap-4 mt-1">
                         <span className="text-base font-black text-secondary">BS {p.priceBs.toFixed(2)}</span>
-                        <span className="bg-[#2ECC71] text-black px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-tighter">
+                        <span className="bg-[#00FF00] text-black px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-tighter border border-green-700 shadow-sm">
                           STOCK: {p.stock}
                         </span>
                       </div>
@@ -142,7 +142,19 @@ export default function ProductSearch({ state, onAdd }: ProductSearchProps) {
                 <div className="flex-1">
                   <div className="text-sm font-bold text-foreground">{c.name}</div>
                   <div className="text-xs text-muted-foreground">{c.cedula}</div>
-                  {c.debt > 0 && <div className="text-xs text-destructive font-bold mt-1">DEUDA: BS {c.debt.toFixed(2)}</div>}
+                  {c.debt > 0 ? (
+                    <div className="mt-2">
+                      <span className="bg-[#FF0000] text-black px-2 py-0.5 rounded text-[10px] font-black uppercase border border-red-700">
+                        DEUDA: BS {c.debt.toFixed(2)}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="mt-2">
+                      <span className="bg-[#00FF00] text-black px-2 py-0.5 rounded text-[10px] font-black uppercase border border-green-700">
+                        AL DÍA
+                      </span>
+                    </div>
+                  )}
                 </div>
               </button>
             ))}

@@ -1,9 +1,10 @@
 "use client";
 
 import { usePOSState } from '@/hooks/use-pos-state';
-import { FileText, Search, Download } from 'lucide-react';
+import { Download } from 'lucide-react';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 
 interface AccountsModuleProps {
   state: ReturnType<typeof usePOSState>;
@@ -41,15 +42,20 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
                 </TableCell>
                 <TableCell className="text-xs text-muted-foreground max-w-[200px] truncate">{a.products}</TableCell>
                 <TableCell className="font-bold text-sm">BS {a.amountBs.toFixed(2)}</TableCell>
-                <TableCell className="font-bold text-sm text-destructive">BS {(a.amountBs - a.paidAmount).toFixed(2)}</TableCell>
+                <TableCell className={cn(
+                  "font-black text-sm",
+                  (a.amountBs - a.paidAmount) > 0 ? "text-[#FF0000]" : "text-[#00FF00]"
+                )}>
+                  BS {(a.amountBs - a.paidAmount).toFixed(2)}
+                </TableCell>
                 <TableCell className="text-right">
                   <span className={cn(
-                    "px-2 py-0.5 rounded-full text-[10px] font-bold border",
-                    a.status === 'pagada' ? "bg-[#2ECC711A] text-[#2ECC71] border-[#2ECC7133]" :
-                    a.status === 'parcial' ? "bg-[#F39C121A] text-[#F39C12] border-[#F39C1233]" :
-                    "bg-[#E74C3C1A] text-[#E74C3C] border-[#E74C3C33]"
+                    "px-3 py-1 rounded-full text-[10px] font-black border uppercase shadow-sm",
+                    a.status === 'pagada' ? "bg-[#00FF00] text-black border-green-700" :
+                    a.status === 'parcial' ? "bg-[#F39C12] text-black border-yellow-700" :
+                    "bg-[#FF0000] text-black border-red-700"
                   )}>
-                    {a.status.toUpperCase()}
+                    {a.status}
                   </span>
                 </TableCell>
               </TableRow>
@@ -65,5 +71,3 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
     </div>
   );
 }
-
-import { cn } from '@/lib/utils';

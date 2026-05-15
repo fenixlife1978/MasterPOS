@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { usePOSState } from '@/hooks/use-pos-state';
-import { Plus, Search, BrainCircuit, Barcode as BarcodeIcon } from 'lucide-react';
+import { Plus, Search, BrainCircuit } from 'lucide-react';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -99,7 +99,7 @@ export default function InventoryModule({ state }: InventoryModuleProps) {
                 </TableCell>
                 <TableCell className="font-bold text-sm">{p.priceBs.toFixed(2)}</TableCell>
                 <TableCell className="text-center">
-                  <span className="bg-[#2ECC71] text-black px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest shadow-sm">
+                  <span className="bg-[#00FF00] text-black px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest shadow-sm border border-green-700">
                     {p.stock} UDS
                   </span>
                 </TableCell>
@@ -113,18 +113,18 @@ export default function InventoryModule({ state }: InventoryModuleProps) {
                         <p className="text-muted-foreground italic leading-tight">{forecasts[p.id].reasoning.substring(0, 100)}...</p>
                         <div className="mt-2 flex justify-between font-bold">
                           <span>Agotamiento:</span>
-                          <span className="text-[#CC4317]">{forecasts[p.id].predictedStockoutDays} días</span>
+                          <span className="text-[#FF0000]">{forecasts[p.id].predictedStockoutDays} días</span>
                         </div>
                         <div className="flex justify-between font-bold">
                           <span>Sugerido:</span>
-                          <span className="text-[#2ECC71]">{forecasts[p.id].suggestedReorderQuantity} uds</span>
+                          <span className="text-[#00FF00]">{forecasts[p.id].suggestedReorderQuantity} uds</span>
                         </div>
                       </div>
                     ) : (
                       <Button 
                         variant="ghost" 
                         size="sm" 
-                        className="h-8 text-[10px] font-bold text-primary hover:text-primary hover:bg-primary/10"
+                        className="h-8 text-[10px] font-black text-accent hover:text-accent hover:bg-accent/10"
                         onClick={() => getForecast(p.id)}
                         disabled={loadingForecast === p.id}
                       >

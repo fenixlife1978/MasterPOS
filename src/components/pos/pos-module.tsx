@@ -4,7 +4,6 @@ import { useState } from 'react';
 import { usePOSState } from '@/hooks/use-pos-state';
 import ProductSearch from './product-search';
 import CartPanel from './cart-panel';
-import ClientPanel from './client-panel';
 import PaymentModal from './payment-modal';
 import SaleTypeModal from './sale-type-modal';
 import CreditModal from './credit-modal';
@@ -14,32 +13,26 @@ interface POSModuleProps {
 }
 
 export default function POSModule({ state }: POSModuleProps) {
-  const [activeView, setActiveView] = useState<'cart' | 'client'>('cart');
   const [showSaleType, setShowSaleType] = useState(false);
   const [showContado, setShowContado] = useState(false);
   const [showCredito, setShowCredito] = useState(false);
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 h-full overflow-hidden">
-      {/* Column 1: Search & Navigation */}
-      <div className="bg-background border-r border-border flex flex-col overflow-hidden">
-        <ProductSearch 
-          products={state.products} 
-          onAdd={state.addToCart} 
-          onToggleView={() => setActiveView(prev => prev === 'cart' ? 'client' : 'cart')}
-          isClientView={activeView === 'client'}
-        />
-        
-        {activeView === 'client' && (
-          <ClientPanel 
-            clients={state.clients} 
-            accounts={state.accounts}
-            onClose={() => setActiveView('cart')}
+    <div className="grid grid-cols-1 lg:grid-cols-3 h-full overflow-hidden bg-background">
+      {/* Columna 1: Búsqueda Inteligente */}
+      <div className="border-r border-border flex flex-col overflow-hidden bg-card/20">
+        <div className="p-4 border-b border-border bg-card/40">
+          <h2 className="text-sm font-black uppercase tracking-[0.2em] text-primary">Buscador Inteligente</h2>
+        </div>
+        <div className="flex-1 overflow-y-auto scrollbar-thin">
+          <ProductSearch 
+            products={state.products} 
+            onAdd={state.addToCart} 
           />
-        )}
+        </div>
       </div>
 
-      {/* Column 2: Cart */}
+      {/* Columna 2: Carrito de Compras */}
       <div className="border-r border-border flex flex-col overflow-hidden bg-background">
         <CartPanel 
           cart={state.cart} 
@@ -51,16 +44,19 @@ export default function POSModule({ state }: POSModuleProps) {
         />
       </div>
 
-      {/* Column 3: Ambient Decoration */}
-      <div className="hidden lg:flex items-center justify-center relative overflow-hidden">
-        <div className="absolute w-72 h-72 bg-primary/10 rounded-full blur-3xl animate-float-ambient top-[10%] left-[10%]" />
-        <div className="absolute w-60 h-60 bg-primary/5 rounded-full blur-3xl animate-float-ambient bottom-[20%] right-[15%] animation-delay-2000" />
-        <div className="absolute w-40 h-40 bg-primary/5 rounded-full blur-3xl animate-float-ambient top-[60%] left-[50%] animation-delay-4000" />
-        <div className="z-10 text-center flex flex-col items-center">
-          <div className="w-16 h-16 rounded-full border border-primary/20 flex items-center justify-center text-primary/30 mb-4 animate-pulse">
-            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" /></svg>
+      {/* Columna 3: Espacio Ambientado (Vacío con Animación) */}
+      <div className="hidden lg:flex flex-col items-center justify-center relative overflow-hidden bg-card/10">
+        {/* Luces ambientales animadas */}
+        <div className="absolute w-[500px] h-[500px] bg-primary/5 rounded-full blur-[120px] animate-float-ambient top-[-10%] right-[-10%]" />
+        <div className="absolute w-[400px] h-[400px] bg-primary/3 rounded-full blur-[100px] animate-float-ambient bottom-[10%] left-[-5%] animation-delay-2000" />
+        <div className="absolute w-[300px] h-[300px] bg-primary/5 rounded-full blur-[80px] animate-float-ambient top-[40%] left-[20%] animation-delay-4000" />
+        
+        {/* Marca de agua sutil */}
+        <div className="z-10 opacity-10 select-none">
+          <div className="w-24 h-24 border-2 border-primary rounded-full flex items-center justify-center mb-4">
+            <span className="font-headline font-black text-3xl">L</span>
           </div>
-          <p className="text-muted font-medium uppercase tracking-[0.2em] text-[10px]">Escaneo en Espera</p>
+          <p className="text-center font-headline italic text-lg tracking-widest">Premium Collection</p>
         </div>
       </div>
 

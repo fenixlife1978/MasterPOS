@@ -2,22 +2,20 @@
 
 import { useState, useMemo } from 'react';
 import { Product } from '@/lib/types';
-import { Search, Barcode, UserCircle } from 'lucide-react';
+import { Search, Barcode, Wine, Beer, Martini, GlassWater } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface ProductSearchProps {
   products: Product[];
   onAdd: (id: number) => boolean;
-  onToggleView: () => void;
-  isClientView: boolean;
 }
 
-export default function ProductSearch({ products, onAdd, onToggleView, isClientView }: ProductSearchProps) {
+export default function ProductSearch({ products, onAdd }: ProductSearchProps) {
   const [query, setQuery] = useState('');
   const [isFocused, setIsFocused] = useState(false);
 
   const results = useMemo(() => {
-    if (!query.trim()) return [];
+    if (!query.trim()) return products; // Mostramos todos por defecto si no hay búsqueda
     const q = query.toLowerCase();
     return products.filter(p => 
       p.name.toLowerCase().includes(q) || 
@@ -36,70 +34,76 @@ export default function ProductSearch({ products, onAdd, onToggleView, isClientV
   }, [results]);
 
   return (
-    <div className="p-3.5 relative z-50">
-      <div className={cn(
-        "flex items-center bg-card border border-border rounded-lg px-3 transition-colors mb-3",
-        isFocused && "border-primary"
-      )}>
-        <Search size={14} className="text-muted" />
-        <input 
-          id="pos-search-input"
-          type="text" 
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onFocus={() => setIsFocused(true)}
-          onBlur={() => setTimeout(() => setIsFocused(false), 200)}
-          placeholder="Buscar producto o escanear..."
-          className="flex-1 bg-transparent border-none text-foreground px-2 py-2.5 text-sm focus:outline-none font-body"
-        />
-        <Barcode size={16} className="text-primary animate-pulse-scan" />
+    <div className="flex flex-col h-full">
+      <div className="p-4 sticky top-0 bg-background/80 backdrop-blur-md z-10 border-b border-border/50">
+        <div className={cn(
+          "flex items-center bg-card border border-border rounded-xl px-4 transition-all duration-300 shadow-inner",
+          isFocused && "border-primary ring-1 ring-primary/20 bg-card/80"
+        )}>
+          <Search size={18} className="text-muted" />
+          <input 
+            id="pos-search-input"
+            type="text" 
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onFocus={() => setIsFocused(true)}
+            onBlur={() => setTimeout(() => setIsFocused(false), 200)}
+            placeholder="Nombre, marca o código..."
+            className="flex-1 bg-transparent border-none text-foreground px-3 py-3.5 text-sm focus:outline-none font-body placeholder:text-muted/50"
+          />
+          <Barcode size={20} className="text-primary/60 animate-pulse-scan" />
+        </div>
       </div>
 
-      <button 
-        onClick={onToggleView}
-        className={cn(
-          "w-full flex items-center justify-center gap-2 p-2.5 rounded-lg border border-border bg-card text-xs font-bold transition-all",
-          isClientView ? "bg-primary/10 border-primary text-primary" : "text-muted hover:text-foreground hover:border-primary"
-        )}
-      >
-        <UserCircle size={16} />
-        {isClientView ? 'BUSCAR CLIENTE' : 'VER CLIENTE'}
-      </button>
-
-      {isFocused && query.trim() && (
-        <div className="absolute top-[62px] left-3.5 right-3.5 max-h-[420px] overflow-y-auto bg-card border border-border rounded-xl shadow-2xl p-1.5 scrollbar-thin">
-          {results.length === 0 ? (
-            <div className="text-center py-6 text-muted text-xs">Sin resultados</div>
-          ) : (
-            Object.entries(groups).map(([cat, prods]) => (
-              <div key={cat}>
-                <div className="text-[10px] uppercase tracking-wider text-muted px-2 py-2 font-bold">{cat}</div>
+      <div className="flex-1 p-2 space-y-4">
+        {results.length === 0 ? (
+          <div className="text-center py-20 text-muted opacity-50 flex flex-col items-center gap-3">
+            <Search size={40} />
+            <p className="text-sm font-medium italic">No se encontraron licores</p>
+          </div>
+        ) : (
+          Object.entries(groups).map(([cat, prods]) => (
+            <div key={cat} className="space-y-1">
+              <div className="flex items-center gap-2 px-3 py-2">
+                <div className="h-px flex-1 bg-border/40" />
+                <span className="text-[10px] uppercase tracking-[0.2em] text-muted font-black">{cat}</span>
+                <div className="h-px flex-1 bg-border/40" />
+              </div>
+              
+              <div className="grid grid-cols-1 gap-1">
                 {prods.map(p => (
                   <button 
                     key={p.id}
-                    onClick={() => { onAdd(p.id); setQuery(''); }}
-                    className="w-full flex items-center gap-3 p-2.5 rounded-lg hover:bg-secondary text-left group border border-transparent hover:border-border transition-all"
+                    onClick={() => { onAdd(p.id); }}
+                    className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-primary/5 text-left group border border-transparent hover:border-primary/20 transition-all duration-200 bg-card/30"
                   >
-                    <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
-                      <StoreIcon category={p.category} />
+                    <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center text-primary group-hover:scale-110 transition-transform">
+                      <CategoryIcon category={p.category} />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium truncate">{p.name}</div>
-                      <div className="text-xs text-primary font-bold">BS {p.priceBs.toFixed(2)} / USD {p.priceUsd.toFixed(2)}</div>
+                      <div className="text-sm font-bold truncate text-foreground/90 group-hover:text-primary transition-colors">{p.name}</div>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <span className="text-[11px] font-black text-primary">BS {p.priceBs.toFixed(2)}</span>
+                        <span className="text-[10px] text-muted font-medium">|</span>
+                        <span className="text-[10px] text-muted uppercase font-bold tracking-tighter">Stock: {p.stock}</span>
+                      </div>
                     </div>
-                    <div className="text-[10px] text-muted">{p.stock} uds</div>
                   </button>
                 ))}
               </div>
-            ))
-          )}
-        </div>
-      )}
+            </div>
+          ))
+        )}
+      </div>
     </div>
   );
 }
 
-function StoreIcon({ category }: { category: string }) {
-  // Mock icons for categories
-  return <Search size={16} />;
+function CategoryIcon({ category }: { category: string }) {
+  const c = category.toLowerCase();
+  if (c.includes('whisky')) return <Martini size={18} />;
+  if (c.includes('ron')) return <GlassWater size={18} />;
+  if (c.includes('cerveza')) return <Beer size={18} />;
+  if (c.includes('vino')) return <Wine size={18} />;
+  return <Wine size={18} />;
 }

@@ -79,20 +79,20 @@ export default function ClientPanel({ client, state, onClose }: ClientPanelProps
                   ABONAR
                 </button>
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-col gap-2">
                 <input 
                   id="abono-field"
                   type="number" 
                   value={abono}
                   onChange={(e) => setAbono(e.target.value)}
                   placeholder="Monto BS"
-                  className="flex-1 bg-background border border-border rounded-xl px-4 py-3 text-sm font-black text-foreground outline-none focus:border-primary"
+                  className="w-full bg-background border border-border rounded-xl px-4 py-3 text-sm font-black text-foreground outline-none focus:border-primary"
                 />
                 <button 
                   onClick={handleProcessAbono}
-                  className="px-6 bg-primary text-background text-[11px] font-black rounded-xl hover:brightness-110 transition-all"
+                  className="w-full py-3 bg-primary text-background text-[11px] font-black rounded-xl hover:brightness-110 transition-all uppercase tracking-widest"
                 >
-                  CONFIRMAR
+                  Confirmar
                 </button>
               </div>
               <p className="text-[9px] text-muted text-center italic">El abono se aplicará cronológicamente a las deudas más antiguas.</p>

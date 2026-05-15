@@ -111,7 +111,9 @@ export default function ProductSearch({ state, onAdd }: ProductSearchProps) {
                       <div className="text-sm font-bold truncate uppercase text-foreground">{p.name}</div>
                       <div className="flex items-center gap-4 mt-1">
                         <span className="text-base font-black text-secondary">BS {p.priceBs.toFixed(2)}</span>
-                        <span className="text-xs text-muted-foreground font-bold uppercase tracking-tighter">STOCK: {p.stock}</span>
+                        <span className="bg-[#2ECC71] text-black px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-tighter">
+                          STOCK: {p.stock}
+                        </span>
                       </div>
                     </div>
                   </button>

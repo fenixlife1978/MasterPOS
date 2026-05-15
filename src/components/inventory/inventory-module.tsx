@@ -99,13 +99,8 @@ export default function InventoryModule({ state }: InventoryModuleProps) {
                 </TableCell>
                 <TableCell className="font-bold text-sm">{p.priceBs.toFixed(2)}</TableCell>
                 <TableCell className="text-center">
-                  <span className={cn(
-                    "px-2 py-0.5 rounded-full text-[10px] font-bold border",
-                    p.stock > 10 ? "bg-[#2ECC711A] text-[#2ECC71] border-[#2ECC7133]" : 
-                    p.stock > 0 ? "bg-[#F1C40F1A] text-[#F1C40F] border-[#F1C40F33]" :
-                    "bg-[#E74C3C1A] text-[#E74C3C] border-[#E74C3C33]"
-                  )}>
-                    {p.stock} uds
+                  <span className="bg-[#2ECC71] text-black px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest shadow-sm">
+                    {p.stock} UDS
                   </span>
                 </TableCell>
                 <TableCell className="text-right">

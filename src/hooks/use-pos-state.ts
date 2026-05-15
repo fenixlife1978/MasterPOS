@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
@@ -30,6 +31,7 @@ export function usePOSState() {
   const [register, setRegister] = useState<CashRegister | null>(null);
   const [exchangeRate, setExchangeRate] = useState(36.50);
   const [cart, setCart] = useState<CartItem[]>([]);
+  const [isIvaEnabled, setIsIvaEnabled] = useState(true);
   const [currentPage, setCurrentPage] = useState<Page>('pos');
   const [isHydrated, setIsHydrated] = useState(false);
 
@@ -118,7 +120,7 @@ export function usePOSState() {
     if (!register || !register.isOpen) return;
 
     const subtotal = cart.reduce((acc, item) => acc + (item.priceBs * item.qty), 0);
-    const iva = subtotal * 0.16;
+    const iva = isIvaEnabled ? subtotal * 0.16 : 0;
     const total = subtotal + iva;
     const totalUsd = total / exchangeRate;
 
@@ -126,7 +128,6 @@ export function usePOSState() {
     let targetClientName = paymentData.clientName;
     let targetClientCedula = paymentData.clientCedula;
 
-    // Handle new client registration during credit sale
     if (type === 'credito' && paymentData.isNewClient) {
       const nextClientId = clients.length ? Math.max(...clients.map(c => c.id)) + 1 : 1;
       const newCli: Client = {
@@ -184,7 +185,7 @@ export function usePOSState() {
     }
 
     setCart([]);
-  }, [cart, register, exchangeRate, transactions.length, accounts.length, clients]);
+  }, [cart, register, exchangeRate, transactions.length, accounts.length, clients, isIvaEnabled]);
 
   const applyAbono = useCallback((clientId: number, amount: number) => {
     if (!register || !register.isOpen) return;
@@ -245,6 +246,7 @@ export function usePOSState() {
     register, openCashRegister, closeCashRegister,
     exchangeRate, setExchangeRate,
     cart, addToCart, removeFromCart, updateCartQty,
+    isIvaEnabled, setIsIvaEnabled,
     currentPage, setCurrentPage,
     finalizeSale, applyAbono,
     isHydrated

@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState } from 'react';
@@ -17,9 +18,12 @@ export default function POSModule({ state }: POSModuleProps) {
   const [showContado, setShowContado] = useState(false);
   const [showCredito, setShowCredito] = useState(false);
 
+  const cartTotal = state.cart.reduce((s,i) => s + (i.priceBs * i.qty), 0);
+  const totalWithIva = state.isIvaEnabled ? cartTotal * 1.16 : cartTotal;
+
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 h-full overflow-hidden bg-background">
-      {/* COLUMNA IZQUIERDA: Búsqueda Inteligente + Panel de Cliente */}
+      {/* COLUMNA IZQUIERDA: Búsqueda Inteligente */}
       <div className="border-r border-border flex flex-col overflow-hidden bg-background">
         <ProductSearch 
           state={state}
@@ -36,6 +40,8 @@ export default function POSModule({ state }: POSModuleProps) {
           onCobrar={() => setShowSaleType(true)}
           exchangeRate={state.exchangeRate}
           isRegisterOpen={!!state.register?.isOpen}
+          isIvaEnabled={state.isIvaEnabled}
+          onIvaToggle={state.setIsIvaEnabled}
         />
       </div>
 
@@ -66,7 +72,7 @@ export default function POSModule({ state }: POSModuleProps) {
 
       {showContado && (
         <PaymentModal 
-          total={state.cart.reduce((s,i) => s + (i.priceBs * i.qty), 0) * 1.16}
+          total={totalWithIva}
           exchangeRate={state.exchangeRate}
           onClose={() => setShowContado(false)}
           onConfirm={(data) => {

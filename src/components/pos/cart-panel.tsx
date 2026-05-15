@@ -1,8 +1,11 @@
+
 "use client";
 
 import { CartItem } from '@/lib/types';
 import { ShoppingCart, Trash2, Minus, Plus, Banknote } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
 
 interface CartPanelProps {
   cart: CartItem[];
@@ -11,11 +14,22 @@ interface CartPanelProps {
   onCobrar: () => void;
   exchangeRate: number;
   isRegisterOpen: boolean;
+  isIvaEnabled: boolean;
+  onIvaToggle: (enabled: boolean) => void;
 }
 
-export default function CartPanel({ cart, onUpdateQty, onRemove, onCobrar, exchangeRate, isRegisterOpen }: CartPanelProps) {
+export default function CartPanel({ 
+  cart, 
+  onUpdateQty, 
+  onRemove, 
+  onCobrar, 
+  exchangeRate, 
+  isRegisterOpen,
+  isIvaEnabled,
+  onIvaToggle
+}: CartPanelProps) {
   const subtotal = cart.reduce((s, i) => s + (i.priceBs * i.qty), 0);
-  const iva = subtotal * 0.16;
+  const iva = isIvaEnabled ? subtotal * 0.16 : 0;
   const total = subtotal + iva;
   const totalUsd = total / exchangeRate;
 
@@ -78,12 +92,27 @@ export default function CartPanel({ cart, onUpdateQty, onRemove, onCobrar, excha
       </div>
 
       <div className="p-6 border-t border-border bg-secondary/10">
+        <div className="flex items-center justify-between mb-4 px-1">
+          <Label htmlFor="iva-toggle" className="text-[10px] font-black text-muted-foreground uppercase tracking-widest cursor-pointer">
+            Calcular IVA (16%)
+          </Label>
+          <Switch 
+            id="iva-toggle" 
+            checked={isIvaEnabled} 
+            onCheckedChange={onIvaToggle}
+            className="data-[state=checked]:bg-primary"
+          />
+        </div>
+
         <div className="space-y-2 mb-6">
           <div className="flex justify-between text-[11px] text-muted font-black uppercase tracking-widest">
             <span>Subtotal</span>
             <span>BS {subtotal.toFixed(2)}</span>
           </div>
-          <div className="flex justify-between text-[11px] text-muted font-black uppercase tracking-widest">
+          <div className={cn(
+            "flex justify-between text-[11px] font-black uppercase tracking-widest transition-opacity",
+            isIvaEnabled ? "text-muted" : "text-muted/30"
+          )}>
             <span>IVA (16%)</span>
             <span>BS {iva.toFixed(2)}</span>
           </div>

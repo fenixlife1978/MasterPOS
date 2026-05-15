@@ -1,9 +1,11 @@
+
 "use client";
 
 import { useState, useMemo } from 'react';
 import { Client, CartItem } from '@/lib/types';
 import { Handshake, X, Search, UserPlus, UserCheck } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { usePOSState } from '@/hooks/use-pos-state';
 
 interface CreditModalProps {
   cart: CartItem[];
@@ -13,12 +15,14 @@ interface CreditModalProps {
 }
 
 export default function CreditModal({ cart, clients, onClose, onConfirm }: CreditModalProps) {
+  const { isIvaEnabled } = usePOSState();
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<Client | null>(null);
   const [isNewMode, setIsNewMode] = useState(false);
   const [newClient, setNewClient] = useState({ name: '', cedula: '', phone: '', address: '' });
 
-  const total = cart.reduce((s, i) => s + (i.priceBs * i.qty), 0) * 1.16;
+  const subtotal = cart.reduce((s, i) => s + (i.priceBs * i.qty), 0);
+  const total = isIvaEnabled ? subtotal * 1.16 : subtotal;
 
   const results = useMemo(() => {
     if (!query.trim()) return [];
@@ -103,7 +107,7 @@ export default function CreditModal({ cart, clients, onClose, onConfirm }: Credi
               ))}
             </div>
             
-            {!query && results.length === 0 && (
+            {!query && (
               <button 
                 onClick={() => setIsNewMode(true)}
                 className="w-full py-3 mb-4 border border-dashed border-border rounded-xl text-xs font-bold text-muted hover:text-primary hover:border-primary transition-all flex items-center justify-center gap-2"

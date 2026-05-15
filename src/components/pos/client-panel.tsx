@@ -1,34 +1,142 @@
 "use client";
 
+import { useState } from 'react';
 import { Client, Account } from '@/lib/types';
-import { User, X, Landmark, ReceiptText } from 'lucide-react';
+import { UserCircle, X, Banknote, HandCoins, History } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { usePOSState } from '@/hooks/use-pos-state';
 
 interface ClientPanelProps {
-  clients: Client[];
-  accounts: Account[];
+  client: Client;
+  state: ReturnType<typeof usePOSState>;
   onClose: () => void;
 }
 
-export default function ClientPanel({ clients, accounts, onClose }: ClientPanelProps) {
-  // Logic for abono payment would go here. Replicating the design for now.
+export default function ClientPanel({ client, state, onClose }: ClientPanelProps) {
+  const [abono, setAbono] = useState('');
+  
+  const clientAccounts = state.accounts
+    .filter(a => a.clientId === client.id)
+    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+  const totalDebt = clientAccounts
+    .filter(a => a.status !== 'pagada')
+    .reduce((s, a) => s + (a.amountBs - (a.paidAmount || 0)), 0);
+
+  const handleProcessAbono = () => {
+    const amount = parseFloat(abono) || 0;
+    if (amount <= 0) return;
+    if (amount > totalDebt) return;
+    state.applyAbono(client.id, amount);
+    setAbono('');
+  };
+
+  const handleFullPay = () => {
+    if (totalDebt <= 0) return;
+    state.applyAbono(client.id, totalDebt);
+  };
+
   return (
-    <div className="flex-1 flex flex-col overflow-hidden bg-background">
-      <div className="p-4 border-b border-border flex items-center justify-between">
-        <h2 className="text-base font-bold flex items-center gap-2">
-          <User size={18} className="text-primary" /> Detalles de Cliente
-        </h2>
-        <button onClick={onClose} className="text-muted hover:text-foreground"><X size={18} /></button>
+    <div className="flex flex-col h-full animate-in fade-in slide-in-from-bottom-4">
+      <div className="flex items-center gap-4 mb-6 pb-4 border-b border-border">
+        <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center text-primary border border-primary/20">
+          <UserCircle size={28} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-base font-black truncate">{client.name}</div>
+          <div className="text-[11px] text-muted font-bold uppercase">{client.cedula} | {client.phone}</div>
+        </div>
+        <button onClick={onClose} className="text-muted hover:text-foreground transition-colors">
+          <X size={20} />
+        </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin">
-        <div className="flex items-center gap-4">
-          <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center text-primary border border-primary/20">
-            <User size={28} />
+      <div className="space-y-6">
+        <div>
+          <div className="text-[10px] font-black text-muted uppercase tracking-widest mb-2">Deuda Actual</div>
+          <div className="bg-secondary border border-border rounded-2xl p-6 text-center shadow-xl">
+            <div className="text-[10px] text-muted font-bold uppercase tracking-widest">Saldo Pendiente</div>
+            <div className="text-3xl font-black text-destructive mt-1">BS {totalDebt.toFixed(2)}</div>
+            <div className="text-sm text-primary font-bold mt-1">USD {(totalDebt / state.exchangeRate).toFixed(2)}</div>
           </div>
+        </div>
+
+        {totalDebt > 0 && (
           <div>
-            <div className="text-lg font-headline font-black tracking-tight">Seleccione un cliente</div>
-            <div className="text-xs text-muted">Inicie una búsqueda para visualizar detalles</div>
+            <div className="text-[10px] font-black text-muted uppercase tracking-widest mb-2">Abonar / Pagar</div>
+            <div className="bg-secondary border border-border rounded-2xl p-5 space-y-4">
+              <div className="flex gap-2">
+                <button 
+                  onClick={handleFullPay}
+                  className="flex-1 py-3 bg-success/10 border border-success/30 text-success text-[11px] font-black rounded-xl hover:bg-success/20 transition-all"
+                >
+                  PAGAR TOTAL
+                </button>
+                <button 
+                  onClick={() => document.getElementById('abono-field')?.focus()}
+                  className="flex-1 py-3 bg-primary/10 border border-primary/30 text-primary text-[11px] font-black rounded-xl hover:bg-primary/20 transition-all"
+                >
+                  ABONAR
+                </button>
+              </div>
+              <div className="flex gap-2">
+                <input 
+                  id="abono-field"
+                  type="number" 
+                  value={abono}
+                  onChange={(e) => setAbono(e.target.value)}
+                  placeholder="Monto BS"
+                  className="flex-1 bg-background border border-border rounded-xl px-4 py-3 text-sm font-black text-foreground outline-none focus:border-primary"
+                />
+                <button 
+                  onClick={handleProcessAbono}
+                  className="px-6 bg-primary text-background text-[11px] font-black rounded-xl hover:brightness-110 transition-all"
+                >
+                  CONFIRMAR
+                </button>
+              </div>
+              <p className="text-[9px] text-muted text-center italic">El abono se aplicará cronológicamente a las deudas más antiguas.</p>
+            </div>
+          </div>
+        )}
+
+        <div>
+          <div className="text-[10px] font-black text-muted uppercase tracking-widest mb-3 flex items-center justify-between">
+            <span>Transacciones de Crédito</span>
+            <span className="bg-secondary px-2 py-0.5 rounded text-[9px]">{clientAccounts.length} TXS</span>
+          </div>
+          <div className="space-y-2">
+            {clientAccounts.length === 0 ? (
+              <div className="text-center py-6 text-muted italic text-[11px]">Sin registros de crédito</div>
+            ) : (
+              clientAccounts.map(a => {
+                const remaining = a.amountBs - (a.paidAmount || 0);
+                return (
+                  <div key={a.id} className="flex items-center gap-3 p-3 bg-secondary/50 border border-border rounded-xl transition-all hover:border-primary/30">
+                    <div className="text-[10px] text-muted font-black w-12 shrink-0">
+                      {new Date(a.date).toLocaleDateString('es-VE', { day: '2-digit', month: 'short' })}
+                    </div>
+                    <div className="flex-1 min-w-0 text-[11px] font-bold text-muted-foreground truncate">
+                      {a.products}
+                    </div>
+                    <div className="text-right shrink-0">
+                      <div className={cn(
+                        "text-[12px] font-black",
+                        a.status === 'pagada' ? "text-success" : a.status === 'parcial' ? "text-warning" : "text-destructive"
+                      )}>
+                        BS {remaining.toFixed(2)}
+                      </div>
+                      <span className={cn(
+                        "text-[9px] font-black px-1.5 py-0.5 rounded uppercase",
+                        a.status === 'pagada' ? "bg-success/10 text-success" : a.status === 'parcial' ? "bg-warning/10 text-warning" : "bg-destructive/10 text-destructive"
+                      )}>
+                        {a.status}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })
+            )}
           </div>
         </div>
       </div>

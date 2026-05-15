@@ -111,8 +111,6 @@ export function usePOSState() {
   }, []);
 
   const closeCashRegister = useCallback(() => {
-    setRegister(prev => prev ? { ...prev, isOpen: false, closeTime: new Date().toISOString() } : null);
-    // Here we'd usually archive it, for now just null
     setRegister(null);
   }, []);
 
@@ -143,7 +141,6 @@ export function usePOSState() {
     setTransactions(prev => [...prev, tx]);
     setRegister(prev => prev ? { ...prev, txs: [...prev.txs, tx] } : null);
 
-    // Update stocks
     setProducts(prev => prev.map(p => {
       const cartItem = cart.find(ci => ci.productId === p.id);
       return cartItem ? { ...p, stock: p.stock - cartItem.qty } : p;
@@ -170,6 +167,57 @@ export function usePOSState() {
     setCart([]);
   }, [cart, register, exchangeRate, transactions.length, accounts.length]);
 
+  const applyAbono = useCallback((clientId: number, amount: number) => {
+    if (!register || !register.isOpen) return;
+
+    const client = clients.find(c => c.id === clientId);
+    if (!client) return;
+
+    const clientAccounts = accounts
+      .filter(a => a.clientId === clientId && a.status !== 'pagada')
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+    let remaining = amount;
+    const updatedAccounts = [...accounts];
+
+    for (const accIdx in updatedAccounts) {
+      const acc = updatedAccounts[accIdx];
+      if (acc.clientId !== clientId || acc.status === 'pagada' || remaining <= 0) continue;
+
+      const owed = acc.amountBs - (acc.paidAmount || 0);
+      if (remaining >= owed) {
+        acc.paidAmount = acc.amountBs;
+        acc.status = 'pagada';
+        remaining -= owed;
+      } else {
+        acc.paidAmount = (acc.paidAmount || 0) + remaining;
+        acc.status = 'parcial';
+        remaining = 0;
+      }
+    }
+
+    const tx: Transaction = {
+      id: transactions.length + 1,
+      date: new Date().toISOString(),
+      type: 'cobro_deuda',
+      items: [],
+      subtotal: amount,
+      iva: 0,
+      total: amount,
+      totalUsd: amount / exchangeRate,
+      payMethod: 'efectivo_bs',
+      paidBs: amount,
+      change: 0,
+      clientId: clientId,
+      clientName: client.name
+    };
+
+    setAccounts(updatedAccounts);
+    setTransactions(prev => [...prev, tx]);
+    setRegister(prev => prev ? { ...prev, txs: [...prev.txs, tx] } : null);
+    setClients(prev => prev.map(c => c.id === clientId ? { ...c, debt: Math.max(0, c.debt - amount) } : c));
+  }, [register, clients, accounts, transactions.length, exchangeRate]);
+
   return {
     products, setProducts,
     clients, setClients,
@@ -179,7 +227,7 @@ export function usePOSState() {
     exchangeRate, setExchangeRate,
     cart, addToCart, removeFromCart, updateCartQty,
     currentPage, setCurrentPage,
-    finalizeSale,
+    finalizeSale, applyAbono,
     isHydrated
   };
 }

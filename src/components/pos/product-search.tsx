@@ -1,44 +1,47 @@
 "use client";
 
 import { useState, useMemo } from 'react';
-import { Product } from '@/lib/types';
-import { Search, Barcode, Wine, Beer, Martini, GlassWater } from 'lucide-react';
+import { Product, Client } from '@/lib/types';
+import { Search, Barcode, UserCircle, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import ClientPanel from './client-panel';
+import { usePOSState } from '@/hooks/use-pos-state';
 
 interface ProductSearchProps {
-  products: Product[];
+  state: ReturnType<typeof usePOSState>;
   onAdd: (id: number) => boolean;
 }
 
-export default function ProductSearch({ products, onAdd }: ProductSearchProps) {
+export default function ProductSearch({ state, onAdd }: ProductSearchProps) {
   const [query, setQuery] = useState('');
   const [isFocused, setIsFocused] = useState(false);
+  const [isClientSearch, setIsClientSearch] = useState(false);
+  const [viewingClient, setViewingClient] = useState<Client | null>(null);
 
-  const results = useMemo(() => {
-    if (!query.trim()) return products;
+  const productResults = useMemo(() => {
+    if (!query.trim()) return [];
     const q = query.toLowerCase();
-    return products.filter(p => 
+    return state.products.filter(p => 
       p.name.toLowerCase().includes(q) || 
       p.barcode.includes(q) || 
       p.category.toLowerCase().includes(q)
     );
-  }, [query, products]);
+  }, [query, state.products]);
 
-  const groups = useMemo(() => {
-    const g: Record<string, Product[]> = {};
-    results.forEach(p => {
-      if (!g[p.category]) g[p.category] = [];
-      g[p.category].push(p);
-    });
-    return g;
-  }, [results]);
+  const clientResults = useMemo(() => {
+    if (!query.trim()) return state.clients;
+    const q = query.toLowerCase();
+    return state.clients.filter(c => 
+      c.name.toLowerCase().includes(q) || 
+      c.cedula.toLowerCase().includes(q)
+    );
+  }, [query, state.clients]);
 
   return (
-    <div className="flex flex-col h-full bg-[#0C0B0A]">
-      <div className="p-4 bg-[#111111] border-b border-border">
-         <h2 className="text-[10px] font-black uppercase tracking-[0.3em] text-primary/60 mb-4">Búsqueda Inteligente</h2>
-         <div className={cn(
-          "flex items-center bg-card border border-border rounded-xl px-4 transition-all duration-300 shadow-2xl",
+    <div className="flex flex-col h-full bg-background relative">
+      <div className="p-4 bg-background z-50">
+        <div className={cn(
+          "flex items-center bg-secondary border border-border rounded-xl px-4 transition-all duration-300",
           isFocused && "border-primary ring-1 ring-primary/20"
         )}>
           <Search size={18} className="text-muted" />
@@ -49,60 +52,92 @@ export default function ProductSearch({ products, onAdd }: ProductSearchProps) {
             onChange={(e) => setQuery(e.target.value)}
             onFocus={() => setIsFocused(true)}
             onBlur={() => setTimeout(() => setIsFocused(false), 200)}
-            placeholder="Escanear o escribir..."
-            className="flex-1 bg-transparent border-none text-foreground px-3 py-4 text-sm focus:outline-none font-body placeholder:text-muted/30 uppercase font-bold"
+            placeholder={isClientSearch ? "Buscar cliente..." : "Buscar producto o escanear..."}
+            className="flex-1 bg-transparent border-none text-foreground px-3 py-4 text-sm focus:outline-none font-body placeholder:text-muted/50 uppercase font-bold"
           />
-          <Barcode size={20} className="text-primary/40" />
+          <Barcode size={20} className="text-primary/60 animate-pulse-scan" />
         </div>
+
+        <button 
+          onClick={() => {
+            setIsClientSearch(!isClientSearch);
+            setQuery('');
+            setViewingClient(null);
+          }}
+          className={cn(
+            "w-full mt-3 flex items-center justify-center gap-2 p-3 rounded-xl border border-border text-xs font-black transition-all",
+            isClientSearch || viewingClient ? "bg-primary/10 border-primary text-primary" : "bg-secondary text-foreground hover:border-primary/50"
+          )}
+        >
+          <UserCircle size={18} />
+          {viewingClient ? 'CAMBIAR CLIENTE' : isClientSearch ? 'CANCELAR BÚSQUEDA' : 'VER CLIENTE'}
+        </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin">
-        {results.length === 0 ? (
-          <div className="text-center py-20 text-muted opacity-30 flex flex-col items-center gap-4">
-            <Search size={48} strokeWidth={1} />
-            <p className="text-xs font-black uppercase tracking-widest italic">Sin resultados</p>
+      <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-2 scrollbar-thin">
+        {/* Resultados de Productos */}
+        {!isClientSearch && !viewingClient && query && (
+          <div className="space-y-1.5 animate-in fade-in slide-in-from-top-2">
+            {productResults.map(p => (
+              <button 
+                key={p.id}
+                onClick={() => {
+                  onAdd(p.id);
+                  setQuery('');
+                }}
+                className="w-full flex items-center gap-3 p-3 rounded-xl bg-secondary/50 border border-transparent hover:border-primary/20 hover:bg-primary/5 transition-all group text-left"
+              >
+                <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center text-primary/60 group-hover:text-primary border border-border">
+                  <Barcode size={18} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[13px] font-bold truncate uppercase">{p.name}</div>
+                  <div className="flex items-center gap-3 mt-0.5">
+                    <span className="text-[12px] font-black text-primary">BS {p.priceBs.toFixed(2)}</span>
+                    <span className="text-[10px] text-muted font-bold">STOCK: {p.stock}</span>
+                  </div>
+                </div>
+              </button>
+            ))}
+            {productResults.length === 0 && (
+              <div className="text-center py-10 opacity-30 italic text-xs">Sin resultados</div>
+            )}
           </div>
-        ) : (
-          Object.entries(groups).map(([cat, prods]) => (
-            <div key={cat} className="space-y-2">
-              <div className="flex items-center gap-3">
-                <span className="text-[9px] uppercase tracking-[0.4em] text-primary/50 font-black whitespace-nowrap">{cat}</span>
-                <div className="h-px w-full bg-border/40" />
-              </div>
-              
-              <div className="grid grid-cols-1 gap-1.5">
-                {prods.map(p => (
-                  <button 
-                    key={p.id}
-                    onClick={() => onAdd(p.id)}
-                    className="w-full flex items-center gap-3 p-3 rounded-xl bg-card/30 border border-transparent hover:border-primary/20 hover:bg-primary/5 transition-all group text-left"
-                  >
-                    <div className="w-9 h-9 rounded-lg bg-secondary flex items-center justify-center text-primary/60 group-hover:text-primary transition-colors">
-                      <CategoryIcon category={p.category} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-xs font-bold truncate text-foreground group-hover:text-primary transition-colors uppercase tracking-tight">{p.name}</div>
-                      <div className="flex items-center gap-3 mt-1">
-                        <span className="text-[11px] font-black text-primary">BS {p.priceBs.toFixed(2)}</span>
-                        <span className="text-[9px] text-muted font-bold uppercase tracking-tighter">Stock: {p.stock}</span>
-                      </div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          ))
+        )}
+
+        {/* Resultados de Clientes */}
+        {isClientSearch && !viewingClient && (
+          <div className="space-y-1.5 animate-in fade-in slide-in-from-top-2">
+            {clientResults.map(c => (
+              <button 
+                key={c.id}
+                onClick={() => {
+                  setViewingClient(c);
+                  setIsClientSearch(false);
+                  setQuery('');
+                }}
+                className="w-full flex items-center gap-3 p-3 rounded-xl bg-secondary/50 border border-transparent hover:border-primary/20 transition-all text-left"
+              >
+                <UserCircle size={24} className="text-primary" />
+                <div className="flex-1">
+                  <div className="text-[13px] font-bold">{c.name}</div>
+                  <div className="text-[11px] text-muted">{c.cedula}</div>
+                  {c.debt > 0 && <div className="text-[11px] text-destructive font-bold">DEUDA: BS {c.debt.toFixed(2)}</div>}
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Panel de Información del Cliente */}
+        {viewingClient && (
+          <ClientPanel 
+            client={viewingClient} 
+            state={state} 
+            onClose={() => setViewingClient(null)} 
+          />
         )}
       </div>
     </div>
   );
-}
-
-function CategoryIcon({ category }: { category: string }) {
-  const c = category.toLowerCase();
-  if (c.includes('whisky')) return <Martini size={18} />;
-  if (c.includes('ron')) return <GlassWater size={18} />;
-  if (c.includes('cerveza')) return <Beer size={18} />;
-  if (c.includes('vino')) return <Wine size={18} />;
-  return <Wine size={18} />;
 }

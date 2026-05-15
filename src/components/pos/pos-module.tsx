@@ -18,16 +18,16 @@ export default function POSModule({ state }: POSModuleProps) {
   const [showCredito, setShowCredito] = useState(false);
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 h-full overflow-hidden bg-background">
-      {/* Columna 1: Búsqueda Inteligente */}
-      <div className="border-r border-border flex flex-col overflow-hidden bg-card/10">
+    <div className="grid grid-cols-1 md:grid-cols-3 h-full overflow-hidden bg-background">
+      {/* COLUMNA IZQUIERDA: Búsqueda Inteligente + Panel de Cliente */}
+      <div className="border-r border-border flex flex-col overflow-hidden bg-background">
         <ProductSearch 
-          products={state.products} 
+          state={state}
           onAdd={state.addToCart} 
         />
       </div>
 
-      {/* Columna 2: Carrito de Compras */}
+      {/* COLUMNA CENTRAL: Carrito de Compras */}
       <div className="border-r border-border flex flex-col overflow-hidden bg-background">
         <CartPanel 
           cart={state.cart} 
@@ -39,19 +39,17 @@ export default function POSModule({ state }: POSModuleProps) {
         />
       </div>
 
-      {/* Columna 3: Espacio Ambiental */}
-      <div className="hidden lg:flex flex-col items-center justify-center relative overflow-hidden bg-card/5">
-        {/* Luces ambientales animadas */}
-        <div className="absolute w-[500px] h-[500px] bg-primary/5 rounded-full blur-[120px] animate-float-ambient top-[-10%] right-[-10%]" />
-        <div className="absolute w-[400px] h-[400px] bg-primary/3 rounded-full blur-[100px] animate-float-ambient bottom-[10%] left-[-5%] animation-delay-2000" />
-        <div className="absolute w-[300px] h-[300px] bg-primary/5 rounded-full blur-[80px] animate-float-ambient top-[40%] left-[20%] animation-delay-4000" />
+      {/* COLUMNA DERECHA: Espacio Ambiental Premium */}
+      <div className="hidden md:flex flex-col items-center justify-center relative overflow-hidden bg-background">
+        <div className="absolute w-[280px] h-[280px] bg-primary/10 rounded-full blur-[100px] animate-float-ambient top-[20%] left-[15%]" />
+        <div className="absolute w-[180px] h-[180px] bg-primary/5 rounded-full blur-[80px] animate-float-ambient bottom-[25%] right-[20%] animation-delay-2000" />
+        <div className="absolute w-[120px] h-[120px] bg-primary/10 rounded-full blur-[60px] animate-float-ambient top-[55%] left-[50%] animation-delay-4000" />
         
-        {/* Marca de agua sutil */}
-        <div className="z-10 opacity-5 select-none text-center">
+        <div className="z-10 opacity-10 select-none text-center">
           <div className="w-24 h-24 border border-primary/20 rounded-full flex items-center justify-center mb-6 mx-auto">
-            <span className="font-headline font-black text-3xl text-primary/30">L</span>
+            <span className="font-headline font-black text-4xl text-primary/30">LP</span>
           </div>
-          <p className="font-headline italic text-xl tracking-[0.3em] text-primary/10 uppercase">Gold Experience</p>
+          <p className="font-headline italic text-xl tracking-[0.4em] text-primary/20 uppercase">Gold Experience</p>
         </div>
       </div>
 

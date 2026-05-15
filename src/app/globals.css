@@ -4,33 +4,45 @@
 
 @layer base {
   :root {
-    --bg: 0 0% 4%;
-    --bg2: 0 0% 7%;
-    --card: 0 0% 9%;
-    --card2: 0 0% 11%;
-    --hover: 0 0% 13%;
-    --accent: 43 80% 46%;
-    --accent-light: 41 78% 61%;
-    --accent-dark: 45 100% 33%;
-    --fg: 36 29% 94%;
-    --fg2: 36 12% 75%;
-    --muted: 26 6% 39%;
-    --border: 30 13% 15%;
-    --success: 145 63% 49%;
-    --danger: 6 78% 57%;
-    --warning: 38 92% 50%;
+    /* Paleta Original LicoPOS */
+    --bg: 0 0% 4%;            /* #0A0A0A */
+    --bg2: 0 0% 7%;           /* #111111 */
+    --card-hex: 0 0% 9%;      /* #161616 */
+    --card2-hex: 0 0% 11%;    /* #1C1C1C */
+    --hover-hex: 0 0% 13%;    /* #222222 */
+    --accent-hex: 43 80% 46%; /* #D4A017 */
+    --accent-light: 41 78% 61%; /* #E8B84D */
+    --accent-dark: 45 100% 33%; /* #A67C00 */
+    --fg: 36 29% 94%;         /* #F5F0E8 */
+    --fg2: 36 12% 75%;        /* #C8C0B4 */
+    --muted-hex: 26 6% 39%;   /* #6B6560 */
+    --border-hex: 30 13% 15%; /* #2A2520 */
+    --success-hex: 145 63% 49%; /* #2ECC71 */
+    --danger-hex: 6 78% 57%;  /* #E74C3C */
+    --warning-hex: 38 92% 50%; /* #F39C12 */
     
+    /* ShadCN Mappings */
     --background: var(--bg);
     --foreground: var(--fg);
-    --primary: var(--accent);
+    --primary: var(--accent-hex);
     --primary-foreground: var(--bg);
     --secondary: var(--bg2);
     --secondary-foreground: var(--fg2);
-    --muted-foreground: var(--muted);
+    --muted: var(--muted-hex);
+    --muted-foreground: var(--muted-hex);
+    --accent: var(--accent-hex);
     --accent-foreground: var(--bg);
-    --destructive: var(--danger);
+    --destructive: var(--danger-hex);
     --destructive-foreground: var(--fg);
+    --border: var(--border-hex);
+    --input: var(--border-hex);
+    --ring: var(--accent-hex);
     --radius: 10px;
+    
+    --card: var(--card-hex);
+    --card-foreground: var(--fg);
+    --popover: var(--card-hex);
+    --popover-foreground: var(--fg);
   }
 }
 

@@ -69,7 +69,7 @@ export default function InventoryModule({ state }: InventoryModuleProps) {
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
-          <Button className="bg-primary hover:bg-primary/90 text-accent font-black">
+          <Button className="bg-primary hover:bg-primary/90 text-accent font-black shadow-md">
             <Plus size={18} className="mr-2" /> AGREGAR PRODUCTO
           </Button>
         </div>
@@ -93,20 +93,20 @@ export default function InventoryModule({ state }: InventoryModuleProps) {
                 <TableCell className="font-mono text-[11px] text-muted-foreground">{p.barcode}</TableCell>
                 <TableCell className="font-bold text-sm text-foreground">{p.name}</TableCell>
                 <TableCell>
-                  <span className="bg-primary text-accent px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest shadow-sm">
+                  <span className="bg-primary text-accent px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest shadow-sm border border-primary/20">
                     {p.category}
                   </span>
                 </TableCell>
                 <TableCell className="font-bold text-sm">{p.priceBs.toFixed(2)}</TableCell>
                 <TableCell className="text-center">
-                  <span className="bg-[#00FF00] text-black px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest shadow-sm border border-green-700">
+                  <span className="bg-[#00FF00] text-black px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest shadow-sm border border-green-800">
                     {p.stock} UDS
                   </span>
                 </TableCell>
                 <TableCell className="text-right">
                   <div className="flex flex-col items-end gap-1">
                     {forecasts[p.id] ? (
-                      <div className="text-[10px] text-left max-w-[200px] bg-[#111111] p-2 rounded border border-primary/10">
+                      <div className="text-[10px] text-left max-w-[200px] bg-[#111111] p-3 rounded border border-primary/20 shadow-lg">
                         <div className="text-primary font-bold mb-1 flex items-center gap-1">
                           <BrainCircuit size={10} /> Pronóstico AI
                         </div>

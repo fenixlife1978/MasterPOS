@@ -4,34 +4,34 @@
 
 @layer base {
   :root {
-    /* Paleta de colores inspirada en la imagen */
+    /* Paleta de colores Ultra-Vibrante */
     --background: 0 0% 100%;
-    --foreground: 210 33% 15%;
+    --foreground: 210 50% 10%;
     
     --card: 0 0% 98%;
-    --card-foreground: 210 33% 15%;
+    --card-foreground: 210 50% 10%;
     
     --popover: 0 0% 100%;
-    --popover-foreground: 210 33% 15%;
+    --popover-foreground: 210 50% 10%;
     
-    --primary: 50 100% 50%; /* Amarillo Brillante */
-    --primary-foreground: 0 0% 0%;
+    --primary: 50 100% 50%; /* Amarillo Vibrante Puro */
+    --primary-foreground: 210 100% 15%; /* Azul Ver Cliente (Accent) */
     
-    --secondary: 199 91% 64%; /* Azul Claro Topbar */
+    --secondary: 199 100% 50%; /* Azul Cielo Vibrante (Topbar) */
     --secondary-foreground: 0 0% 100%;
     
-    --muted: 0 0% 96%;
-    --muted-foreground: 0 0% 45%;
+    --muted: 210 10% 90%;
+    --muted-foreground: 210 20% 40%;
     
-    --accent: 210 33% 15%; /* Azul Marino Botón Ver Cliente */
+    --accent: 210 100% 15%; /* Azul Marino Vibrante (Botón Ver Cliente) */
     --accent-foreground: 0 0% 100%;
     
-    --destructive: 0 84% 60%;
-    --destructive-foreground: 0 0% 98%;
-    
-    --border: 0 0% 92%;
-    --input: 0 0% 92%;
-    --ring: 199 91% 64%;
+    --destructive: 0 100% 50%; /* Rojo Vibrante Puro */
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 210 20% 90%;
+    --input: 210 20% 90%;
+    --ring: 199 100% 50%;
     --radius: 12px;
   }
 }
@@ -41,7 +41,7 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground font-body antialiased selection:bg-primary selection:text-foreground overflow-hidden;
+    @apply bg-background text-foreground font-body antialiased selection:bg-primary selection:text-accent overflow-hidden;
   }
 }
 
@@ -52,7 +52,7 @@
 }
 
 @keyframes pulse-scan {
-  0%, 100% { opacity: 0.6; }
+  0%, 100% { opacity: 0.7; }
   50% { opacity: 1; }
 }
 
@@ -61,7 +61,7 @@
 }
 
 .animate-pulse-scan {
-  animation: pulse-scan 2s infinite;
+  animation: pulse-scan 1.5s infinite;
 }
 
 .scrollbar-thin::-webkit-scrollbar {
@@ -71,5 +71,5 @@
   @apply bg-muted;
 }
 .scrollbar-thin::-webkit-scrollbar-thumb {
-  @apply bg-border rounded-full;
+  @apply bg-accent/20 rounded-full;
 }

@@ -21,7 +21,7 @@ export default function ClientsModule({ state }: ClientsModuleProps) {
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
             <Input placeholder="Buscar cliente..." className="pl-9 h-10 bg-card border-border" />
           </div>
-          <Button className="bg-primary hover:bg-primary/90 text-background font-black">
+          <Button className="bg-primary hover:bg-primary/90 text-accent font-black shadow-md">
             <UserPlus size={18} className="mr-2" /> NUEVO CLIENTE
           </Button>
         </div>
@@ -53,8 +53,8 @@ export default function ClientsModule({ state }: ClientsModuleProps) {
                   <span className={cn(
                     "px-3 py-1 rounded-full text-[10px] font-black border shadow-sm",
                     c.debt > 0 
-                      ? "bg-[#FF0000] text-black border-red-700" 
-                      : "bg-[#00FF00] text-black border-green-700"
+                      ? "bg-[#FF0000] text-black border-red-800" 
+                      : "bg-[#00FF00] text-black border-green-800"
                   )}>
                     BS {c.debt.toFixed(2)}
                   </span>

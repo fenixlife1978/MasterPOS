@@ -45,7 +45,7 @@ export default function CartPanel({
 
       <div className="flex-1 overflow-y-auto p-2 space-y-1.5 scrollbar-thin">
         {cart.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center text-muted gap-3 opacity-30">
+          <div className="h-full flex flex-col items-center justify-center text-muted-foreground gap-3 opacity-30">
             <ShoppingCart size={48} strokeWidth={1} />
             <p className="text-sm font-medium">Carrito vacío</p>
           </div>
@@ -81,7 +81,7 @@ export default function CartPanel({
               
               <button 
                 onClick={() => onRemove(item.productId)} 
-                className="text-muted hover:text-destructive transition-colors p-1"
+                className="text-muted-foreground hover:text-destructive transition-colors p-1"
               >
                 <Trash2 size={16} />
               </button>
@@ -92,7 +92,7 @@ export default function CartPanel({
 
       <div className="p-4 border-t border-border bg-card/50 shrink-0">
         <div className="flex items-center justify-between mb-3">
-          <Label htmlFor="iva-toggle" className="text-[11px] font-bold text-muted uppercase tracking-wider cursor-pointer">
+          <Label htmlFor="iva-toggle" className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider cursor-pointer">
             Calcular IVA (16%)
           </Label>
           <Switch 
@@ -133,7 +133,7 @@ export default function CartPanel({
         <button 
           disabled={cart.length === 0 || !isRegisterOpen}
           onClick={onCobrar}
-          className="w-full py-3.5 gold-gradient rounded-xl text-black font-black text-base flex items-center justify-center gap-2.5 hover:brightness-110 active:scale-[0.98] transition-all shadow-lg gold-glow disabled:opacity-30 disabled:pointer-events-none"
+          className="w-full py-3.5 orange-gradient rounded-xl text-black font-black text-base flex items-center justify-center gap-2.5 hover:brightness-110 active:scale-[0.98] transition-all shadow-lg vibrant-glow disabled:opacity-30 disabled:pointer-events-none"
         >
           <Banknote size={18} /> Cobrar
         </button>

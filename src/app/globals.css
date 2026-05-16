@@ -4,37 +4,37 @@
 
 @layer base {
   :root {
-    --background: 0 0% 4%; /* #0A0A0A */
-    --foreground: 36 21% 94%; /* #F5F0E8 */
+    --background: 222 15% 15%; /* Plomo Azulado Oscuro */
+    --foreground: 210 20% 98%; /* Blanco suave para texto */
     
-    --card: 0 0% 9%; /* #161616 */
-    --card-foreground: 36 21% 94%;
+    --card: 222 15% 12%; /* Plomo Azulado más profundo */
+    --card-foreground: 210 20% 98%;
     
-    --popover: 0 0% 7%; /* #111111 */
-    --popover-foreground: 36 21% 94%;
+    --popover: 222 15% 10%;
+    --popover-foreground: 210 20% 98%;
     
-    --primary: 43 72% 46%; /* #D4A017 - Gold */
-    --primary-foreground: 0 0% 4%; /* Black text on Gold */
+    --primary: 30 100% 50%; /* Naranja Vibrante */
+    --primary-foreground: 0 0% 0%; /* Negro para contraste en naranja */
     
-    --secondary: 0 0% 7%; /* #111111 */
-    --secondary-foreground: 43 72% 46%;
+    --secondary: 215 100% 45%; /* Azul Institucional Vibrante */
+    --secondary-foreground: 0 0% 100%; /* Blanco sobre azul */
     
-    --muted: 26 6% 39%; /* #6B6560 */
-    --muted-foreground: 26 6% 39%;
+    --muted: 222 10% 40%;
+    --muted-foreground: 215 15% 70%;
     
-    --accent: 43 72% 46%;
-    --accent-foreground: 0 0% 4%;
+    --accent: 215 100% 45%;
+    --accent-foreground: 0 0% 100%;
     
-    --destructive: 4 78% 57%; /* #E74C3C */
-    --destructive-foreground: 0 0% 4%;
+    --destructive: 0 100% 50%; /* Rojo Vibrante */
+    --destructive-foreground: 0 0% 0%;
 
-    --border: 30 13% 15%; /* #2A2520 */
-    --input: 30 13% 15%;
-    --ring: 43 72% 46%;
+    --border: 222 15% 25%;
+    --input: 222 15% 25%;
+    --ring: 30 100% 50%;
     --radius: 10px;
 
-    --success: 145 63% 49%;
-    --warning: 38 92% 50%;
+    --success: 145 100% 45%; /* Verde Vibrante */
+    --warning: 38 100% 50%;
   }
 }
 
@@ -43,7 +43,7 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground font-body antialiased selection:bg-primary selection:text-background overflow-hidden;
+    @apply bg-background text-foreground font-body antialiased selection:bg-primary selection:text-primary-foreground overflow-hidden;
   }
 }
 
@@ -76,10 +76,10 @@
   @apply bg-muted rounded-full;
 }
 
-.gold-glow {
-  box-shadow: 0 0 15px rgba(212, 160, 23, 0.15);
+.vibrant-glow {
+  box-shadow: 0 0 15px rgba(255, 140, 0, 0.2);
 }
 
-.gold-gradient {
-  background: linear-gradient(135deg, #D4A017, #A67C00);
+.orange-gradient {
+  background: linear-gradient(135deg, #ff8c00, #e67e22);
 }

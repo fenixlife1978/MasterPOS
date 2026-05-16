@@ -4,38 +4,38 @@
 
 @layer base {
   :root {
-    /* Paleta Gold Experience Original */
-    --background: 0 0% 4%; /* #0A0A0A */
-    --foreground: 36 33% 94%; /* #F5F0E8 */
+    /* Nueva Paleta: Soft & Vibrant */
+    --background: 210 20% 98%; /* Soft White */
+    --foreground: 222 47% 11%; /* Deep Navy for text */
     
-    --card: 0 0% 7%; /* #111111 */
-    --card-foreground: 36 33% 94%;
+    --card: 0 0% 95%; /* Light Gray */
+    --card-foreground: 222 47% 11%;
     
-    --popover: 0 0% 9%; /* #161616 */
-    --popover-foreground: 36 33% 94%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
     
-    --primary: 43 71% 46%; /* #D4A017 (Gold) */
-    --primary-foreground: 0 0% 4%;
+    --primary: 47 95% 55%; /* Vibrant Yellow (Sidebar) */
+    --primary-foreground: 222 47% 11%;
     
-    --secondary: 0 0% 7%; /* #111111 */
-    --secondary-foreground: 43 71% 46%;
+    --secondary: 221 83% 53%; /* Vibrant Blue (Header) */
+    --secondary-foreground: 210 20% 98%;
     
-    --muted: 24 6% 39%; /* #6B6560 */
-    --muted-foreground: 24 6% 39%;
+    --muted: 210 40% 92%; /* Light Gray for muted areas */
+    --muted-foreground: 215 16% 47%;
     
-    --accent: 43 71% 46%; /* #D4A017 */
-    --accent-foreground: 0 0% 100%;
+    --accent: 221 83% 53%; /* Same Blue for actions */
+    --accent-foreground: 210 20% 98%;
     
-    --destructive: 6 78% 57%; /* #E74C3C */
-    --destructive-foreground: 0 0% 100%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 210 20% 98%;
 
-    --border: 30 13% 14%; /* #2A2520 */
-    --input: 30 13% 14%;
-    --ring: 43 71% 46%;
+    --border: 214 32% 85%; /* Soft borders */
+    --input: 214 32% 85%;
+    --ring: 221 83% 53%;
     --radius: 10px;
 
-    --success: 145 63% 49%; /* #2ECC71 */
-    --warning: 38 92% 50%; /* #F39C12 */
+    --success: 145 63% 42%;
+    --warning: 38 92% 50%;
   }
 }
 
@@ -44,7 +44,7 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground font-body antialiased selection:bg-primary selection:text-background overflow-hidden;
+    @apply bg-background text-foreground font-body antialiased selection:bg-secondary selection:text-white overflow-hidden;
   }
 }
 
@@ -71,17 +71,17 @@
   width: 5px;
 }
 .scrollbar-thin::-webkit-scrollbar-track {
-  @apply bg-card;
+  @apply bg-muted;
 }
 .scrollbar-thin::-webkit-scrollbar-thumb {
-  @apply bg-muted/40 rounded-full;
+  @apply bg-secondary/20 rounded-full;
 }
 
-/* Efecto de brillo dorado */
-.gold-glow {
-  box-shadow: 0 0 15px rgba(212, 160, 23, 0.15);
+/* Efecto de brillo sutil para la nueva paleta */
+.blue-glow {
+  box-shadow: 0 0 15px rgba(37, 99, 235, 0.1);
 }
 
-.gold-gradient {
-  background: linear-gradient(135deg, #D4A017, #A67C00);
+.yellow-gradient {
+  background: linear-gradient(135deg, #facc15, #eab308);
 }

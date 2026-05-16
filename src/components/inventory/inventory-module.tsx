@@ -64,48 +64,48 @@ export default function InventoryModule({ state }: InventoryModuleProps) {
         <h2 className="text-2xl font-headline font-black text-foreground">Inventario Premium</h2>
         <div className="flex gap-3">
           <div className="relative w-64">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
             <Input 
               placeholder="Buscar producto..." 
-              className="pl-9 h-10 bg-card border-border text-sm"
+              className="pl-9 h-10 bg-white border-border text-sm"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
           <Button 
             onClick={() => setIsAdding(true)}
-            className="bg-primary hover:bg-primary/90 text-black font-black shadow-md"
+            className="bg-primary hover:brightness-105 text-foreground font-black shadow-md border-b-4 border-yellow-600"
           >
             <Plus size={18} className="mr-2" /> AGREGAR PRODUCTO
           </Button>
         </div>
       </div>
 
-      <div className="bg-card border border-border rounded-xl overflow-hidden shadow-2xl">
+      <div className="bg-white border border-border rounded-xl overflow-hidden shadow-sm">
         <Table>
-          <TableHeader className="bg-[#111111]">
+          <TableHeader className="bg-muted">
             <TableRow className="border-border hover:bg-transparent">
-              <TableHead className="text-[10px] font-black uppercase text-muted tracking-widest">Código</TableHead>
-              <TableHead className="text-[10px] font-black uppercase text-muted tracking-widest">Producto</TableHead>
-              <TableHead className="text-[10px] font-black uppercase text-muted tracking-widest">Categoría</TableHead>
-              <TableHead className="text-[10px] font-black uppercase text-muted tracking-widest">Precio (BS)</TableHead>
-              <TableHead className="text-[10px] font-black uppercase text-muted tracking-widest text-center">Stock</TableHead>
-              <TableHead className="text-[10px] font-black uppercase text-muted tracking-widest text-right">Acciones</TableHead>
+              <TableHead className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Código</TableHead>
+              <TableHead className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Producto</TableHead>
+              <TableHead className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Categoría</TableHead>
+              <TableHead className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Precio (BS)</TableHead>
+              <TableHead className="text-[10px] font-black uppercase text-muted-foreground tracking-widest text-center">Stock</TableHead>
+              <TableHead className="text-[10px] font-black uppercase text-muted-foreground tracking-widest text-right">Acciones</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {filtered.map((p) => (
-              <TableRow key={p.id} className="border-border hover:bg-secondary/30 transition-colors">
+              <TableRow key={p.id} className="border-border hover:bg-muted/50 transition-colors">
                 <TableCell className="font-mono text-[11px] text-muted-foreground">{p.barcode}</TableCell>
                 <TableCell className="font-bold text-sm text-foreground">{p.name}</TableCell>
                 <TableCell>
-                  <span className="bg-primary text-black px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest shadow-sm border border-primary/20">
+                  <span className="bg-primary text-foreground px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest shadow-sm">
                     {p.category}
                   </span>
                 </TableCell>
                 <TableCell className="font-bold text-sm text-foreground">{p.priceBs.toFixed(2)}</TableCell>
                 <TableCell className="text-center">
-                  <span className="bg-[#00FF00] text-black px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest shadow-md border border-green-800 inline-block min-w-[90px] whitespace-nowrap text-center">
+                  <span className="bg-green-500 text-white px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest shadow-sm inline-block min-w-[90px] whitespace-nowrap text-center">
                     {p.stock} UDS
                   </span>
                 </TableCell>
@@ -114,7 +114,7 @@ export default function InventoryModule({ state }: InventoryModuleProps) {
                     <Button 
                       variant="ghost" 
                       size="sm" 
-                      className="h-8 w-8 p-0 text-accent hover:bg-accent/10"
+                      className="h-8 w-8 p-0 text-secondary hover:bg-secondary/10"
                       onClick={() => setViewingProduct(p)}
                     >
                       <Info size={16} />
@@ -122,7 +122,7 @@ export default function InventoryModule({ state }: InventoryModuleProps) {
                     <Button 
                       variant="ghost" 
                       size="sm" 
-                      className="h-8 w-8 p-0 text-accent hover:bg-accent/10"
+                      className="h-8 w-8 p-0 text-secondary hover:bg-secondary/10"
                       onClick={() => setEditingProduct(p)}
                     >
                       <Pencil size={16} />
@@ -145,38 +145,38 @@ export default function InventoryModule({ state }: InventoryModuleProps) {
 
       {/* MODAL EDITAR / AGREGAR */}
       <Dialog open={!!editingProduct || isAdding} onOpenChange={() => { setEditingProduct(null); setIsAdding(false); }}>
-        <DialogContent className="bg-card border-border text-foreground max-w-md">
+        <DialogContent className="bg-white border-border text-foreground max-w-md">
           <DialogHeader>
-            <DialogTitle className="text-xl font-headline font-black text-primary flex items-center gap-2">
-              {isAdding ? <Plus className="text-primary" /> : <Pencil className="text-primary" />}
+            <DialogTitle className="text-xl font-headline font-black text-secondary flex items-center gap-2">
+              {isAdding ? <Plus className="text-secondary" /> : <Pencil className="text-secondary" />}
               {isAdding ? 'Nuevo Producto' : 'Editar Producto'}
             </DialogTitle>
           </DialogHeader>
           <form onSubmit={handleSave} className="space-y-4 pt-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="col-span-2 space-y-1.5">
-                <label className="text-[10px] font-black text-muted uppercase tracking-widest">Código de Barras</label>
+                <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Código de Barras</label>
                 <Input name="barcode" defaultValue={editingProduct?.barcode} required className="bg-background border-border" />
               </div>
               <div className="col-span-2 space-y-1.5">
-                <label className="text-[10px] font-black text-muted uppercase tracking-widest">Nombre</label>
+                <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Nombre</label>
                 <Input name="name" defaultValue={editingProduct?.name} required className="bg-background border-border" />
               </div>
               <div className="space-y-1.5">
-                <label className="text-[10px] font-black text-muted uppercase tracking-widest">Precio BS</label>
+                <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Precio BS</label>
                 <Input name="priceBs" type="number" step="0.01" defaultValue={editingProduct?.priceBs} required className="bg-background border-border" />
               </div>
               <div className="space-y-1.5">
-                <label className="text-[10px] font-black text-muted uppercase tracking-widest">Precio USD</label>
+                <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Precio USD</label>
                 <Input name="priceUsd" type="number" step="0.01" defaultValue={editingProduct?.priceUsd} required className="bg-background border-border" />
               </div>
               <div className="space-y-1.5">
-                <label className="text-[10px] font-black text-muted uppercase tracking-widest">Stock</label>
+                <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Stock</label>
                 <Input name="stock" type="number" defaultValue={editingProduct?.stock} required className="bg-background border-border" />
               </div>
               <div className="space-y-1.5">
-                <label className="text-[10px] font-black text-muted uppercase tracking-widest">Categoría</label>
-                <select name="category" defaultValue={editingProduct?.category} className="w-full h-10 bg-background border border-border rounded-md px-3 text-sm focus:ring-2 focus:ring-primary outline-none text-foreground">
+                <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Categoría</label>
+                <select name="category" defaultValue={editingProduct?.category} className="w-full h-10 bg-background border border-border rounded-md px-3 text-sm focus:ring-2 focus:ring-secondary outline-none text-foreground">
                   <option value="Whisky">Whisky</option>
                   <option value="Ron">Ron</option>
                   <option value="Cerveza">Cerveza</option>
@@ -191,7 +191,7 @@ export default function InventoryModule({ state }: InventoryModuleProps) {
             </div>
             <div className="flex gap-2 pt-4">
               <Button type="button" variant="ghost" onClick={() => { setEditingProduct(null); setIsAdding(false); }} className="flex-1 text-foreground">CANCELAR</Button>
-              <Button type="submit" className="flex-1 bg-primary text-black font-black">GUARDAR CAMBIOS</Button>
+              <Button type="submit" className="flex-1 bg-secondary text-white font-black">GUARDAR CAMBIOS</Button>
             </div>
           </form>
         </DialogContent>
@@ -199,19 +199,19 @@ export default function InventoryModule({ state }: InventoryModuleProps) {
 
       {/* MODAL KARDEX (DETALLES) */}
       <Dialog open={!!viewingProduct} onOpenChange={() => setViewingProduct(null)}>
-        <DialogContent className="bg-card border-border text-foreground max-w-2xl p-0 overflow-hidden rounded-2xl shadow-2xl">
+        <DialogContent className="bg-white border-border text-foreground max-w-2xl p-0 overflow-hidden rounded-2xl shadow-xl">
           <DialogHeader className="sr-only">
             <DialogTitle>Detalles del Producto: {viewingProduct?.name}</DialogTitle>
             <DialogDescription>
-              Ficha técnica e historial de movimientos de inventario para el producto {viewingProduct?.name}.
+              Ficha técnica e historial de movimientos de inventario.
             </DialogDescription>
           </DialogHeader>
           {viewingProduct && (
             <div className="flex flex-col h-full">
-              <div className="gold-gradient p-6 text-black relative">
+              <div className="bg-secondary p-6 text-white relative">
                 <button onClick={() => setViewingProduct(null)} className="absolute top-4 right-4 hover:opacity-70"><X size={20} /></button>
                 <div className="flex items-center gap-4">
-                  <div className="w-16 h-16 bg-black/10 rounded-2xl flex items-center justify-center backdrop-blur-md border border-white/20">
+                  <div className="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center backdrop-blur-md border border-white/20">
                     <BarcodeIcon size={32} />
                   </div>
                   <div>
@@ -224,34 +224,34 @@ export default function InventoryModule({ state }: InventoryModuleProps) {
               <div className="p-8 grid grid-cols-3 gap-6">
                 <div className="space-y-6 col-span-1 border-r border-border pr-6">
                   <div className="space-y-1">
-                    <span className="text-[10px] font-black text-muted uppercase tracking-widest">Código Fiscal</span>
+                    <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Código Fiscal</span>
                     <p className="font-mono text-sm font-bold text-foreground">{viewingProduct.barcode}</p>
                   </div>
                   <div className="space-y-1">
-                    <span className="text-[10px] font-black text-muted uppercase tracking-widest">Disponibilidad Actual</span>
+                    <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Disponibilidad Actual</span>
                     <div className="flex items-center gap-2">
-                      <Boxes size={18} className="text-primary" />
-                      <p className="text-xl font-black text-[#00FF00]">{viewingProduct.stock} Unidades</p>
+                      <Boxes size={18} className="text-secondary" />
+                      <p className="text-xl font-black text-green-600">{viewingProduct.stock} Unidades</p>
                     </div>
                   </div>
                   <div className="space-y-3 pt-4 border-t border-border">
                     <div className="flex justify-between items-center">
-                      <span className="text-[10px] font-bold text-muted uppercase">Precio BS</span>
+                      <span className="text-[10px] font-bold text-muted-foreground uppercase">Precio BS</span>
                       <span className="text-lg font-black text-foreground">{viewingProduct.priceBs.toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between items-center">
-                      <span className="text-[10px] font-bold text-muted uppercase">Precio USD</span>
-                      <span className="text-lg font-black text-primary">{viewingProduct.priceUsd.toFixed(2)}</span>
+                      <span className="text-[10px] font-bold text-muted-foreground uppercase">Precio USD</span>
+                      <span className="text-lg font-black text-secondary">{viewingProduct.priceUsd.toFixed(2)}</span>
                     </div>
                   </div>
                 </div>
 
                 <div className="col-span-2 space-y-6">
                   <div className="flex items-center justify-between">
-                    <h4 className="text-xs font-black uppercase tracking-widest flex items-center gap-2 text-primary">
+                    <h4 className="text-xs font-black uppercase tracking-widest flex items-center gap-2 text-secondary">
                       <TrendingUp size={14} /> Historial de Movimientos
                     </h4>
-                    <span className="text-[9px] bg-secondary text-muted px-2 py-0.5 rounded font-bold">Últimos 30 días</span>
+                    <span className="text-[9px] bg-muted text-muted-foreground px-2 py-0.5 rounded font-bold">Últimos 30 días</span>
                   </div>
                   
                   <div className="space-y-3 max-h-[300px] overflow-y-auto scrollbar-thin pr-2">
@@ -259,19 +259,19 @@ export default function InventoryModule({ state }: InventoryModuleProps) {
                       .filter(t => t.items.some(i => i.productId === viewingProduct.id))
                       .sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())
                       .map(t => (
-                        <div key={t.id} className="flex items-center justify-between p-3 bg-secondary/50 border border-border rounded-xl group hover:border-primary/30 transition-all">
+                        <div key={t.id} className="flex items-center justify-between p-3 bg-muted/30 border border-border rounded-xl group hover:border-secondary/30 transition-all">
                           <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-lg bg-background flex items-center justify-center text-[10px] font-bold text-muted">
+                            <div className="w-8 h-8 rounded-lg bg-white flex items-center justify-center text-[10px] font-bold text-muted-foreground">
                               {new Date(t.date).toLocaleDateString('es-VE', { day: '2-digit', month: 'short' })}
                             </div>
                             <div>
                               <div className="text-[11px] font-bold text-foreground">Venta #{t.id}</div>
-                              <div className="text-[9px] text-muted uppercase">{t.clientName || 'Cliente Final'}</div>
+                              <div className="text-[9px] text-muted-foreground uppercase">{t.clientName || 'Cliente Final'}</div>
                             </div>
                           </div>
                           <div className="text-right">
                             <div className="text-xs font-black text-destructive">-{t.items.find(i => i.productId === viewingProduct.id)?.qty} UDS</div>
-                            <div className="text-[9px] text-muted uppercase">{t.payMethod.toUpperCase()}</div>
+                            <div className="text-[9px] text-muted-foreground uppercase">{t.payMethod.toUpperCase()}</div>
                           </div>
                         </div>
                       ))}
@@ -285,7 +285,7 @@ export default function InventoryModule({ state }: InventoryModuleProps) {
                 </div>
               </div>
 
-              <div className="bg-secondary/30 p-4 border-t border-border flex justify-end">
+              <div className="bg-muted p-4 border-t border-border flex justify-end">
                 <Button variant="ghost" onClick={() => setViewingProduct(null)} className="font-bold text-xs uppercase tracking-widest text-foreground">Cerrar Kardex</Button>
               </div>
             </div>

@@ -19,8 +19,8 @@ export default function Sidebar({ currentPage, onPageChange }: SidebarProps) {
   ];
 
   return (
-    <aside className="w-[72px] min-w-[72px] bg-card border-r border-border flex flex-col items-center py-4 z-50">
-      <div className="w-[44px] h-[44px] gold-gradient rounded-xl flex items-center justify-center font-headline font-black text-lg text-black mb-6 shrink-0 shadow-lg">
+    <aside className="w-[72px] min-w-[72px] bg-primary border-r border-border flex flex-col items-center py-4 z-50">
+      <div className="w-[44px] h-[44px] bg-secondary rounded-xl flex items-center justify-center font-headline font-black text-lg text-white mb-6 shrink-0 shadow-lg">
         LP
       </div>
       
@@ -35,19 +35,19 @@ export default function Sidebar({ currentPage, onPageChange }: SidebarProps) {
               className={cn(
                 "w-[52px] h-[52px] rounded-xl flex flex-col items-center justify-center transition-all relative group gap-0.5",
                 isActive 
-                  ? "bg-primary/15 text-primary" 
-                  : "text-muted hover:bg-white/5 hover:text-foreground"
+                  ? "bg-white/40 text-secondary" 
+                  : "text-secondary/60 hover:bg-white/20 hover:text-secondary"
               )}
             >
               <Icon size={18} strokeWidth={isActive ? 2.5 : 2} />
               <span className={cn(
                 "text-[9px] font-bold uppercase tracking-tight",
-                isActive ? "opacity-100" : "opacity-60"
+                isActive ? "opacity-100" : "opacity-80"
               )}>
                 {item.label}
               </span>
               {isActive && (
-                <div className="absolute left-[-10px] top-1/2 -translate-y-1/2 w-[3px] h-6 bg-primary rounded-r-md" />
+                <div className="absolute left-[-10px] top-1/2 -translate-y-1/2 w-[3px] h-6 bg-secondary rounded-r-md" />
               )}
             </button>
           );

@@ -37,7 +37,7 @@ export default function Topbar({ register, rate, onRateChange }: TopbarProps) {
   };
 
   return (
-    <header className="h-[56px] bg-secondary border-b border-white/10 flex items-center px-6 gap-6 shrink-0 z-40">
+    <header className="h-[56px] bg-secondary border-b border-black/10 flex items-center px-6 gap-6 shrink-0 z-40">
       <div className="font-headline font-bold text-[22px] text-white tracking-tight">
         LicoPOS Elite
       </div>
@@ -45,14 +45,14 @@ export default function Topbar({ register, rate, onRateChange }: TopbarProps) {
       <div className={cn(
         "px-4 py-1 rounded-full text-[12px] font-bold tracking-tight transition-colors border",
         isOpen 
-          ? "bg-success/20 text-white border-white/30" 
+          ? "bg-primary text-black border-black/10" 
           : "bg-destructive/20 text-white border-white/30"
       )}>
         {isOpen ? 'Caja Abierta' : 'Caja Cerrada'}
       </div>
 
       <div className="ml-auto flex items-center gap-6">
-        <div className="bg-black/20 px-5 py-1.5 rounded-full flex items-center gap-3 border border-white/10">
+        <div className="bg-black/30 px-5 py-1.5 rounded-full flex items-center gap-3 border border-white/5 shadow-inner">
           <RefreshCw size={16} className="text-primary" />
           <div className="flex items-center gap-2 text-[13px]">
             <span className="text-white/70 font-bold tracking-widest text-[11px]">TASA:</span>

@@ -4,36 +4,37 @@
 
 @layer base {
   :root {
-    --background: 222 15% 15%; /* Plomo Azulado Oscuro */
-    --foreground: 210 20% 98%; /* Blanco suave para texto */
+    /* Paleta exacta según la imagen */
+    --background: 45 50% 92%; /* Crema Suave / Off-white */
+    --foreground: 222 47% 11%; /* Texto oscuro para áreas claras */
     
-    --card: 222 15% 12%; /* Plomo Azulado más profundo */
-    --card-foreground: 210 20% 98%;
+    --card: 45 50% 94%;
+    --card-foreground: 222 47% 11%;
     
-    --popover: 222 15% 10%;
-    --popover-foreground: 210 20% 98%;
+    --popover: 45 50% 92%;
+    --popover-foreground: 222 47% 11%;
     
-    --primary: 30 100% 50%; /* Naranja Vibrante */
-    --primary-foreground: 0 0% 0%; /* Negro para contraste en naranja */
+    --primary: 43 73% 48%; /* Dorado Mostaza exacto */
+    --primary-foreground: 0 0% 0%; /* Negro para contraste en dorado */
     
-    --secondary: 215 100% 45%; /* Azul Institucional Vibrante */
+    --secondary: 218 70% 13%; /* Azul Marino Profundo exacto */
     --secondary-foreground: 0 0% 100%; /* Blanco sobre azul */
     
-    --muted: 222 10% 40%;
-    --muted-foreground: 215 15% 70%;
+    --muted: 45 10% 80%;
+    --muted-foreground: 222 10% 40%;
     
-    --accent: 215 100% 45%;
-    --accent-foreground: 0 0% 100%;
+    --accent: 43 73% 48%;
+    --accent-foreground: 0 0% 0%;
     
-    --destructive: 0 100% 50%; /* Rojo Vibrante */
-    --destructive-foreground: 0 0% 0%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 210 20% 98%;
 
-    --border: 222 15% 25%;
-    --input: 222 15% 25%;
-    --ring: 30 100% 50%;
-    --radius: 10px;
+    --border: 45 20% 70%;
+    --input: 45 20% 70%;
+    --ring: 43 73% 48%;
+    --radius: 12px;
 
-    --success: 145 100% 45%; /* Verde Vibrante */
+    --success: 145 100% 45%;
     --warning: 38 100% 50%;
   }
 }
@@ -70,16 +71,16 @@
   width: 5px;
 }
 .scrollbar-thin::-webkit-scrollbar-track {
-  @apply bg-card;
+  @apply bg-muted/20;
 }
 .scrollbar-thin::-webkit-scrollbar-thumb {
-  @apply bg-muted rounded-full;
+  @apply bg-primary rounded-full;
 }
 
-.vibrant-glow {
-  box-shadow: 0 0 15px rgba(255, 140, 0, 0.2);
+.gold-glow {
+  box-shadow: 0 0 15px rgba(213, 160, 33, 0.2);
 }
 
-.orange-gradient {
-  background: linear-gradient(135deg, #ff8c00, #e67e22);
+.gold-gradient {
+  background: linear-gradient(135deg, #d5a021, #b88a1c);
 }

@@ -19,8 +19,8 @@ export default function Sidebar({ currentPage, onPageChange }: SidebarProps) {
   ];
 
   return (
-    <aside className="w-[72px] min-w-[72px] bg-card border-r border-border flex flex-col items-center py-4 z-50">
-      <div className="w-[44px] h-[44px] orange-gradient rounded-xl flex items-center justify-center font-headline font-black text-lg text-black mb-6 shrink-0 shadow-lg">
+    <aside className="w-[72px] min-w-[72px] bg-primary border-r border-black/10 flex flex-col items-center py-4 z-50">
+      <div className="w-[44px] h-[44px] bg-primary-foreground/10 rounded-xl flex items-center justify-center font-headline font-black text-lg text-black mb-6 shrink-0 shadow-sm border border-black/20">
         LP
       </div>
       
@@ -35,8 +35,8 @@ export default function Sidebar({ currentPage, onPageChange }: SidebarProps) {
               className={cn(
                 "w-[52px] h-[52px] rounded-xl flex flex-col items-center justify-center transition-all relative group gap-0.5",
                 isActive 
-                  ? "bg-primary/10 text-primary" 
-                  : "text-muted-foreground hover:bg-white/5 hover:text-foreground"
+                  ? "bg-black/10 text-black" 
+                  : "text-black/60 hover:bg-black/5 hover:text-black"
               )}
             >
               <Icon size={18} strokeWidth={isActive ? 2.5 : 2} />
@@ -47,7 +47,7 @@ export default function Sidebar({ currentPage, onPageChange }: SidebarProps) {
                 {item.label}
               </span>
               {isActive && (
-                <div className="absolute left-[-10px] top-1/2 -translate-y-1/2 w-[3px] h-6 bg-primary rounded-r-md" />
+                <div className="absolute left-[-10px] top-1/2 -translate-y-1/2 w-[3px] h-6 bg-black rounded-r-md" />
               )}
             </button>
           );

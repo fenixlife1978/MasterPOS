@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState } from 'react';
@@ -56,7 +55,7 @@ export default function POSModule({ state }: POSModuleProps) {
         <div className="absolute w-[180px] h-[180px] bg-primary/2 rounded-full blur-[100px] animate-float-ambient bottom-[25%] right-[20%] animation-delay-2000" />
         
         {/* Logo Centrado y Proporcional */}
-        <div className="z-10 w-full px-12 flex items-center justify-center transition-all duration-500 hover:scale-105">
+        <div className="z-10 w-full px-12 flex items-center justify-center transition-all duration-500 hover:scale-110">
           {logoImage && (
             <Image 
               src={logoImage.imageUrl}

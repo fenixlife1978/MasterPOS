@@ -1,0 +1,2 @@
+Esta carpeta "public" es para tus logos y recursos estáticos.
+Para que el logo se vea correctamente, sube tu imagen con el nombre "logo-masterpos.png" directamente en esta carpeta.

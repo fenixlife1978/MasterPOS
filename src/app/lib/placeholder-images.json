@@ -1,10 +1,9 @@
-
 {
   "placeholderImages": [
     {
       "id": "masterpos-logo",
-      "description": "Logo de MasterPos Pro Evolución v1.0 con botella y escudo",
-      "imageUrl": "https://picsum.photos/seed/masterpos/600/400",
+      "description": "Logo de MasterPos Pro Evolución v1.0",
+      "imageUrl": "/logo-masterpos.png",
       "imageHint": "liquor logo"
     }
   ]

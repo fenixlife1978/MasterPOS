@@ -21,15 +21,27 @@ export default function CashModule({ state }: CashModuleProps) {
   const totalContado = reg?.txs.filter(t => t.type === 'contado' || t.type === 'cobro_deuda').reduce((s,t) => s + t.total, 0) || 0;
   const totalCredito = reg?.txs.filter(t => t.type === 'credito').reduce((s,t) => s + t.total, 0) || 0;
 
-  // Distribución por método de pago
+  // Distribución por método de pago (asegurando que todos los métodos clave aparezcan)
   const paymentDistribution = useMemo(() => {
-    if (!reg) return [];
+    const methods = ['efectivo_bs', 'tarjeta', 'usd_efectivo', 'biopago', 'pago_movil', 'zelle'];
     const dist: Record<string, number> = {};
-    reg.txs.forEach(t => {
-      if (t.type === 'contado' || t.type === 'cobro_deuda') {
-        dist[t.payMethod] = (dist[t.payMethod] || 0) + t.total;
-      }
-    });
+    
+    // Inicializar todos con 0
+    methods.forEach(m => dist[m] = 0);
+    
+    if (reg) {
+      reg.txs.forEach(t => {
+        if (t.type === 'contado' || t.type === 'cobro_deuda') {
+          // Sumar si el método está en nuestra lista predefinida
+          if (dist[t.payMethod] !== undefined) {
+            dist[t.payMethod] += t.total;
+          } else {
+            // Para métodos no predefinidos (como créditos antiguos)
+            dist[t.payMethod] = (dist[t.payMethod] || 0) + t.total;
+          }
+        }
+      });
+    }
     return Object.entries(dist).map(([method, total]) => ({ method, total }));
   }, [reg]);
 
@@ -82,7 +94,7 @@ export default function CashModule({ state }: CashModuleProps) {
         )}
       </div>
 
-      {!isClosed && paymentDistribution.length > 0 && (
+      {!isClosed && (
         <div className="mb-8">
           <h3 className="text-sm font-black uppercase tracking-widest text-muted mb-4 flex items-center gap-2">
             <Vault size={14} className="text-primary" /> Distribución por Método

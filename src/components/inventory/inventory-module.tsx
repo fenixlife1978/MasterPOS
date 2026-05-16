@@ -7,7 +7,7 @@ import { Plus, Search, Info, Pencil, Trash2, X, Barcode as BarcodeIcon, Tag, Box
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { Product } from '@/lib/types';
@@ -106,7 +106,7 @@ export default function InventoryModule({ state }: InventoryModuleProps) {
                 </TableCell>
                 <TableCell className="font-bold text-sm">{p.priceBs.toFixed(2)}</TableCell>
                 <TableCell className="text-center">
-                  <span className="bg-[#00FF00] text-black px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest shadow-md border border-green-800 inline-block min-w-[80px] whitespace-nowrap">
+                  <span className="bg-[#00FF00] text-black px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest shadow-md border border-green-800 inline-block min-w-[90px] whitespace-nowrap text-center">
                     {p.stock} UDS
                   </span>
                 </TableCell>
@@ -201,6 +201,12 @@ export default function InventoryModule({ state }: InventoryModuleProps) {
       {/* MODAL KARDEX (DETALLES) */}
       <Dialog open={!!viewingProduct} onOpenChange={() => setViewingProduct(null)}>
         <DialogContent className="bg-card border-border text-foreground max-w-2xl p-0 overflow-hidden rounded-2xl shadow-2xl">
+          <DialogHeader className="sr-only">
+            <DialogTitle>Detalles del Producto: {viewingProduct?.name}</DialogTitle>
+            <DialogDescription>
+              Ficha técnica e historial de movimientos de inventario para el producto {viewingProduct?.name}.
+            </DialogDescription>
+          </DialogHeader>
           {viewingProduct && (
             <div className="flex flex-col h-full">
               <div className="gold-gradient p-6 text-black relative">

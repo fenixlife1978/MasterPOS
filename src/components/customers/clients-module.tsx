@@ -1,3 +1,4 @@
+
 "use client";
 
 import { usePOSState } from '@/hooks/use-pos-state';
@@ -21,7 +22,7 @@ export default function ClientsModule({ state }: ClientsModuleProps) {
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
             <Input placeholder="Buscar cliente..." className="pl-9 h-10 bg-card border-border" />
           </div>
-          <Button className="bg-accent hover:bg-accent/90 text-white font-black shadow-md">
+          <Button className="bg-primary hover:bg-primary/90 text-black font-black shadow-md">
             <UserPlus size={18} className="mr-2" /> NUEVO CLIENTE
           </Button>
         </div>
@@ -40,9 +41,9 @@ export default function ClientsModule({ state }: ClientsModuleProps) {
           </TableHeader>
           <TableBody>
             {state.clients.map((c) => (
-              <TableRow key={c.id} className="border-border hover:bg-secondary/30">
+              <TableRow key={c.id} className="border-border hover:bg-secondary/30 transition-colors">
                 <TableCell className="font-mono text-[11px] text-muted-foreground">{c.cedula}</TableCell>
-                <TableCell className="font-bold text-sm">{c.name}</TableCell>
+                <TableCell className="font-bold text-sm text-foreground">{c.name}</TableCell>
                 <TableCell>
                   <div className="flex flex-col gap-1">
                     <div className="flex items-center gap-1.5 text-xs text-muted-foreground"><Phone size={10} /> {c.phone}</div>

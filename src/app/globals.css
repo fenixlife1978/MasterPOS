@@ -4,37 +4,36 @@
 
 @layer base {
   :root {
-    /* Nueva Paleta: Soft & Vibrant */
-    --background: 210 20% 98%; /* Soft White */
-    --foreground: 222 47% 11%; /* Deep Navy for text */
+    --background: 0 0% 4%; /* #0A0A0A */
+    --foreground: 36 21% 94%; /* #F5F0E8 */
     
-    --card: 0 0% 95%; /* Light Gray */
-    --card-foreground: 222 47% 11%;
+    --card: 0 0% 9%; /* #161616 */
+    --card-foreground: 36 21% 94%;
     
-    --popover: 0 0% 100%;
-    --popover-foreground: 222 47% 11%;
+    --popover: 0 0% 7%; /* #111111 */
+    --popover-foreground: 36 21% 94%;
     
-    --primary: 47 95% 55%; /* Vibrant Yellow (Sidebar) */
-    --primary-foreground: 222 47% 11%;
+    --primary: 43 72% 46%; /* #D4A017 - Gold */
+    --primary-foreground: 0 0% 4%; /* Black text on Gold */
     
-    --secondary: 221 83% 53%; /* Vibrant Blue (Header) */
-    --secondary-foreground: 210 20% 98%;
+    --secondary: 0 0% 7%; /* #111111 */
+    --secondary-foreground: 43 72% 46%;
     
-    --muted: 210 40% 92%; /* Light Gray for muted areas */
-    --muted-foreground: 215 16% 47%;
+    --muted: 26 6% 39%; /* #6B6560 */
+    --muted-foreground: 26 6% 39%;
     
-    --accent: 221 83% 53%; /* Same Blue for actions */
-    --accent-foreground: 210 20% 98%;
+    --accent: 43 72% 46%;
+    --accent-foreground: 0 0% 4%;
     
-    --destructive: 0 84% 60%;
-    --destructive-foreground: 210 20% 98%;
+    --destructive: 4 78% 57%; /* #E74C3C */
+    --destructive-foreground: 0 0% 4%;
 
-    --border: 214 32% 85%; /* Soft borders */
-    --input: 214 32% 85%;
-    --ring: 221 83% 53%;
+    --border: 30 13% 15%; /* #2A2520 */
+    --input: 30 13% 15%;
+    --ring: 43 72% 46%;
     --radius: 10px;
 
-    --success: 145 63% 42%;
+    --success: 145 63% 49%;
     --warning: 38 92% 50%;
   }
 }
@@ -44,7 +43,7 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground font-body antialiased selection:bg-secondary selection:text-white overflow-hidden;
+    @apply bg-background text-foreground font-body antialiased selection:bg-primary selection:text-background overflow-hidden;
   }
 }
 
@@ -71,17 +70,16 @@
   width: 5px;
 }
 .scrollbar-thin::-webkit-scrollbar-track {
-  @apply bg-muted;
+  @apply bg-card;
 }
 .scrollbar-thin::-webkit-scrollbar-thumb {
-  @apply bg-secondary/20 rounded-full;
+  @apply bg-muted rounded-full;
 }
 
-/* Efecto de brillo sutil para la nueva paleta */
-.blue-glow {
-  box-shadow: 0 0 15px rgba(37, 99, 235, 0.1);
+.gold-glow {
+  box-shadow: 0 0 15px rgba(212, 160, 23, 0.15);
 }
 
-.yellow-gradient {
-  background: linear-gradient(135deg, #facc15, #eab308);
+.gold-gradient {
+  background: linear-gradient(135deg, #D4A017, #A67C00);
 }

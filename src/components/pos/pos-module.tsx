@@ -1,12 +1,15 @@
+
 "use client";
 
 import { useState } from 'react';
+import Image from 'next/image';
 import { usePOSState } from '@/hooks/use-pos-state';
 import ProductSearch from './product-search';
 import CartPanel from './cart-panel';
 import PaymentModal from './payment-modal';
 import SaleTypeModal from './sale-type-modal';
 import CreditModal from './credit-modal';
+import { PlaceHolderImages } from '@/lib/placeholder-images';
 
 interface POSModuleProps {
   state: ReturnType<typeof usePOSState>;
@@ -19,6 +22,8 @@ export default function POSModule({ state }: POSModuleProps) {
 
   const cartTotal = state.cart.reduce((s,i) => s + (i.priceBs * i.qty), 0);
   const totalWithIva = state.isIvaEnabled ? cartTotal * 1.16 : cartTotal;
+
+  const logoImage = PlaceHolderImages.find(img => img.id === 'masterpos-logo');
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 h-full overflow-hidden">
@@ -44,19 +49,22 @@ export default function POSModule({ state }: POSModuleProps) {
         />
       </div>
 
-      {/* COLUMNA DERECHA: Ambiente Premium (Crema Exacta #F9F4E1) */}
+      {/* COLUMNA DERECHA: Ambiente Premium con Logo MasterPos (#F9F4E1) */}
       <div className="hidden md:flex flex-col items-center justify-center relative overflow-hidden bg-background">
         <div className="absolute w-[280px] h-[280px] bg-primary/5 rounded-full blur-[120px] animate-float-ambient top-[20%] left-[15%]" />
         <div className="absolute w-[180px] h-[180px] bg-primary/2 rounded-full blur-[100px] animate-float-ambient bottom-[25%] right-[20%] animation-delay-2000" />
         
-        <div className="z-10 text-center flex flex-col items-center">
-          <div className="w-32 h-32 border-2 border-primary/20 rounded-full flex items-center justify-center mb-10">
-            <span className="font-headline font-black text-5xl text-secondary">LP</span>
-          </div>
-          <div className="space-y-4">
-            <p className="font-headline italic text-3xl tracking-[0.3em] text-secondary uppercase">GOLD</p>
-            <p className="font-headline italic text-3xl tracking-[0.3em] text-secondary uppercase">EXPERIENCE</p>
-          </div>
+        <div className="z-10 w-full px-12 flex items-center justify-center transition-all duration-500 hover:scale-105">
+          {logoImage && (
+            <Image 
+              src={logoImage.imageUrl}
+              alt={logoImage.description}
+              width={600}
+              height={400}
+              className="object-contain drop-shadow-2xl"
+              data-ai-hint={logoImage.imageHint}
+            />
+          )}
         </div>
       </div>
 

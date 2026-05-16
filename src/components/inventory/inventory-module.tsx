@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState } from 'react';
@@ -104,7 +103,7 @@ export default function InventoryModule({ state }: InventoryModuleProps) {
                     {p.category}
                   </span>
                 </TableCell>
-                <TableCell className="font-bold text-sm">{p.priceBs.toFixed(2)}</TableCell>
+                <TableCell className="font-bold text-sm text-foreground">{p.priceBs.toFixed(2)}</TableCell>
                 <TableCell className="text-center">
                   <span className="bg-[#00FF00] text-black px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest shadow-md border border-green-800 inline-block min-w-[90px] whitespace-nowrap text-center">
                     {p.stock} UDS
@@ -177,7 +176,7 @@ export default function InventoryModule({ state }: InventoryModuleProps) {
               </div>
               <div className="space-y-1.5">
                 <label className="text-[10px] font-black text-muted uppercase tracking-widest">Categoría</label>
-                <select name="category" defaultValue={editingProduct?.category} className="w-full h-10 bg-background border border-border rounded-md px-3 text-sm focus:ring-2 focus:ring-primary outline-none">
+                <select name="category" defaultValue={editingProduct?.category} className="w-full h-10 bg-background border border-border rounded-md px-3 text-sm focus:ring-2 focus:ring-primary outline-none text-foreground">
                   <option value="Whisky">Whisky</option>
                   <option value="Ron">Ron</option>
                   <option value="Cerveza">Cerveza</option>
@@ -191,7 +190,7 @@ export default function InventoryModule({ state }: InventoryModuleProps) {
               </div>
             </div>
             <div className="flex gap-2 pt-4">
-              <Button type="button" variant="ghost" onClick={() => { setEditingProduct(null); setIsAdding(false); }} className="flex-1">CANCELAR</Button>
+              <Button type="button" variant="ghost" onClick={() => { setEditingProduct(null); setIsAdding(false); }} className="flex-1 text-foreground">CANCELAR</Button>
               <Button type="submit" className="flex-1 bg-primary text-black font-black">GUARDAR CAMBIOS</Button>
             </div>
           </form>
@@ -226,7 +225,7 @@ export default function InventoryModule({ state }: InventoryModuleProps) {
                 <div className="space-y-6 col-span-1 border-r border-border pr-6">
                   <div className="space-y-1">
                     <span className="text-[10px] font-black text-muted uppercase tracking-widest">Código Fiscal</span>
-                    <p className="font-mono text-sm font-bold">{viewingProduct.barcode}</p>
+                    <p className="font-mono text-sm font-bold text-foreground">{viewingProduct.barcode}</p>
                   </div>
                   <div className="space-y-1">
                     <span className="text-[10px] font-black text-muted uppercase tracking-widest">Disponibilidad Actual</span>
@@ -272,7 +271,7 @@ export default function InventoryModule({ state }: InventoryModuleProps) {
                           </div>
                           <div className="text-right">
                             <div className="text-xs font-black text-destructive">-{t.items.find(i => i.productId === viewingProduct.id)?.qty} UDS</div>
-                            <div className="text-[9px] text-muted">{t.payMethod.toUpperCase()}</div>
+                            <div className="text-[9px] text-muted uppercase">{t.payMethod.toUpperCase()}</div>
                           </div>
                         </div>
                       ))}
@@ -287,7 +286,7 @@ export default function InventoryModule({ state }: InventoryModuleProps) {
               </div>
 
               <div className="bg-secondary/30 p-4 border-t border-border flex justify-end">
-                <Button variant="ghost" onClick={() => setViewingProduct(null)} className="font-bold text-xs uppercase tracking-widest">Cerrar Kardex</Button>
+                <Button variant="ghost" onClick={() => setViewingProduct(null)} className="font-bold text-xs uppercase tracking-widest text-foreground">Cerrar Kardex</Button>
               </div>
             </div>
           )}

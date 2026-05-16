@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { usePOSState } from '@/hooks/use-pos-state';
-import { Vault, Lock, Unlock, FileText, Share2, Printer } from 'lucide-react';
+import { Vault, Lock, Unlock, FileText, Share2, Printer, CreditCard, Banknote, Smartphone, Fingerprint, Plane, DollarSign } from 'lucide-react';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { cn } from '@/lib/utils';
 
 interface CashModuleProps {
   state: ReturnType<typeof usePOSState>;
@@ -20,11 +21,41 @@ export default function CashModule({ state }: CashModuleProps) {
   const totalContado = reg?.txs.filter(t => t.type === 'contado' || t.type === 'cobro_deuda').reduce((s,t) => s + t.total, 0) || 0;
   const totalCredito = reg?.txs.filter(t => t.type === 'credito').reduce((s,t) => s + t.total, 0) || 0;
 
+  // Distribución por método de pago
+  const paymentDistribution = useMemo(() => {
+    if (!reg) return [];
+    const dist: Record<string, number> = {};
+    reg.txs.forEach(t => {
+      if (t.type === 'contado' || t.type === 'cobro_deuda') {
+        dist[t.payMethod] = (dist[t.payMethod] || 0) + t.total;
+      }
+    });
+    return Object.entries(dist).map(([method, total]) => ({ method, total }));
+  }, [reg]);
+
+  const methodIcons: Record<string, any> = {
+    efectivo_bs: Banknote,
+    tarjeta: CreditCard,
+    usd_efectivo: DollarSign,
+    biopago: Fingerprint,
+    pago_movil: Smartphone,
+    zelle: Plane,
+  };
+
+  const methodLabels: Record<string, string> = {
+    efectivo_bs: 'Efectivo BS',
+    tarjeta: 'Tarjeta',
+    usd_efectivo: 'USD Efectivo',
+    biopago: 'Biopago',
+    pago_movil: 'Pago Móvil',
+    zelle: 'Zelle',
+  };
+
   return (
     <div className="p-6 h-full overflow-y-auto scrollbar-thin">
       <h2 className="text-2xl font-headline font-black text-foreground mb-6">Gestión de Bóveda</h2>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <div className="bg-card border border-border rounded-xl p-5 shadow-xl relative overflow-hidden">
            <div className="text-[10px] text-muted font-black uppercase tracking-widest mb-1">Estado Actual</div>
            <div className={cn("text-2xl font-black", isClosed ? "text-destructive" : "text-[#2ECC71]")}>
@@ -37,23 +68,41 @@ export default function CashModule({ state }: CashModuleProps) {
           <>
             <div className="bg-card border border-border rounded-xl p-5 shadow-xl">
               <div className="text-[10px] text-muted font-black uppercase tracking-widest mb-1 text-primary">Apertura</div>
-              <div className="text-2xl font-black">BS {reg.openAmount.toFixed(2)}</div>
+              <div className="text-2xl font-black text-foreground">BS {reg.openAmount.toFixed(2)}</div>
             </div>
             <div className="bg-card border border-border rounded-xl p-5 shadow-xl">
-              <div className="text-[10px] text-muted font-black uppercase tracking-widest mb-1 text-[#2ECC71]">Ventas Contado</div>
-              <div className="text-2xl font-black text-[#2ECC71]">BS {totalContado.toFixed(2)}</div>
+              <div className="text-[10px] text-muted font-black uppercase tracking-widest mb-1 text-[#2ECC71]">Total en Caja</div>
+              <div className="text-2xl font-black text-[#2ECC71]">BS {(reg.openAmount + totalContado).toFixed(2)}</div>
             </div>
             <div className="bg-card border border-border rounded-xl p-5 shadow-xl">
               <div className="text-[10px] text-muted font-black uppercase tracking-widest mb-1 text-[#F39C12]">Ventas Crédito</div>
               <div className="text-2xl font-black text-[#F39C12]">BS {totalCredito.toFixed(2)}</div>
             </div>
-            <div className="bg-card border border-border rounded-xl p-5 shadow-xl">
-              <div className="text-[10px] text-muted font-black uppercase tracking-widest mb-1 text-primary">Total Caja</div>
-              <div className="text-2xl font-black text-primary">BS {(reg.openAmount + totalContado).toFixed(2)}</div>
-            </div>
           </>
         )}
       </div>
+
+      {!isClosed && paymentDistribution.length > 0 && (
+        <div className="mb-8">
+          <h3 className="text-sm font-black uppercase tracking-widest text-muted mb-4 flex items-center gap-2">
+            <Vault size={14} className="text-primary" /> Distribución por Método
+          </h3>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+            {paymentDistribution.map(({ method, total }) => {
+              const Icon = methodIcons[method] || DollarSign;
+              return (
+                <div key={method} className="bg-card/50 border border-border rounded-xl p-3 flex flex-col items-center justify-center text-center group hover:border-primary/40 transition-all">
+                  <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary mb-2">
+                    <Icon size={16} />
+                  </div>
+                  <div className="text-[9px] font-black uppercase text-muted tracking-tighter">{methodLabels[method] || method}</div>
+                  <div className="text-sm font-bold text-foreground">BS {total.toFixed(2)}</div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <div className="flex gap-3 mb-8">
         {isClosed ? (
@@ -69,7 +118,7 @@ export default function CashModule({ state }: CashModuleProps) {
             </div>
             <Button 
               onClick={() => state.openCashRegister(parseFloat(openAmount) || 0)}
-              className="bg-primary hover:bg-primary/90 text-background font-black h-11 px-8"
+              className="bg-primary hover:bg-primary/90 text-black font-black h-11 px-8"
             >
               <Unlock size={18} className="mr-2" /> ABRIR CAJA
             </Button>
@@ -79,14 +128,14 @@ export default function CashModule({ state }: CashModuleProps) {
             <Button variant="destructive" className="font-black h-11 px-8" onClick={() => state.closeCashRegister()}>
               <Lock size={18} className="mr-2" /> CERRAR CAJA
             </Button>
-            <Button variant="secondary" className="border-border text-xs font-bold h-11"><FileText size={16} className="mr-2" /> EXPORTAR PDF</Button>
-            <Button variant="secondary" className="border-border text-xs font-bold h-11"><Printer size={16} className="mr-2" /> IMPRIMIR</Button>
-            <Button variant="secondary" className="border-border text-xs font-bold h-11"><Share2 size={16} className="mr-2" /> COMPARTIR</Button>
+            <Button variant="secondary" className="border-border text-xs font-bold h-11 text-foreground"><FileText size={16} className="mr-2" /> EXPORTAR PDF</Button>
+            <Button variant="secondary" className="border-border text-xs font-bold h-11 text-foreground"><Printer size={16} className="mr-2" /> IMPRIMIR</Button>
+            <Button variant="secondary" className="border-border text-xs font-bold h-11 text-foreground"><Share2 size={16} className="mr-2" /> COMPARTIR</Button>
           </div>
         )}
       </div>
 
-      <h3 className="text-base font-headline font-black mb-4">Historial de Transacciones de hoy</h3>
+      <h3 className="text-sm font-black uppercase tracking-widest text-muted mb-4">Historial de Transacciones</h3>
       <div className="bg-card border border-border rounded-xl overflow-hidden shadow-2xl">
         <Table>
           <TableHeader className="bg-[#111111]">
@@ -128,5 +177,3 @@ export default function CashModule({ state }: CashModuleProps) {
     </div>
   );
 }
-
-import { cn } from '@/lib/utils';

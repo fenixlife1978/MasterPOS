@@ -19,12 +19,12 @@ export default function Sidebar({ currentPage, onPageChange }: SidebarProps) {
   ];
 
   return (
-    <aside className="w-[84px] min-w-[84px] bg-primary border-r border-border/10 flex flex-col items-center py-6 z-50">
-      <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center font-headline font-black text-xl text-secondary mb-10 shrink-0 shadow-lg">
+    <aside className="w-[72px] min-w-[72px] bg-card border-r border-border flex flex-col items-center py-4 z-50">
+      <div className="w-[44px] h-[44px] gold-gradient rounded-xl flex items-center justify-center font-headline font-black text-lg text-black mb-6 shrink-0 shadow-lg">
         LP
       </div>
       
-      <nav className="flex flex-col gap-4">
+      <nav className="flex flex-col gap-1.5">
         {items.map((item) => {
           const Icon = item.icon;
           const isActive = currentPage === item.id;
@@ -33,21 +33,21 @@ export default function Sidebar({ currentPage, onPageChange }: SidebarProps) {
               key={item.id}
               onClick={() => onPageChange(item.id)}
               className={cn(
-                "w-[64px] h-[64px] rounded-xl flex flex-col items-center justify-center transition-all relative group",
+                "w-[52px] h-[52px] rounded-xl flex flex-col items-center justify-center transition-all relative group gap-0.5",
                 isActive 
-                  ? "bg-black/10 text-black" 
-                  : "text-black/60 hover:bg-black/5 hover:text-black"
+                  ? "bg-primary/15 text-primary" 
+                  : "text-muted hover:bg-white/5 hover:text-foreground"
               )}
             >
-              <Icon size={22} strokeWidth={isActive ? 2.5 : 2} />
+              <Icon size={18} strokeWidth={isActive ? 2.5 : 2} />
               <span className={cn(
-                "text-[10px] mt-1 font-bold uppercase tracking-tight",
+                "text-[9px] font-bold uppercase tracking-tight",
                 isActive ? "opacity-100" : "opacity-60"
               )}>
                 {item.label}
               </span>
               {isActive && (
-                <div className="absolute left-[-10px] top-1/2 -translate-y-1/2 w-[4px] h-8 bg-black rounded-r-md shadow-sm" />
+                <div className="absolute left-[-10px] top-1/2 -translate-y-1/2 w-[3px] h-6 bg-primary rounded-r-md" />
               )}
             </button>
           );

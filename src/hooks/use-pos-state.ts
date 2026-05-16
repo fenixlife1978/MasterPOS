@@ -62,6 +62,18 @@ export function usePOSState() {
     localStorage.setItem('licopos_rate', exchangeRate.toString());
   }, [products, clients, transactions, accounts, register, exchangeRate, isHydrated]);
 
+  const addProduct = useCallback((p: Product) => {
+    setProducts(prev => [...prev, p]);
+  }, []);
+
+  const updateProduct = useCallback((p: Product) => {
+    setProducts(prev => prev.map(old => old.id === p.id ? p : old));
+  }, []);
+
+  const deleteProduct = useCallback((id: number) => {
+    setProducts(prev => prev.filter(p => p.id !== id));
+  }, []);
+
   const addToCart = useCallback((productId: number) => {
     const product = products.find(p => p.id === productId);
     if (!product || product.stock <= 0) return false;
@@ -239,7 +251,7 @@ export function usePOSState() {
   }, [register, clients, accounts, transactions.length, exchangeRate]);
 
   return {
-    products, setProducts,
+    products, setProducts, addProduct, updateProduct, deleteProduct,
     clients, setClients,
     transactions,
     accounts, setAccounts,

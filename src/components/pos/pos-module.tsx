@@ -51,9 +51,11 @@ export default function POSModule({ state }: POSModuleProps) {
 
       {/* COLUMNA DERECHA: Ambiente Premium con Logo MasterPos (#F9F4E1) */}
       <div className="hidden md:flex flex-col items-center justify-center relative overflow-hidden bg-background">
+        {/* Efectos ambientales sutiles */}
         <div className="absolute w-[280px] h-[280px] bg-primary/5 rounded-full blur-[120px] animate-float-ambient top-[20%] left-[15%]" />
         <div className="absolute w-[180px] h-[180px] bg-primary/2 rounded-full blur-[100px] animate-float-ambient bottom-[25%] right-[20%] animation-delay-2000" />
         
+        {/* Logo Centrado y Proporcional */}
         <div className="z-10 w-full px-12 flex items-center justify-center transition-all duration-500 hover:scale-105">
           {logoImage && (
             <Image 

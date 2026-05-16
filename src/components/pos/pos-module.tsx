@@ -26,8 +26,8 @@ export default function POSModule({ state }: POSModuleProps) {
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 h-full overflow-hidden">
-      {/* COLUMNA IZQUIERDA: Búsqueda y Navegación (Dorada) */}
-      <div className="flex flex-col overflow-hidden bg-primary">
+      {/* COLUMNA IZQUIERDA: Búsqueda y Navegación (Dorada) - Bordes negro izquierdo y derecho */}
+      <div className="flex flex-col overflow-hidden bg-primary border-l border-r border-black">
         <ProductSearch 
           state={state}
           onAdd={state.addToCart} 
@@ -48,7 +48,7 @@ export default function POSModule({ state }: POSModuleProps) {
         />
       </div>
 
-      {/* COLUMNA DERECHA: Ambiente Premium con Logo MasterPos (#F9F4E1) */}
+      {/* COLUMNA DERECHA: Ambiente Premium con Logo MasterPos */}
       <div className="hidden md:flex flex-col items-center justify-center relative overflow-hidden bg-background">
         <div className="absolute w-[280px] h-[280px] bg-primary/5 rounded-full blur-[120px] animate-float-ambient top-[20%] left-[15%]" />
         <div className="absolute w-[180px] h-[180px] bg-primary/2 rounded-full blur-[100px] animate-float-ambient bottom-[25%] right-[20%]" />

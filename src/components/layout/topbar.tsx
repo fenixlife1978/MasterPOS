@@ -42,26 +42,27 @@ export default function Topbar({ register, rate, onRateChange }: TopbarProps) {
         LicoPOS Elite
       </div>
       
+      {/* Botón de Caja - Verde cuando abierta, Rojo cuando cerrada */}
       <div className={cn(
-        "px-4 py-1 rounded-full text-[12px] font-bold tracking-tight transition-colors border",
+        "px-4 py-1 rounded-full text-[12px] font-bold tracking-tight transition-all duration-200 shadow-md flex items-center gap-2",
         isOpen 
-          ? "bg-primary text-black border-black/10" 
-          : "bg-destructive/20 text-white border-white/30"
+          ? "bg-[#2ECC71] text-white border border-[#27AE60]" 
+          : "bg-[#E74C3C] text-white border border-[#C0392B]"
       )}>
-        {isOpen ? 'Caja Abierta' : 'Caja Cerrada'}
+        <span className={cn(
+          "w-2 h-2 rounded-full",
+          isOpen ? "bg-white animate-pulse" : "bg-white/50"
+        )} />
+        {isOpen ? 'CAJA ABIERTA' : 'CAJA CERRADA'}
       </div>
 
       <div className="ml-auto flex items-center gap-6">
+        {/* Tasa BCV - Solo lectura, no editable */}
         <div className="bg-black/30 px-5 py-1.5 rounded-full flex items-center gap-3 border border-white/5 shadow-inner">
           <RefreshCw size={16} className="text-primary" />
           <div className="flex items-center gap-2 text-[13px]">
-            <span className="text-white/70 font-bold tracking-widest text-[11px]">TASA:</span>
-            <input 
-              type="number" 
-              value={rate} 
-              onChange={(e) => onRateChange(parseFloat(e.target.value) || 0)}
-              className="w-12 bg-transparent border-none text-primary font-black focus:outline-none text-center text-[15px]"
-            />
+            <span className="text-white/70 font-bold tracking-widest text-[11px]">TASA BCV:</span>
+            <span className="text-primary font-black text-[15px]">{rate.toFixed(2)}</span>
             <span className="text-white/40 text-[10px] font-bold ml-1">BS/USD</span>
           </div>
         </div>

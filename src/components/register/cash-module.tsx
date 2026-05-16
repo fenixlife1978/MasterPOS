@@ -32,12 +32,11 @@ export default function CashModule({ state }: CashModuleProps) {
     if (reg) {
       reg.txs.forEach(t => {
         if (t.type === 'contado' || t.type === 'cobro_deuda') {
-          // Sumar si el método está en nuestra lista predefinida
-          if (dist[t.payMethod] !== undefined) {
-            dist[t.payMethod] += t.total;
+          const method = t.payMethod || 'efectivo_bs';
+          if (dist[method] !== undefined) {
+            dist[method] += t.total;
           } else {
-            // Para métodos no predefinidos (como créditos antiguos)
-            dist[t.payMethod] = (dist[t.payMethod] || 0) + t.total;
+            dist[method] = (dist[method] || 0) + t.total;
           }
         }
       });
@@ -173,7 +172,7 @@ export default function CashModule({ state }: CashModuleProps) {
                     {t.type.toUpperCase()}
                   </span>
                 </TableCell>
-                <TableCell className="text-xs font-bold uppercase text-muted-foreground">{t.payMethod.replace('_', ' ')}</TableCell>
+                <TableCell className="text-xs font-bold uppercase text-muted-foreground">{(t.payMethod || 'efectivo_bs').replace('_', ' ')}</TableCell>
                 <TableCell className="font-bold text-sm">BS {t.total.toFixed(2)}</TableCell>
                 <TableCell className="text-right font-medium text-xs text-muted-foreground">{t.clientName || 'CLIENTE FINAL'}</TableCell>
               </TableRow>

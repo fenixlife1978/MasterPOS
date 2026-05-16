@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useMemo } from 'react';
@@ -53,31 +52,33 @@ export default function CreditModal({ cart, clients, onClose, onConfirm }: Credi
 
   return (
     <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-card border border-border rounded-2xl w-full max-w-xl p-6 shadow-2xl animate-in zoom-in-95">
+      <div className="bg-[#1A2C4E] border border-white/20 rounded-2xl w-full max-w-xl p-6 shadow-2xl animate-in zoom-in-95">
         <div className="flex justify-between items-center mb-6">
-          <h3 className="text-xl font-headline font-black flex items-center gap-2">
+          <h3 className="text-xl font-headline font-black flex items-center gap-2 text-white">
             <Handshake size={24} className="text-primary" /> Venta a Crédito
           </h3>
-          <button onClick={onClose} className="text-muted hover:text-foreground"><X size={20} /></button>
+          <button onClick={onClose} className="text-white/60 hover:text-white transition-colors">
+            <X size={20} />
+          </button>
         </div>
 
         {!isNewMode ? (
           <>
-            <div className="flex items-center bg-background border border-border rounded-lg px-3 mb-4">
-              <Search size={14} className="text-muted" />
+            <div className="flex items-center bg-[#0F1E3A] border border-white/20 rounded-lg px-3 mb-4">
+              <Search size={14} className="text-white/60" />
               <input 
                 type="text" 
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Buscar cliente por nombre o cédula..."
-                className="flex-1 bg-transparent border-none text-sm px-3 py-2.5 focus:outline-none"
+                className="flex-1 bg-transparent border-none text-sm px-3 py-2.5 focus:outline-none text-white placeholder:text-white/40"
               />
             </div>
 
             <div className="max-h-40 overflow-y-auto space-y-1 mb-4 scrollbar-thin">
               {results.length === 0 && query && (
                 <div className="text-center py-4 space-y-2">
-                  <p className="text-xs text-muted">No se encontraron resultados</p>
+                  <p className="text-xs text-white/60">No se encontraron resultados</p>
                   <button 
                     onClick={() => setIsNewMode(true)}
                     className="text-xs text-primary font-bold hover:underline"
@@ -92,17 +93,17 @@ export default function CreditModal({ cart, clients, onClose, onConfirm }: Credi
                   onClick={() => setSelected(c)}
                   className={cn(
                     "w-full flex items-center gap-3 p-3 rounded-lg text-left transition-all",
-                    selected?.id === c.id ? "bg-primary/10 border-primary border" : "bg-secondary/50 border border-transparent hover:border-border"
+                    selected?.id === c.id ? "bg-primary/20 border border-primary" : "bg-[#0F1E3A] border border-white/10 hover:border-white/30"
                   )}
                 >
-                  <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary">
-                    <UserCheck size={14} />
+                  <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center">
+                    <UserCheck size={14} className="text-primary" />
                   </div>
                   <div className="flex-1">
-                    <div className="text-sm font-bold">{c.name}</div>
-                    <div className="text-[10px] text-muted">{c.cedula}</div>
+                    <div className="text-sm font-bold text-white">{c.name}</div>
+                    <div className="text-[10px] text-white/50">{c.cedula}</div>
                   </div>
-                  {c.debt > 0 && <div className="text-xs text-destructive font-bold">Deuda: BS {c.debt.toFixed(2)}</div>}
+                  {c.debt > 0 && <div className="text-xs text-[#FF6B6B] font-bold">Deuda: BS {c.debt.toFixed(2)}</div>}
                 </button>
               ))}
             </div>
@@ -110,7 +111,7 @@ export default function CreditModal({ cart, clients, onClose, onConfirm }: Credi
             {!query && (
               <button 
                 onClick={() => setIsNewMode(true)}
-                className="w-full py-3 mb-4 border border-dashed border-border rounded-xl text-xs font-bold text-muted hover:text-primary hover:border-primary transition-all flex items-center justify-center gap-2"
+                className="w-full py-3 mb-4 border border-dashed border-white/30 rounded-xl text-xs font-bold text-white/70 hover:text-primary hover:border-primary transition-all flex items-center justify-center gap-2"
               >
                 <UserPlus size={14} /> REGISTRAR NUEVO CLIENTE
               </button>
@@ -120,7 +121,7 @@ export default function CreditModal({ cart, clients, onClose, onConfirm }: Credi
           <div className="space-y-3 mb-6 animate-in fade-in slide-in-from-top-2">
             <div className="flex justify-between items-center mb-2">
               <span className="text-[10px] font-black text-primary tracking-widest uppercase">Datos del Nuevo Cliente</span>
-              <button onClick={() => setIsNewMode(false)} className="text-[10px] text-muted font-bold hover:text-foreground">VOLVER A BUSCAR</button>
+              <button onClick={() => setIsNewMode(false)} className="text-[10px] text-white/50 font-bold hover:text-white">VOLVER A BUSCAR</button>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <input 
@@ -128,58 +129,63 @@ export default function CreditModal({ cart, clients, onClose, onConfirm }: Credi
                 placeholder="Nombre Completo" 
                 value={newClient.name}
                 onChange={e => setNewClient({...newClient, name: e.target.value})}
-                className="bg-background border border-border rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-primary"
+                className="bg-[#0F1E3A] border border-white/20 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-primary text-white placeholder:text-white/40"
               />
               <input 
                 type="text" 
                 placeholder="Cédula / RIF" 
                 value={newClient.cedula}
                 onChange={e => setNewClient({...newClient, cedula: e.target.value})}
-                className="bg-background border border-border rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-primary"
+                className="bg-[#0F1E3A] border border-white/20 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-primary text-white placeholder:text-white/40"
               />
               <input 
                 type="text" 
                 placeholder="Teléfono" 
                 value={newClient.phone}
                 onChange={e => setNewClient({...newClient, phone: e.target.value})}
-                className="bg-background border border-border rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-primary"
+                className="bg-[#0F1E3A] border border-white/20 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-primary text-white placeholder:text-white/40"
               />
               <input 
                 type="text" 
                 placeholder="Dirección" 
                 value={newClient.address}
                 onChange={e => setNewClient({...newClient, address: e.target.value})}
-                className="bg-background border border-border rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-primary"
+                className="bg-[#0F1E3A] border border-white/20 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-primary text-white placeholder:text-white/40"
               />
             </div>
           </div>
         )}
 
-        <div className="bg-background border border-border rounded-xl p-4 mb-6">
+        <div className="bg-[#0F1E3A] border border-white/20 rounded-xl p-4 mb-6">
           <div className="flex justify-between text-xs mb-1">
-            <span className="text-muted">Cliente:</span>
-            <span className="font-bold">
+            <span className="text-white/60">Cliente:</span>
+            <span className="font-bold text-white">
               {isNewMode ? (newClient.name || 'Nuevo Cliente...') : (selected ? selected.name : 'No seleccionado')}
             </span>
           </div>
-          {!isNewMode && (
+          {!isNewMode && selected && (
             <div className="flex justify-between text-xs mb-1">
-              <span className="text-muted">Deuda actual:</span>
-              <span className="font-bold text-destructive">BS {selected?.debt.toFixed(2) || '0.00'}</span>
+              <span className="text-white/60">Deuda actual:</span>
+              <span className="font-bold text-[#FF6B6B]">BS {selected?.debt?.toFixed(2) || '0.00'}</span>
             </div>
           )}
-          <div className="flex justify-between text-xs pt-2 mt-2 border-t border-border">
-            <span className="text-muted">Nuevo crédito:</span>
+          <div className="flex justify-between text-xs pt-2 mt-2 border-t border-white/20">
+            <span className="text-white/60">Nuevo crédito:</span>
             <span className="font-black text-primary">BS {total.toFixed(2)}</span>
           </div>
         </div>
 
         <div className="flex gap-3">
-          <button onClick={onClose} className="flex-1 py-3 rounded-lg border border-border text-sm font-bold hover:text-foreground transition-all">CANCELAR</button>
+          <button 
+            onClick={onClose} 
+            className="flex-1 py-3 rounded-lg border border-white/30 bg-[#0F1E3A] text-white font-bold text-sm hover:bg-[#1A2C4E] hover:border-white/50 transition-all"
+          >
+            CANCELAR
+          </button>
           <button 
             disabled={isNewMode ? (!newClient.name || !newClient.cedula) : !selected}
             onClick={handleConfirm}
-            className="flex-1 py-3 bg-primary rounded-lg text-background font-black text-sm hover:bg-primary/90 disabled:opacity-30 transition-all"
+            className="flex-1 py-3 bg-primary rounded-lg text-black font-black text-sm hover:brightness-110 disabled:opacity-30 transition-all"
           >
             CONFIRMAR CRÉDITO
           </button>

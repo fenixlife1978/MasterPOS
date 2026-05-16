@@ -10,39 +10,44 @@ interface SaleTypeModalProps {
 export default function SaleTypeModal({ onClose, onSelect }: SaleTypeModalProps) {
   return (
     <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-card border border-border rounded-2xl w-full max-w-md p-6 shadow-2xl animate-in zoom-in-95">
+      <div className="bg-[#1A2C4E] border border-white/20 rounded-2xl w-full max-w-md p-6 shadow-2xl animate-in zoom-in-95">
         <div className="flex justify-between items-center mb-6">
-          <h3 className="text-xl font-headline font-black flex items-center gap-2">
+          <h3 className="text-xl font-headline font-black flex items-center gap-2 text-white">
             <Wallet size={24} className="text-primary" /> Tipo de Venta
           </h3>
-          <button onClick={onClose} className="text-muted hover:text-foreground"><X size={20} /></button>
+          <button onClick={onClose} className="text-white/60 hover:text-white transition-colors">
+            <X size={20} />
+          </button>
         </div>
 
         <div className="grid grid-cols-2 gap-4">
+          {/* Botón CONTADO - Verde pastel */}
           <button 
             onClick={() => onSelect('contado')}
-            className="group p-6 rounded-xl border-2 border-border bg-[#111111] hover:border-primary hover:bg-primary/5 transition-all flex flex-col items-center gap-3"
+            className="group p-6 rounded-xl border-2 border-white/20 bg-[#D5E8D4] hover:bg-[#C5E0C4] hover:border-white/40 transition-all flex flex-col items-center gap-3 shadow-md hover:shadow-lg"
           >
-            <div className="w-16 h-16 rounded-full bg-[#2ECC711A] text-[#2ECC71] flex items-center justify-center group-hover:scale-110 transition-transform">
+            <div className="w-16 h-16 rounded-full bg-[#2ECC71] text-white flex items-center justify-center group-hover:scale-110 transition-transform shadow-md">
               <Wallet size={32} />
             </div>
-            <span className="text-sm font-bold uppercase tracking-widest">Contado</span>
+            <span className="text-sm font-bold uppercase tracking-widest text-black">Contado</span>
           </button>
 
+          {/* Botón CRÉDITO - Naranja pastel */}
           <button 
             onClick={() => onSelect('credito')}
-            className="group p-6 rounded-xl border-2 border-border bg-[#111111] hover:border-primary hover:bg-primary/5 transition-all flex flex-col items-center gap-3"
+            className="group p-6 rounded-xl border-2 border-white/20 bg-[#FFE4C4] hover:bg-[#FFD8B0] hover:border-white/40 transition-all flex flex-col items-center gap-3 shadow-md hover:shadow-lg"
           >
-            <div className="w-16 h-16 rounded-full bg-[#F39C121A] text-[#F39C12] flex items-center justify-center group-hover:scale-110 transition-transform">
+            <div className="w-16 h-16 rounded-full bg-[#F39C12] text-white flex items-center justify-center group-hover:scale-110 transition-transform shadow-md">
               <Handshake size={32} />
             </div>
-            <span className="text-sm font-bold uppercase tracking-widest">Crédito</span>
+            <span className="text-sm font-bold uppercase tracking-widest text-black">Crédito</span>
           </button>
         </div>
 
+        {/* Botón CANCELAR - Rojo */}
         <button 
           onClick={onClose}
-          className="w-full mt-6 py-2.5 rounded-lg border border-border text-muted font-bold text-xs hover:text-foreground transition-colors"
+          className="w-full mt-6 py-2.5 rounded-lg bg-red-600 hover:bg-red-700 text-white font-bold text-xs transition-colors shadow-md"
         >
           CANCELAR
         </button>

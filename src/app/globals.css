@@ -29,8 +29,8 @@
     --destructive: 0 84% 60%;
     --destructive-foreground: 210 20% 98%;
 
-    --border: 0 0% 70%;
-    --input: 0 0% 70%;
+    --border: 0 0% 15%;    /* Negro visible (corregido) */
+    --input: 0 0% 15%;     /* Inputs con borde negro (corregido) */
     --ring: 43 73% 48%;
     --radius: 12px;
 

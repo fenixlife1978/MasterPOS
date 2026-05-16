@@ -82,22 +82,25 @@ export default function ClientPanel({ client, state, onClose }: ClientPanelProps
                 <HandCoins size={12} className="inline mr-1" /> Abonar
               </button>
             </div>
-            <div className="flex gap-2">
+            
+            {/* Contenedor vertical para el input y el botón de confirmar */}
+            <div className="space-y-2">
               <input 
                 id="abono-input"
                 type="number" 
                 value={abono}
                 onChange={(e) => setAbono(e.target.value)}
                 placeholder="Monto BS"
-                className="flex-1 bg-background border border-border rounded-lg px-3 py-2 text-sm font-bold text-foreground outline-none focus:border-primary transition-colors"
+                className="w-full bg-background border border-border rounded-lg px-3 py-2.5 text-sm font-bold text-foreground outline-none focus:border-primary transition-colors text-center"
               />
               <button 
                 onClick={handleProcessAbono}
-                className="bg-primary text-black text-[12px] font-black px-4 rounded-lg hover:brightness-110 transition-all uppercase shadow-md"
+                className="w-full py-2.5 bg-primary text-black text-[12px] font-black rounded-lg hover:brightness-110 transition-all uppercase shadow-md"
               >
                 Confirmar
               </button>
             </div>
+            
             <p className="text-[10px] text-muted italic leading-tight text-center">Los abonos se aplican cronológicamente desde la deuda más antigua.</p>
           </div>
         )}

@@ -4,23 +4,23 @@
 
 @layer base {
   :root {
-    /* Paleta exacta según la imagen */
-    --background: 47 67% 93%; /* #F9F4E1 - Crema Suave exacto */
-    --foreground: 222 47% 11%; /* Texto oscuro para áreas claras */
+    /* Gris Neutral extraído de la imagen del logo */
+    --background: 0 0% 85%; /* #D9D9D9 - Gris profesional */
+    --foreground: 222 47% 11%;
     
-    --card: 47 67% 95%;
+    --card: 0 0% 88%;
     --card-foreground: 222 47% 11%;
     
-    --popover: 47 67% 93%;
+    --popover: 0 0% 85%;
     --popover-foreground: 222 47% 11%;
     
-    --primary: 43 73% 48%; /* Dorado Mostaza exacto */
-    --primary-foreground: 0 0% 0%; /* Negro para contraste en dorado */
+    --primary: 43 73% 48%; /* Dorado Mostaza */
+    --primary-foreground: 0 0% 0%;
     
-    --secondary: 218 70% 13%; /* Azul Marino Profundo exacto */
-    --secondary-foreground: 0 0% 100%; /* Blanco sobre azul */
+    --secondary: 218 70% 13%; /* Azul Marino Profundo */
+    --secondary-foreground: 0 0% 100%;
     
-    --muted: 45 10% 80%;
+    --muted: 0 0% 75%;
     --muted-foreground: 222 10% 40%;
     
     --accent: 43 73% 48%;
@@ -29,8 +29,8 @@
     --destructive: 0 84% 60%;
     --destructive-foreground: 210 20% 98%;
 
-    --border: 45 20% 70%;
-    --input: 45 20% 70%;
+    --border: 0 0% 70%;
+    --input: 0 0% 70%;
     --ring: 43 73% 48%;
     --radius: 12px;
 

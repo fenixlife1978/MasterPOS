@@ -5,13 +5,13 @@
 @layer base {
   :root {
     /* Paleta exacta según la imagen */
-    --background: 45 50% 92%; /* Crema Suave / Off-white */
+    --background: 47 67% 93%; /* #F9F4E1 - Crema Suave exacto */
     --foreground: 222 47% 11%; /* Texto oscuro para áreas claras */
     
-    --card: 45 50% 94%;
+    --card: 47 67% 95%;
     --card-foreground: 222 47% 11%;
     
-    --popover: 45 50% 92%;
+    --popover: 47 67% 93%;
     --popover-foreground: 222 47% 11%;
     
     --primary: 43 73% 48%; /* Dorado Mostaza exacto */

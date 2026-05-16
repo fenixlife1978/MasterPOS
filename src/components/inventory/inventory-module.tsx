@@ -59,7 +59,7 @@ export default function InventoryModule({ state }: InventoryModuleProps) {
   };
 
   return (
-    <div className="p-6 overflow-y-auto h-full scrollbar-thin">
+    <div className="p-6 overflow-y-auto h-full scrollbar-thin bg-background">
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-2xl font-headline font-black text-foreground">Inventario Premium</h2>
         <div className="flex gap-3">
@@ -74,16 +74,16 @@ export default function InventoryModule({ state }: InventoryModuleProps) {
           </div>
           <Button 
             onClick={() => setIsAdding(true)}
-            className="bg-primary hover:brightness-105 text-foreground font-black shadow-md border-b-4 border-yellow-600"
+            className="bg-primary hover:brightness-105 text-black font-black shadow-md border-b-4 border-yellow-600"
           >
             <Plus size={18} className="mr-2" /> AGREGAR PRODUCTO
           </Button>
         </div>
       </div>
 
-      <div className="bg-white border border-border rounded-xl overflow-hidden shadow-sm">
+      <div className="bg-card/50 border border-border rounded-xl overflow-hidden shadow-sm backdrop-blur-sm">
         <Table>
-          <TableHeader className="bg-muted">
+          <TableHeader className="bg-muted/50">
             <TableRow className="border-border hover:bg-transparent">
               <TableHead className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Código</TableHead>
               <TableHead className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Producto</TableHead>
@@ -99,13 +99,13 @@ export default function InventoryModule({ state }: InventoryModuleProps) {
                 <TableCell className="font-mono text-[11px] text-muted-foreground">{p.barcode}</TableCell>
                 <TableCell className="font-bold text-sm text-foreground">{p.name}</TableCell>
                 <TableCell>
-                  <span className="bg-primary text-foreground px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest shadow-sm">
+                  <span className="bg-primary text-black px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest shadow-sm">
                     {p.category}
                   </span>
                 </TableCell>
                 <TableCell className="font-bold text-sm text-foreground">{p.priceBs.toFixed(2)}</TableCell>
                 <TableCell className="text-center">
-                  <span className="bg-green-500 text-white px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest shadow-sm inline-block min-w-[90px] whitespace-nowrap text-center">
+                  <span className="bg-[#00FF00] text-black border border-black/10 px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest shadow-sm inline-block min-w-[100px] whitespace-nowrap text-center">
                     {p.stock} UDS
                   </span>
                 </TableCell>
@@ -203,7 +203,7 @@ export default function InventoryModule({ state }: InventoryModuleProps) {
           <DialogHeader className="sr-only">
             <DialogTitle>Detalles del Producto: {viewingProduct?.name}</DialogTitle>
             <DialogDescription>
-              Ficha técnica e historial de movimientos de inventario.
+              Ficha técnica e historial de movimientos de inventario del sistema LicoPOS Elite.
             </DialogDescription>
           </DialogHeader>
           {viewingProduct && (

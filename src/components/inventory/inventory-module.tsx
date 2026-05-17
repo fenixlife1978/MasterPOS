@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { usePOSState } from '@/hooks/use-pos-state';
-import { Plus, Search, Info, Pencil, Trash2, X, Barcode as BarcodeIcon, Tag, Boxes, TrendingUp } from 'lucide-react';
+import { Plus, Search, Info, Pencil, Trash2, X, Barcode as BarcodeIcon, Tag, Boxes, TrendingUp, DollarSign, Percent } from 'lucide-react';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,13 +15,56 @@ interface InventoryModuleProps {
   state: ReturnType<typeof usePOSState>;
 }
 
+// Extender Product para incluir campos de costo y ganancia
+interface ProductWithCost extends Product {
+  costBs: number;
+  costUsd: number;
+  profitPercent: number;
+}
+
 export default function InventoryModule({ state }: InventoryModuleProps) {
   const [search, setSearch] = useState('');
-  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [editingProduct, setEditingProduct] = useState<ProductWithCost | null>(null);
   const [viewingProduct, setViewingProduct] = useState<Product | null>(null);
   const [isAdding, setIsAdding] = useState(false);
+  const [costBs, setCostBs] = useState('');
+  const [costUsd, setCostUsd] = useState('');
+  const [profitPercent, setProfitPercent] = useState('');
+  const [calculatedPriceUsd, setCalculatedPriceUsd] = useState(0);
+  const [calculatedPriceBs, setCalculatedPriceBs] = useState(0);
   
   const { toast } = useToast();
+
+  // Calcular precios de venta automáticamente
+  useEffect(() => {
+    const costUsdNum = parseFloat(costUsd) || 0;
+    const profitNum = parseFloat(profitPercent) || 0;
+    const calculatedUsd = costUsdNum + (costUsdNum * profitNum / 100);
+    setCalculatedPriceUsd(calculatedUsd);
+    setCalculatedPriceBs(calculatedUsd * state.exchangeRate);
+  }, [costUsd, profitPercent, state.exchangeRate]);
+
+  // Cuando se edita un producto, cargar sus valores
+  useEffect(() => {
+    if (editingProduct) {
+      setCostBs(editingProduct.costBs?.toString() || '');
+      setCostUsd(editingProduct.costUsd?.toString() || '');
+      setProfitPercent(editingProduct.profitPercent?.toString() || '');
+      setCalculatedPriceUsd(editingProduct.priceUsd || 0);
+      setCalculatedPriceBs(editingProduct.priceBs || 0);
+    }
+  }, [editingProduct]);
+
+  // Limpiar formulario al agregar nuevo
+  useEffect(() => {
+    if (isAdding) {
+      setCostBs('');
+      setCostUsd('');
+      setProfitPercent('');
+      setCalculatedPriceUsd(0);
+      setCalculatedPriceBs(0);
+    }
+  }, [isAdding]);
 
   const filtered = state.products.filter(p => 
     p.name.toLowerCase().includes(search.toLowerCase()) || 
@@ -38,22 +81,34 @@ export default function InventoryModule({ state }: InventoryModuleProps) {
   const handleSave = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
+    
+    const costBsNum = parseFloat(formData.get('costBs') as string) || 0;
+    const costUsdNum = parseFloat(formData.get('costUsd') as string) || 0;
+    const profitPercentNum = parseFloat(formData.get('profitPercent') as string) || 0;
+    
+    // Calcular precio de venta
+    const salePriceUsd = costUsdNum + (costUsdNum * profitPercentNum / 100);
+    const salePriceBs = salePriceUsd * state.exchangeRate;
+    
     const data = {
       barcode: formData.get('barcode') as string,
       name: formData.get('name') as string,
       category: formData.get('category') as any,
-      priceBs: parseFloat(formData.get('priceBs') as string),
-      priceUsd: parseFloat(formData.get('priceUsd') as string),
+      costBs: costBsNum,
+      costUsd: costUsdNum,
+      profitPercent: profitPercentNum,
+      priceUsd: salePriceUsd,
+      priceBs: salePriceBs,
       stock: parseInt(formData.get('stock') as string),
     };
 
     if (isAdding) {
       state.addProduct({ id: Date.now(), ...data });
-      toast({ title: "Éxito", description: "Producto agregado." });
+      toast({ title: "Éxito", description: "Producto agregado correctamente." });
       setIsAdding(false);
     } else if (editingProduct) {
       state.updateProduct({ ...editingProduct, ...data });
-      toast({ title: "Éxito", description: "Producto actualizado." });
+      toast({ title: "Éxito", description: "Producto actualizado correctamente." });
       setEditingProduct(null);
     }
   };
@@ -88,7 +143,8 @@ export default function InventoryModule({ state }: InventoryModuleProps) {
               <TableHead className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Código</TableHead>
               <TableHead className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Producto</TableHead>
               <TableHead className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Categoría</TableHead>
-              <TableHead className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Precio (BS)</TableHead>
+              <TableHead className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Precio Venta (BS)</TableHead>
+              <TableHead className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Precio Venta (USD)</TableHead>
               <TableHead className="text-[10px] font-black uppercase text-muted-foreground tracking-widest text-center">Stock</TableHead>
               <TableHead className="text-[10px] font-black uppercase text-muted-foreground tracking-widest text-right">Acciones</TableHead>
             </TableRow>
@@ -104,6 +160,7 @@ export default function InventoryModule({ state }: InventoryModuleProps) {
                   </span>
                 </TableCell>
                 <TableCell className="font-bold text-sm text-foreground">{p.priceBs.toFixed(2)}</TableCell>
+                <TableCell className="font-bold text-sm text-secondary">${p.priceUsd.toFixed(2)}</TableCell>
                 <TableCell className="text-center">
                   <span className="bg-[#00FF00] text-black border border-black/10 px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest shadow-sm inline-block min-w-[100px] whitespace-nowrap text-center">
                     {p.stock} UDS
@@ -123,7 +180,7 @@ export default function InventoryModule({ state }: InventoryModuleProps) {
                       variant="ghost" 
                       size="sm" 
                       className="h-8 w-8 p-0 text-secondary hover:bg-secondary/10"
-                      onClick={() => setEditingProduct(p)}
+                      onClick={() => setEditingProduct(p as ProductWithCost)}
                     >
                       <Pencil size={16} />
                     </Button>
@@ -143,7 +200,7 @@ export default function InventoryModule({ state }: InventoryModuleProps) {
         </Table>
       </div>
 
-      {/* MODAL EDITAR / AGREGAR */}
+      {/* MODAL EDITAR / AGREGAR con campos de costo y ganancia */}
       <Dialog open={!!editingProduct || isAdding} onOpenChange={() => { setEditingProduct(null); setIsAdding(false); }}>
         <DialogContent className="bg-white border-border text-foreground max-w-md">
           <DialogHeader>
@@ -159,19 +216,97 @@ export default function InventoryModule({ state }: InventoryModuleProps) {
                 <Input name="barcode" defaultValue={editingProduct?.barcode} required className="bg-background border-border" />
               </div>
               <div className="col-span-2 space-y-1.5">
-                <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Nombre</label>
+                <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Nombre del Producto</label>
                 <Input name="name" defaultValue={editingProduct?.name} required className="bg-background border-border" />
               </div>
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Precio BS</label>
-                <Input name="priceBs" type="number" step="0.01" defaultValue={editingProduct?.priceBs} required className="bg-background border-border" />
+              
+              {/* Campos de Costo */}
+              <div className="col-span-2">
+                <div className="bg-muted/30 p-3 rounded-lg mb-2">
+                  <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest mb-2 flex items-center gap-1">
+                    <Tag size={10} /> DATOS DE COSTO
+                  </p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Costo (Bs)</label>
+                      <Input 
+                        name="costBs" 
+                        type="number" 
+                        step="0.01"
+                        value={costBs}
+                        onChange={(e) => setCostBs(e.target.value)}
+                        placeholder="0.00"
+                        required 
+                        className="bg-background border-border"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Costo (USD)</label>
+                      <Input 
+                        name="costUsd" 
+                        type="number" 
+                        step="0.01"
+                        value={costUsd}
+                        onChange={(e) => setCostUsd(e.target.value)}
+                        placeholder="0.00"
+                        required 
+                        className="bg-background border-border"
+                      />
+                    </div>
+                  </div>
+                </div>
               </div>
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Precio USD</label>
-                <Input name="priceUsd" type="number" step="0.01" defaultValue={editingProduct?.priceUsd} required className="bg-background border-border" />
+
+              {/* Porcentaje de Ganancia */}
+              <div className="col-span-2">
+                <div className="bg-primary/10 p-3 rounded-lg mb-2">
+                  <p className="text-[9px] font-bold text-primary uppercase tracking-widest mb-2 flex items-center gap-1">
+                    <Percent size={10} /> CONFIGURACIÓN DE GANANCIA
+                  </p>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">% de Ganancia</label>
+                    <Input 
+                      name="profitPercent" 
+                      type="number" 
+                      step="0.01"
+                      value={profitPercent}
+                      onChange={(e) => setProfitPercent(e.target.value)}
+                      placeholder="30"
+                      required 
+                      className="bg-background border-primary/30"
+                    />
+                  </div>
+                </div>
               </div>
+
+              {/* Precios de Venta Calculados */}
+              <div className="col-span-2">
+                <div className="bg-secondary/10 p-3 rounded-lg">
+                  <p className="text-[9px] font-bold text-secondary uppercase tracking-widest mb-2 flex items-center gap-1">
+                    <DollarSign size={10} /> PRECIOS DE VENTA (Calculados)
+                  </p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-0.5">
+                      <label className="text-[9px] font-bold text-muted-foreground">Precio Venta USD</label>
+                      <div className="text-lg font-black text-secondary">
+                        ${calculatedPriceUsd.toFixed(2)}
+                      </div>
+                    </div>
+                    <div className="space-y-0.5">
+                      <label className="text-[9px] font-bold text-muted-foreground">Precio Venta Bs</label>
+                      <div className="text-lg font-black text-foreground">
+                        Bs {calculatedPriceBs.toFixed(2)}
+                      </div>
+                    </div>
+                  </div>
+                  <p className="text-[8px] text-muted-foreground mt-2 text-center">
+                    Tasa BCV: {state.exchangeRate.toFixed(2)} Bs/USD
+                  </p>
+                </div>
+              </div>
+
               <div className="space-y-1.5">
-                <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Stock</label>
+                <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Stock Inicial</label>
                 <Input name="stock" type="number" defaultValue={editingProduct?.stock} required className="bg-background border-border" />
               </div>
               <div className="space-y-1.5">
@@ -189,6 +324,11 @@ export default function InventoryModule({ state }: InventoryModuleProps) {
                 </select>
               </div>
             </div>
+            
+            {/* Campos ocultos para pasar los valores calculados */}
+            <input type="hidden" name="priceUsd" value={calculatedPriceUsd} />
+            <input type="hidden" name="priceBs" value={calculatedPriceBs} />
+            
             <div className="flex gap-2 pt-4">
               <Button type="button" variant="ghost" onClick={() => { setEditingProduct(null); setIsAdding(false); }} className="flex-1 text-foreground">CANCELAR</Button>
               <Button type="submit" className="flex-1 bg-secondary text-white font-black">GUARDAR CAMBIOS</Button>
@@ -203,7 +343,7 @@ export default function InventoryModule({ state }: InventoryModuleProps) {
           <DialogHeader className="sr-only">
             <DialogTitle>Detalles del Producto: {viewingProduct?.name}</DialogTitle>
             <DialogDescription>
-              Ficha técnica e historial de movimientos de inventario del sistema LicoPOS Elite.
+              Ficha técnica e historial de movimientos de inventario del sistema MasterPOS.
             </DialogDescription>
           </DialogHeader>
           {viewingProduct && (
@@ -236,7 +376,7 @@ export default function InventoryModule({ state }: InventoryModuleProps) {
                   </div>
                   <div className="space-y-3 pt-4 border-t border-border">
                     <div className="flex justify-between items-center">
-                      <span className="text-[10px] font-bold text-muted-foreground uppercase">Precio BS</span>
+                      <span className="text-[10px] font-bold text-muted-foreground uppercase">Precio Bs</span>
                       <span className="text-lg font-black text-foreground">{viewingProduct.priceBs.toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between items-center">
@@ -271,7 +411,7 @@ export default function InventoryModule({ state }: InventoryModuleProps) {
                           </div>
                           <div className="text-right">
                             <div className="text-xs font-black text-destructive">-{t.items.find(i => i.productId === viewingProduct.id)?.qty} UDS</div>
-                            <div className="text-[9px] text-muted-foreground uppercase">{t.payMethod.toUpperCase()}</div>
+                            <div className="text-[9px] text-muted-foreground uppercase">{t.payMethod?.toUpperCase() || 'N/A'}</div>
                           </div>
                         </div>
                       ))}

@@ -38,8 +38,11 @@ export default function Topbar({ register, rate, onRateChange }: TopbarProps) {
 
   return (
     <header className="h-[56px] bg-secondary border-b border-black/10 flex items-center px-6 gap-6 shrink-0 z-40">
-      <div className="font-headline font-bold text-[22px] text-white tracking-tight">
-        LicoPOS Elite
+      {/* Logo con dos tonos */}
+      <div className="font-headline font-bold text-[22px] tracking-tight">
+        <span className="text-primary">Master</span>
+        <span className="text-white">POS</span>
+        <span className="text-white/40 text-[12px] ml-2 font-normal">pro evolution v1.0</span>
       </div>
       
       {/* Botón de Caja - Verde cuando abierta, Rojo cuando cerrada */}
@@ -57,7 +60,7 @@ export default function Topbar({ register, rate, onRateChange }: TopbarProps) {
       </div>
 
       <div className="ml-auto flex items-center gap-6">
-        {/* Tasa BCV - Solo lectura, no editable */}
+        {/* Tasa BCV - Solo lectura */}
         <div className="bg-black/30 px-5 py-1.5 rounded-full flex items-center gap-3 border border-white/5 shadow-inner">
           <RefreshCw size={16} className="text-primary" />
           <div className="flex items-center gap-2 text-[13px]">

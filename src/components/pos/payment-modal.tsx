@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { Calculator, X, CreditCard, DollarSign, Fingerprint, Smartphone, Plane, Plus, Trash2, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -17,7 +17,7 @@ interface PaymentModalProps {
   total: number;
   exchangeRate: number;
   onClose: () => void;
-  onConfirm: (data: { payments: PaymentItem[]; totalPaid: number; change: number }) => void;
+  onConfirm: (data: { payments: PaymentItem[]; totalPaid: number; change: number; method: string }) => void;
 }
 
 export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }: PaymentModalProps) {
@@ -27,7 +27,6 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
   const [activePaymentId, setActivePaymentId] = useState<string>(payments[0].id);
   const [buffer, setBuffer] = useState('');
   const [showPagoMovilModal, setShowPagoMovilModal] = useState(false);
-  const [tempPaymentMethod, setTempPaymentMethod] = useState<string>('');
   
   const methods = [
     { id: 'efectivo_bs', icon: DollarSign, label: 'BS', color: '#D4A017', textColor: 'black' },
@@ -38,10 +37,6 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
     { id: 'zelle', icon: Plane, label: 'ZELLE', color: '#E74C3C', textColor: 'white' },
   ];
 
-  const getMethodColor = (methodId: string) => {
-    return methods.find(m => m.id === methodId)?.color || '#D9D9D9';
-  };
-
   const getMethodLabel = (methodId: string) => {
     return methods.find(m => m.id === methodId)?.label || methodId;
   };
@@ -49,7 +44,6 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
   const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
   const remaining = Math.max(0, total - totalPaid);
   const change = Math.max(0, totalPaid - total);
-  const isPaid = totalPaid >= total;
 
   const activePayment = payments.find(p => p.id === activePaymentId);
   const isActiveUsd = activePayment?.method === 'usd_efectivo' || activePayment?.method === 'zelle';
@@ -72,7 +66,6 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
       amountToAdd = enteredAmount * exchangeRate;
     }
     
-    // No permitir exceder el total pendiente
     const maxAmount = remaining;
     const finalAmount = Math.min(amountToAdd, maxAmount);
     
@@ -108,10 +101,10 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [buffer, activePayment, remaining]);
 
-  const addPaymentMethod = (methodId: string) => {
+  const addPaymentMethod = () => {
     const newPayment = {
       id: crypto.randomUUID(),
-      method: methodId,
+      method: 'efectivo_bs',
       amount: 0
     };
     setPayments(prev => [...prev, newPayment]);
@@ -132,15 +125,6 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
     ));
   };
 
-  const handlePagoMovilRequest = () => {
-    if (activePayment && activePayment.method === 'pago_movil' && activePayment.amount > 0) {
-      setTempPaymentMethod(activePayment.method);
-      setShowPagoMovilModal(true);
-    } else {
-      handleSetAmount();
-    }
-  };
-
   const handlePagoMovilConfirm = (reference: string, bank: string) => {
     setPayments(prev => prev.map(p => 
       p.id === activePaymentId ? { ...p, reference, bank, lastDigits: reference.slice(-6) } : p
@@ -153,7 +137,17 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
       alert(`Falta pagar: BS ${remaining.toFixed(2)}`);
       return;
     }
-    onConfirm({ payments, totalPaid, change });
+    
+    // Obtener el método principal de pago (el primero con monto > 0)
+    const mainPayment = payments.find(p => p.amount > 0) || payments[0];
+    const method = mainPayment.method;
+    
+    onConfirm({ 
+      payments, 
+      totalPaid, 
+      change,
+      method 
+    });
   };
 
   const renderPaymentItem = (payment: PaymentItem, index: number) => {
@@ -312,7 +306,6 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
     <>
       <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm">
         <div className="h-full flex items-stretch justify-start">
-          {/* Modal alineado a la izquierda */}
           <div className="bg-[#D9D9D9] border-r border-black/20 shadow-2xl animate-in slide-in-from-left-5 w-full max-w-2xl h-full overflow-y-auto">
             <div className="p-5">
               <div className="flex justify-between items-center mb-4">
@@ -332,7 +325,7 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
                       Métodos de Pago ({payments.length})
                     </span>
                     <button
-                      onClick={() => addPaymentMethod('efectivo_bs')}
+                      onClick={addPaymentMethod}
                       className="text-xs text-[#D4A017] font-bold flex items-center gap-1 hover:underline"
                     >
                       <Plus size={12} /> Agregar

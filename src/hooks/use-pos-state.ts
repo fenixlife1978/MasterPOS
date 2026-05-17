@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
@@ -128,13 +127,17 @@ export function usePOSState() {
     setRegister(null);
   }, []);
 
-  const finalizeSale = useCallback((type: 'contado' | 'credito', paymentData: any) => {
+  const finalizeSale = useCallback((type: 'contado' | 'credito' | 'cobro_deuda', paymentData: any) => {
     if (!register || !register.isOpen) return;
 
     const subtotal = cart.reduce((acc, item) => acc + (item.priceBs * item.qty), 0);
     const iva = isIvaEnabled ? subtotal * 0.16 : 0;
     const total = subtotal + iva;
-    const totalUsd = total / exchangeRate;
+
+    // Para pago de deuda, el total es el monto pagado
+    const finalTotal = type === 'cobro_deuda' ? paymentData.totalPaid : total;
+    const finalSubtotal = type === 'cobro_deuda' ? paymentData.totalPaid : subtotal;
+    const finalIva = type === 'cobro_deuda' ? 0 : iva;
 
     let targetClientId = paymentData.clientId;
     let targetClientName = paymentData.clientName;
@@ -154,18 +157,25 @@ export function usePOSState() {
       targetClientId = nextClientId;
     }
 
+    // Obtener método de pago (para pagos compuestos, tomar el primero o concatenar)
+    let payMethod = paymentData.method;
+    if (paymentData.payments && paymentData.payments.length > 0) {
+      const methods = paymentData.payments.map((p: any) => p.method).join('+');
+      payMethod = methods;
+    }
+
     const tx: Transaction = {
       id: transactions.length + 1,
       date: new Date().toISOString(),
       type: type,
-      items: [...cart],
-      subtotal,
-      iva,
-      total,
-      totalUsd,
-      payMethod: paymentData.method,
-      paidBs: paymentData.amount || total,
-      change: Math.max(0, (paymentData.amount || total) - total),
+      items: type === 'cobro_deuda' ? [] : [...cart],
+      subtotal: finalSubtotal,
+      iva: finalIva,
+      total: finalTotal,
+      totalUsd: finalTotal / exchangeRate,
+      payMethod: payMethod || paymentData.payments?.[0]?.method || 'efectivo_bs',
+      paidBs: paymentData.totalPaid || paymentData.amount || finalTotal,
+      change: paymentData.change || 0,
       clientId: targetClientId,
       clientName: targetClientName
     };
@@ -173,10 +183,13 @@ export function usePOSState() {
     setTransactions(prev => [...prev, tx]);
     setRegister(prev => prev ? { ...prev, txs: [...prev.txs, tx] } : null);
 
-    setProducts(prev => prev.map(p => {
-      const cartItem = cart.find(ci => ci.productId === p.id);
-      return cartItem ? { ...p, stock: p.stock - cartItem.qty } : p;
-    }));
+    // Solo reducir stock si es venta normal (no cobro de deuda)
+    if (type !== 'cobro_deuda') {
+      setProducts(prev => prev.map(p => {
+        const cartItem = cart.find(ci => ci.productId === p.id);
+        return cartItem ? { ...p, stock: p.stock - cartItem.qty } : p;
+      }));
+    }
 
     if (type === 'credito') {
       const acc: Account = {
@@ -185,18 +198,23 @@ export function usePOSState() {
         date: tx.date,
         clientId: targetClientId,
         clientName: targetClientName,
-        clientCedula: targetClientCedula,
+        clientCedula: targetClientCedula || '',
         products: cart.map(i => `${i.name} x${i.qty}`).join(', '),
         amountBs: total,
-        amountUsd: totalUsd,
+        amountUsd: total / exchangeRate,
         paidAmount: 0,
         status: 'pendiente'
       };
       setAccounts(prev => [...prev, acc]);
-      setClients(prev => prev.map(c => c.id === targetClientId ? { ...c, debt: c.debt + total } : c));
+      setClients(prev => prev.map(c => c.id === targetClientId ? { ...c, debt: (c.debt || 0) + total } : c));
     }
 
-    setCart([]);
+    // Limpiar carrito solo si no es cobro de deuda
+    if (type !== 'cobro_deuda') {
+      setCart([]);
+    }
+
+    return tx;
   }, [cart, register, exchangeRate, transactions.length, accounts.length, clients, isIvaEnabled]);
 
   const applyAbono = useCallback((clientId: number, amount: number) => {
@@ -247,7 +265,7 @@ export function usePOSState() {
     setAccounts(updatedAccounts);
     setTransactions(prev => [...prev, tx]);
     setRegister(prev => prev ? { ...prev, txs: [...prev.txs, tx] } : null);
-    setClients(prev => prev.map(c => c.id === clientId ? { ...c, debt: Math.max(0, c.debt - amount) } : c));
+    setClients(prev => prev.map(c => c.id === clientId ? { ...c, debt: Math.max(0, (c.debt || 0) - amount) } : c));
   }, [register, clients, accounts, transactions.length, exchangeRate]);
 
   return {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { usePOSState } from '@/hooks/use-pos-state';
 import { Download, ChevronDown, ChevronRight, Wallet } from 'lucide-react';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
@@ -64,7 +64,6 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
       state.applyAbono(selectedClient.id, paymentData.totalPaid);
       setShowPaymentModal(false);
       setSelectedClient(null);
-      // Opcional: mostrar mensaje de éxito
       alert(`Pago registrado correctamente. Monto: BS ${paymentData.totalPaid.toFixed(2)}`);
     }
   };
@@ -145,10 +144,9 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
                   const hasDebt = client.totalDebt > 0;
                   
                   return (
-                    <>
+                    <React.Fragment key={client.clientId}>
                       {/* Fila principal del cliente */}
                       <TableRow 
-                        key={client.clientId} 
                         className="border-b border-[#9E9E9E] hover:bg-[#F5F5F5] cursor-pointer"
                         onClick={() => setExpandedClient(isExpanded ? null : client.clientId)}
                       >
@@ -246,7 +244,7 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
                           </TableCell>
                         </TableRow>
                       )}
-                    </>
+                    </React.Fragment>
                   );
                 })
               )}

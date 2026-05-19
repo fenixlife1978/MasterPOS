@@ -66,4 +66,39 @@ export interface CashRegister {
   closeTime?: string;
 }
 
-export type Page = 'pos' | 'inventario' | 'clientes' | 'cuentas' | 'caja';
+export type Page = 'dashboard' | 'pos' | 'inventario' | 'clientes' | 'cuentas' | 'caja';
+
+// ============================================
+// Tipos para Terminales / Múltiples Cajas
+// ============================================
+
+export interface Terminal {
+  id: number;
+  name: string;
+  description: string;
+  location: string;
+  status: 'active' | 'inactive' | 'maintenance';
+  assignedTo: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TerminalUser {
+  id: number;
+  terminalId: number;
+  userId: number;
+  role: 'cashier' | 'supervisor';
+  assignedAt: string;
+}
+
+export interface SystemUser {
+  id: number;
+  name: string;
+  email: string;
+  cedula: string;
+  phone: string;
+  role: 'admin' | 'cashier' | 'supervisor';
+  status: 'active' | 'inactive';
+  terminalId: number | null;
+  createdAt: string;
+}

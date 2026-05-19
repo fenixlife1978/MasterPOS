@@ -7,6 +7,9 @@ import { cn } from '@/lib/utils';
 import ClientPanel from './client-panel';
 import { usePOSState } from '@/hooks/use-pos-state';
 
+// Umbral mínimo de stock por defecto (si el producto no tiene configurado uno)
+const DEFAULT_MIN_STOCK = 5;
+
 interface ProductSearchProps {
   state: ReturnType<typeof usePOSState>;
   onAdd: (id: number) => boolean;
@@ -17,6 +20,35 @@ export default function ProductSearch({ state, onAdd }: ProductSearchProps) {
   const [isFocused, setIsFocused] = useState(false);
   const [isClientSearch, setIsClientSearch] = useState(false);
   const [viewingClient, setViewingClient] = useState<Client | null>(null);
+
+  // Obtener el stock mínimo de un producto
+  const getProductMinStock = (product: any) => {
+    return (product as any).minStock || DEFAULT_MIN_STOCK;
+  };
+
+  // Obtener color del stock
+  const getStockColor = (product: any) => {
+    const minStock = getProductMinStock(product);
+    if (product.stock === 0) {
+      return "text-red-600 bg-red-50"; // Rojo - Agotado
+    } else if (product.stock <= minStock) {
+      return "text-yellow-600 bg-yellow-50"; // Amarillo - Stock mínimo
+    } else {
+      return "text-green-600 bg-green-50"; // Verde - Stock suficiente
+    }
+  };
+
+  // Obtener texto del stock
+  const getStockText = (product: any) => {
+    const minStock = getProductMinStock(product);
+    if (product.stock === 0) {
+      return "AGOTADO";
+    } else if (product.stock <= minStock) {
+      return `STOCK MÍNIMO (${product.stock}/${minStock})`;
+    } else {
+      return `STOCK: ${product.stock}`;
+    }
+  };
 
   const productResults = useMemo(() => {
     if (!query.trim()) return [];
@@ -53,7 +85,7 @@ export default function ProductSearch({ state, onAdd }: ProductSearchProps) {
           "flex items-center bg-background border border-black/40 rounded-xl px-3 transition-all duration-200",
           isFocused && "border-black shadow-sm"
         )}>
-          <Search size={16} className="text-black" />
+          <Search size={16} className="text-black/40" />
           <input 
             id="pos-search-input"
             type="text" 
@@ -62,12 +94,12 @@ export default function ProductSearch({ state, onAdd }: ProductSearchProps) {
             onFocus={() => setIsFocused(true)}
             onBlur={() => setTimeout(() => setIsFocused(false), 200)}
             placeholder={isClientSearch ? "Buscar cliente por nombre o cédula..." : "Buscar producto o escanear..."}
-            className="flex-1 bg-transparent border-none text-black px-2 py-2.5 text-sm focus:outline-none font-body placeholder:text-black/40"
+            className="flex-1 bg-transparent border-none text-black px-2 py-2.5 text-sm focus:outline-none font-body placeholder:text-black/30"
           />
           {isClientSearch ? (
-             <X size={18} className="text-black cursor-pointer hover:text-black/60" onClick={() => { setIsClientSearch(false); setQuery(''); }} />
+             <X size={18} className="text-black/40 cursor-pointer hover:text-black" onClick={() => { setIsClientSearch(false); setQuery(''); }} />
           ) : (
-             <Barcode size={18} className="text-black" />
+             <Barcode size={18} className="text-black/60" />
           )}
         </div>
 
@@ -81,7 +113,7 @@ export default function ProductSearch({ state, onAdd }: ProductSearchProps) {
             "w-full mt-2.5 flex items-center justify-center gap-2 p-2.5 rounded-xl font-bold text-[13px] transition-all border border-black/40",
             isClientSearch || viewingClient 
               ? "bg-black/10 text-black border-black/60" 
-              : "bg-background/20 text-black hover:bg-black/10"
+              : "bg-background/20 text-black/80 hover:bg-black/5 hover:text-black"
           )}
         >
           <UserCircle size={18} />
@@ -94,32 +126,40 @@ export default function ProductSearch({ state, onAdd }: ProductSearchProps) {
           <div className="space-y-4 animate-in fade-in slide-in-from-top-2">
             {Object.entries(groupedProductResults).map(([category, items]) => (
               <div key={category} className="space-y-1">
-                <div className="text-[10px] font-bold text-black/60 uppercase tracking-[0.1em] px-2 mb-1">
+                <div className="text-[10px] font-bold text-black/40 uppercase tracking-[0.1em] px-2 mb-1">
                   {category}
                 </div>
-                {items.map(p => (
-                  <button 
-                    key={p.id}
-                    onClick={() => {
-                      onAdd(p.id);
-                      setQuery('');
-                    }}
-                    className="w-full flex items-center gap-3 p-2.5 rounded-lg bg-background border border-black/30 hover:border-black/60 hover:bg-white/10 transition-all text-left"
-                  >
-                    <div className="w-9 h-9 rounded-lg bg-black/5 flex items-center justify-center border border-black/20">
-                      <Barcode size={18} className="text-black" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-[13px] font-medium truncate text-black">{p.name}</div>
-                      <div className="flex items-center gap-3 mt-0.5">
-                        <span className="text-[12px] font-bold text-black">BS {p.priceBs.toFixed(2)}</span>
-                        <span className="text-[10px] text-black/50 uppercase font-bold">
-                          STOCK: {p.stock}
-                        </span>
+                {items.map(p => {
+                  const stockColor = getStockColor(p);
+                  const stockText = getStockText(p);
+                  
+                  return (
+                    <button 
+                      key={p.id}
+                      onClick={() => {
+                        onAdd(p.id);
+                        setQuery('');
+                      }}
+                      className="w-full flex items-center gap-3 p-2.5 rounded-lg bg-background border border-black/30 hover:border-black/60 hover:bg-white/10 transition-all text-left"
+                    >
+                      <div className="w-9 h-9 rounded-lg bg-black/5 flex items-center justify-center text-black/60 border border-black/20">
+                        <Barcode size={18} />
                       </div>
-                    </div>
-                  </button>
-                ))}
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[13px] font-medium truncate text-black">{p.name}</div>
+                        <div className="flex items-center gap-3 mt-0.5">
+                          <span className="text-[12px] font-bold text-black/80">BS {p.priceBs.toFixed(2)}</span>
+                          <span className={cn(
+                            "text-[10px] font-bold px-1.5 py-0.5 rounded-full",
+                            stockColor
+                          )}>
+                            {stockText}
+                          </span>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             ))}
           </div>
@@ -137,7 +177,7 @@ export default function ProductSearch({ state, onAdd }: ProductSearchProps) {
                 }}
                 className="w-full flex items-center gap-3 p-3 rounded-lg bg-background border border-black/30 hover:bg-white/10 hover:border-black/60 transition-all text-left group"
               >
-                <UserCircle size={24} className="text-black" />
+                <UserCircle size={24} className="text-black/60" />
                 <div className="flex-1">
                   <div className="text-[13px] font-medium text-black">{c.name}</div>
                   <div className="text-[11px] text-black/50">{c.cedula} | {c.phone}</div>

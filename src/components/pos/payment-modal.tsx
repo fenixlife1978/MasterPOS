@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from 'react';
-import { Calculator, X, CreditCard, DollarSign, Fingerprint, Smartphone, Plane, Plus, Trash2, Check } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Calculator, X, CreditCard, DollarSign, Fingerprint, Smartphone, Plane, ChevronDown, ChevronUp, Wallet, Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface PaymentItem {
@@ -21,32 +21,43 @@ interface PaymentModalProps {
 }
 
 export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }: PaymentModalProps) {
-  const [payments, setPayments] = useState<PaymentItem[]>([
-    { id: crypto.randomUUID(), method: 'efectivo_bs', amount: 0 }
-  ]);
-  const [activePaymentId, setActivePaymentId] = useState<string>(payments[0].id);
+  const [showCompoundModal, setShowCompoundModal] = useState(false);
+  const [showMethodsDropdown, setShowMethodsDropdown] = useState(false);
+  const [currentMethod, setCurrentMethod] = useState('efectivo_bs');
+  const [currentAmount, setCurrentAmount] = useState(0);
+  const [compoundPayments, setCompoundPayments] = useState<PaymentItem[]>([]);
   const [buffer, setBuffer] = useState('');
   const [showPagoMovilModal, setShowPagoMovilModal] = useState(false);
+  const [showChangeDialog, setShowChangeDialog] = useState(false);
+  const [pendingChange, setPendingChange] = useState(0);
+  
+  // Refs para inputs del modal de Pago Móvil
+  const pagoMovilInputRef = useRef<HTMLInputElement>(null);
+  const pagoMovilSelectRef = useRef<HTMLSelectElement>(null);
   
   const methods = [
     { id: 'efectivo_bs', icon: DollarSign, label: 'BS', color: '#D4A017', textColor: 'black' },
-    { id: 'tarjeta', icon: CreditCard, label: 'TARJ', color: '#1A2C4E', textColor: 'white' },
+    { id: 'tarjeta', icon: CreditCard, label: 'TARJETA', color: '#1A2C4E', textColor: 'white' },
     { id: 'usd_efectivo', icon: DollarSign, label: 'USD', color: '#2ECC71', textColor: 'black' },
-    { id: 'biopago', icon: Fingerprint, label: 'BIO', color: '#9B59B6', textColor: 'white' },
-    { id: 'pago_movil', icon: Smartphone, label: 'PM', color: '#E67E22', textColor: 'white' },
+    { id: 'biopago', icon: Fingerprint, label: 'BIOPAGO', color: '#9B59B6', textColor: 'white' },
+    { id: 'pago_movil', icon: Smartphone, label: 'PAGO MÓVIL', color: '#E67E22', textColor: 'white' },
     { id: 'zelle', icon: Plane, label: 'ZELLE', color: '#E74C3C', textColor: 'white' },
   ];
 
-  const getMethodLabel = (methodId: string) => {
-    return methods.find(m => m.id === methodId)?.label || methodId;
-  };
-
-  const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
+  const currentMethodInfo = methods.find(m => m.id === currentMethod);
+  const isUsd = currentMethod === 'usd_efectivo' || currentMethod === 'zelle';
+  
+  // En modo simple
+  const simpleAmount = currentAmount;
+  const totalPaid = simpleAmount;
   const remaining = Math.max(0, total - totalPaid);
-  const change = Math.max(0, totalPaid - total);
+  const changeAmount = Math.max(0, totalPaid - total);
+  const isFullyPaid = totalPaid >= total;
 
-  const activePayment = payments.find(p => p.id === activePaymentId);
-  const isActiveUsd = activePayment?.method === 'usd_efectivo' || activePayment?.method === 'zelle';
+  // En modo compuesto
+  const compoundTotalPaid = compoundPayments.reduce((sum, p) => sum + p.amount, 0);
+  const compoundRemaining = Math.max(0, total - compoundTotalPaid);
+  const compoundChange = Math.max(0, compoundTotalPaid - total);
 
   const handleInput = (val: string) => {
     if (val === 'del') {
@@ -60,38 +71,96 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
 
   const handleSetAmount = () => {
     const enteredAmount = parseFloat(buffer) || 0;
-    let amountToAdd = enteredAmount;
+    let amountToSet = enteredAmount;
     
-    if (isActiveUsd) {
-      amountToAdd = enteredAmount * exchangeRate;
+    if (isUsd) {
+      amountToSet = enteredAmount * exchangeRate;
     }
     
-    const maxAmount = remaining;
-    const finalAmount = Math.min(amountToAdd, maxAmount);
-    
-    setPayments(prev => prev.map(p => 
-      p.id === activePaymentId ? { ...p, amount: finalAmount } : p
-    ));
+    setCurrentAmount(amountToSet);
     setBuffer('');
   };
 
-  const handleKeyDown = (e: KeyboardEvent) => {
-    const key = e.key;
+  const handleCompoundAddPayment = () => {
+    const enteredAmount = parseFloat(buffer) || 0;
+    let amountToAdd = enteredAmount;
     
-    if (key >= '0' && key <= '9') {
-      handleInput(key);
-    } else if (key === '.') {
+    if (isUsd) {
+      amountToAdd = enteredAmount * exchangeRate;
+    }
+    
+    const newTotalPaid = compoundTotalPaid + amountToAdd;
+    
+    if (newTotalPaid > total) {
+      // Hay vuelto
+      setPendingChange(newTotalPaid - total);
+      const existingIndex = compoundPayments.findIndex(p => p.method === currentMethod);
+      let updatedPayments = [...compoundPayments];
+      if (existingIndex >= 0) {
+        updatedPayments[existingIndex] = { ...updatedPayments[existingIndex], amount: updatedPayments[existingIndex].amount + amountToAdd };
+      } else {
+        updatedPayments.push({ id: crypto.randomUUID(), method: currentMethod, amount: amountToAdd });
+      }
+      setCompoundPayments(updatedPayments);
+      setShowChangeDialog(true);
+    } else {
+      const existingIndex = compoundPayments.findIndex(p => p.method === currentMethod);
+      if (existingIndex >= 0) {
+        const updatedPayments = [...compoundPayments];
+        updatedPayments[existingIndex] = { ...updatedPayments[existingIndex], amount: updatedPayments[existingIndex].amount + amountToAdd };
+        setCompoundPayments(updatedPayments);
+      } else {
+        setCompoundPayments([...compoundPayments, { id: crypto.randomUUID(), method: currentMethod, amount: amountToAdd }]);
+      }
+    }
+    setBuffer('');
+  };
+
+  // Manejar teclado - SOLO si NO hay modales secundarios abiertos
+  const handleKeyDown = (e: KeyboardEvent) => {
+    // IMPORTANTE: Si el modal de Pago Móvil está abierto, NO procesar NADA
+    if (showPagoMovilModal) {
+      return;
+    }
+    
+    if (showChangeDialog) {
+      return;
+    }
+    
+    // Si el modal compuesto está abierto, procesar teclas para él
+    if (showCompoundModal) {
+      if (e.key >= '0' && e.key <= '9') {
+        handleInput(e.key);
+      } else if (e.key === '.') {
+        e.preventDefault();
+        handleInput('.');
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        handleCompoundAddPayment();
+      } else if (e.key === 'Backspace') {
+        e.preventDefault();
+        handleInput('del');
+      } else if (e.key === 'Escape') {
+        setShowCompoundModal(false);
+        setCompoundPayments([]);
+        setBuffer('');
+      }
+      return;
+    }
+    
+    // Modo simple
+    if (e.key >= '0' && e.key <= '9') {
+      handleInput(e.key);
+    } else if (e.key === '.') {
       e.preventDefault();
       handleInput('.');
-    } else if (key === 'Enter') {
+    } else if (e.key === 'Enter') {
       e.preventDefault();
-      if (remaining > 0) {
-        handleSetAmount();
-      }
-    } else if (key === 'Backspace') {
+      handleSetAmount();
+    } else if (e.key === 'Backspace') {
       e.preventDefault();
       handleInput('del');
-    } else if (key === 'Escape') {
+    } else if (e.key === 'Escape') {
       onClose();
     }
   };
@@ -99,120 +168,69 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
   useEffect(() => {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [buffer, activePayment, remaining]);
-
-  const addPaymentMethod = () => {
-    const newPayment = {
-      id: crypto.randomUUID(),
-      method: 'efectivo_bs',
-      amount: 0
-    };
-    setPayments(prev => [...prev, newPayment]);
-    setActivePaymentId(newPayment.id);
-  };
-
-  const removePaymentMethod = (id: string) => {
-    if (payments.length === 1) return;
-    setPayments(prev => prev.filter(p => p.id !== id));
-    if (activePaymentId === id) {
-      setActivePaymentId(payments[0].id);
-    }
-  };
-
-  const updatePaymentMethod = (id: string, methodId: string) => {
-    setPayments(prev => prev.map(p => 
-      p.id === id ? { ...p, method: methodId, amount: 0, reference: undefined, bank: undefined } : p
-    ));
-  };
-
-  const handlePagoMovilConfirm = (reference: string, bank: string) => {
-    setPayments(prev => prev.map(p => 
-      p.id === activePaymentId ? { ...p, reference, bank, lastDigits: reference.slice(-6) } : p
-    ));
-    setShowPagoMovilModal(false);
-  };
+  }, [buffer, currentMethod, showCompoundModal, showChangeDialog, showPagoMovilModal, compoundPayments]);
 
   const handleFinalConfirm = () => {
-    if (totalPaid < total) {
-      alert(`Falta pagar: BS ${remaining.toFixed(2)}`);
-      return;
+    if (showCompoundModal) {
+      if (compoundTotalPaid < total) {
+        alert(`Falta pagar: BS ${compoundRemaining.toFixed(2)}`);
+        return;
+      }
+      const mainPayment = compoundPayments.find(p => p.amount > 0) || { method: 'efectivo_bs' };
+      onConfirm({ 
+        payments: compoundPayments, 
+        totalPaid: compoundTotalPaid, 
+        change: compoundChange,
+        method: mainPayment.method 
+      });
+    } else {
+      if (currentAmount < total) {
+        alert(`Falta pagar: BS ${remaining.toFixed(2)}`);
+        return;
+      }
+      onConfirm({ 
+        payments: [{ id: crypto.randomUUID(), method: currentMethod, amount: currentAmount }], 
+        totalPaid: currentAmount, 
+        change: changeAmount,
+        method: currentMethod 
+      });
     }
-    
-    // Obtener el método principal de pago (el primero con monto > 0)
-    const mainPayment = payments.find(p => p.amount > 0) || payments[0];
-    const method = mainPayment.method;
-    
-    onConfirm({ 
-      payments, 
-      totalPaid, 
-      change,
-      method 
-    });
   };
 
-  const renderPaymentItem = (payment: PaymentItem, index: number) => {
-    const isActive = activePaymentId === payment.id;
-    const methodInfo = methods.find(m => m.id === payment.method);
-    const isUsd = payment.method === 'usd_efectivo' || payment.method === 'zelle';
-    const displayAmount = isUsd ? payment.amount / exchangeRate : payment.amount;
-    const currency = isUsd ? 'USD' : 'BS';
-    
-    return (
-      <div 
-        key={payment.id}
-        onClick={() => setActivePaymentId(payment.id)}
-        className={cn(
-          "p-3 rounded-xl border-2 transition-all cursor-pointer",
-          isActive ? "border-[#D4A017] bg-[#D4A017]/10" : "border-black/10 bg-white/50"
-        )}
-      >
-        <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center gap-2">
-            <select
-              value={payment.method}
-              onChange={(e) => updatePaymentMethod(payment.id, e.target.value)}
-              className="text-xs font-bold bg-transparent border border-black/20 rounded-lg px-2 py-1"
-              style={{ color: methodInfo?.textColor === 'white' ? '#1A2C4E' : 'black' }}
-            >
-              {methods.map(m => (
-                <option key={m.id} value={m.id}>{m.label}</option>
-              ))}
-            </select>
-            {payments.length > 1 && (
-              <button
-                onClick={(e) => { e.stopPropagation(); removePaymentMethod(payment.id); }}
-                className="text-red-500 hover:text-red-700"
-              >
-                <Trash2 size={14} />
-              </button>
-            )}
-          </div>
-          <span className="text-xs font-bold text-black/60">
-            #{index + 1}
-          </span>
-        </div>
-        
-        <div className="flex items-center justify-between">
-          <span className="text-xl font-black">
-            {currency} {displayAmount.toFixed(2)}
-          </span>
-          {payment.reference && (
-            <span className="text-[9px] text-black/50">
-              Ref: {payment.lastDigits}
-            </span>
-          )}
-        </div>
-        
-        {payment.bank && (
-          <div className="text-[8px] text-black/40 mt-1">
-            {payment.bank}
-          </div>
-        )}
-      </div>
-    );
+  const handleMontoExacto = () => {
+    if (showCompoundModal) {
+      const amountToAdd = compoundRemaining;
+      if (amountToAdd > 0) {
+        const existingIndex = compoundPayments.findIndex(p => p.method === currentMethod);
+        if (existingIndex >= 0) {
+          const updatedPayments = [...compoundPayments];
+          updatedPayments[existingIndex] = { ...updatedPayments[existingIndex], amount: updatedPayments[existingIndex].amount + amountToAdd };
+          setCompoundPayments(updatedPayments);
+        } else {
+          setCompoundPayments([...compoundPayments, { id: crypto.randomUUID(), method: currentMethod, amount: amountToAdd }]);
+        }
+      }
+    } else {
+      setCurrentAmount(total);
+    }
+    setBuffer('');
   };
 
-  // Modal Pago Móvil
+  const handleConfirmChange = () => {
+    setShowChangeDialog(false);
+    setPendingChange(0);
+  };
+
+  const getMethodLabel = (methodId: string) => {
+    return methods.find(m => m.id === methodId)?.label || methodId;
+  };
+
+  const MethodIcon = ({ methodId }: { methodId: string }) => {
+    const Icon = methods.find(m => m.id === methodId)?.icon || DollarSign;
+    return <Icon size={14} />;
+  };
+
+  // Modal Pago Móvil - CORREGIDO con refs y prevención de propagación
   const PagoMovilModal = () => {
     const [reference, setReference] = useState('');
     const [bank, setBank] = useState('');
@@ -222,79 +240,116 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
       'BANCO ACTIVO', 'BANCO CARONÍ', 'BANCO SOFITASA', 'BANCAMIGO', 'BANFANB', '100% BANCO'
     ];
 
+    const handleReferenceChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const value = e.target.value.replace(/\D/g, '').slice(0, 6);
+      setReference(value);
+    };
+
+    const handleConfirm = () => {
+      if (reference.length !== 6) {
+        alert('Debe ingresar los 6 últimos dígitos');
+        return;
+      }
+      if (!bank) {
+        alert('Debe seleccionar el banco');
+        return;
+      }
+      if (showCompoundModal) {
+        const existingIndex = compoundPayments.findIndex(p => p.method === currentMethod);
+        if (existingIndex >= 0) {
+          const updatedPayments = [...compoundPayments];
+          updatedPayments[existingIndex] = { 
+            ...updatedPayments[existingIndex], 
+            reference, 
+            bank, 
+            lastDigits: reference.slice(-6) 
+          };
+          setCompoundPayments(updatedPayments);
+        }
+      }
+      setShowPagoMovilModal(false);
+      setReference('');
+      setBank('');
+    };
+
+    // Prevenir que los eventos de teclado lleguen al modal padre
+    const handleKeyDownCapture = (e: React.KeyboardEvent) => {
+      e.stopPropagation();
+    };
+
     return (
-      <div className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4">
-        <div className="bg-[#D9D9D9] border border-black/20 rounded-2xl w-full max-w-md p-6 shadow-2xl animate-in zoom-in-95">
-          <div className="flex justify-between items-center mb-5">
-            <h3 className="text-xl font-headline font-black flex items-center gap-2 text-black">
-              <Smartphone size={24} className="text-[#E67E22]" /> Pago Móvil
+      <div 
+        className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-sm flex items-center justify-start p-4 ml-6"
+        onKeyDownCapture={handleKeyDownCapture}
+      >
+        <div className="bg-[#D9D9D9] border border-black/20 rounded-2xl w-full max-w-md p-5 shadow-2xl">
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-lg font-headline font-black flex items-center gap-2 text-black">
+              <Smartphone size={20} className="text-[#E67E22]" /> Pago Móvil
             </h3>
-            <button onClick={() => setShowPagoMovilModal(false)} className="text-black/50 hover:text-black">
-              <X size={20} />
+            <button onClick={() => {
+              setShowPagoMovilModal(false);
+              setReference('');
+              setBank('');
+            }} className="text-black/50 hover:text-black">
+              <X size={18} />
             </button>
           </div>
 
-          <div className="space-y-4">
+          <div className="space-y-3">
             <div>
-              <label className="block text-[11px] font-bold text-black uppercase tracking-widest mb-1.5">
-                Últimos 6 dígitos de la referencia
+              <label className="block text-[10px] font-bold text-black uppercase tracking-widest mb-1">
+                ÚLTIMOS 6 DÍGITOS DE LA REFERENCIA
               </label>
               <input 
+                ref={pagoMovilInputRef}
                 type="text"
                 maxLength={6}
                 value={reference}
-                onChange={(e) => setReference(e.target.value.replace(/\D/g, ''))}
+                onChange={handleReferenceChange}
                 placeholder="Ej: 123456"
-                className="w-full bg-white border border-black/20 rounded-lg px-4 py-3 text-base font-bold text-black text-center tracking-widest focus:outline-none focus:border-[#E67E22]"
+                autoFocus
+                onKeyDown={(e) => e.stopPropagation()}
+                className="w-full bg-white border border-black/20 rounded-lg px-3 py-2 text-base font-bold text-black text-center tracking-widest focus:outline-none focus:border-[#E67E22] focus:ring-2 focus:ring-[#E67E22]/50"
               />
+              <p className="text-[9px] text-black/40 mt-1 text-center">
+                {reference.length}/6 dígitos
+              </p>
             </div>
 
             <div>
-              <label className="block text-[11px] font-bold text-black uppercase tracking-widest mb-1.5">
-                Banco de Origen
+              <label className="block text-[10px] font-bold text-black uppercase tracking-widest mb-1">
+                BANCO DE ORIGEN
               </label>
               <select 
+                ref={pagoMovilSelectRef}
                 value={bank}
                 onChange={(e) => setBank(e.target.value)}
-                className="w-full bg-white border border-black/20 rounded-lg px-4 py-3 text-sm font-medium text-black focus:outline-none focus:border-[#E67E22]"
+                onKeyDown={(e) => e.stopPropagation()}
+                className="w-full bg-white border border-black/20 rounded-lg px-3 py-2 text-sm font-medium text-black focus:outline-none focus:border-[#E67E22] focus:ring-2 focus:ring-[#E67E22]/50"
               >
                 <option value="">Seleccione un banco</option>
                 {banks.map(b => <option key={b} value={b}>{b}</option>)}
               </select>
             </div>
-
-            <div className="bg-[#1A2C4E] rounded-xl p-3">
-              <div className="flex justify-between text-xs">
-                <span className="text-white/60">Monto a pagar:</span>
-                <span className="text-white font-bold">
-                  {isActiveUsd ? `USD ${(activePayment?.amount || 0).toFixed(2)}` : `BS ${(activePayment?.amount || 0).toFixed(2)}`}
-                </span>
-              </div>
-            </div>
           </div>
 
-          <div className="flex gap-3 mt-6">
+          <div className="flex gap-2 mt-4">
             <button 
-              onClick={() => setShowPagoMovilModal(false)}
-              className="flex-1 py-3 rounded-lg border border-black/20 bg-[#E8E8E8] text-black font-bold text-sm hover:bg-[#D4A017]"
+              onClick={() => {
+                setShowPagoMovilModal(false);
+                setReference('');
+                setBank('');
+              }}
+              className="flex-1 py-2 rounded-lg border border-black/20 bg-[#E8E8E8] text-black font-bold text-sm hover:bg-[#D4A017]"
             >
               CANCELAR
             </button>
             <button 
-              onClick={() => {
-                if (reference.length !== 6) {
-                  alert('Debe ingresar los 6 últimos dígitos');
-                  return;
-                }
-                if (!bank) {
-                  alert('Debe seleccionar el banco');
-                  return;
-                }
-                handlePagoMovilConfirm(reference, bank);
-              }}
-              className="flex-1 py-3 bg-[#E67E22] rounded-lg text-white font-black text-sm hover:brightness-110"
+              onClick={handleConfirm}
+              className="flex-1 py-2 bg-[#E67E22] rounded-lg text-white font-black text-sm hover:brightness-110"
             >
-              <Check size={16} className="inline mr-1" /> CONFIRMAR
+              CONFIRMAR
             </button>
           </div>
         </div>
@@ -302,139 +357,374 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
     );
   };
 
-  return (
-    <>
-      <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm">
-        <div className="h-full flex items-stretch justify-start">
-          <div className="bg-[#D9D9D9] border-r border-black/20 shadow-2xl animate-in slide-in-from-left-5 w-full max-w-2xl h-full overflow-y-auto">
-            <div className="p-5">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-lg font-headline font-black flex items-center gap-2 text-black">
-                  <Calculator size={20} className="text-[#D4A017]" /> Cobro Contado
-                </h3>
-                <button onClick={onClose} className="text-black/50 hover:text-black">
-                  <X size={18} />
-                </button>
+  // Diálogo de vuelto
+  const ChangeDialog = () => (
+    <div className="fixed inset-0 z-[300] bg-black/90 backdrop-blur-sm flex items-center justify-start p-4 ml-6">
+      <div className="bg-[#1A2C4E] border-2 border-[#2ECC71] rounded-2xl w-full max-w-sm p-6 shadow-2xl text-center">
+        <div className="w-16 h-16 mx-auto mb-3 rounded-full bg-[#2ECC71]/20 flex items-center justify-center">
+          <span className="text-3xl">💰</span>
+        </div>
+        
+        <h2 className="text-xl font-black text-white mb-2">¡VUELTO!</h2>
+        
+        <div className="bg-white/10 rounded-lg p-4 my-3">
+          <p className="text-[10px] text-white/60 uppercase tracking-widest mb-1">Monto a devolver</p>
+          <div className="text-4xl font-black text-[#2ECC71] mb-1">
+            BS {pendingChange.toFixed(2)}
+          </div>
+          <div className="text-xs text-white/40">
+            ≈ USD {(pendingChange / exchangeRate).toFixed(2)}
+          </div>
+        </div>
+        
+        <p className="text-white/60 text-[11px] mb-4">
+          El cliente pagó más del total. Entregue el vuelto y confirme.
+        </p>
+        
+        <div className="flex gap-2">
+          <button 
+            onClick={() => {
+              setShowChangeDialog(false);
+              setCompoundPayments([]);
+              setPendingChange(0);
+            }}
+            className="flex-1 py-2 rounded-lg border border-white/30 bg-transparent text-white font-bold text-sm hover:bg-white/10"
+          >
+            CORREGIR
+          </button>
+          <button 
+            onClick={handleConfirmChange}
+            className="flex-1 py-2 bg-[#2ECC71] rounded-lg text-black font-black text-sm hover:brightness-110 shadow-md"
+          >
+            CONFIRMAR
+          </button>
+        </div>
+        
+        <p className="text-[9px] text-white/30 mt-3">
+          ESC para corregir | ENTER para confirmar
+        </p>
+      </div>
+    </div>
+  );
+
+  // Modal de pago compuesto
+  const CompoundModal = () => (
+    <div className="fixed inset-0 z-[150] bg-black/80 backdrop-blur-sm flex items-center justify-start p-4 ml-6">
+      <div className="bg-[#D9D9D9] border border-black/20 rounded-2xl w-full max-w-lg p-4 shadow-2xl">
+        <div className="flex justify-between items-center mb-3">
+          <h3 className="text-base font-headline font-black flex items-center gap-2 text-black">
+            <Wallet size={16} className="text-[#D4A017]" /> Pago Compuesto
+          </h3>
+          <button onClick={() => setShowCompoundModal(false)} className="text-black/50 hover:text-black">
+            <X size={16} />
+          </button>
+        </div>
+
+        {/* Lista de pagos acumulados */}
+        <div className="mb-3 max-h-40 overflow-y-auto">
+          {compoundPayments.length === 0 ? (
+            <div className="text-center py-4 text-black/40 text-xs italic">
+              No hay pagos registrados
+            </div>
+          ) : (
+            <div className="space-y-1">
+              {compoundPayments.map((p, idx) => {
+                const isUsdPay = p.method === 'usd_efectivo' || p.method === 'zelle';
+                const displayAmount = isUsdPay ? p.amount / exchangeRate : p.amount;
+                const currency = isUsdPay ? 'USD' : 'BS';
+                return (
+                  <div key={p.id} className="flex justify-between items-center p-2 bg-white/50 rounded-lg border border-black/10">
+                    <div className="flex items-center gap-2">
+                      <MethodIcon methodId={p.method} />
+                      <span className="text-xs font-bold text-black">{getMethodLabel(p.method)}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-black text-[#2ECC71]">{currency} {displayAmount.toFixed(2)}</span>
+                      {p.reference && (
+                        <span className="text-[8px] text-black/50">Ref: {p.lastDigits}</span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Totales */}
+        <div className="bg-white/80 rounded-lg p-2 mb-3">
+          <div className="flex justify-between text-xs">
+            <span className="text-black/60">Total:</span>
+            <span className="font-bold text-black">BS {total.toFixed(2)}</span>
+          </div>
+          <div className="flex justify-between text-xs">
+            <span className="text-black/60">Pagado:</span>
+            <span className="font-bold text-[#2ECC71]">BS {compoundTotalPaid.toFixed(2)}</span>
+          </div>
+          <div className="flex justify-between text-sm pt-1">
+            <span className="text-black font-bold">FALTANTE:</span>
+            <span className={cn("font-black", compoundRemaining > 0 ? "text-[#E74C3C]" : "text-[#2ECC71]")}>
+              BS {compoundRemaining.toFixed(2)}
+            </span>
+          </div>
+        </div>
+
+        {/* Selector de método y monto */}
+        <div className="grid grid-cols-2 gap-2 mb-3">
+          <div className="relative">
+            <button
+              onClick={() => setShowMethodsDropdown(!showMethodsDropdown)}
+              className="w-full flex items-center justify-between p-2 bg-white border border-black/20 rounded-lg text-sm font-bold text-black"
+            >
+              <span className="flex items-center gap-2">
+                <MethodIcon methodId={currentMethod} />
+                {currentMethodInfo?.label}
+              </span>
+              {showMethodsDropdown ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            </button>
+            {showMethodsDropdown && (
+              <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-black/20 rounded-lg shadow-lg z-10">
+                {methods.map(m => (
+                  <button
+                    key={m.id}
+                    onClick={() => {
+                      setCurrentMethod(m.id);
+                      setShowMethodsDropdown(false);
+                      if (m.id === 'pago_movil') {
+                        setShowPagoMovilModal(true);
+                      }
+                    }}
+                    className="w-full flex items-center gap-2 p-2 text-xs font-bold text-black hover:bg-primary/10 transition-colors"
+                  >
+                    <m.icon size={12} />
+                    {m.label}
+                  </button>
+                ))}
               </div>
-
-              <div className="grid grid-cols-2 gap-5">
-                {/* Panel izquierdo - Lista de pagos */}
-                <div>
-                  <div className="flex items-center justify-between mb-3">
-                    <span className="text-[10px] font-bold text-black/60 uppercase tracking-widest">
-                      Métodos de Pago ({payments.length})
-                    </span>
-                    <button
-                      onClick={addPaymentMethod}
-                      className="text-xs text-[#D4A017] font-bold flex items-center gap-1 hover:underline"
-                    >
-                      <Plus size={12} /> Agregar
-                    </button>
-                  </div>
-                  <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-2 scrollbar-thin">
-                    {payments.map((p, idx) => renderPaymentItem(p, idx))}
-                  </div>
-                </div>
-
-                {/* Panel derecho - Calculadora y totales */}
-                <div>
-                  {/* Pantalla de calculadora */}
-                  <div className="bg-[#1A2C4E] rounded-xl p-4 border border-[#D4A017]/30 mb-4 text-right shadow-inner">
-                    <div className="text-[10px] text-white/60 uppercase font-bold tracking-widest">
-                      {activePayment ? getMethodLabel(activePayment.method) : 'SELECCIONE MÉTODO'}
-                    </div>
-                    <div className="text-3xl font-black text-white mt-1 tracking-tighter">
-                      {isActiveUsd ? `USD ${(parseFloat(buffer) || 0).toFixed(2)}` : `BS ${(parseFloat(buffer) || 0).toFixed(2)}`}
-                    </div>
-                    <div className="text-xs text-[#D4A017] font-bold mt-1">
-                      Equivalente: {isActiveUsd ? `BS ${((parseFloat(buffer) || 0) * exchangeRate).toFixed(2)}` : `USD ${((parseFloat(buffer) || 0) / exchangeRate).toFixed(2)}`}
-                    </div>
-                  </div>
-
-                  {/* Resumen de totales */}
-                  <div className="bg-white/80 rounded-xl p-3 mb-4 space-y-1">
-                    <div className="flex justify-between text-xs">
-                      <span className="text-black/60">Total a pagar:</span>
-                      <span className="font-bold text-black">BS {total.toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between text-xs">
-                      <span className="text-black/60">Total pagado:</span>
-                      <span className="font-bold text-[#2ECC71]">BS {totalPaid.toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between text-xs">
-                      <span className="text-black/60">Restante:</span>
-                      <span className={cn("font-bold", remaining > 0 ? "text-[#E74C3C]" : "text-[#2ECC71]")}>
-                        BS {remaining.toFixed(2)}
-                      </span>
-                    </div>
-                    {change > 0 && (
-                      <div className="flex justify-between text-xs pt-1 border-t border-black/10">
-                        <span className="text-black/60">Vuelto:</span>
-                        <span className="font-bold text-[#2ECC71]">BS {change.toFixed(2)}</span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Teclado numérico */}
-                  <div className="grid grid-cols-3 gap-1.5 mb-3">
-                    {[1,2,3,4,5,6,7,8,9].map(n => (
-                      <button key={n} onClick={() => handleInput(n.toString())} 
-                        className="h-10 bg-[#E8E8E8] border border-black/10 rounded-lg font-black text-base text-black hover:bg-[#D4A017] transition-all">
-                        {n}
-                      </button>
-                    ))}
-                    <button onClick={() => handleInput('del')} 
-                      className="h-10 bg-[#E8E8E8] border border-black/10 rounded-lg text-[#E74C3C] flex items-center justify-center hover:bg-[#E74C3C] hover:text-white">
-                      <Calculator size={18} />
-                    </button>
-                    <button onClick={() => handleInput('0')} 
-                      className="h-10 bg-[#E8E8E8] border border-black/10 rounded-lg font-black text-base text-black hover:bg-[#D4A017]">
-                      0
-                    </button>
-                    <button onClick={() => handleInput('.')} 
-                      className="h-10 bg-[#E8E8E8] border border-black/10 rounded-lg font-black text-base text-black hover:bg-[#D4A017]">
-                      .
-                    </button>
-                  </div>
-
-                  {/* Botones de acción */}
-                  <div className="flex gap-2">
-                    <button 
-                      onClick={() => {
-                        const maxAmount = remaining;
-                        setBuffer(maxAmount.toString());
-                      }}
-                      className="flex-1 py-2 rounded-lg border border-black/20 bg-[#D2B48C] text-black text-xs font-bold hover:bg-[#C4A57B]"
-                    >
-                      Restante
-                    </button>
-                    <button 
-                      onClick={handleSetAmount}
-                      disabled={remaining === 0 || !activePayment}
-                      className="flex-1 py-2 bg-[#D4A017] rounded-lg text-black text-xs font-black hover:brightness-110 disabled:opacity-30"
-                    >
-                      Asignar
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Botón final de confirmación */}
-              <div className="mt-4 pt-4 border-t border-black/10">
-                <button 
-                  onClick={handleFinalConfirm}
-                  disabled={totalPaid < total}
-                  className="w-full py-3 bg-[#2ECC71] rounded-xl text-white font-black text-base hover:brightness-110 disabled:opacity-30 transition-all shadow-md"
-                >
-                  {totalPaid >= total ? `COMPLETAR PAGO - Vuelto: BS ${change.toFixed(2)}` : `FALTA PAGAR: BS ${remaining.toFixed(2)}`}
-                </button>
-              </div>
+            )}
+          </div>
+          
+          <div className="bg-[#1A2C4E] rounded-lg p-2 text-right">
+            <div className="text-[8px] text-white/60 uppercase font-bold">Monto a asignar</div>
+            <div className="text-lg font-black text-white">
+              {isUsd ? `USD ${(parseFloat(buffer) || 0).toFixed(2)}` : `BS ${(parseFloat(buffer) || 0).toFixed(2)}`}
             </div>
           </div>
+        </div>
+
+        {/* Teclado numérico */}
+        <div className="grid grid-cols-3 gap-1 mb-3">
+          {[1,2,3,4,5,6,7,8,9].map(n => (
+            <button key={n} onClick={() => handleInput(n.toString())} 
+              className="h-8 bg-[#E8E8E8] border border-black/10 rounded-md font-black text-sm text-black hover:bg-[#D4A017] transition-all">
+              {n}
+            </button>
+          ))}
+          <button onClick={() => handleInput('del')} 
+            className="h-8 bg-[#E8E8E8] border border-black/10 rounded-md text-[#E74C3C] flex items-center justify-center hover:bg-[#E74C3C] hover:text-white">
+            <Calculator size={14} />
+          </button>
+          <button onClick={() => handleInput('0')} 
+            className="h-8 bg-[#E8E8E8] border border-black/10 rounded-md font-black text-sm text-black hover:bg-[#D4A017]">
+            0
+          </button>
+          <button onClick={() => handleInput('.')} 
+            className="h-8 bg-[#E8E8E8] border border-black/10 rounded-md font-black text-sm text-black hover:bg-[#D4A017]">
+            .
+          </button>
+        </div>
+
+        {/* Botones de acción */}
+        <div className="flex gap-2">
+          <button 
+            onClick={handleMontoExacto}
+            className="flex-1 py-1.5 rounded-md border border-black/20 bg-[#D2B48C] text-black text-[10px] font-bold hover:bg-[#C4A57B]"
+          >
+            Restante
+          </button>
+          <button 
+            onClick={handleCompoundAddPayment}
+            className="flex-1 py-1.5 bg-[#D4A017] rounded-md text-black text-[10px] font-black hover:brightness-110"
+          >
+            Asignar a {currentMethodInfo?.label}
+          </button>
+        </div>
+
+        {/* Botón final */}
+        <button 
+          onClick={handleFinalConfirm}
+          disabled={compoundTotalPaid < total}
+          className={cn(
+            "w-full mt-3 py-2 rounded-lg text-white font-black text-sm transition-all shadow-md",
+            compoundTotalPaid >= total 
+              ? "bg-[#2ECC71] hover:brightness-110" 
+              : "bg-gray-400 cursor-not-allowed"
+          )}
+        >
+          {compoundTotalPaid >= total 
+            ? (compoundChange > 0 
+                ? `COMPLETAR - Vuelto: BS ${compoundChange.toFixed(2)}` 
+                : `COMPLETAR PAGO`)
+            : `FALTAN: BS ${compoundRemaining.toFixed(2)}`}
+        </button>
+      </div>
+    </div>
+  );
+
+  return (
+    <>
+      {/* Modal principal */}
+      <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-start">
+        <div className="bg-[#D9D9D9] border border-black/20 rounded-2xl shadow-2xl w-full max-w-md p-5 ml-6">
+          <div className="flex justify-between items-center mb-3">
+            <h3 className="text-base font-headline font-black flex items-center gap-2 text-black">
+              <Calculator size={18} className="text-[#D4A017]" /> Cobro Contado
+            </h3>
+            <button onClick={onClose} className="text-black/50 hover:text-black">
+              <X size={18} />
+            </button>
+          </div>
+
+          <div className="flex gap-2 mb-3">
+            <button
+              onClick={() => {
+                setShowCompoundModal(true);
+                setCompoundPayments([]);
+                setCurrentAmount(0);
+                setBuffer('');
+              }}
+              className="flex-1 py-1.5 bg-[#E8E8E8] border border-black/20 rounded-md text-[10px] font-bold text-black hover:bg-[#D4A017] transition-all flex items-center justify-center gap-1"
+            >
+              <Plus size={12} /> PAGO COMPUESTO
+            </button>
+          </div>
+
+          <div className="bg-[#1A2C4E] rounded-lg p-3 mb-3 text-right shadow-inner">
+            <div className="text-[8px] text-white/60 uppercase font-bold tracking-widest">
+              {currentMethodInfo?.label}
+            </div>
+            <div className="text-2xl font-black text-white mt-0.5 tracking-tighter">
+              {isUsd ? `USD ${(parseFloat(buffer) || 0).toFixed(2)}` : `BS ${(parseFloat(buffer) || 0).toFixed(2)}`}
+            </div>
+            <div className="text-[9px] text-[#D4A017] font-bold">
+              ≈ {isUsd ? `BS ${((parseFloat(buffer) || 0) * exchangeRate).toFixed(2)}` : `USD ${((parseFloat(buffer) || 0) / exchangeRate).toFixed(2)}`}
+            </div>
+          </div>
+
+          <div className="bg-white/80 rounded-lg p-2 mb-3">
+            <div className="flex justify-between text-xs">
+              <span className="text-black/60">Total a pagar:</span>
+              <span className="font-bold text-black">BS {total.toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between text-xs">
+              <span className="text-black/60">Pagado:</span>
+              <span className="font-bold text-[#2ECC71]">BS {currentAmount.toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between text-sm pt-1">
+              <span className="text-black font-bold">FALTANTE:</span>
+              <span className={cn("font-black", remaining > 0 ? "text-[#E74C3C]" : "text-[#2ECC71]")}>
+                BS {remaining.toFixed(2)}
+              </span>
+            </div>
+            {changeAmount > 0 && (
+              <div className="flex justify-between text-base pt-1 mt-1 border-t border-[#2ECC71]">
+                <span className="text-black font-bold">VUELTO:</span>
+                <span className="font-black text-[#2ECC71]">BS {changeAmount.toFixed(2)}</span>
+              </div>
+            )}
+          </div>
+
+          <div className="relative mb-3">
+            <button
+              onClick={() => setShowMethodsDropdown(!showMethodsDropdown)}
+              className="w-full flex items-center justify-between p-2 bg-white border border-black/20 rounded-lg text-sm font-bold text-black"
+            >
+              <span className="flex items-center gap-2">
+                <MethodIcon methodId={currentMethod} />
+                {currentMethodInfo?.label}
+              </span>
+              {showMethodsDropdown ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+            </button>
+            {showMethodsDropdown && (
+              <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-black/20 rounded-lg shadow-lg z-10">
+                {methods.map(m => (
+                  <button
+                    key={m.id}
+                    onClick={() => {
+                      setCurrentMethod(m.id);
+                      setShowMethodsDropdown(false);
+                      if (m.id === 'pago_movil') {
+                        setShowPagoMovilModal(true);
+                      }
+                    }}
+                    className="w-full flex items-center gap-2 p-2 text-xs font-bold text-black hover:bg-primary/10 transition-colors"
+                  >
+                    <m.icon size={14} />
+                    {m.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-3 gap-1 mb-3">
+            {[1,2,3,4,5,6,7,8,9].map(n => (
+              <button key={n} onClick={() => handleInput(n.toString())} 
+                className="h-10 bg-[#E8E8E8] border border-black/10 rounded-lg font-black text-base text-black hover:bg-[#D4A017] transition-all">
+                {n}
+              </button>
+            ))}
+            <button onClick={() => handleInput('del')} 
+              className="h-10 bg-[#E8E8E8] border border-black/10 rounded-lg text-[#E74C3C] flex items-center justify-center hover:bg-[#E74C3C] hover:text-white">
+              <Calculator size={18} />
+            </button>
+            <button onClick={() => handleInput('0')} 
+              className="h-10 bg-[#E8E8E8] border border-black/10 rounded-lg font-black text-base text-black hover:bg-[#D4A017]">
+              0
+            </button>
+            <button onClick={() => handleInput('.')} 
+              className="h-10 bg-[#E8E8E8] border border-black/10 rounded-lg font-black text-base text-black hover:bg-[#D4A017]">
+              .
+            </button>
+          </div>
+
+          <div className="flex gap-2">
+            <button 
+              onClick={handleMontoExacto}
+              className="flex-1 py-2 rounded-lg border border-black/20 bg-[#D2B48C] text-black text-xs font-bold hover:bg-[#C4A57B]"
+            >
+              Monto Exacto
+            </button>
+            <button 
+              onClick={handleSetAmount}
+              className="flex-1 py-2 bg-[#D4A017] rounded-lg text-black text-xs font-black hover:brightness-110"
+            >
+              Aplicar Pago
+            </button>
+          </div>
+
+          <button 
+            onClick={handleFinalConfirm}
+            disabled={!isFullyPaid}
+            className={cn(
+              "w-full mt-3 py-2 rounded-lg text-white font-black text-sm transition-all shadow-md",
+              isFullyPaid 
+                ? "bg-[#2ECC71] hover:brightness-110" 
+                : "bg-gray-400 cursor-not-allowed"
+            )}
+          >
+            {isFullyPaid 
+              ? (changeAmount > 0 
+                  ? `COMPLETAR - Vuelto: BS ${changeAmount.toFixed(2)}` 
+                  : `COMPLETAR PAGO`)
+              : `FALTAN: BS ${remaining.toFixed(2)}`}
+          </button>
         </div>
       </div>
 
       {showPagoMovilModal && <PagoMovilModal />}
+      {showChangeDialog && <ChangeDialog />}
+      {showCompoundModal && <CompoundModal />}
     </>
   );
 }

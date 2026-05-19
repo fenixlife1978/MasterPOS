@@ -1,26 +1,13 @@
 "use client";
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Product, Client, Transaction, Account, CashRegister, Page, CartItem } from '@/lib/types';
+import { syncService } from '@/services/syncService';
 
-const INITIAL_PRODUCTS: Product[] = [
-  {id:1,barcode:'7791234567890',name:'Johnnie Walker Red Label 750ml',priceBs:912.50,priceUsd:25.00,stock:24,category:'Whisky'},
-  {id:2,barcode:'7791234567906',name:'Johnnie Walker Black Label 750ml',priceBs:1642.50,priceUsd:45.00,stock:12,category:'Whisky'},
-  {id:3,barcode:'7791234567913',name:'Santa Teresa 1796 750ml',priceBs:657.00,priceUsd:18.00,stock:18,category:'Ron'},
-  {id:4,barcode:'7791234567920',name:'Pampero Anejo Especial 750ml',priceBs:310.25,priceUsd:8.50,stock:30,category:'Ron'},
-  {id:5,barcode:'7791234567937',name:'Cerveza Polar Pilsen 6-Pack',priceBs:164.25,priceUsd:4.50,stock:120,category:'Cerveza'},
-  {id:6,barcode:'7791234567944',name:'Smirnoff Vodka 750ml',priceBs:438.00,priceUsd:12.00,stock:20,category:'Vodka'},
-  {id:7,barcode:'7791234567951',name:'Jose Cuervo Especial 750ml',priceBs:803.00,priceUsd:22.00,stock:15,category:'Tequila'},
-  {id:8,barcode:'7791234567968',name:'Casillero del Diablo Cabernet 750ml',priceBs:365.00,priceUsd:10.00,stock:22,category:'Vino'},
-  {id:9,barcode:'7791234567975',name:'Moet & Chandon Imperial 750ml',priceBs:2007.50,priceUsd:55.00,stock:8,category:'Vino'},
-  {id:10,barcode:'7791234567982',name:'Zhumur Durazno 750ml',priceBs:127.75,priceUsd:3.50,stock:40,category:'Licor'},
-];
+const INITIAL_PRODUCTS: Product[] = [];
+const INITIAL_CLIENTS: Client[] = [];
 
-const INITIAL_CLIENTS: Client[] = [
-  {id:1,name:'Carlos Mendoza',cedula:'V-12345678',phone:'0414-5551234',address:'Urb. El Rosal, Calle 5, Casa 12',debt:1500.00},
-  {id:2,name:'Maria Garcia',cedula:'V-23456789',phone:'0416-5555678',address:'Av. Principal de Las Delicias',debt:0},
-  {id:3,name:'Jose Rodriguez',cedula:'V-34567890',phone:'0424-5559012',address:'Centro Comercial Sambil, Local 45',debt:3200.50},
-];
+let firebaseLoaded = false;
 
 export function usePOSState() {
   const [products, setProducts] = useState<Product[]>([]);
@@ -33,33 +20,120 @@ export function usePOSState() {
   const [isIvaEnabled, setIsIvaEnabled] = useState(true);
   const [currentPage, setCurrentPage] = useState<Page>('pos');
   const [isHydrated, setIsHydrated] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  
+  const syncTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
-    const storedProds = localStorage.getItem('licopos_products');
-    const storedClients = localStorage.getItem('licopos_clients');
-    const storedTxs = localStorage.getItem('licopos_transactions');
-    const storedAccounts = localStorage.getItem('licopos_accounts');
-    const storedReg = localStorage.getItem('licopos_register');
-    const storedRate = localStorage.getItem('licopos_rate');
+    const loadData = async () => {
+      const storedProds = localStorage.getItem('licopos_products');
+      const storedClients = localStorage.getItem('licopos_clients');
+      const storedTxs = localStorage.getItem('licopos_transactions');
+      const storedAccounts = localStorage.getItem('licopos_accounts');
+      const storedReg = localStorage.getItem('licopos_register');
+      const storedRate = localStorage.getItem('licopos_rate');
 
-    setProducts(storedProds ? JSON.parse(storedProds) : INITIAL_PRODUCTS);
-    setClients(storedClients ? JSON.parse(storedClients) : INITIAL_CLIENTS);
-    setTransactions(storedTxs ? JSON.parse(storedTxs) : []);
-    setAccounts(storedAccounts ? JSON.parse(storedAccounts) : []);
-    setRegister(storedReg ? JSON.parse(storedReg) : null);
-    setExchangeRate(storedRate ? parseFloat(storedRate) : 36.50);
-    setIsHydrated(true);
+      let localProducts = storedProds ? JSON.parse(storedProds) : INITIAL_PRODUCTS;
+      let localClients = storedClients ? JSON.parse(storedClients) : INITIAL_CLIENTS;
+      let localTransactions = storedTxs ? JSON.parse(storedTxs) : [];
+      let localAccounts = storedAccounts ? JSON.parse(storedAccounts) : [];
+      let localRegister = storedReg ? JSON.parse(storedReg) : null;
+      let localRate = storedRate ? parseFloat(storedRate) : 36.50;
+
+      setProducts(localProducts);
+      setClients(localClients);
+      setTransactions(localTransactions);
+      setAccounts(localAccounts);
+      setRegister(localRegister);
+      setExchangeRate(localRate);
+      setIsHydrated(true);
+
+      if (!firebaseLoaded && typeof window !== 'undefined') {
+        firebaseLoaded = true;
+        setIsSyncing(true);
+        
+        try {
+          const fbProducts = await syncService.loadProducts();
+          if (fbProducts && fbProducts.length > 0) {
+            setProducts(fbProducts as Product[]);
+            localStorage.setItem('licopos_products', JSON.stringify(fbProducts));
+          }
+          
+          const fbClients = await syncService.loadClients();
+          if (fbClients && fbClients.length > 0) {
+            setClients(fbClients as Client[]);
+            localStorage.setItem('licopos_clients', JSON.stringify(fbClients));
+          }
+          
+          const fbTransactions = await syncService.loadTransactions();
+          if (fbTransactions && fbTransactions.length > 0) {
+            setTransactions(fbTransactions as Transaction[]);
+            localStorage.setItem('licopos_transactions', JSON.stringify(fbTransactions));
+          }
+          
+          const fbAccounts = await syncService.loadAccounts();
+          if (fbAccounts && fbAccounts.length > 0) {
+            setAccounts(fbAccounts as Account[]);
+            localStorage.setItem('licopos_accounts', JSON.stringify(fbAccounts));
+          }
+          
+          const fbRegister = await syncService.loadRegister();
+          if (fbRegister) {
+            setRegister(fbRegister as CashRegister);
+            localStorage.setItem('licopos_register', JSON.stringify(fbRegister));
+          }
+        } catch (error) {
+          console.error('Error syncing with Firebase:', error);
+        } finally {
+          setIsSyncing(false);
+        }
+      }
+    };
+    
+    loadData();
   }, []);
 
   useEffect(() => {
     if (!isHydrated) return;
+    
     localStorage.setItem('licopos_products', JSON.stringify(products));
     localStorage.setItem('licopos_clients', JSON.stringify(clients));
     localStorage.setItem('licopos_transactions', JSON.stringify(transactions));
     localStorage.setItem('licopos_accounts', JSON.stringify(accounts));
     localStorage.setItem('licopos_register', JSON.stringify(register));
     localStorage.setItem('licopos_rate', exchangeRate.toString());
+    
+    if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+    syncTimerRef.current = setTimeout(() => {
+      syncToFirebase();
+    }, 5000);
   }, [products, clients, transactions, accounts, register, exchangeRate, isHydrated]);
+
+  const syncToFirebase = useCallback(async () => {
+    if (!isHydrated) return;
+    
+    try {
+      await Promise.all([
+        syncService.saveProducts(products),
+        syncService.saveClients(clients),
+        syncService.saveRegister(register),
+      ]);
+      
+      const lastTx = transactions[transactions.length - 1];
+      if (lastTx) {
+        await syncService.saveTransaction(lastTx);
+      }
+      
+      const lastAccount = accounts[accounts.length - 1];
+      if (lastAccount) {
+        await syncService.saveAccount(lastAccount);
+      }
+      
+      console.log('✅ Firebase sync completed');
+    } catch (error) {
+      console.error('❌ Firebase sync error:', error);
+    }
+  }, [products, clients, transactions, accounts, register, isHydrated]);
 
   const addProduct = useCallback((p: Product) => {
     setProducts(prev => [...prev, p]);
@@ -115,16 +189,19 @@ export function usePOSState() {
   }, [products]);
 
   const openCashRegister = useCallback((amount: number) => {
-    setRegister({
+    const newRegister = {
       isOpen: true,
       openTime: new Date().toISOString(),
       openAmount: amount,
       txs: []
-    });
+    };
+    setRegister(newRegister);
+    syncService.saveRegister(newRegister).catch(console.error);
   }, []);
 
   const closeCashRegister = useCallback(() => {
     setRegister(null);
+    syncService.clearRegister().catch(console.error);
   }, []);
 
   const finalizeSale = useCallback((type: 'contado' | 'credito' | 'cobro_deuda', paymentData: any) => {
@@ -134,7 +211,6 @@ export function usePOSState() {
     const iva = isIvaEnabled ? subtotal * 0.16 : 0;
     const total = subtotal + iva;
 
-    // Para pago de deuda, el total es el monto pagado
     const finalTotal = type === 'cobro_deuda' ? paymentData.totalPaid : total;
     const finalSubtotal = type === 'cobro_deuda' ? paymentData.totalPaid : subtotal;
     const finalIva = type === 'cobro_deuda' ? 0 : iva;
@@ -157,7 +233,6 @@ export function usePOSState() {
       targetClientId = nextClientId;
     }
 
-    // Obtener método de pago (para pagos compuestos, tomar el primero o concatenar)
     let payMethod = paymentData.method;
     if (paymentData.payments && paymentData.payments.length > 0) {
       const methods = paymentData.payments.map((p: any) => p.method).join('+');
@@ -183,7 +258,6 @@ export function usePOSState() {
     setTransactions(prev => [...prev, tx]);
     setRegister(prev => prev ? { ...prev, txs: [...prev.txs, tx] } : null);
 
-    // Solo reducir stock si es venta normal (no cobro de deuda)
     if (type !== 'cobro_deuda') {
       setProducts(prev => prev.map(p => {
         const cartItem = cart.find(ci => ci.productId === p.id);
@@ -209,7 +283,6 @@ export function usePOSState() {
       setClients(prev => prev.map(c => c.id === targetClientId ? { ...c, debt: (c.debt || 0) + total } : c));
     }
 
-    // Limpiar carrito solo si no es cobro de deuda
     if (type !== 'cobro_deuda') {
       setCart([]);
     }
@@ -218,33 +291,51 @@ export function usePOSState() {
   }, [cart, register, exchangeRate, transactions.length, accounts.length, clients, isIvaEnabled]);
 
   const applyAbono = useCallback((clientId: number, amount: number) => {
-    if (!register || !register.isOpen) return;
+    console.log('🔄 Aplicando abono:', { clientId, amount });
+    
+    if (!register || !register.isOpen) {
+      console.log('❌ Caja no está abierta');
+      return;
+    }
 
     const client = clients.find(c => c.id === clientId);
-    if (!client) return;
+    if (!client) {
+      console.log('❌ Cliente no encontrado');
+      return;
+    }
 
     const clientAccounts = accounts
       .filter(a => a.clientId === clientId && a.status !== 'pagada')
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
+    console.log('📋 Cuentas pendientes:', clientAccounts.length);
+
+    if (clientAccounts.length === 0) {
+      console.log('⚠️ No hay cuentas pendientes');
+      return;
+    }
+
     let remaining = amount;
-    const updatedAccounts = [...accounts];
-
-    for (const accIdx in updatedAccounts) {
-      const acc = updatedAccounts[accIdx];
-      if (acc.clientId !== clientId || acc.status === 'pagada' || remaining <= 0) continue;
-
+    const updatedAccounts = accounts.map(acc => {
+      if (acc.clientId !== clientId || acc.status === 'pagada' || remaining <= 0) {
+        return acc;
+      }
+      
       const owed = acc.amountBs - (acc.paidAmount || 0);
       if (remaining >= owed) {
-        acc.paidAmount = acc.amountBs;
-        acc.status = 'pagada';
+        const newPaidAmount = acc.amountBs;
+        const newStatus: 'pagada' = 'pagada';
         remaining -= owed;
+        console.log(`✅ Cuenta ${acc.id} pagada completamente. Owed: ${owed}, Restante: ${remaining}`);
+        return { ...acc, paidAmount: newPaidAmount, status: newStatus };
       } else {
-        acc.paidAmount = (acc.paidAmount || 0) + remaining;
-        acc.status = 'parcial';
+        const newPaidAmount = (acc.paidAmount || 0) + remaining;
+        const newStatus: 'parcial' = 'parcial';
+        console.log(`🟡 Cuenta ${acc.id} pagada parcialmente. Nuevo paidAmount: ${newPaidAmount}, Restante: 0`);
         remaining = 0;
+        return { ...acc, paidAmount: newPaidAmount, status: newStatus };
       }
-    }
+    });
 
     const tx: Transaction = {
       id: transactions.length + 1,
@@ -265,7 +356,11 @@ export function usePOSState() {
     setAccounts(updatedAccounts);
     setTransactions(prev => [...prev, tx]);
     setRegister(prev => prev ? { ...prev, txs: [...prev.txs, tx] } : null);
-    setClients(prev => prev.map(c => c.id === clientId ? { ...c, debt: Math.max(0, (c.debt || 0) - amount) } : c));
+    
+    const newDebt = Math.max(0, (client.debt || 0) - amount);
+    setClients(prev => prev.map(c => c.id === clientId ? { ...c, debt: newDebt } : c));
+    
+    console.log(`✅ Abono aplicado. Cliente: ${client.name}, Deuda anterior: ${client.debt}, Monto: ${amount}, Nueva deuda: ${newDebt}`);
   }, [register, clients, accounts, transactions.length, exchangeRate]);
 
   return {
@@ -279,6 +374,7 @@ export function usePOSState() {
     isIvaEnabled, setIsIvaEnabled,
     currentPage, setCurrentPage,
     finalizeSale, applyAbono,
-    isHydrated
+    isHydrated,
+    isSyncing
   };
 }

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { Supplier, SupplierInvoice, SupplierPayment } from '@/lib/types';
+import { registerSupplierPaymentEntry } from '@/services/accountingService';
 
 const STORAGE_KEY_SUPPLIERS = 'masterpos_suppliers';
 const STORAGE_KEY_INVOICES = 'masterpos_supplier_invoices';
@@ -76,7 +77,7 @@ export function useSuppliers() {
     return newInvoice;
   }, [invoices, suppliers]);
 
-  const addPayment = useCallback((payment: Omit<SupplierPayment, 'id'>) => {
+  const addPayment = useCallback(async (payment: Omit<SupplierPayment, 'id'>) => {
     const newId = payments.length > 0 ? Math.max(...payments.map(p => p.id)) + 1 : 1;
     const newPayment: SupplierPayment = { ...payment, id: newId };
     setPayments(prev => [...prev, newPayment]);
@@ -97,6 +98,9 @@ export function useSuppliers() {
         setSuppliers(prev => prev.map(s => 
           s.id === payment.supplierId ? { ...s, totalDebt: newDebt } : s
         ));
+        
+        // REGISTRO ATÓMICO EN LIBRO DIARIO
+        await registerSupplierPaymentEntry(newPayment, invoice, supplier);
       }
     }
     return newPayment;
@@ -107,7 +111,7 @@ export function useSuppliers() {
   }, [invoices]);
 
   const getInvoicePayments = useCallback((invoiceId: number) => {
-    return payments.filter(p => p.invoiceId === invoiceId).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    return payments.filter(p => p.invoiceId === invoiceId).sort((a, b) => new Date(a.date).getTime() - new Date(a.date).getTime());
   }, [payments]);
 
   return {

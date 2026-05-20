@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 import { Transaction, CartItem } from '@/lib/types';
+import { registerReturnEntry } from '@/services/accountingService';
 
 interface ReturnItem {
   productId: number;
@@ -29,7 +30,6 @@ export default function ReturnsModule() {
   const [returnType, setReturnType] = useState<'total' | 'partial'>('total');
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  // Filtrar transacciones de tipo 'contado' (solo ventas en efectivo/contado)
   const salesTransactions = transactions.filter(t => t.type === 'contado').sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
   const filteredSales = salesTransactions.filter(t =>
@@ -43,7 +43,6 @@ export default function ReturnsModule() {
     setReturnType(type);
     
     if (type === 'total') {
-      // Devolución total: marcar todos los items
       const items: ReturnItem[] = transaction.items.map(item => ({
         productId: item.productId,
         name: item.name,
@@ -55,7 +54,6 @@ export default function ReturnsModule() {
       setReturnItems(items);
       setShowConfirmModal(true);
     } else {
-      // Devolución parcial: mostrar modal para seleccionar cantidades
       const items: ReturnItem[] = transaction.items.map(item => ({
         productId: item.productId,
         name: item.name,
@@ -85,7 +83,7 @@ export default function ReturnsModule() {
     return returnItems.reduce((sum, item) => sum + item.amount, 0);
   };
 
-  const processReturn = () => {
+  const processReturn = async () => {
     if (!selectedTransaction || !register?.isOpen) {
       setMessage({ type: 'error', text: 'La caja debe estar abierta para procesar devoluciones' });
       return;
@@ -125,7 +123,7 @@ export default function ReturnsModule() {
       clientName: selectedTransaction.clientName
     };
 
-    // 2. Actualizar stock (sumar lo devuelto)
+    // 2. Actualizar stock
     const updatedProducts = products.map(product => {
       const returnedItem = returnItems.find(item => item.productId === product.id);
       if (returnedItem && returnedItem.returnQty > 0) {
@@ -134,16 +132,18 @@ export default function ReturnsModule() {
       return product;
     });
 
-    // 3. Actualizar caja (restar el monto devuelto del efectivo)
+    // 3. Actualizar caja
     const updatedTxs = register.txs ? [...register.txs, returnTransaction] : [returnTransaction];
     const updatedRegister = { ...register, txs: updatedTxs };
 
-    // 4. Actualizar estados
+    // 4. Registrar en Libro Diario (Atómico)
+    await registerReturnEntry(returnTransaction, selectedTransaction.id);
+
+    // 5. Actualizar estados y storage
     setTransactions([...transactions, returnTransaction]);
     setProducts(updatedProducts);
     setRegister(updatedRegister);
 
-    // 5. Guardar en localStorage
     localStorage.setItem('licopos_transactions', JSON.stringify([...transactions, returnTransaction]));
     localStorage.setItem('licopos_products', JSON.stringify(updatedProducts));
     localStorage.setItem('licopos_register', JSON.stringify(updatedRegister));
@@ -252,7 +252,6 @@ export default function ReturnsModule() {
         </Table>
       </div>
 
-      {/* Modal de devolución parcial */}
       <Dialog open={showReturnModal} onOpenChange={setShowReturnModal}>
         <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-lg p-0 overflow-hidden rounded-2xl shadow-xl">
           <DialogHeader className="sr-only"><DialogTitle>Devolución Parcial</DialogTitle></DialogHeader>
@@ -303,7 +302,6 @@ export default function ReturnsModule() {
         </DialogContent>
       </Dialog>
 
-      {/* Modal de confirmación de devolución total */}
       <Dialog open={showConfirmModal} onOpenChange={setShowConfirmModal}>
         <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-md p-0 overflow-hidden rounded-2xl shadow-xl">
           <DialogHeader className="sr-only"><DialogTitle>Confirmar Devolución Total</DialogTitle></DialogHeader>
@@ -325,7 +323,7 @@ export default function ReturnsModule() {
                 <li>Repondrá el stock de los productos devueltos</li>
                 <li>Restará el monto de la caja (mismo método de pago)</li>
                 <li>Creará un registro de devolución en el historial</li>
-                <li>Generará el asiento contable correspondiente</li>
+                <li>Generará el asiento contable correspondiente en tiempo real</li>
               </ul>
             </div>
             <div className="bg-[#F5F5F5] p-4 border-t flex justify-end gap-3">

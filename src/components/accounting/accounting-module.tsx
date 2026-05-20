@@ -1,9 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef } from 'react';
+import { useState } from 'react';
 import { useAccounting } from '@/hooks/use-accounting';
-import { usePOSState } from '@/hooks/use-pos-state';
-import { useSuppliers } from '@/hooks/use-suppliers';
 import { Plus, Search, X, TrendingUp, TrendingDown, DollarSign } from 'lucide-react';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
@@ -13,9 +11,7 @@ import { cn } from '@/lib/utils';
 import ExpenseModal from './expense-modal';
 
 export default function AccountingModule() {
-  const { entries, addEntry, getTotalIngresos, getTotalEgresos, getBalance } = useAccounting();
-  const { transactions } = usePOSState();
-  const { invoices, payments } = useSuppliers();
+  const { entries, addEntry, getTotalIngresos, getTotalEgresos } = useAccounting();
   const [search, setSearch] = useState('');
   const [filterType, setFilterType] = useState<'todos' | 'ingreso' | 'egreso'>('todos');
   const [startDate, setStartDate] = useState('');
@@ -23,66 +19,9 @@ export default function AccountingModule() {
   const [showExpenseModal, setShowExpenseModal] = useState(false);
   const [showEntryDetail, setShowEntryDetail] = useState(false);
   const [selectedEntry, setSelectedEntry] = useState<any>(null);
-  const hasInitialized = useRef(false);
 
-  // Sincronizar ventas con el libro contable (una sola vez)
-  useEffect(() => {
-    if (hasInitialized.current) return;
-    hasInitialized.current = true;
-    
-    // Limpiar entradas duplicadas primero
-    const uniqueEntries = new Map();
-    entries.forEach(entry => {
-      const key = `${entry.referenceType}_${entry.referenceId}`;
-      if (!uniqueEntries.has(key)) {
-        uniqueEntries.set(key, entry);
-      }
-    });
-    
-    // Sincronizar ventas
-    const saleIds = new Set(entries.filter(e => e.referenceType === 'sale').map(e => e.referenceId));
-    transactions.filter(t => t.type === 'contado').forEach(t => {
-      if (!saleIds.has(t.id)) {
-        addEntry({
-          date: t.date.split('T')[0],
-          type: 'ingreso',
-          category: 'ventas',
-          concept: `Venta #${t.id}`,
-          description: `Venta al contado - Cliente: ${t.clientName || 'Cliente Final'}`,
-          amount: t.total,
-          referenceId: t.id,
-          referenceType: 'sale'
-        });
-      }
-    });
-  }, [transactions.length]);
-
-  // Sincronizar pagos a proveedores (una sola vez)
-  useEffect(() => {
-    if (!hasInitialized.current) return;
-    
-    const paymentIds = new Set(entries.filter(e => e.referenceType === 'supplier_payment').map(e => e.referenceId));
-    payments.forEach(p => {
-      if (!paymentIds.has(p.id)) {
-        const invoice = invoices.find(i => i.id === p.invoiceId);
-        addEntry({
-          date: p.date.split('T')[0],
-          type: 'egreso',
-          category: 'compra_mercancia',
-          concept: `Pago a proveedor - Factura #${invoice?.invoiceNumber || ''}`,
-          description: `Pago por compra de mercancía. Método: ${p.method}`,
-          amount: p.amount,
-          referenceId: p.id,
-          referenceType: 'supplier_payment'
-        });
-      }
-    });
-  }, [payments.length]);
-
-  // Obtener entradas únicas por id
-  const uniqueEntries = Array.from(new Map(entries.map(e => [e.id, e])).values());
-  
-  const filteredEntries = uniqueEntries.filter(entry => {
+  // Filtrar entradas basadas en búsqueda y fechas
+  const filteredEntries = entries.filter(entry => {
     if (filterType !== 'todos' && entry.type !== filterType) return false;
     if (search && !entry.concept.toLowerCase().includes(search.toLowerCase()) && !entry.description.toLowerCase().includes(search.toLowerCase())) return false;
     if (startDate && new Date(entry.date) < new Date(startDate)) return false;
@@ -94,8 +33,8 @@ export default function AccountingModule() {
   const totalEgresos = filteredEntries.filter(e => e.type === 'egreso').reduce((sum, e) => sum + e.amount, 0);
   const balance = totalIngresos - totalEgresos;
 
-  const handleExpenseConfirm = (data: any) => {
-    addEntry({
+  const handleExpenseConfirm = async (data: any) => {
+    await addEntry({
       date: data.date,
       type: 'egreso',
       category: data.category,
@@ -108,7 +47,12 @@ export default function AccountingModule() {
     alert('Egreso registrado correctamente');
   };
 
-  const formatDate = (dateStr: string) => new Date(dateStr).toLocaleDateString('es-VE');
+  const formatDate = (dateStr: string) => {
+    if (!dateStr) return '—';
+    // Ajustar para evitar problemas de zona horaria al mostrar solo fecha
+    const [year, month, day] = dateStr.split('-');
+    return `${day}/${month}/${year}`;
+  };
 
   const getCategoryLabel = (categoryId: string) => {
     const categories: Record<string, string> = {
@@ -122,7 +66,10 @@ export default function AccountingModule() {
       servicios_profesionales: 'Servicios Profesionales',
       reparacion_local: 'Reparación de Local',
       sueldos: 'Sueldos',
-      otros: 'Otros Gastos'
+      otros: 'Otros Gastos',
+      devolucion: 'Devolución',
+      cobro_deuda: 'Cobro de Deuda',
+      cuenta_por_cobrar: 'Venta a Crédito'
     };
     return categories[categoryId] || categoryId;
   };
@@ -132,7 +79,7 @@ export default function AccountingModule() {
       <div className="flex justify-between items-center mb-6">
         <div>
           <h2 className="text-2xl font-headline font-black text-black">Libro Diario - Contabilidad</h2>
-          <p className="text-sm text-black/50 mt-1">Registro de Ingresos y Egresos</p>
+          <p className="text-sm text-black/50 mt-1">Registro de Ingresos y Egresos en Tiempo Real</p>
         </div>
         <Button onClick={() => setShowExpenseModal(true)} className="bg-red-600 hover:bg-red-700 text-white font-black shadow-md">
           <Plus size={18} className="mr-2" /> REGISTRAR EGRESO
@@ -193,12 +140,12 @@ export default function AccountingModule() {
                   <TableCell className="text-center"><button className="text-primary text-[10px] font-bold hover:underline">Ver</button></TableCell>
                 </TableRow>
               ))}
-              {filteredEntries.length === 0 && (<TableRow><TableCell colSpan={7} className="text-center py-10 text-black/50 italic">No hay movimientos registrados</TableCell></TableRow>)}
+              {filteredEntries.length === 0 && (<TableRow><TableCell colSpan={7} className="text-center py-10 text-black/50 italic">No hay movimientos registrados para este período</TableCell></TableRow>)}
             </TableBody>
             <tfoot className="bg-[#F0F0F0] sticky bottom-0">
-              <TableRow className="border-t-2 border-[#9E9E9E]"><TableCell colSpan={5} className="p-3 text-right font-black text-black">TOTAL INGRESOS:</TableCell><TableCell className="p-3 text-right font-black text-green-600">+ Bs {totalIngresos.toFixed(2)}</TableCell><TableCell></TableCell></TableRow>
-              <TableRow><TableCell colSpan={5} className="p-3 text-right font-black text-black">TOTAL EGRESOS:</TableCell><TableCell className="p-3 text-right font-black text-red-600">- Bs {totalEgresos.toFixed(2)}</TableCell><TableCell></TableCell></TableRow>
-              <TableRow className="bg-[#E8E8E8]"><TableCell colSpan={5} className="p-3 text-right font-black text-black">BALANCE:</TableCell><TableCell className={cn("p-3 text-right font-black text-lg", balance >= 0 ? "text-green-600" : "text-red-600")}>Bs {balance.toFixed(2)}</TableCell><TableCell></TableCell></TableRow>
+              <TableRow className="border-t-2 border-[#9E9E9E]"><TableCell colSpan={5} className="p-3 text-right font-black text-black">TOTAL FILTRADO INGRESOS:</TableCell><TableCell className="p-3 text-right font-black text-green-600">+ Bs {totalIngresos.toFixed(2)}</TableCell><TableCell></TableCell></TableRow>
+              <TableRow><TableCell colSpan={5} className="p-3 text-right font-black text-black">TOTAL FILTRADO EGRESOS:</TableCell><TableCell className="p-3 text-right font-black text-red-600">- Bs {totalEgresos.toFixed(2)}</TableCell><TableCell></TableCell></TableRow>
+              <TableRow className="bg-[#E8E8E8]"><TableCell colSpan={5} className="p-3 text-right font-black text-black">BALANCE PERIODO:</TableCell><TableCell className={cn("p-3 text-right font-black text-lg", balance >= 0 ? "text-green-600" : "text-red-600")}>Bs {balance.toFixed(2)}</TableCell><TableCell></TableCell></TableRow>
             </tfoot>
           </Table>
         </div>

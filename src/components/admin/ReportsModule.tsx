@@ -292,10 +292,10 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
                   <tr className="border-t-2 border-[#9E9E9E]">
                     <td className="p-4 font-black text-black">TOTAL HISTÓRICO ACUMULADO</td>
                     <td className="p-4 text-right font-black text-green-600 text-base">
-                      Bs {monthlyConsolidated.reduce((s, r) => s + row.income, 0).toFixed(2)}
+                      Bs {monthlyConsolidated.reduce((s, r) => s + r.income, 0).toFixed(2)}
                     </td>
                     <td className="p-4 text-right font-black text-red-600 text-base">
-                      Bs {monthlyConsolidated.reduce((s, r) => s + row.expense, 0).toFixed(2)}
+                      Bs {monthlyConsolidated.reduce((s, r) => s + r.expense, 0).toFixed(2)}
                     </td>
                     <td className="p-4 text-right">
                       {(() => {

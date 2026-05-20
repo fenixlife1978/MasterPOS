@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useAccounting } from '@/hooks/use-accounting';
-import { Plus, Search, X, TrendingUp, TrendingDown, DollarSign } from 'lucide-react';
+import { Plus, Search, X, TrendingUp, TrendingDown, DollarSign, Filter } from 'lucide-react';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -14,15 +14,35 @@ export default function AccountingModule() {
   const { entries, addEntry, getTotalIngresos, getTotalEgresos } = useAccounting();
   const [search, setSearch] = useState('');
   const [filterType, setFilterType] = useState<'todos' | 'ingreso' | 'egreso'>('todos');
+  const [filterCategory, setFilterCategory] = useState('todas');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [showExpenseModal, setShowExpenseModal] = useState(false);
   const [showEntryDetail, setShowEntryDetail] = useState(false);
   const [selectedEntry, setSelectedEntry] = useState<any>(null);
 
-  // Filtrar entradas basadas en búsqueda y fechas
+  // Mapeo de categorías para el filtro
+  const categoriesList = [
+    { id: 'ventas', label: 'Ventas' },
+    { id: 'compra_mercancia', label: 'Compra de Mercancía' },
+    { id: 'servicios_publicos', label: 'Servicios Públicos' },
+    { id: 'alquiler', label: 'Alquiler' },
+    { id: 'telefonia', label: 'Telefonía' },
+    { id: 'impuestos_municipales', label: 'Impuestos Municipales' },
+    { id: 'declaracion_renta', label: 'Declaración de Renta' },
+    { id: 'servicios_profesionales', label: 'Servicios Profesionales' },
+    { id: 'reparacion_local', label: 'Reparación de Local' },
+    { id: 'sueldos', label: 'Sueldos' },
+    { id: 'otros', label: 'Otros Gastos' },
+    { id: 'devolucion', label: 'Devolución' },
+    { id: 'cobro_deuda', label: 'Cobro de Deuda' },
+    { id: 'cuenta_por_cobrar', label: 'Venta a Crédito' }
+  ];
+
+  // Filtrar entradas basadas en búsqueda, tipo, categoría y fechas
   const filteredEntries = entries.filter(entry => {
     if (filterType !== 'todos' && entry.type !== filterType) return false;
+    if (filterCategory !== 'todas' && entry.category !== filterCategory) return false;
     if (search && !entry.concept.toLowerCase().includes(search.toLowerCase()) && !entry.description.toLowerCase().includes(search.toLowerCase())) return false;
     if (startDate && new Date(entry.date) < new Date(startDate)) return false;
     if (endDate && new Date(entry.date) > new Date(endDate)) return false;
@@ -49,29 +69,13 @@ export default function AccountingModule() {
 
   const formatDate = (dateStr: string) => {
     if (!dateStr) return '—';
-    // Ajustar para evitar problemas de zona horaria al mostrar solo fecha
     const [year, month, day] = dateStr.split('-');
     return `${day}/${month}/${year}`;
   };
 
   const getCategoryLabel = (categoryId: string) => {
-    const categories: Record<string, string> = {
-      ventas: 'Ventas',
-      compra_mercancia: 'Compra de Mercancía',
-      servicios_publicos: 'Servicios Públicos',
-      alquiler: 'Alquiler',
-      telefonia: 'Telefonía',
-      impuestos_municipales: 'Impuestos Municipales',
-      declaracion_renta: 'Declaración de Renta',
-      servicios_profesionales: 'Servicios Profesionales',
-      reparacion_local: 'Reparación de Local',
-      sueldos: 'Sueldos',
-      otros: 'Otros Gastos',
-      devolucion: 'Devolución',
-      cobro_deuda: 'Cobro de Deuda',
-      cuenta_por_cobrar: 'Venta a Crédito'
-    };
-    return categories[categoryId] || categoryId;
+    const found = categoriesList.find(c => c.id === categoryId);
+    return found ? found.label : categoryId;
   };
 
   return (
@@ -102,13 +106,25 @@ export default function AccountingModule() {
       </div>
 
       <div className="bg-white border border-[#9E9E9E] rounded-xl p-4 mb-6">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-          <div className="relative"><Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-black/50" /><Input placeholder="Buscar..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9 h-10 bg-white border-[#9E9E9E]" /></div>
-          <select value={filterType} onChange={(e) => setFilterType(e.target.value as any)} className="h-10 bg-white border border-[#9E9E9E] rounded-lg px-3 text-sm">
-            <option value="todos">Todos</option>
-            <option value="ingreso">Ingresos</option>
-            <option value="egreso">Egresos</option>
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+          <div className="relative">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-black/50" />
+            <Input placeholder="Buscar por concepto..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9 h-10 bg-white border-[#9E9E9E]" />
+          </div>
+          
+          <select value={filterType} onChange={(e) => { setFilterType(e.target.value as any); setFilterCategory('todas'); }} className="h-10 bg-white border border-[#9E9E9E] rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50">
+            <option value="todos">Todos los Tipos</option>
+            <option value="ingreso">Solo Ingresos</option>
+            <option value="egreso">Solo Egresos</option>
           </select>
+
+          <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)} className="h-10 bg-white border border-[#9E9E9E] rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50">
+            <option value="todas">Todas las Categorías</option>
+            {categoriesList.map(cat => (
+              <option key={cat.id} value={cat.id}>{cat.label}</option>
+            ))}
+          </select>
+
           <Input type="date" placeholder="Desde" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="bg-white border-[#9E9E9E]" />
           <Input type="date" placeholder="Hasta" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="bg-white border-[#9E9E9E]" />
         </div>
@@ -140,7 +156,7 @@ export default function AccountingModule() {
                   <TableCell className="text-center"><button className="text-primary text-[10px] font-bold hover:underline">Ver</button></TableCell>
                 </TableRow>
               ))}
-              {filteredEntries.length === 0 && (<TableRow><TableCell colSpan={7} className="text-center py-10 text-black/50 italic">No hay movimientos registrados para este período</TableCell></TableRow>)}
+              {filteredEntries.length === 0 && (<TableRow><TableCell colSpan={7} className="text-center py-10 text-black/50 italic">No hay movimientos que coincidan con los filtros</TableCell></TableRow>)}
             </TableBody>
             <tfoot className="bg-[#F0F0F0] sticky bottom-0">
               <TableRow className="border-t-2 border-[#9E9E9E]"><TableCell colSpan={5} className="p-3 text-right font-black text-black">TOTAL FILTRADO INGRESOS:</TableCell><TableCell className="p-3 text-right font-black text-green-600">+ Bs {totalIngresos.toFixed(2)}</TableCell><TableCell></TableCell></TableRow>

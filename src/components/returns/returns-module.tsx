@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState } from 'react';
@@ -38,7 +39,17 @@ export default function ReturnsModule() {
     new Date(t.date).toLocaleDateString().includes(search)
   );
 
+  // Verificar si una venta ya tiene una devolución asociada
+  const isTransactionReturned = (saleId: number) => {
+    return transactions.some(t => t.type === 'devolucion' && (t as any).originalSaleId === saleId);
+  };
+
   const openReturnModal = (transaction: Transaction, type: 'total' | 'partial') => {
+    if (isTransactionReturned(transaction.id)) {
+      alert('Esta venta ya tiene una devolución procesada.');
+      return;
+    }
+
     setSelectedTransaction(transaction);
     setReturnType(type);
     
@@ -89,6 +100,11 @@ export default function ReturnsModule() {
       return;
     }
 
+    if (isTransactionReturned(selectedTransaction.id)) {
+      setMessage({ type: 'error', text: 'Esta venta ya ha sido devuelta anteriormente.' });
+      return;
+    }
+
     const totalReturn = calculateTotalReturn();
     if (totalReturn <= 0) {
       setMessage({ type: 'error', text: 'No hay productos seleccionados para devolver' });
@@ -107,7 +123,7 @@ export default function ReturnsModule() {
         category: 'Otro' as any
       }));
 
-    const returnTransaction: Transaction = {
+    const returnTransaction: Transaction & { originalSaleId: number } = {
       id: transactions.length + 1,
       date: new Date().toISOString(),
       type: 'devolucion',
@@ -120,7 +136,8 @@ export default function ReturnsModule() {
       paidBs: totalReturn,
       change: 0,
       clientId: selectedTransaction.clientId,
-      clientName: selectedTransaction.clientName
+      clientName: selectedTransaction.clientName,
+      originalSaleId: selectedTransaction.id // Vincular con la venta original
     };
 
     // 2. Actualizar stock
@@ -174,7 +191,7 @@ export default function ReturnsModule() {
       <div className="flex justify-between items-center mb-6">
         <div>
           <h2 className="text-2xl font-headline font-black text-black">Devoluciones</h2>
-          <p className="text-sm text-black/50 mt-1">Gestión de devoluciones de productos (Total o Parcial)</p>
+          <p className="text-sm text-black/50 mt-1">Gestión de devoluciones de productos (Una sola vez por venta)</p>
         </div>
         <div className="flex gap-3">
           <div className="relative w-64">
@@ -212,35 +229,44 @@ export default function ReturnsModule() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filteredSales.map((t) => (
-              <TableRow key={t.id} className="border-b border-[#9E9E9E] hover:bg-[#F5F5F5]">
-                <TableCell className="font-bold text-black">#{t.id}</TableCell>
-                <TableCell className="text-xs text-black/60">{formatDate(t.date)}</TableCell>
-                <TableCell className="text-sm text-black">{t.clientName || 'Cliente Final'}</TableCell>
-                <TableCell className="text-xs text-black/70">
-                  {t.items.map(i => `${i.name} x${i.qty}`).join(', ')}
-                </TableCell>
-                <TableCell className="text-right font-bold text-black">Bs {t.total.toFixed(2)}</TableCell>
-                <TableCell className="text-center">
-                  <div className="flex justify-center gap-2">
-                    <button
-                      onClick={() => openReturnModal(t, 'total')}
-                      className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-[10px] font-bold rounded-lg transition-all"
-                      title="Devolución total"
-                    >
-                      DEV. TOTAL
-                    </button>
-                    <button
-                      onClick={() => openReturnModal(t, 'partial')}
-                      className="px-3 py-1 bg-yellow-600 hover:bg-yellow-700 text-white text-[10px] font-bold rounded-lg transition-all"
-                      title="Devolución parcial"
-                    >
-                      DEV. PARCIAL
-                    </button>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))}
+            {filteredSales.map((t) => {
+              const alreadyReturned = isTransactionReturned(t.id);
+              return (
+                <TableRow key={t.id} className="border-b border-[#9E9E9E] hover:bg-[#F5F5F5]">
+                  <TableCell className="font-bold text-black">#{t.id}</TableCell>
+                  <TableCell className="text-xs text-black/60">{formatDate(t.date)}</TableCell>
+                  <TableCell className="text-sm text-black">{t.clientName || 'Cliente Final'}</TableCell>
+                  <TableCell className="text-xs text-black/70">
+                    {t.items.map(i => `${i.name} x${i.qty}`).join(', ')}
+                  </TableCell>
+                  <TableCell className="text-right font-bold text-black">Bs {t.total.toFixed(2)}</TableCell>
+                  <TableCell className="text-center">
+                    <div className="flex justify-center gap-2">
+                      <button
+                        disabled={alreadyReturned}
+                        onClick={() => openReturnModal(t, 'total')}
+                        className={cn(
+                          "px-3 py-1 text-white text-[10px] font-bold rounded-lg transition-all",
+                          alreadyReturned ? "bg-gray-400 cursor-not-allowed" : "bg-red-600 hover:bg-red-700"
+                        )}
+                      >
+                        {alreadyReturned ? 'PROCESADA' : 'DEV. TOTAL'}
+                      </button>
+                      <button
+                        disabled={alreadyReturned}
+                        onClick={() => openReturnModal(t, 'partial')}
+                        className={cn(
+                          "px-3 py-1 text-white text-[10px] font-bold rounded-lg transition-all",
+                          alreadyReturned ? "bg-gray-400 cursor-not-allowed" : "bg-yellow-600 hover:bg-yellow-700"
+                        )}
+                      >
+                        {alreadyReturned ? 'DEVUELTO' : 'DEV. PARCIAL'}
+                      </button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
             {filteredSales.length === 0 && (
               <TableRow>
                 <TableCell colSpan={6} className="text-center py-10 text-black/50 italic">
@@ -322,8 +348,8 @@ export default function ReturnsModule() {
               <ul className="text-[10px] text-black/50 list-disc pl-4 space-y-0.5">
                 <li>Repondrá el stock de los productos devueltos</li>
                 <li>Restará el monto de la caja (mismo método de pago)</li>
-                <li>Creará un registro de devolución en el historial</li>
-                <li>Generará el asiento contable correspondiente en tiempo real</li>
+                <li>Creará un registro de devolución vinculado a la venta</li>
+                <li>Generará el asiento contable de egreso automáticamente</li>
               </ul>
             </div>
             <div className="bg-[#F5F5F5] p-4 border-t flex justify-end gap-3">

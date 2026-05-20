@@ -244,7 +244,6 @@ export function usePOSState() {
       payMethod = methods;
     }
 
-    // Usar ISO estandar para evitar desfases de zona horaria
     const tx: Transaction = {
       id: transactions.length + 1,
       date: new Date().toISOString(),
@@ -288,18 +287,15 @@ export function usePOSState() {
       setAccounts(prev => [...prev, acc]);
       setClients(prev => prev.map(c => c.id === targetClientId ? { ...c, debt: (c.debt || 0) + total } : c));
       
-      // Registrar asiento contable de crédito
       const client = clients.find(c => c.id === targetClientId);
       if (client) await registerCreditEntry(tx, client);
     }
 
     if (type === 'contado') {
-      // Registrar asiento contable de venta
       await registerSaleEntry(tx);
     }
 
     if (type === 'cobro_deuda') {
-      // Registrar asiento contable de cobro de deuda
       const client = clients.find(c => c.id === targetClientId);
       if (client) await registerDebtPaymentEntry(tx, client);
     }
@@ -362,7 +358,6 @@ export function usePOSState() {
     setClients(prev => prev.map(c => c.id === clientId ? { ...c, debt: Math.max(0, (c.debt || 0) - amount) } : c));
   }, [register, clients, accounts, transactions.length, exchangeRate]);
 
-  // Función para reiniciar la base de datos
   const resetDatabase = useCallback(async () => {
     if (confirm('⚠️ ¿Estás seguro? Esto ELIMINARÁ TODOS los datos')) {
       setProducts([]);

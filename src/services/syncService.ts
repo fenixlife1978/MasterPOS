@@ -453,3 +453,101 @@ export const syncService = {
   getPendingQueueLength: () => pendingQueue.length,
   forceSync: processQueue
 };
+
+// ============================================
+// MÚLTIPLES TERMINALES / CAJAS
+// ============================================
+
+// Guardar estado de caja por terminal
+export const saveRegisterByTerminal = async (terminalId: string, register: any) => {
+  const cleaned = cleanObject(register);
+  if (!isOnline) {
+    addToQueue({ type: 'saveRegister', data: { terminalId, register: cleaned } });
+    return;
+  }
+  
+  try {
+    const registerRef = ref(rtdb, `registers/${terminalId}`);
+    const toSave = { ...cleaned, updatedAt: Date.now() };
+    delete toSave.txs;
+    await set(registerRef, toSave);
+  } catch (error) {
+    console.error('Error saving register by terminal:', error);
+    addToQueue({ type: 'saveRegister', data: { terminalId, register: cleaned } });
+  }
+};
+
+// Cargar estado de caja por terminal
+export const loadRegisterByTerminal = async (terminalId: string): Promise<any> => {
+  try {
+    const registerRef = ref(rtdb, `registers/${terminalId}`);
+    const snapshot = await get(registerRef);
+    const data = snapshot.val();
+    if (data && typeof window !== 'undefined') {
+      localStorage.setItem(`cache_register_${terminalId}`, JSON.stringify(data));
+    }
+    return data;
+  } catch (error) {
+    console.error('Error loading register by terminal:', error);
+    if (typeof window !== 'undefined') {
+      const cached = localStorage.getItem(`cache_register_${terminalId}`);
+      if (cached) return JSON.parse(cached);
+    }
+    return null;
+  }
+};
+
+// Suscribirse a cambios de caja por terminal (tiempo real)
+export const subscribeToRegisterByTerminal = (terminalId: string, callback: (data: any) => void) => {
+  const registerRef = ref(rtdb, `registers/${terminalId}`);
+  const unsubscribe = onValue(registerRef, (snapshot) => {
+    callback(snapshot.val());
+  });
+  listeners.push(unsubscribe);
+  return unsubscribe;
+};
+
+// Obtener todas las cajas activas (para administrador)
+export const getAllActiveRegisters = async (): Promise<any[]> => {
+  try {
+    const registersRef = ref(rtdb, 'registers');
+    const snapshot = await get(registersRef);
+    const data = snapshot.val();
+    if (!data) return [];
+    return Object.entries(data).map(([terminalId, register]) => ({
+      terminalId,
+      ...(register as any)
+    }));
+  } catch (error) {
+    console.error('Error loading all registers:', error);
+    return [];
+  }
+};
+
+// Suscribirse a todas las cajas (tiempo real para admin)
+export const subscribeToAllRegisters = (callback: (registers: any[]) => void) => {
+  const registersRef = ref(rtdb, 'registers');
+  const unsubscribe = onValue(registersRef, (snapshot) => {
+    const data = snapshot.val();
+    if (!data) {
+      callback([]);
+      return;
+    }
+    const registers = Object.entries(data).map(([terminalId, register]) => ({
+      terminalId,
+      ...(register as any)
+    }));
+    callback(registers);
+  });
+  listeners.push(unsubscribe);
+  return unsubscribe;
+};
+
+// Declaraciones de tipo para las nuevas funciones
+declare module './syncService' {
+  export function saveRegisterByTerminal(terminalId: string, register: any): Promise<void>;
+  export function loadRegisterByTerminal(terminalId: string): Promise<any>;
+  export function subscribeToRegisterByTerminal(terminalId: string, callback: (data: any) => void): () => void;
+  export function getAllActiveRegisters(): Promise<any[]>;
+  export function subscribeToAllRegisters(callback: (registers: any[]) => void): () => void;
+}

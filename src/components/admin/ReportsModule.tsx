@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import { usePOSState } from '@/hooks/use-pos-state';
 import { useSuppliers } from '@/hooks/use-suppliers';
-import { Calendar, FileText, FileSpreadsheet, Search, X, TrendingUp, TrendingDown } from 'lucide-react';
+import { useAccounting } from '@/hooks/use-accounting';
+import { Calendar, FileText, FileSpreadsheet, Search, X, TrendingUp, TrendingDown, BarChart3, ArrowRight, DollarSign } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
@@ -16,12 +17,12 @@ interface ReportsModuleProps {
 }
 
 export default function ReportsModule({ state, userRole = 'cashier' }: ReportsModuleProps) {
-  const { invoices } = useSuppliers();
+  const { entries } = useAccounting();
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [filteredTransactions, setFilteredTransactions] = useState<Transaction[]>([]);
   const [hasSearched, setHasSearched] = useState(false);
-  const [activeReport, setActiveReport] = useState<'transactions' | 'summary'>('transactions');
+  const [activeReport, setActiveReport] = useState<'transactions' | 'summary' | 'consolidated'>('transactions');
 
   const isAdmin = userRole === 'admin';
 
@@ -31,11 +32,9 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
       return;
     }
     
-    // Crear límites de tiempo en la zona horaria local del usuario
     const startLimit = getStartOfDay(startDate);
     const endLimit = getEndOfDay(endDate);
     
-    // Filtrar comparando el punto exacto en el tiempo (Date vs Date)
     const filtered = state.transactions.filter(t => {
       const txDate = new Date(t.date);
       return txDate >= startLimit && txDate <= endLimit;
@@ -83,8 +82,6 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
       <style>th{background:#D4A017;color:black;padding:8px}td{padding:6px;border:1px solid #ddd}table{border-collapse:collapse;width:100%}</style>
       </head><body><h2>Reporte de Transacciones</h2>
       <p>Periodo: ${new Date(startDate + 'T00:00:00').toLocaleDateString('es-VE')} - ${new Date(endDate + 'T00:00:00').toLocaleDateString('es-VE')}</p>
-      <p>Total transacciones: ${filteredTransactions.length}</p>
-      <p>Total ventas: BS ${filteredTransactions.reduce((sum, t) => sum + t.total, 0).toFixed(2)}</p>
       <table><thead><tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr></thead>
       <tbody>${rows.map(row => `<tr>${row.map(cell => `<td>${cell}</td>`).join('')}</tr>`).join('')}</tbody>
       </table></body></html>
@@ -107,15 +104,47 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
       <style>body{font-family:Arial;margin:40px}h1{color:#D4A017;text-align:center}table{width:100%;border-collapse:collapse;margin-top:20px}th,td{border:1px solid #ddd;padding:8px;text-align:left}th{background-color:#D4A017;color:black}.footer{margin-top:30px;text-align:center;font-size:12px;color:#666}</style>
       </head><body><h1>MasterPOS - Reporte de Transacciones</h1>
       <p><strong>Periodo:</strong> ${new Date(startDate + 'T00:00:00').toLocaleDateString('es-VE')} - ${new Date(endDate + 'T00:00:00').toLocaleDateString('es-VE')}</p>
-      <div><h3>Resumen</h3><p><strong>Total transacciones:</strong> ${filteredTransactions.length}</p><p><strong>Total general:</strong> BS ${totalVentas.toFixed(2)}</p></div>
       <table><thead><tr><th>Fecha</th><th>Tipo</th><th>Cliente</th><th>Método</th><th>Total</th></tr></thead>
-      <tbody>${filteredTransactions.map(t => `<tr><td class="p-2 text-xs">${formatLocalDate(t.date)}</td><td class="p-2"><span class="px-2 py-0.5 rounded-full text-[9px] font-bold ${t.type === 'contado' ? 'bg-green-100 text-green-700' : t.type === 'credito' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}">${t.type === 'contado' ? 'CONTADO' : t.type === 'credito' ? 'CRÉDITO' : 'COBRO'}</span></td><td class="p-2">${t.clientName || 'CLIENTE FINAL'}</td><td class="p-2">${t.payMethod?.replace('_', ' ') || 'EFECTIVO'}</td><td class="p-2 text-right font-bold">Bs ${t.total.toFixed(2)}</td></tr>`).join('')}</tbody>
-      </table><div class="footer"><p>Reporte generado por MasterPOS</p></div><script>window.print();<\/script></body></html>
+      <tbody>${filteredTransactions.map(t => `<tr><td>${formatLocalDate(t.date)}</td><td>${t.type.toUpperCase()}</td><td>${t.clientName || 'CLIENTE FINAL'}</td><td>${t.payMethod || 'EFECTIVO'}</td><td>Bs ${t.total.toFixed(2)}</td></tr>`).join('')}</tbody>
+      </table><script>window.print();<\/script></body></html>
     `;
     printWindow?.document.write(content);
     printWindow?.document.close();
-    printWindow?.print();
   };
+
+  // Cálculo de consolidado mensual
+  const monthlyConsolidated = useMemo(() => {
+    const consolidated: Record<string, { label: string, year: number, monthIdx: number, income: number, expense: number }> = {};
+    
+    entries.forEach(entry => {
+      const d = new Date(entry.date);
+      const year = d.getFullYear();
+      const monthIdx = d.getMonth();
+      const key = `${year}-${String(monthIdx).padStart(2, '0')}`;
+      
+      if (!consolidated[key]) {
+        const monthName = d.toLocaleDateString('es-VE', { month: 'long' });
+        consolidated[key] = { 
+          label: monthName.toUpperCase(), 
+          year, 
+          monthIdx,
+          income: 0, 
+          expense: 0 
+        };
+      }
+      
+      if (entry.type === 'ingreso') {
+        consolidated[key].income += entry.amount;
+      } else {
+        consolidated[key].expense += entry.amount;
+      }
+    });
+    
+    return Object.values(consolidated).sort((a, b) => {
+      if (a.year !== b.year) return b.year - a.year;
+      return b.monthIdx - a.monthIdx;
+    });
+  }, [entries]);
 
   const totalGeneral = filteredTransactions.reduce((sum, t) => sum + t.total, 0);
   const contadoTotal = filteredTransactions.filter(t => t.type === 'contado').reduce((sum, t) => sum + t.total, 0);
@@ -124,12 +153,28 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
 
   return (
     <div className="bg-white border border-[#9E9E9E] rounded-xl p-5 shadow-md">
-      <div className="flex gap-2 mb-4 border-b pb-2">
-        <button onClick={() => setActiveReport('transactions')} className={cn("px-4 py-2 rounded-lg font-bold text-sm", activeReport === 'transactions' ? "bg-primary text-black" : "text-black/60")}>Transacciones por Fecha</button>
-        <button onClick={() => setActiveReport('summary')} className={cn("px-4 py-2 rounded-lg font-bold text-sm", activeReport === 'summary' ? "bg-primary text-black" : "text-black/60")}>Resumen de Ventas</button>
+      <div className="flex gap-2 mb-4 border-b pb-2 flex-wrap">
+        <button 
+          onClick={() => setActiveReport('transactions')} 
+          className={cn("px-4 py-2 rounded-lg font-bold text-sm transition-all", activeReport === 'transactions' ? "bg-primary text-black" : "text-black/60 hover:bg-black/5")}
+        >
+          Transacciones por Fecha
+        </button>
+        <button 
+          onClick={() => setActiveReport('summary')} 
+          className={cn("px-4 py-2 rounded-lg font-bold text-sm transition-all", activeReport === 'summary' ? "bg-primary text-black" : "text-black/60 hover:bg-black/5")}
+        >
+          Resumen de Ventas
+        </button>
+        <button 
+          onClick={() => setActiveReport('consolidated')} 
+          className={cn("px-4 py-2 rounded-lg font-bold text-sm transition-all", activeReport === 'consolidated' ? "bg-primary text-black" : "text-black/60 hover:bg-black/5")}
+        >
+          Consolidado Ingresos/Egresos
+        </button>
       </div>
 
-      {activeReport === 'transactions' ? (
+      {activeReport === 'transactions' && (
         <>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
             <div><label className="text-[10px] font-black text-black/60 block mb-1">Fecha Desde</label><Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="bg-white border-[#9E9E9E]" /></div>
@@ -149,7 +194,6 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
                       <th className="p-2 text-[10px] font-black text-black">Fecha</th>
                       <th className="p-2 text-[10px] font-black text-black">Tipo</th>
                       <th className="p-2 text-[10px] font-black text-black">Cliente</th>
-                      <th className="p-2 text-[10px] font-black text-black">Método</th>
                       <th className="p-2 text-[10px] font-black text-black text-right">Total</th>
                       {isAdmin && <th className="p-2 text-[10px] font-black text-black text-center">Acción</th>}
                     </tr>
@@ -158,39 +202,128 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
                     {filteredTransactions.map((t, idx) => (
                       <tr key={idx} className="border-b hover:bg-[#F5F5F5]">
                         <td className="p-2 text-xs text-black/60">{formatLocalDate(t.date)}</td>
-                        <td className="p-2"><span className={cn("px-2 py-0.5 rounded-full text-[9px] font-bold", t.type === 'contado' ? "bg-green-100 text-green-700" : t.type === 'credito' ? "bg-orange-100 text-orange-700" : "bg-blue-100 text-blue-700")}>{t.type === 'contado' ? 'CONTADO' : t.type === 'credito' ? 'CRÉDITO' : 'COBRO'}</span></td>
+                        <td className="p-2"><span className={cn("px-2 py-0.5 rounded-full text-[9px] font-bold", t.type === 'contado' ? "bg-green-100 text-green-700" : t.type === 'credito' ? "bg-orange-100 text-orange-700" : "bg-blue-100 text-blue-700")}>{t.type.toUpperCase()}</span></td>
                         <td className="p-2 text-xs text-black/80">{t.clientName || '—'}</td>
-                        <td className="p-2 text-xs text-black/60">{t.payMethod?.replace('_', ' ') || 'EFECTIVO'}</td>
                         <td className="p-2 text-right font-bold text-black">Bs {t.total.toFixed(2)}</td>
-                        {isAdmin && (
-                          <td className="p-2 text-center">
-                            <button onClick={() => handleDeleteTransaction(t.id)} className="text-red-500 hover:text-red-700 transition-colors" title="Eliminar transacción">
-                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                            </button>
-                          </td>
-                        )}
+                        {isAdmin && <td className="p-2 text-center"><button onClick={() => handleDeleteTransaction(t.id)} className="text-red-500 hover:text-red-700"><X size={14} /></button></td>}
                       </tr>
                     ))}
                   </tbody>
-                  <tfoot className="bg-[#F0F0F0] sticky bottom-0">
-                    <tr className="border-t-2 border-[#9E9E9E]"><td colSpan={isAdmin ? 5 : 4} className="p-2 text-right font-black text-black">TOTAL GENERAL:</td><td className="p-2 text-right font-black text-black">Bs {totalGeneral.toFixed(2)}</td>{isAdmin && <td></td>}</tr>
-                  </tfoot>
                 </table>
               </div>
             </>
           )}
-          {hasSearched && filteredTransactions.length === 0 && <div className="text-center py-10 text-black/50 italic">No se encontraron transacciones en el período seleccionado</div>}
         </>
-      ) : (
-        <>
-          <div className="flex justify-end mb-4"><Button onClick={exportToExcel} className="bg-green-600 text-white text-xs h-8"><FileSpreadsheet size={14} className="mr-1" /> EXPORTAR EXCEL</Button></div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-            <div className="bg-green-50 rounded-xl p-4 text-center border border-green-200"><p className="text-[10px] font-bold text-green-700 uppercase">Ventas Contado</p><p className="text-2xl font-black text-green-600">Bs {contadoTotal.toFixed(2)}</p></div>
-            <div className="bg-orange-50 rounded-xl p-4 text-center border border-orange-200"><p className="text-[10px] font-bold text-orange-700 uppercase">Ventas Crédito</p><p className="text-2xl font-black text-orange-600">Bs {creditoTotal.toFixed(2)}</p></div>
-            <div className="bg-blue-50 rounded-xl p-4 text-center border border-blue-200"><p className="text-[10px] font-bold text-blue-700 uppercase">Cobros de Deuda</p><p className="text-2xl font-black text-blue-600">Bs {cobroTotal.toFixed(2)}</p></div>
+      )}
+
+      {activeReport === 'summary' && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="bg-green-50 rounded-xl p-6 text-center border border-green-200">
+            <TrendingUp size={24} className="text-green-600 mx-auto mb-2" />
+            <p className="text-[10px] font-bold text-green-700 uppercase">Ventas Contado</p>
+            <p className="text-3xl font-black text-green-600">Bs {contadoTotal.toFixed(2)}</p>
           </div>
-          {hasSearched && filteredTransactions.length === 0 && <div className="text-center py-10 text-black/50 italic">No hay datos para el período seleccionado. Realice una búsqueda primero.</div>}
-        </>
+          <div className="bg-orange-50 rounded-xl p-6 text-center border border-orange-200">
+            <Calendar size={24} className="text-orange-600 mx-auto mb-2" />
+            <p className="text-[10px] font-bold text-orange-700 uppercase">Ventas Crédito</p>
+            <p className="text-3xl font-black text-orange-600">Bs {creditoTotal.toFixed(2)}</p>
+          </div>
+          <div className="bg-blue-50 rounded-xl p-6 text-center border border-blue-200">
+            <DollarSign size={24} className="text-blue-600 mx-auto mb-2" />
+            <p className="text-[10px] font-bold text-blue-700 uppercase">Cobros de Deuda</p>
+            <p className="text-3xl font-black text-blue-600">Bs {cobroTotal.toFixed(2)}</p>
+          </div>
+        </div>
+      )}
+
+      {activeReport === 'consolidated' && (
+        <div className="space-y-6">
+          <div className="flex items-center gap-2 mb-4">
+            <BarChart3 size={20} className="text-primary" />
+            <h3 className="text-lg font-black text-black">Consolidado Mensual de Caja</h3>
+          </div>
+          
+          <div className="bg-white border border-[#9E9E9E] rounded-xl overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-[#E8E8E8]">
+                <tr className="border-b border-[#9E9E9E]">
+                  <th className="p-3 text-[10px] font-black text-black text-left uppercase">Periodo / Mes</th>
+                  <th className="p-3 text-[10px] font-black text-black text-right uppercase">Ingresos (+)</th>
+                  <th className="p-3 text-[10px] font-black text-black text-right uppercase">Egresos (-)</th>
+                  <th className="p-3 text-[10px] font-black text-black text-right uppercase">Balance / Diferencia</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#9E9E9E]">
+                {monthlyConsolidated.length === 0 ? (
+                  <tr><td colSpan={4} className="p-8 text-center text-black/50 italic">No hay movimientos contables suficientes para generar el consolidado</td></tr>
+                ) : (
+                  monthlyConsolidated.map((row, idx) => {
+                    const balance = row.income - row.expense;
+                    return (
+                      <tr key={idx} className="hover:bg-[#F5F5F5] transition-colors">
+                        <td className="p-3">
+                          <div className="flex flex-col">
+                            <span className="font-black text-black">{row.label}</span>
+                            <span className="text-[10px] text-black/50 font-bold">{row.year}</span>
+                          </div>
+                        </td>
+                        <td className="p-3 text-right">
+                          <span className="font-bold text-green-600 text-sm">Bs {row.income.toFixed(2)}</span>
+                        </td>
+                        <td className="p-3 text-right">
+                          <span className="font-bold text-red-600 text-sm">Bs {row.expense.toFixed(2)}</span>
+                        </td>
+                        <td className="p-3 text-right">
+                          <div className={cn(
+                            "inline-flex items-center gap-1.5 px-3 py-1 rounded-lg font-black text-base shadow-sm border",
+                            balance >= 0 ? "bg-green-100 text-green-700 border-green-200" : "bg-red-100 text-red-700 border-red-200"
+                          )}>
+                            {balance >= 0 ? <TrendingUp size={16} /> : <TrendingDown size={16} />}
+                            Bs {balance.toFixed(2)}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+              {monthlyConsolidated.length > 0 && (
+                <tfoot className="bg-[#F0F0F0]">
+                  <tr className="border-t-2 border-[#9E9E9E]">
+                    <td className="p-4 font-black text-black">TOTAL HISTÓRICO ACUMULADO</td>
+                    <td className="p-4 text-right font-black text-green-600 text-base">
+                      Bs {monthlyConsolidated.reduce((s, r) => s + row.income, 0).toFixed(2)}
+                    </td>
+                    <td className="p-4 text-right font-black text-red-600 text-base">
+                      Bs {monthlyConsolidated.reduce((s, r) => s + row.expense, 0).toFixed(2)}
+                    </td>
+                    <td className="p-4 text-right">
+                      {(() => {
+                        const totalIncome = monthlyConsolidated.reduce((s, r) => s + r.income, 0);
+                        const totalExpense = monthlyConsolidated.reduce((s, r) => s + r.expense, 0);
+                        const totalBalance = totalIncome - totalExpense;
+                        return (
+                          <div className={cn(
+                            "font-black text-lg",
+                            totalBalance >= 0 ? "text-green-700" : "text-red-700"
+                          )}>
+                            Bs {totalBalance.toFixed(2)}
+                          </div>
+                        );
+                      })()}
+                    </td>
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
+          
+          <div className="bg-[#1A2C4E]/5 rounded-xl p-4 border border-[#1A2C4E]/10">
+            <p className="text-[10px] text-black/50 leading-tight">
+              * El <strong>Consolidado</strong> agrupa todos los asientos contables registrados en el Libro Diario (Ventas, Devoluciones, Gastos Operativos y Pagos a Proveedores). Los montos están expresados en Moneda Nacional (Bs) según la tasa vigente al momento del registro.
+            </p>
+          </div>
+        </div>
       )}
     </div>
   );

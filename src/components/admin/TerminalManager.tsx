@@ -11,22 +11,32 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
-import { Terminal, SystemUser } from '@/lib/types';
 
-interface TerminalManagerProps {
-  onClose?: () => void;
+interface Terminal {
+  id: number;
+  name: string;
+  description: string;
+  location: string;
+  status: 'active' | 'inactive' | 'maintenance';
+  assignedTo: number | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
-// Usuarios de prueba eliminados
-const AVAILABLE_CASHIERS: SystemUser[] = [];
+interface Cashier {
+  id: number;
+  name: string;
+  email: string;
+  role: string;
+}
 
-export default function TerminalManager({ onClose }: TerminalManagerProps) {
+export default function TerminalManager() {
   const [terminals, setTerminals] = useState<Terminal[]>([]);
+  const [cashiers, setCashiers] = useState<Cashier[]>([]);
   const [showModal, setShowModal] = useState(false);
   const [editingTerminal, setEditingTerminal] = useState<Terminal | null>(null);
   const [search, setSearch] = useState('');
   
-  // Formulario
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -34,18 +44,46 @@ export default function TerminalManager({ onClose }: TerminalManagerProps) {
     assignedTo: '' as string,
   });
 
-  // Cargar terminales desde localStorage
+  // Cargar terminales y cajeros
   useEffect(() => {
+    // Cargar terminales
     const stored = localStorage.getItem('masterpos_terminals');
     if (stored) {
       setTerminals(JSON.parse(stored));
     } else {
-      setTerminals([]);
-      localStorage.setItem('masterpos_terminals', JSON.stringify([]));
+      const defaultTerminals: Terminal[] = [
+        {
+          id: 1,
+          name: 'Caja Principal',
+          description: 'Caja principal del local',
+          location: 'Primer piso - Mostrador central',
+          status: 'active',
+          assignedTo: null,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      ];
+      setTerminals(defaultTerminals);
+      localStorage.setItem('masterpos_terminals', JSON.stringify(defaultTerminals));
+    }
+    
+    // Cargar cajeros (usuarios con rol cashier)
+    const storedUsers = localStorage.getItem('masterpos_users');
+    if (storedUsers) {
+      const allUsers = JSON.parse(storedUsers);
+      const cashiersList = allUsers.filter((u: any) => u.role === 'cashier');
+      setCashiers(cashiersList);
+    } else {
+      // Usuarios de ejemplo
+      const defaultCashiers: Cashier[] = [
+        { id: 1, name: 'Ana López', email: 'ana@masterpos.com', role: 'cashier' },
+        { id: 2, name: 'Carlos Ruiz', email: 'carlos@masterpos.com', role: 'cashier' },
+      ];
+      setCashiers(defaultCashiers);
+      localStorage.setItem('masterpos_users', JSON.stringify(defaultCashiers));
     }
   }, []);
 
-  // Guardar terminales
   const saveTerminals = (newTerminals: Terminal[]) => {
     setTerminals(newTerminals);
     localStorage.setItem('masterpos_terminals', JSON.stringify(newTerminals));
@@ -58,7 +96,6 @@ export default function TerminalManager({ onClose }: TerminalManagerProps) {
     }
 
     if (editingTerminal) {
-      // Editar
       const updated = terminals.map(t => 
         t.id === editingTerminal.id 
           ? {
@@ -73,7 +110,6 @@ export default function TerminalManager({ onClose }: TerminalManagerProps) {
       );
       saveTerminals(updated);
     } else {
-      // Crear
       const newTerminal: Terminal = {
         id: Date.now(),
         name: formData.name,
@@ -142,9 +178,9 @@ export default function TerminalManager({ onClose }: TerminalManagerProps) {
   };
 
   const getAssignedUserName = (userId: number | null) => {
-    if (!userId) return '—';
-    const user = AVAILABLE_CASHIERS.find(u => u.id === userId);
-    return user ? user.name : '—';
+    if (!userId) return 'Sin asignar';
+    const cashier = cashiers.find(c => c.id === userId);
+    return cashier ? cashier.name : 'Sin asignar';
   };
 
   const filteredTerminals = terminals.filter(t => 
@@ -299,10 +335,13 @@ export default function TerminalManager({ onClose }: TerminalManagerProps) {
                   className="w-full h-10 bg-white border border-[#9E9E9E] rounded-lg px-3 text-sm"
                 >
                   <option value="">Sin asignar</option>
-                  {AVAILABLE_CASHIERS.map(cashier => (
+                  {cashiers.map(cashier => (
                     <option key={cashier.id} value={cashier.id}>{cashier.name}</option>
                   ))}
                 </select>
+                {cashiers.length === 0 && (
+                  <p className="text-[9px] text-red-500 mt-1">No hay cajeros registrados. Cree un usuario con rol "Cajero" primero.</p>
+                )}
               </div>
             </div>
             <div className="bg-[#F5F5F5] p-4 border-t border-[#9E9E9E] flex justify-end gap-3">

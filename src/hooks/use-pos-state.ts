@@ -3,17 +3,22 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Product, Client, Transaction, Account, CashRegister, Page, CartItem } from '@/lib/types';
 import { syncService } from '@/services/syncService';
+import { registerSaleEntry, registerCreditEntry, registerDebtPaymentEntry } from '@/services/accountingService';
 
 const INITIAL_PRODUCTS: Product[] = [];
 const INITIAL_CLIENTS: Client[] = [];
 
 let firebaseLoaded = false;
+let cachedProducts: Product[] = [];
+let cachedClients: Client[] = [];
+let cachedTransactions: Transaction[] = [];
+let cachedAccounts: Account[] = [];
 
 export function usePOSState() {
-  const [products, setProducts] = useState<Product[]>([]);
-  const [clients, setClients] = useState<Client[]>([]);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [products, setProducts] = useState<Product[]>(cachedProducts);
+  const [clients, setClients] = useState<Client[]>(cachedClients);
+  const [transactions, setTransactions] = useState<Transaction[]>(cachedTransactions);
+  const [accounts, setAccounts] = useState<Account[]>(cachedAccounts);
   const [register, setRegister] = useState<CashRegister | null>(null);
   const [exchangeRate, setExchangeRate] = useState(36.50);
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -204,7 +209,7 @@ export function usePOSState() {
     syncService.clearRegister().catch(console.error);
   }, []);
 
-  const finalizeSale = useCallback((type: 'contado' | 'credito' | 'cobro_deuda', paymentData: any) => {
+  const finalizeSale = useCallback(async (type: 'contado' | 'credito' | 'cobro_deuda', paymentData: any) => {
     if (!register || !register.isOpen) return;
 
     const subtotal = cart.reduce((acc, item) => acc + (item.priceBs * item.qty), 0);
@@ -239,6 +244,7 @@ export function usePOSState() {
       payMethod = methods;
     }
 
+    // Usar ISO estandar para evitar desfases de zona horaria
     const tx: Transaction = {
       id: transactions.length + 1,
       date: new Date().toISOString(),
@@ -256,7 +262,7 @@ export function usePOSState() {
     };
 
     setTransactions(prev => [...prev, tx]);
-    setRegister(prev => prev ? { ...prev, txs: [...prev.txs, tx] } : null);
+    setRegister(prev => prev ? { ...prev, txs: [...(prev.txs || []), tx] } : null);
 
     if (type !== 'cobro_deuda') {
       setProducts(prev => prev.map(p => {
@@ -281,6 +287,21 @@ export function usePOSState() {
       };
       setAccounts(prev => [...prev, acc]);
       setClients(prev => prev.map(c => c.id === targetClientId ? { ...c, debt: (c.debt || 0) + total } : c));
+      
+      // Registrar asiento contable de crédito
+      const client = clients.find(c => c.id === targetClientId);
+      if (client) await registerCreditEntry(tx, client);
+    }
+
+    if (type === 'contado') {
+      // Registrar asiento contable de venta
+      await registerSaleEntry(tx);
+    }
+
+    if (type === 'cobro_deuda') {
+      // Registrar asiento contable de cobro de deuda
+      const client = clients.find(c => c.id === targetClientId);
+      if (client) await registerDebtPaymentEntry(tx, client);
     }
 
     if (type !== 'cobro_deuda') {
@@ -291,51 +312,33 @@ export function usePOSState() {
   }, [cart, register, exchangeRate, transactions.length, accounts.length, clients, isIvaEnabled]);
 
   const applyAbono = useCallback((clientId: number, amount: number) => {
-    console.log('🔄 Aplicando abono:', { clientId, amount });
-    
-    if (!register || !register.isOpen) {
-      console.log('❌ Caja no está abierta');
-      return;
-    }
+    if (!register || !register.isOpen) return;
 
     const client = clients.find(c => c.id === clientId);
-    if (!client) {
-      console.log('❌ Cliente no encontrado');
-      return;
-    }
+    if (!client) return;
 
     const clientAccounts = accounts
       .filter(a => a.clientId === clientId && a.status !== 'pagada')
-      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-
-    console.log('📋 Cuentas pendientes:', clientAccounts.length);
-
-    if (clientAccounts.length === 0) {
-      console.log('⚠️ No hay cuentas pendientes');
-      return;
-    }
+      .sort((a, b) => new Date(a.date).getTime() - new Date(a.date).getTime());
 
     let remaining = amount;
-    const updatedAccounts = accounts.map(acc => {
-      if (acc.clientId !== clientId || acc.status === 'pagada' || remaining <= 0) {
-        return acc;
-      }
-      
+    const updatedAccounts = [...accounts];
+
+    for (let i = 0; i < updatedAccounts.length; i++) {
+      const acc = updatedAccounts[i];
+      if (acc.clientId !== clientId || acc.status === 'pagada' || remaining <= 0) continue;
+
       const owed = acc.amountBs - (acc.paidAmount || 0);
       if (remaining >= owed) {
-        const newPaidAmount = acc.amountBs;
-        const newStatus: 'pagada' = 'pagada';
+        acc.paidAmount = acc.amountBs;
+        acc.status = 'pagada';
         remaining -= owed;
-        console.log(`✅ Cuenta ${acc.id} pagada completamente. Owed: ${owed}, Restante: ${remaining}`);
-        return { ...acc, paidAmount: newPaidAmount, status: newStatus };
       } else {
-        const newPaidAmount = (acc.paidAmount || 0) + remaining;
-        const newStatus: 'parcial' = 'parcial';
-        console.log(`🟡 Cuenta ${acc.id} pagada parcialmente. Nuevo paidAmount: ${newPaidAmount}, Restante: 0`);
+        acc.paidAmount = (acc.paidAmount || 0) + remaining;
+        acc.status = 'parcial';
         remaining = 0;
-        return { ...acc, paidAmount: newPaidAmount, status: newStatus };
       }
-    });
+    }
 
     const tx: Transaction = {
       id: transactions.length + 1,
@@ -355,26 +358,41 @@ export function usePOSState() {
 
     setAccounts(updatedAccounts);
     setTransactions(prev => [...prev, tx]);
-    setRegister(prev => prev ? { ...prev, txs: [...prev.txs, tx] } : null);
-    
-    const newDebt = Math.max(0, (client.debt || 0) - amount);
-    setClients(prev => prev.map(c => c.id === clientId ? { ...c, debt: newDebt } : c));
-    
-    console.log(`✅ Abono aplicado. Cliente: ${client.name}, Deuda anterior: ${client.debt}, Monto: ${amount}, Nueva deuda: ${newDebt}`);
+    setRegister(prev => prev ? { ...prev, txs: [...(prev.txs || []), tx] } : null);
+    setClients(prev => prev.map(c => c.id === clientId ? { ...c, debt: Math.max(0, (c.debt || 0) - amount) } : c));
   }, [register, clients, accounts, transactions.length, exchangeRate]);
+
+  // Función para reiniciar la base de datos
+  const resetDatabase = useCallback(async () => {
+    if (confirm('⚠️ ¿Estás seguro? Esto ELIMINARÁ TODOS los datos')) {
+      setProducts([]);
+      setClients([]);
+      setTransactions([]);
+      setAccounts([]);
+      setRegister(null);
+      setCart([]);
+      
+      await syncService.saveProducts([]);
+      await syncService.saveClients([]);
+      await syncService.clearRegister();
+      
+      alert('Base de datos reiniciada');
+    }
+  }, []);
 
   return {
     products, setProducts, addProduct, updateProduct, deleteProduct,
     clients, setClients,
-    transactions,
+    transactions, setTransactions,
     accounts, setAccounts,
-    register, openCashRegister, closeCashRegister,
+    register, setRegister, openCashRegister, closeCashRegister,
     exchangeRate, setExchangeRate,
     cart, addToCart, removeFromCart, updateCartQty,
     isIvaEnabled, setIsIvaEnabled,
     currentPage, setCurrentPage,
     finalizeSale, applyAbono,
     isHydrated,
-    isSyncing
+    isSyncing,
+    resetDatabase
   };
 }

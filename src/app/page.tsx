@@ -13,22 +13,26 @@ import ClientsModule from '@/components/customers/clients-module';
 import AccountsModule from '@/components/accounts/accounts-module';
 import CashModule from '@/components/register/cash-module';
 import AdminDashboard from '@/components/dashboard/AdminDashboard';
+import SuppliersModule from '@/components/suppliers/suppliers-module';
+import AccountingModule from '@/components/accounting/accounting-module';
+import ReturnsModule from '@/components/returns/returns-module';
 import { Toaster } from '@/components/ui/toaster';
 
 export default function LicoPOSApp() {
   const [user, setUser] = useState<{ name: string; role: string; email?: string } | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
   const state = usePOSState();
   const { toast } = useToast();
 
-  // Verificar autenticación
   useEffect(() => {
     const storedUser = localStorage.getItem('user');
     if (!storedUser) {
-      router.push('/login');
+      router.replace('/login');
     } else {
       setUser(JSON.parse(storedUser));
     }
+    setIsLoading(false);
   }, [router]);
 
   useBarcode((code) => {
@@ -49,15 +53,24 @@ export default function LicoPOSApp() {
     }
   });
 
-  if (!state.isHydrated || !user) return <div className="bg-background min-h-screen flex items-center justify-center text-primary font-headline text-2xl">Cargando...</div>;
+  if (isLoading || !state.isHydrated || !user) {
+    return (
+      <div className="bg-background min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-primary font-headline text-lg">Cargando sistema...</p>
+        </div>
+      </div>
+    );
+  }
 
   const isAdmin = user.role === 'admin';
   const isCashier = user.role === 'cashier';
-
-  // Admin puede acceder a dashboard y todo, Cajero solo POS y Caja
+  
+  // Admin puede ver todo, Cajero puede ver POS, Caja y Devoluciones
   const allowedPages = isAdmin 
-    ? ['dashboard', 'pos', 'inventario', 'clientes', 'cuentas', 'caja']
-    : ['pos', 'caja'];
+    ? ['dashboard', 'pos', 'inventario', 'clientes', 'cuentas', 'proveedores', 'contabilidad', 'devoluciones', 'caja']
+    : ['pos', 'devoluciones', 'caja'];
 
   if (!allowedPages.includes(state.currentPage)) {
     state.setCurrentPage('pos');
@@ -85,6 +98,9 @@ export default function LicoPOSApp() {
           {state.currentPage === 'inventario' && isAdmin && <InventoryModule state={state} />}
           {state.currentPage === 'clientes' && isAdmin && <ClientsModule state={state} />}
           {state.currentPage === 'cuentas' && isAdmin && <AccountsModule state={state} />}
+          {state.currentPage === 'proveedores' && isAdmin && <SuppliersModule />}
+          {state.currentPage === 'contabilidad' && isAdmin && <AccountingModule />}
+          {state.currentPage === 'devoluciones' && <ReturnsModule />}
           {state.currentPage === 'caja' && <CashModule state={state} />}
         </div>
       </main>

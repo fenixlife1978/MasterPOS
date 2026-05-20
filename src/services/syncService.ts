@@ -1,3 +1,5 @@
+"use client";
+
 import { db, rtdb } from '@/lib/firebase';
 import { 
   doc, getDoc, setDoc, updateDoc, deleteDoc, 
@@ -6,10 +8,12 @@ import {
 } from 'firebase/firestore';
 import { ref, set, get, update, remove, onValue, off } from 'firebase/database';
 
-// Cola de operaciones pendientes (offline)
+// ============================================
+// COLA DE OPERACIONES OFFLINE
+// ============================================
 interface PendingOperation {
   id: string;
-  type: 'saveProducts' | 'saveClients' | 'saveTransaction' | 'saveAccount' | 'saveRegister' | 'clearRegister';
+  type: 'saveProducts' | 'saveClients' | 'saveTransaction' | 'saveAccount' | 'saveRegister' | 'clearRegister' | 'saveAccountingEntry';
   data: any;
   timestamp: number;
   retries: number;
@@ -50,6 +54,25 @@ if (typeof window !== 'undefined') {
   });
 }
 
+// Limpiar datos undefined
+const cleanObject = (obj: any): any => {
+  if (obj === null || obj === undefined) return null;
+  if (Array.isArray(obj)) {
+    return obj.map(item => cleanObject(item)).filter(item => item !== null);
+  }
+  if (typeof obj === 'object') {
+    const cleaned: any = {};
+    for (const key in obj) {
+      const value = cleanObject(obj[key]);
+      if (value !== undefined && value !== null) {
+        cleaned[key] = value;
+      }
+    }
+    return cleaned;
+  }
+  return obj;
+};
+
 // Procesar cola de operaciones pendientes
 const processQueue = async () => {
   if (!isOnline || isSyncing || pendingQueue.length === 0) return;
@@ -61,34 +84,56 @@ const processQueue = async () => {
   
   for (const op of pendingQueue) {
     try {
+      const cleanedData = cleanObject(op.data);
+      
       switch (op.type) {
         case 'saveProducts':
           const batch = writeBatch(db);
-          op.data.forEach((product: any) => {
-            const docRef = doc(db, 'products', product.id.toString());
-            batch.set(docRef, { ...product, updatedAt: Date.now() });
-          });
-          await batch.commit();
+          if (Array.isArray(cleanedData)) {
+            cleanedData.forEach((product: any) => {
+              if (product && product.id) {
+                const docRef = doc(db, 'products', product.id.toString());
+                batch.set(docRef, { ...product, updatedAt: Date.now() });
+              }
+            });
+            await batch.commit();
+          }
           break;
         case 'saveClients':
           const clientBatch = writeBatch(db);
-          op.data.forEach((client: any) => {
-            const docRef = doc(db, 'clients', client.id.toString());
-            clientBatch.set(docRef, { ...client, updatedAt: Date.now() });
-          });
-          await clientBatch.commit();
+          if (Array.isArray(cleanedData)) {
+            cleanedData.forEach((client: any) => {
+              if (client && client.id) {
+                const docRef = doc(db, 'clients', client.id.toString());
+                clientBatch.set(docRef, { ...client, updatedAt: Date.now() });
+              }
+            });
+            await clientBatch.commit();
+          }
           break;
         case 'saveTransaction':
-          const txRef = doc(db, 'transactions', op.data.id.toString());
-          await setDoc(txRef, { ...op.data, createdAt: Date.now() });
+          if (cleanedData && cleanedData.id) {
+            const txRef = doc(db, 'transactions', cleanedData.id.toString());
+            await setDoc(txRef, { ...cleanedData, createdAt: Date.now() });
+          }
           break;
         case 'saveAccount':
-          const accRef = doc(db, 'accounts', op.data.id.toString());
-          await setDoc(accRef, { ...op.data, updatedAt: Date.now() });
+          if (cleanedData && cleanedData.id) {
+            const accRef = doc(db, 'accounts', cleanedData.id.toString());
+            await setDoc(accRef, { ...cleanedData, updatedAt: Date.now() });
+          }
+          break;
+        case 'saveAccountingEntry':
+          if (cleanedData && cleanedData.id) {
+            const entryRef = doc(db, 'accounting_entries', cleanedData.id.toString());
+            await setDoc(entryRef, { ...cleanedData, createdAt: Date.now() });
+          }
           break;
         case 'saveRegister':
           const registerRef = ref(rtdb, 'register');
-          await set(registerRef, { ...op.data, updatedAt: Date.now() });
+          const cleanedRegister = { ...cleanedData, updatedAt: Date.now() };
+          delete cleanedRegister.txs;
+          await set(registerRef, cleanedRegister);
           break;
         case 'clearRegister':
           const clearRef = ref(rtdb, 'register');
@@ -116,7 +161,6 @@ const processQueue = async () => {
   }
 };
 
-// Agregar operación a la cola
 const addToQueue = (operation: Omit<PendingOperation, 'id' | 'timestamp' | 'retries'>) => {
   const newOp: PendingOperation = {
     ...operation,
@@ -132,41 +176,47 @@ const addToQueue = (operation: Omit<PendingOperation, 'id' | 'timestamp' | 'retr
   }
 };
 
+// ============================================
+// FIRESTORE - Colecciones
+// ============================================
+
 export const syncService = {
-  // Guardar productos
+  // ============================================
+  // PRODUCTOS
+  // ============================================
   async saveProducts(products: any[]) {
+    const cleaned = cleanObject(products);
     if (!isOnline) {
-      addToQueue({ type: 'saveProducts', data: products });
+      addToQueue({ type: 'saveProducts', data: cleaned });
       return;
     }
     
     try {
       const batch = writeBatch(db);
-      products.forEach(product => {
-        const docRef = doc(db, 'products', product.id.toString());
-        batch.set(docRef, { ...product, updatedAt: Date.now() });
+      cleaned.forEach((product: any) => {
+        if (product && product.id) {
+          const docRef = doc(db, 'products', product.id.toString());
+          batch.set(docRef, { ...product, updatedAt: Date.now() });
+        }
       });
       await batch.commit();
     } catch (error) {
       console.error('Error saving products:', error);
-      addToQueue({ type: 'saveProducts', data: products });
+      addToQueue({ type: 'saveProducts', data: cleaned });
     }
   },
 
-  // Cargar productos (con caché offline)
   async loadProducts(): Promise<any[]> {
     try {
       const q = query(collection(db, 'products'), limit(200));
       const snapshot = await getDocs(q);
       const products = snapshot.docs.map(doc => ({ id: parseInt(doc.id), ...doc.data() }));
-      // Guardar en caché local
       if (typeof window !== 'undefined') {
         localStorage.setItem('cache_products', JSON.stringify(products));
       }
       return products;
     } catch (error) {
-      console.error('Error loading products from Firebase:', error);
-      // Fallback a caché local
+      console.error('Error loading products:', error);
       if (typeof window !== 'undefined') {
         const cached = localStorage.getItem('cache_products');
         if (cached) return JSON.parse(cached);
@@ -175,27 +225,31 @@ export const syncService = {
     }
   },
 
-  // Guardar clientes
+  // ============================================
+  // CLIENTES
+  // ============================================
   async saveClients(clients: any[]) {
+    const cleaned = cleanObject(clients);
     if (!isOnline) {
-      addToQueue({ type: 'saveClients', data: clients });
+      addToQueue({ type: 'saveClients', data: cleaned });
       return;
     }
     
     try {
       const batch = writeBatch(db);
-      clients.forEach(client => {
-        const docRef = doc(db, 'clients', client.id.toString());
-        batch.set(docRef, { ...client, updatedAt: Date.now() });
+      cleaned.forEach((client: any) => {
+        if (client && client.id) {
+          const docRef = doc(db, 'clients', client.id.toString());
+          batch.set(docRef, { ...client, updatedAt: Date.now() });
+        }
       });
       await batch.commit();
     } catch (error) {
       console.error('Error saving clients:', error);
-      addToQueue({ type: 'saveClients', data: clients });
+      addToQueue({ type: 'saveClients', data: cleaned });
     }
   },
 
-  // Cargar clientes
   async loadClients(): Promise<any[]> {
     try {
       const snapshot = await getDocs(collection(db, 'clients'));
@@ -214,26 +268,30 @@ export const syncService = {
     }
   },
 
-  // Guardar transacción
+  // ============================================
+  // TRANSACCIONES
+  // ============================================
   async saveTransaction(transaction: any) {
+    const cleaned = cleanObject(transaction);
     if (!isOnline) {
-      addToQueue({ type: 'saveTransaction', data: transaction });
+      addToQueue({ type: 'saveTransaction', data: cleaned });
       return;
     }
     
     try {
-      const docRef = doc(db, 'transactions', transaction.id.toString());
-      await setDoc(docRef, { ...transaction, createdAt: Date.now() });
+      if (cleaned && cleaned.id) {
+        const docRef = doc(db, 'transactions', cleaned.id.toString());
+        await setDoc(docRef, { ...cleaned, createdAt: Date.now() });
+      }
     } catch (error) {
       console.error('Error saving transaction:', error);
-      addToQueue({ type: 'saveTransaction', data: transaction });
+      addToQueue({ type: 'saveTransaction', data: cleaned });
     }
   },
 
-  // Cargar transacciones
   async loadTransactions(): Promise<any[]> {
     try {
-      const q = query(collection(db, 'transactions'), orderBy('date', 'desc'), limit(100));
+      const q = query(collection(db, 'transactions'), orderBy('date', 'desc'), limit(200));
       const snapshot = await getDocs(q);
       const transactions = snapshot.docs.map(doc => doc.data());
       if (typeof window !== 'undefined') {
@@ -250,23 +308,67 @@ export const syncService = {
     }
   },
 
-  // Guardar cuenta
-  async saveAccount(account: any) {
+  // ============================================
+  // ASIENTOS CONTABLES
+  // ============================================
+  async saveAccountingEntry(entry: any) {
+    const cleaned = cleanObject(entry);
     if (!isOnline) {
-      addToQueue({ type: 'saveAccount', data: account });
+      addToQueue({ type: 'saveAccountingEntry', data: cleaned });
       return;
     }
     
     try {
-      const docRef = doc(db, 'accounts', account.id.toString());
-      await setDoc(docRef, { ...account, updatedAt: Date.now() });
+      if (cleaned && cleaned.id) {
+        const docRef = doc(db, 'accounting_entries', cleaned.id.toString());
+        await setDoc(docRef, { ...cleaned, createdAt: Date.now() });
+      }
     } catch (error) {
-      console.error('Error saving account:', error);
-      addToQueue({ type: 'saveAccount', data: account });
+      console.error('Error saving accounting entry:', error);
+      addToQueue({ type: 'saveAccountingEntry', data: cleaned });
     }
   },
 
-  // Cargar cuentas
+  async loadAccountingEntries(): Promise<any[]> {
+    try {
+      const q = query(collection(db, 'accounting_entries'), orderBy('date', 'desc'), limit(500));
+      const snapshot = await getDocs(q);
+      const entries = snapshot.docs.map(doc => doc.data());
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('cache_accounting_entries', JSON.stringify(entries));
+      }
+      return entries;
+    } catch (error) {
+      console.error('Error loading accounting entries:', error);
+      if (typeof window !== 'undefined') {
+        const cached = localStorage.getItem('cache_accounting_entries');
+        if (cached) return JSON.parse(cached);
+      }
+      return [];
+    }
+  },
+
+  // ============================================
+  // CUENTAS (ACCOUNTS)
+  // ============================================
+  async saveAccount(account: any) {
+    const cleaned = cleanObject(account);
+    if (!isOnline) {
+      addToQueue({ type: 'saveAccount', data: cleaned });
+      return;
+    }
+    
+    try {
+      if (cleaned && cleaned.id) {
+        const docRef = doc(db, 'accounts', cleaned.id.toString());
+        await setDoc(docRef, { ...cleaned, updatedAt: Date.now() });
+      }
+    } catch (error) {
+      console.error('Error saving account:', error);
+      addToQueue({ type: 'saveAccount', data: cleaned });
+    }
+  },
+
   async loadAccounts(): Promise<any[]> {
     try {
       const snapshot = await getDocs(collection(db, 'accounts'));
@@ -285,23 +387,27 @@ export const syncService = {
     }
   },
 
-  // Guardar estado de caja
+  // ============================================
+  // CAJA (Realtime Database)
+  // ============================================
   async saveRegister(register: any) {
+    const cleaned = cleanObject(register);
     if (!isOnline) {
-      addToQueue({ type: 'saveRegister', data: register });
+      addToQueue({ type: 'saveRegister', data: cleaned });
       return;
     }
     
     try {
       const registerRef = ref(rtdb, 'register');
-      await set(registerRef, { ...register, updatedAt: Date.now() });
+      const toSave = { ...cleaned, updatedAt: Date.now() };
+      delete toSave.txs;
+      await set(registerRef, toSave);
     } catch (error) {
       console.error('Error saving register:', error);
-      addToQueue({ type: 'saveRegister', data: register });
+      addToQueue({ type: 'saveRegister', data: cleaned });
     }
   },
 
-  // Cargar estado de caja
   async loadRegister(): Promise<any> {
     try {
       const registerRef = ref(rtdb, 'register');
@@ -321,7 +427,6 @@ export const syncService = {
     }
   },
 
-  // Limpiar caja
   async clearRegister() {
     if (!isOnline) {
       addToQueue({ type: 'clearRegister', data: null });
@@ -337,7 +442,6 @@ export const syncService = {
     }
   },
 
-  // Suscribirse a cambios en tiempo real
   subscribeToRegister(callback: (data: any) => void) {
     const registerRef = ref(rtdb, 'register');
     const unsubscribe = onValue(registerRef, (snapshot) => {
@@ -346,9 +450,6 @@ export const syncService = {
     return unsubscribe;
   },
   
-  // Verificar estado de la cola
   getPendingQueueLength: () => pendingQueue.length,
-  
-  // Forzar sincronización manual
   forceSync: processQueue
 };

@@ -5,6 +5,7 @@ import { CashRegister } from '@/lib/types';
 import { RefreshCw, Clock, Wifi, WifiOff } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { syncService } from '@/services/syncService';
+import InvoiceNotifications from '@/components/ui/InvoiceNotifications';
 
 interface TopbarProps {
   register: CashRegister | null;
@@ -92,6 +93,9 @@ export default function Topbar({ register, rate, onRateChange }: TopbarProps) {
           )}
         </div>
 
+        {/* Notificaciones de facturas por pagar */}
+        <InvoiceNotifications variant="cashier" />
+
         <div className="bg-black/30 px-5 py-1.5 rounded-full flex items-center gap-3 border border-white/5 shadow-inner">
           <RefreshCw size={16} className="text-primary" />
           <div className="flex items-center gap-2 text-[13px]">
@@ -109,7 +113,6 @@ export default function Topbar({ register, rate, onRateChange }: TopbarProps) {
             <span className="font-bold">{formatTime(time)}</span>
           </div>
         </div>
-
       </div>
     </header>
   );

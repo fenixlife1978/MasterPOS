@@ -31,7 +31,7 @@ export interface CartItem {
 export interface Transaction {
   id: number;
   date: string;
-  type: 'contado' | 'credito' | 'cobro_deuda';
+  type: 'contado' | 'credito' | 'cobro_deuda' | 'devolucion';
   items: CartItem[];
   subtotal: number;
   iva: number;
@@ -66,7 +66,7 @@ export interface CashRegister {
   closeTime?: string;
 }
 
-export type Page = 'dashboard' | 'pos' | 'inventario' | 'clientes' | 'cuentas' | 'caja';
+export type Page = 'dashboard' | 'pos' | 'inventario' | 'clientes' | 'cuentas' | 'caja' | 'proveedores' | 'contabilidad' | 'devoluciones';
 
 // ============================================
 // Tipos para Terminales / Múltiples Cajas
@@ -102,3 +102,82 @@ export interface SystemUser {
   terminalId: number | null;
   createdAt: string;
 }
+
+// ============================================
+// Tipos para Proveedores / Cuentas por Pagar
+// ============================================
+
+export interface Supplier {
+  id: number;
+  name: string;
+  rif: string;
+  phone: string;
+  email: string;
+  address: string;
+  contactPerson: string;
+  totalDebt: number;
+  createdAt: string;
+}
+
+export interface SupplierInvoice {
+  id: number;
+  supplierId: number;
+  invoiceNumber: string;
+  date: string;
+  dueDate: string;
+  subtotal: number;
+  iva: number;
+  total: number;
+  paidAmount: number;
+  status: 'pendiente' | 'parcial' | 'pagada';
+  notes: string;
+  createdAt: string;
+}
+
+export interface SupplierPayment {
+  id: number;
+  supplierId: number;
+  invoiceId: number;
+  date: string;
+  amount: number;
+  method: string;
+  reference?: string;
+  bank?: string;
+  notes: string;
+}
+
+// ============================================
+// Tipos para Contabilidad / Libro Diario
+// ============================================
+
+export interface AccountingEntry {
+  id: number;
+  date: string;
+  type: 'ingreso' | 'egreso';
+  category: string;
+  subcategory?: string;
+  concept: string;
+  description: string;
+  amount: number;
+  referenceId?: number; // ID de la transacción, factura o pago relacionado
+  referenceType?: 'sale' | 'supplier_payment' | 'expense';
+  createdAt: string;
+}
+
+export interface ExpenseCategory {
+  id: string;
+  name: string;
+  subcategories?: string[];
+}
+
+export const EXPENSE_CATEGORIES: ExpenseCategory[] = [
+  { id: 'servicios_publicos', name: 'Pago de Servicios Públicos', subcategories: ['Agua', 'Aseo', 'Electricidad', 'Teléfono CANTV'] },
+  { id: 'alquiler', name: 'Pago de Alquiler' },
+  { id: 'telefonia', name: 'Pago de Telefonía', subcategories: ['Movistar', 'Movilnet', 'Digitel'] },
+  { id: 'impuestos_municipales', name: 'Pago de Impuestos Municipales' },
+  { id: 'declaracion_renta', name: 'Declaración de Renta' },
+  { id: 'servicios_profesionales', name: 'Servicios Profesionales' },
+  { id: 'reparacion_local', name: 'Reparación de Local' },
+  { id: 'sueldos', name: 'Pago de Sueldos' },
+  { id: 'otros', name: 'Otros Gastos' },
+];

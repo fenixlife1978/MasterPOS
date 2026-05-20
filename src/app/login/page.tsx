@@ -1,9 +1,12 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Shield, User, LogIn, Building2, Store } from 'lucide-react';
+import { Shield, User, LogIn, Building2, Store, Key, Mail, ArrowLeft } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { auth, db } from '@/lib/firebase';
+import { signInWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -11,59 +14,177 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [mode, setMode] = useState<'admin' | 'cashier'>('admin');
   const [isLoading, setIsLoading] = useState(false);
+  const [showReset, setShowReset] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetMessage, setResetMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const router = useRouter();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  useEffect(() => {
+    const storedUser = localStorage.getItem('user');
+    if (storedUser) {
+      router.replace('/');
+    }
+  }, [router]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setIsLoading(true);
     
-    if (mode === 'admin') {
-      if (email === 'admin@masterpos.com' && password === 'admin123') {
-        localStorage.setItem('user', JSON.stringify({ name: 'Administrador', role: 'admin', email: email }));
-        router.push('/');
-      } else {
-        setError('Credenciales de administrador incorrectas');
+    try {
+      // Autenticar en Firebase Auth
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      const firebaseUser = userCredential.user;
+      
+      // Obtener rol desde Firestore
+      const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+      let userRole = 'cashier';
+      let userName = firebaseUser.displayName || email.split('@')[0] || 'Usuario';
+      
+      if (userDoc.exists()) {
+        const userData = userDoc.data();
+        userRole = userData.role;
+        userName = userData.name;
       }
-    } else {
-      if (email === 'cajero@masterpos.com' && password === 'cajero123') {
-        localStorage.setItem('user', JSON.stringify({ name: 'Cajero', role: 'cashier', email: email }));
-        router.push('/');
-      } else {
-        setError('Credenciales de cajero incorrectas');
+      
+      // Verificar rol según modo seleccionado
+      if (mode === 'admin' && userRole !== 'admin') {
+        setError('Esta cuenta no tiene permisos de administrador');
+        setIsLoading(false);
+        return;
       }
+      
+      if (mode === 'cashier' && userRole !== 'cashier') {
+        setError('Esta cuenta no tiene permisos de cajero');
+        setIsLoading(false);
+        return;
+      }
+      
+      // Guardar sesión
+      localStorage.setItem('user', JSON.stringify({ 
+        name: userName, 
+        role: userRole, 
+        email: firebaseUser.email,
+        uid: firebaseUser.uid
+      }));
+      
+      // Redirigir inmediatamente
+      router.replace('/');
+    } catch (firebaseError: any) {
+      console.error('Login error:', firebaseError);
+      if (firebaseError.code === 'auth/user-not-found') {
+        setError('Usuario no encontrado');
+      } else if (firebaseError.code === 'auth/wrong-password') {
+        setError('Contraseña incorrecta');
+      } else if (firebaseError.code === 'auth/invalid-credential') {
+        setError('Credenciales inválidas');
+      } else {
+        setError(firebaseError.message || 'Error al iniciar sesión');
+      }
+      setIsLoading(false);
     }
-    
-    setIsLoading(false);
   };
 
-  return (
-    <div className="min-h-screen bg-[#D9D9D9] flex items-center justify-center p-4 relative overflow-hidden">
-      {/* Fondo decorativo */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute w-[400px] h-[400px] bg-primary/5 rounded-full blur-[100px] animate-float-ambient top-[10%] left-[5%]" />
-        <div className="absolute w-[250px] h-[250px] bg-primary/3 rounded-full blur-[80px] animate-float-ambient bottom-[10%] right-[10%]" />
-      </div>
+  const handleResetPassword = async () => {
+    if (!resetEmail) {
+      setResetMessage({ type: 'error', text: 'Ingrese su correo electrónico' });
+      return;
+    }
+    
+    setIsLoading(true);
+    try {
+      await sendPasswordResetEmail(auth, resetEmail);
+      setResetMessage({ type: 'success', text: 'Correo de recuperación enviado. Revise su bandeja de entrada.' });
+      setTimeout(() => {
+        setShowReset(false);
+        setResetMessage(null);
+        setResetEmail('');
+        setIsLoading(false);
+      }, 3000);
+    } catch (error: any) {
+      if (error.code === 'auth/user-not-found') {
+        setResetMessage({ type: 'error', text: 'No hay usuario registrado con este correo' });
+      } else {
+        setResetMessage({ type: 'error', text: error.message });
+      }
+      setIsLoading(false);
+    }
+  };
 
-      {/* Card de login - más compacta */}
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-300">
-        {/* Header más compacto */}
-        <div className="bg-[#1A2C4E] p-4 text-center">
-          <div className="w-12 h-12 bg-primary/20 rounded-xl flex items-center justify-center mx-auto mb-2">
-            <Shield size={24} className="text-primary" />
+  if (showReset) {
+    return (
+      <div className="min-h-screen bg-[#D9D9D9] flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
+          <div className="bg-[#1A2C4E] p-5 text-center">
+            <div className="w-14 h-14 bg-primary/20 rounded-xl flex items-center justify-center mx-auto mb-2">
+              <Key size={28} className="text-primary" />
+            </div>
+            <h2 className="text-xl font-headline font-black text-white">Recuperar Contraseña</h2>
           </div>
-          <h2 className="text-xl font-headline font-black text-white">
-            Master<span className="text-primary">POS</span>
-          </h2>
-          <p className="text-white/50 text-[10px] mt-0.5">pro evolution v1.0</p>
+          <div className="p-6">
+            <p className="text-xs text-black/60 mb-4">Ingrese su correo electrónico para restablecer su contraseña.</p>
+            
+            <div className="mb-4">
+              <label className="block text-[10px] font-black text-black/60 uppercase tracking-widest mb-1">Correo electrónico</label>
+              <div className="flex items-center gap-2 bg-[#F5F5F5] border border-[#9E9E9E] rounded-lg px-3">
+                <Mail size={14} className="text-black/40" />
+                <input
+                  type="email"
+                  value={resetEmail}
+                  onChange={(e) => setResetEmail(e.target.value)}
+                  placeholder="usuario@masterpos.com"
+                  className="flex-1 bg-transparent py-2.5 text-sm text-black outline-none"
+                />
+              </div>
+            </div>
+
+            {resetMessage && (
+              <div className={cn(
+                "mb-4 p-2 rounded-lg text-xs",
+                resetMessage.type === 'success' ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"
+              )}>
+                {resetMessage.text}
+              </div>
+            )}
+
+            <button
+              onClick={handleResetPassword}
+              disabled={isLoading}
+              className="w-full py-2.5 bg-primary rounded-lg text-black font-black text-sm transition-all hover:brightness-110 disabled:opacity-50"
+            >
+              {isLoading ? 'Enviando...' : 'Enviar correo'}
+            </button>
+
+            <button
+              onClick={() => {
+                setShowReset(false);
+                setResetMessage(null);
+                setResetEmail('');
+              }}
+              className="w-full mt-3 py-2 text-xs text-primary font-bold hover:underline flex items-center justify-center gap-1"
+            >
+              <ArrowLeft size={12} /> Volver
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-[#D9D9D9] flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
+        <div className="bg-[#1A2C4E] p-5 text-center">
+          <div className="w-14 h-14 bg-primary/20 rounded-xl flex items-center justify-center mx-auto mb-2">
+            <Shield size={28} className="text-primary" />
+          </div>
+          <h2 className="text-xl font-headline font-black text-white">Master<span className="text-primary">POS</span></h2>
         </div>
 
-        {/* Body más compacto */}
-        <div className="p-5">
+        <div className="p-6">
           <h3 className="text-base font-black text-black">Iniciar Sesión</h3>
           <p className="text-[10px] text-black/50 mb-4">Seleccione el modo de acceso</p>
 
-          {/* Selector de modo */}
           <div className="flex gap-2 mb-4">
             <button
               type="button"
@@ -95,34 +216,30 @@ export default function LoginPage() {
 
           <form onSubmit={handleSubmit} className="space-y-3">
             <div>
-              <label className="block text-[9px] font-black text-black/60 uppercase tracking-widest mb-0.5">
-                Correo Electrónico
-              </label>
-              <div className="flex items-center gap-2 bg-[#F5F5F5] border border-[#9E9E9E] rounded-lg px-3 transition-all focus-within:border-primary">
+              <label className="block text-[9px] font-black text-black/60 uppercase tracking-widest mb-0.5">Correo Electrónico</label>
+              <div className="flex items-center gap-2 bg-[#F5F5F5] border border-[#9E9E9E] rounded-lg px-3">
                 <User size={14} className="text-black/40" />
                 <input
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder={mode === 'admin' ? "admin@masterpos.com" : "cajero@masterpos.com"}
-                  className="flex-1 bg-transparent py-2 text-sm text-black outline-none placeholder:text-black/30"
+                  placeholder="usuario@masterpos.com"
+                  className="flex-1 bg-transparent py-2.5 text-sm text-black outline-none"
                   required
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-[9px] font-black text-black/60 uppercase tracking-widest mb-0.5">
-                Contraseña
-              </label>
-              <div className="flex items-center gap-2 bg-[#F5F5F5] border border-[#9E9E9E] rounded-lg px-3 transition-all focus-within:border-primary">
+              <label className="block text-[9px] font-black text-black/60 uppercase tracking-widest mb-0.5">Contraseña</label>
+              <div className="flex items-center gap-2 bg-[#F5F5F5] border border-[#9E9E9E] rounded-lg px-3">
                 <div className="w-3 h-3 rounded-full bg-black/20" />
                 <input
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
-                  className="flex-1 bg-transparent py-2 text-sm text-black outline-none placeholder:text-black/30"
+                  className="flex-1 bg-transparent py-2.5 text-sm text-black outline-none"
                   required
                 />
               </div>
@@ -137,20 +254,31 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={isLoading}
-              className={cn(
-                "w-full py-2 bg-primary rounded-lg text-black font-black text-xs transition-all flex items-center justify-center gap-2",
-                isLoading ? "opacity-50 cursor-not-allowed" : "hover:brightness-110"
-              )}
+              className="w-full py-2.5 bg-primary rounded-lg text-black font-black text-sm transition-all hover:brightness-110 disabled:opacity-50 flex items-center justify-center gap-2"
             >
               {isLoading ? (
-                <div className="w-3 h-3 border-2 border-black/30 border-t-black rounded-full animate-spin" />
-              ) : (
                 <>
-                  <LogIn size={14} /> INGRESAR
+                  <div className="w-4 h-4 border-2 border-black/30 border-t-black rounded-full animate-spin" />
+                  Ingresando...
                 </>
+              ) : (
+                'INGRESAR'
               )}
             </button>
           </form>
+
+          <button
+            onClick={() => setShowReset(true)}
+            className="w-full mt-2 py-1 text-[9px] text-primary font-bold hover:underline transition-all"
+          >
+            ¿Olvidó su contraseña?
+          </button>
+
+          <div className="mt-3 pt-2 border-t border-[#E8E8E8]">
+            <p className="text-[8px] text-black/30 text-center">
+              {mode === 'admin' ? 'Acceso para administradores' : 'Acceso para cajeros'}
+            </p>
+          </div>
         </div>
       </div>
     </div>

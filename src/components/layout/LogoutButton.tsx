@@ -13,7 +13,24 @@ export default function LogoutButton({ className, variant = 'sidebar' }: LogoutB
   const router = useRouter();
 
   const handleLogout = () => {
+    // Limpiar toda la sesión
     localStorage.removeItem('user');
+    localStorage.removeItem('masterpos_users');
+    localStorage.removeItem('masterpos_terminals');
+    localStorage.removeItem('licopos_products');
+    localStorage.removeItem('licopos_clients');
+    localStorage.removeItem('licopos_transactions');
+    localStorage.removeItem('licopos_accounts');
+    localStorage.removeItem('licopos_register');
+    localStorage.removeItem('licopos_rate');
+    localStorage.removeItem('firebase_pending_queue');
+    localStorage.removeItem('cache_products');
+    localStorage.removeItem('cache_clients');
+    localStorage.removeItem('cache_transactions');
+    localStorage.removeItem('cache_accounts');
+    localStorage.removeItem('cache_register');
+    
+    // Redirigir al login
     router.push('/login');
   };
 

@@ -127,6 +127,18 @@ export default function ReceiptModal({ transaction, exchangeRate, onClose }: Rec
     zelle: 'ZELLE',
   };
 
+  // Protección contra undefined
+  const transactionId = transaction?.id ? transaction.id.toString().padStart(8, '0') : '00000000';
+  const transactionDate = transaction?.date ? formatDate(transaction.date) : '';
+  const transactionClientName = transaction?.clientName || '';
+  const transactionSubtotal = transaction?.subtotal || 0;
+  const transactionIva = transaction?.iva || 0;
+  const transactionTotal = transaction?.total || 0;
+  const transactionPaidBs = transaction?.paidBs || 0;
+  const transactionChange = transaction?.change || 0;
+  const transactionPayMethod = transaction?.payMethod || 'efectivo_bs';
+  const transactionItems = transaction?.items || [];
+
   return (
     <div className="fixed inset-0 z-[300] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl animate-in zoom-in-95 overflow-hidden">
@@ -147,14 +159,14 @@ export default function ReceiptModal({ transaction, exchangeRate, onClose }: Rec
               <p className="subtitle">RIF: J-12345678-0</p>
               <p className="subtitle">Tel: (0212) 555-1234</p>
               <div className="info-row" style={{ justifyContent: 'center', gap: '8px', fontSize: '9px', marginTop: '8px' }}>
-                <span>FECHA: {formatDate(transaction.date)}</span>
+                <span>FECHA: {transactionDate}</span>
               </div>
               <div className="info-row" style={{ justifyContent: 'center', gap: '8px', fontSize: '9px' }}>
-                <span>N°: {transaction.id.toString().padStart(8, '0')}</span>
+                <span>N°: {transactionId}</span>
               </div>
-              {transaction.clientName && (
+              {transactionClientName && (
                 <div className="info-row" style={{ justifyContent: 'center', fontSize: '9px', marginTop: '4px' }}>
-                  <span>CLIENTE: {transaction.clientName}</span>
+                  <span>CLIENTE: {transactionClientName}</span>
                 </div>
               )}
             </div>
@@ -169,7 +181,7 @@ export default function ReceiptModal({ transaction, exchangeRate, onClose }: Rec
                 </tr>
               </thead>
               <tbody>
-                {transaction.items.map((item, idx) => (
+                {transactionItems.map((item, idx) => (
                   <tr key={idx}>
                     <td style={{ padding: '4px 0' }}>{item.qty}</td>
                     <td style={{ padding: '4px 0', fontSize: '9px' }}>{item.name.slice(0, 20)}</td>
@@ -183,47 +195,53 @@ export default function ReceiptModal({ transaction, exchangeRate, onClose }: Rec
             <div className="totals" style={{ borderTop: '1px dashed #000', paddingTop: '8px', marginTop: '8px' }}>
               <div className="info-row" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
                 <span>SUBTOTAL:</span>
-                <span>BS {transaction.subtotal.toFixed(2)}</span>
+                <span>BS {transactionSubtotal.toFixed(2)}</span>
               </div>
               <div className="info-row" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
                 <span>IVA (16%):</span>
-                <span>BS {transaction.iva.toFixed(2)}</span>
+                <span>BS {transactionIva.toFixed(2)}</span>
               </div>
               <div className="total-grand" style={{ fontSize: '12px', fontWeight: 'bold', marginTop: '8px', paddingTop: '4px', borderTop: '2px solid #000' }}>
                 <div className="info-row" style={{ display: 'flex', justifyContent: 'space-between' }}>
                   <span>TOTAL:</span>
-                  <span>BS {transaction.total.toFixed(2)}</span>
+                  <span>BS {transactionTotal.toFixed(2)}</span>
                 </div>
               </div>
               <div className="info-row" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
                 <span>MONTO PAGADO:</span>
-                <span>BS {transaction.paidBs.toFixed(2)}</span>
+                <span>BS {transactionPaidBs.toFixed(2)}</span>
               </div>
-              {transaction.change > 0 && (
+              {transactionChange > 0 && (
                 <div className="info-row" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
                   <span>VUELTO:</span>
-                  <span>BS {transaction.change.toFixed(2)}</span>
+                  <span>BS {transactionChange.toFixed(2)}</span>
                 </div>
               )}
             </div>
 
             <div className="payment-method" style={{ background: '#f0f0f0', padding: '4px', margin: '8px 0', textAlign: 'center', fontWeight: 'bold' }}>
-              {paymentMethodLabels[transaction.payMethod] || transaction.payMethod.toUpperCase()}
+              {paymentMethodLabels[transactionPayMethod] || transactionPayMethod.toUpperCase()}
             </div>
 
             <div className="footer" style={{ textAlign: 'center', marginTop: '16px', paddingTop: '8px', borderTop: '1px dashed #000', fontSize: '8px' }}>
               <p>¡Gracias por su compra!</p>
               <p>Válido como comprobante fiscal</p>
-              <p style={{ fontSize: '7px', marginTop: '8px' }}>www.licopos.com</p>
+              <p style={{ fontSize: '7px', marginTop: '8px' }}>www.masterpos.com</p>
             </div>
           </div>
         </div>
 
         <div className="p-4 border-t border-gray-200 flex gap-3">
-          <button onClick={onClose} className="flex-1 py-2 bg-gray-200 text-black font-bold rounded-lg hover:bg-gray-300 transition-all">
+          <button
+            onClick={onClose}
+            className="flex-1 py-2 bg-gray-200 text-black font-bold rounded-lg hover:bg-gray-300 transition-all"
+          >
             CERRAR
           </button>
-          <button onClick={handlePrint} className="flex-1 py-2 bg-[#D4A017] text-black font-bold rounded-lg hover:bg-[#C4940F] transition-all flex items-center justify-center gap-2">
+          <button
+            onClick={handlePrint}
+            className="flex-1 py-2 bg-[#D4A017] text-black font-bold rounded-lg hover:bg-[#C4940F] transition-all flex items-center justify-center gap-2"
+          >
             <Printer size={16} /> IMPRIMIR
           </button>
         </div>

@@ -282,7 +282,7 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
         className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-sm flex items-center justify-start p-4 ml-6"
         onKeyDownCapture={handleKeyDownCapture}
       >
-        <div className="bg-[#D9D9D9] border border-black/20 rounded-2xl w-full max-w-md p-5 shadow-2xl">
+        <div className="bg-[#D9D9D9] border border-black/20 rounded-2xl w-full max-w-md p-4 shadow-2xl">
           <div className="flex justify-between items-center mb-4">
             <h3 className="text-lg font-headline font-black flex items-center gap-2 text-black">
               <Smartphone size={20} className="text-[#E67E22]" /> Pago Móvil
@@ -310,7 +310,7 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
                 placeholder="Ej: 123456"
                 autoFocus
                 onKeyDown={(e) => e.stopPropagation()}
-                className="w-full bg-white border border-black/20 rounded-lg px-3 py-2 text-base font-bold text-black text-center tracking-widest focus:outline-none focus:border-[#E67E22] focus:ring-2 focus:ring-[#E67E22]/50"
+                className="w-full bg-white border border-black/20 rounded-lg px-3 py-2 text-sm font-bold text-black text-center tracking-widest focus:outline-none focus:border-[#E67E22] focus:ring-2 focus:ring-[#E67E22]/50"
               />
               <p className="text-[9px] text-black/40 mt-1 text-center">
                 {reference.length}/6 dígitos
@@ -361,7 +361,7 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
   const ChangeDialog = () => (
     <div className="fixed inset-0 z-[300] bg-black/90 backdrop-blur-sm flex items-center justify-start p-4 ml-6">
       <div className="bg-[#1A2C4E] border-2 border-[#2ECC71] rounded-2xl w-full max-w-sm p-6 shadow-2xl text-center">
-        <div className="w-16 h-16 mx-auto mb-3 rounded-full bg-[#2ECC71]/20 flex items-center justify-center">
+        <div className="w-16 h-16 mx-auto mb-2 rounded-full bg-[#2ECC71]/20 flex items-center justify-center">
           <span className="text-3xl">💰</span>
         </div>
         
@@ -411,8 +411,8 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
   const CompoundModal = () => (
     <div className="fixed inset-0 z-[150] bg-black/80 backdrop-blur-sm flex items-center justify-start p-4 ml-6">
       <div className="bg-[#D9D9D9] border border-black/20 rounded-2xl w-full max-w-lg p-4 shadow-2xl">
-        <div className="flex justify-between items-center mb-3">
-          <h3 className="text-base font-headline font-black flex items-center gap-2 text-black">
+        <div className="flex justify-between items-center mb-2">
+          <h3 className="text-sm font-headline font-black flex items-center gap-2 text-black">
             <Wallet size={16} className="text-[#D4A017]" /> Pago Compuesto
           </h3>
           <button onClick={() => setShowCompoundModal(false)} className="text-black/50 hover:text-black">
@@ -421,7 +421,7 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
         </div>
 
         {/* Lista de pagos acumulados */}
-        <div className="mb-3 max-h-40 overflow-y-auto">
+        <div className="mb-2 max-h-40 overflow-y-auto">
           {compoundPayments.length === 0 ? (
             <div className="text-center py-4 text-black/40 text-xs italic">
               No hay pagos registrados
@@ -452,7 +452,7 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
         </div>
 
         {/* Totales */}
-        <div className="bg-white/80 rounded-lg p-2 mb-3">
+        <div className="bg-white/80 rounded-lg p-2 mb-2">
           <div className="flex justify-between text-xs">
             <span className="text-black/60">Total:</span>
             <span className="font-bold text-black">BS {total.toFixed(2)}</span>
@@ -470,7 +470,7 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
         </div>
 
         {/* Selector de método y monto */}
-        <div className="grid grid-cols-2 gap-2 mb-3">
+        <div className="grid grid-cols-2 gap-2 mb-2">
           <div className="relative">
             <button
               onClick={() => setShowMethodsDropdown(!showMethodsDropdown)}
@@ -513,7 +513,7 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
         </div>
 
         {/* Teclado numérico */}
-        <div className="grid grid-cols-3 gap-1 mb-3">
+        <div className="grid grid-cols-3 gap-1 mb-2">
           {[1,2,3,4,5,6,7,8,9].map(n => (
             <button key={n} onClick={() => handleInput(n.toString())} 
               className="h-8 bg-[#E8E8E8] border border-black/10 rounded-md font-black text-sm text-black hover:bg-[#D4A017] transition-all">
@@ -575,9 +575,9 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
     <>
       {/* Modal principal */}
       <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-start">
-        <div className="bg-[#D9D9D9] border border-black/20 rounded-2xl shadow-2xl w-full max-w-md p-5 ml-6">
-          <div className="flex justify-between items-center mb-3">
-            <h3 className="text-base font-headline font-black flex items-center gap-2 text-black">
+        <div className="bg-[#D9D9D9] border border-black/20 rounded-2xl shadow-2xl w-full max-w-md p-4 ml-6">
+          <div className="flex justify-between items-center mb-2">
+            <h3 className="text-sm font-headline font-black flex items-center gap-2 text-black">
               <Calculator size={18} className="text-[#D4A017]" /> Cobro Contado
             </h3>
             <button onClick={onClose} className="text-black/50 hover:text-black">
@@ -585,7 +585,7 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
             </button>
           </div>
 
-          <div className="flex gap-2 mb-3">
+          <div className="flex gap-2 mb-2">
             <button
               onClick={() => {
                 setShowCompoundModal(true);
@@ -599,11 +599,11 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
             </button>
           </div>
 
-          <div className="bg-[#1A2C4E] rounded-lg p-3 mb-3 text-right shadow-inner">
+          <div className="bg-[#1A2C4E] rounded-lg p-3 mb-2 text-right shadow-inner">
             <div className="text-[8px] text-white/60 uppercase font-bold tracking-widest">
               {currentMethodInfo?.label}
             </div>
-            <div className="text-2xl font-black text-white mt-0.5 tracking-tighter">
+            <div className="text-xl font-black text-white mt-0.5 tracking-tighter">
               {isUsd ? `USD ${(parseFloat(buffer) || 0).toFixed(2)}` : `BS ${(parseFloat(buffer) || 0).toFixed(2)}`}
             </div>
             <div className="text-[9px] text-[#D4A017] font-bold">
@@ -611,7 +611,7 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
             </div>
           </div>
 
-          <div className="bg-white/80 rounded-lg p-2 mb-3">
+          <div className="bg-white/80 rounded-lg p-2 mb-2">
             <div className="flex justify-between text-xs">
               <span className="text-black/60">Total a pagar:</span>
               <span className="font-bold text-black">BS {total.toFixed(2)}</span>
@@ -627,14 +627,14 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
               </span>
             </div>
             {changeAmount > 0 && (
-              <div className="flex justify-between text-base pt-1 mt-1 border-t border-[#2ECC71]">
+              <div className="flex justify-between text-sm pt-1 mt-1 border-t border-[#2ECC71]">
                 <span className="text-black font-bold">VUELTO:</span>
                 <span className="font-black text-[#2ECC71]">BS {changeAmount.toFixed(2)}</span>
               </div>
             )}
           </div>
 
-          <div className="relative mb-3">
+          <div className="relative mb-2">
             <button
               onClick={() => setShowMethodsDropdown(!showMethodsDropdown)}
               className="w-full flex items-center justify-between p-2 bg-white border border-black/20 rounded-lg text-sm font-bold text-black"
@@ -667,23 +667,23 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
             )}
           </div>
 
-          <div className="grid grid-cols-3 gap-1 mb-3">
+          <div className="grid grid-cols-3 gap-1 mb-2">
             {[1,2,3,4,5,6,7,8,9].map(n => (
               <button key={n} onClick={() => handleInput(n.toString())} 
-                className="h-10 bg-[#E8E8E8] border border-black/10 rounded-lg font-black text-base text-black hover:bg-[#D4A017] transition-all">
+                className="h-9 bg-[#E8E8E8] border border-black/10 rounded-lg font-black text-sm text-black hover:bg-[#D4A017] transition-all">
                 {n}
               </button>
             ))}
             <button onClick={() => handleInput('del')} 
-              className="h-10 bg-[#E8E8E8] border border-black/10 rounded-lg text-[#E74C3C] flex items-center justify-center hover:bg-[#E74C3C] hover:text-white">
+              className="h-9 bg-[#E8E8E8] border border-black/10 rounded-lg text-[#E74C3C] flex items-center justify-center hover:bg-[#E74C3C] hover:text-white">
               <Calculator size={18} />
             </button>
             <button onClick={() => handleInput('0')} 
-              className="h-10 bg-[#E8E8E8] border border-black/10 rounded-lg font-black text-base text-black hover:bg-[#D4A017]">
+              className="h-9 bg-[#E8E8E8] border border-black/10 rounded-lg font-black text-sm text-black hover:bg-[#D4A017]">
               0
             </button>
             <button onClick={() => handleInput('.')} 
-              className="h-10 bg-[#E8E8E8] border border-black/10 rounded-lg font-black text-base text-black hover:bg-[#D4A017]">
+              className="h-9 bg-[#E8E8E8] border border-black/10 rounded-lg font-black text-sm text-black hover:bg-[#D4A017]">
               .
             </button>
           </div>

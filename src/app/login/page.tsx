@@ -2,11 +2,12 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Shield, User, LogIn, Building2, Store, Key, Mail, ArrowLeft } from 'lucide-react';
+import { User, Building2, Store, Key, Mail, ArrowLeft } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { auth, db } from '@/lib/firebase';
 import { signInWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
+import Image from 'next/image';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -32,11 +33,9 @@ export default function LoginPage() {
     setIsLoading(true);
     
     try {
-      // Autenticar en Firebase Auth
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const firebaseUser = userCredential.user;
       
-      // Obtener rol desde Firestore
       const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
       let userRole = 'cashier';
       let userName = firebaseUser.displayName || email.split('@')[0] || 'Usuario';
@@ -47,7 +46,6 @@ export default function LoginPage() {
         userName = userData.name;
       }
       
-      // Verificar rol según modo seleccionado
       if (mode === 'admin' && userRole !== 'admin') {
         setError('Esta cuenta no tiene permisos de administrador');
         setIsLoading(false);
@@ -60,7 +58,6 @@ export default function LoginPage() {
         return;
       }
       
-      // Guardar sesión
       localStorage.setItem('user', JSON.stringify({ 
         name: userName, 
         role: userRole, 
@@ -68,7 +65,6 @@ export default function LoginPage() {
         uid: firebaseUser.uid
       }));
       
-      // Redirigir inmediatamente
       router.replace('/');
     } catch (firebaseError: any) {
       console.error('Login error:', firebaseError);
@@ -175,8 +171,16 @@ export default function LoginPage() {
     <div className="min-h-screen bg-[#D9D9D9] flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
         <div className="bg-[#1A2C4E] p-5 text-center">
-          <div className="w-14 h-14 bg-primary/20 rounded-xl flex items-center justify-center mx-auto mb-2">
-            <Shield size={28} className="text-primary" />
+          {/* Contenedor cuadrado con esquinas redondeadas - MISMAS DIMENSIONES que el shield original */}
+          <div className="w-14 h-14 rounded-xl overflow-hidden mx-auto mb-2">
+            <Image 
+              src="/logo-master.png" 
+              alt="MasterPOS Logo" 
+              width={56} 
+              height={56}
+              className="w-full h-full object-cover"
+              priority
+            />
           </div>
           <h2 className="text-xl font-headline font-black text-white">Master<span className="text-primary">POS</span></h2>
         </div>

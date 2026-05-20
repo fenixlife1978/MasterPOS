@@ -2,7 +2,7 @@ import type {Metadata} from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'LicoPOS Elite — Sistema de Ventas Premium',
+  title: 'MasterPOS v1.0',
   description: 'Sistema de gestión de inventario y punto de venta para licorerías de alta gama.',
 };
 

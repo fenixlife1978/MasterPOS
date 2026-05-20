@@ -4,13 +4,15 @@ import { useState, useEffect } from 'react';
 import { 
   Plus, Edit, Trash2, X, Check, 
   Computer, Users, MapPin, Power, 
-  PowerOff, AlertTriangle, Search 
+  PowerOff, AlertTriangle, Search, Loader2 
 } from 'lucide-react';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
+import { db } from '@/lib/firebase';
+import { collection, getDocs, query, where } from 'firebase/firestore';
 
 interface Terminal {
   id: number;
@@ -18,13 +20,13 @@ interface Terminal {
   description: string;
   location: string;
   status: 'active' | 'inactive' | 'maintenance';
-  assignedTo: number | null;
+  assignedTo: string | null; // Cambiado a string para IDs de Firebase
   createdAt: string;
   updatedAt: string;
 }
 
 interface Cashier {
-  id: number;
+  id: string;
   name: string;
   email: string;
   role: string;
@@ -36,52 +38,46 @@ export default function TerminalManager() {
   const [showModal, setShowModal] = useState(false);
   const [editingTerminal, setEditingTerminal] = useState<Terminal | null>(null);
   const [search, setSearch] = useState('');
+  const [isLoadingUsers, setIsLoadingUsers] = useState(false);
   
   const [formData, setFormData] = useState({
     name: '',
     description: '',
     location: '',
-    assignedTo: '' as string,
+    assignedTo: '',
   });
 
-  // Cargar terminales y cajeros
-  useEffect(() => {
-    // Cargar terminales
+  // Cargar terminales desde localStorage y cajeros desde Firestore
+  const loadData = async () => {
+    // 1. Cargar terminales
     const stored = localStorage.getItem('masterpos_terminals');
     if (stored) {
       setTerminals(JSON.parse(stored));
     } else {
-      const defaultTerminals: Terminal[] = [
-        {
-          id: 1,
-          name: 'Caja Principal',
-          description: 'Caja principal del local',
-          location: 'Primer piso - Mostrador central',
-          status: 'active',
-          assignedTo: null,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        },
-      ];
-      setTerminals(defaultTerminals);
-      localStorage.setItem('masterpos_terminals', JSON.stringify(defaultTerminals));
+      setTerminals([]);
     }
     
-    // Cargar cajeros (usuarios con rol cashier)
-    const storedUsers = localStorage.getItem('masterpos_users');
-    if (storedUsers) {
-      const allUsers = JSON.parse(storedUsers);
-      const cashiersList = allUsers.filter((u: any) => u.role === 'cashier');
+    // 2. Cargar cajeros reales desde Firestore (Sincronizado con pestaña Usuarios)
+    setIsLoadingUsers(true);
+    try {
+      const q = query(collection(db, 'users'), where('role', '==', 'cashier'));
+      const querySnapshot = await getDocs(q);
+      const cashiersList = querySnapshot.docs.map(doc => ({
+        id: doc.id,
+        name: doc.data().name,
+        email: doc.data().email,
+        role: doc.data().role
+      })) as Cashier[];
       setCashiers(cashiersList);
-    } else {
-      // Usuarios de ejemplo
-      const defaultCashiers: Cashier[] = [
-        { id: 1, name: 'Ana López', email: 'ana@masterpos.com', role: 'cashier' },
-        { id: 2, name: 'Carlos Ruiz', email: 'carlos@masterpos.com', role: 'cashier' },
-      ];
-      setCashiers(defaultCashiers);
-      localStorage.setItem('masterpos_users', JSON.stringify(defaultCashiers));
+    } catch (error) {
+      console.error('Error loading cashiers from Firestore:', error);
+    } finally {
+      setIsLoadingUsers(false);
     }
+  };
+
+  useEffect(() => {
+    loadData();
   }, []);
 
   const saveTerminals = (newTerminals: Terminal[]) => {
@@ -103,7 +99,7 @@ export default function TerminalManager() {
               name: formData.name,
               description: formData.description,
               location: formData.location,
-              assignedTo: formData.assignedTo ? parseInt(formData.assignedTo) : null,
+              assignedTo: formData.assignedTo || null,
               updatedAt: new Date().toISOString(),
             }
           : t
@@ -116,7 +112,7 @@ export default function TerminalManager() {
         description: formData.description,
         location: formData.location,
         status: 'active',
-        assignedTo: formData.assignedTo ? parseInt(formData.assignedTo) : null,
+        assignedTo: formData.assignedTo || null,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
@@ -133,7 +129,7 @@ export default function TerminalManager() {
       name: terminal.name,
       description: terminal.description || '',
       location: terminal.location || '',
-      assignedTo: terminal.assignedTo?.toString() || '',
+      assignedTo: terminal.assignedTo || '',
     });
     setShowModal(true);
   };
@@ -177,10 +173,10 @@ export default function TerminalManager() {
     }
   };
 
-  const getAssignedUserName = (userId: number | null) => {
+  const getAssignedUserName = (userId: string | null) => {
     if (!userId) return 'Sin asignar';
     const cashier = cashiers.find(c => c.id === userId);
-    return cashier ? cashier.name : 'Sin asignar';
+    return cashier ? cashier.name : 'Usuario no encontrado';
   };
 
   const filteredTerminals = terminals.filter(t => 
@@ -235,7 +231,10 @@ export default function TerminalManager() {
                 <TableCell className="font-bold text-black text-sm">{terminal.name}</TableCell>
                 <TableCell className="text-black/60 text-xs">{terminal.description || '—'}</TableCell>
                 <TableCell className="text-black/60 text-xs flex items-center gap-1"><MapPin size={10} /> {terminal.location || '—'}</TableCell>
-                <TableCell className="text-black/60 text-xs flex items-center gap-1"><Users size={10} /> {getAssignedUserName(terminal.assignedTo)}</TableCell>
+                <TableCell className="text-black/60 text-xs flex items-center gap-1">
+                  <Users size={10} /> 
+                  {isLoadingUsers ? 'Cargando...' : getAssignedUserName(terminal.assignedTo)}
+                </TableCell>
                 <TableCell>{getStatusBadge(terminal.status)}</TableCell>
                 <TableCell className="text-right">
                   <div className="flex justify-end gap-1">
@@ -329,18 +328,26 @@ export default function TerminalManager() {
                 <label className="text-[10px] font-bold text-black/60 uppercase tracking-widest block mb-1">
                   Asignar a Cajero
                 </label>
-                <select 
-                  value={formData.assignedTo}
-                  onChange={(e) => setFormData({ ...formData, assignedTo: e.target.value })}
-                  className="w-full h-10 bg-white border border-[#9E9E9E] rounded-lg px-3 text-sm"
-                >
-                  <option value="">Sin asignar</option>
-                  {cashiers.map(cashier => (
-                    <option key={cashier.id} value={cashier.id}>{cashier.name}</option>
-                  ))}
-                </select>
-                {cashiers.length === 0 && (
-                  <p className="text-[9px] text-red-500 mt-1">No hay cajeros registrados. Cree un usuario con rol "Cajero" primero.</p>
+                <div className="relative">
+                  <select 
+                    value={formData.assignedTo}
+                    onChange={(e) => setFormData({ ...formData, assignedTo: e.target.value })}
+                    className="w-full h-10 bg-white border border-[#9E9E9E] rounded-lg px-3 text-sm appearance-none focus:outline-none focus:ring-2 focus:ring-primary/50"
+                    disabled={isLoadingUsers}
+                  >
+                    <option value="">Sin asignar</option>
+                    {cashiers.map(cashier => (
+                      <option key={cashier.id} value={cashier.id}>{cashier.name}</option>
+                    ))}
+                  </select>
+                  {isLoadingUsers && (
+                    <div className="absolute right-8 top-1/2 -translate-y-1/2">
+                      <Loader2 size={14} className="animate-spin text-black/40" />
+                    </div>
+                  )}
+                </div>
+                {!isLoadingUsers && cashiers.length === 0 && (
+                  <p className="text-[9px] text-red-500 mt-1">No hay cajeros registrados en Firestore. Cree un usuario con rol "Cajero" primero.</p>
                 )}
               </div>
             </div>

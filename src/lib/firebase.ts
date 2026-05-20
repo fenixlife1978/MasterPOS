@@ -13,16 +13,18 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 
-// Inicializar Firebase (evitar múltiples inicializaciones)
-const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+// Inicializar Firebase solo en el cliente
+let app = null;
+let db = null;
+let rtdb = null;
+let auth = null;
 
-// Firestore (para datos principales)
-export const db = getFirestore(app);
+if (typeof window !== 'undefined') {
+  app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+  db = getFirestore(app);
+  rtdb = getDatabase(app);
+  auth = getAuth(app);
+}
 
-// Realtime Database (para datos en tiempo real)
-export const rtdb = getDatabase(app);
-
-// Auth (para autenticación)
-export const auth = getAuth(app);
-
+export { db, rtdb, auth };
 export default app;

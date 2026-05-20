@@ -3,7 +3,7 @@
 import { db, rtdb } from '@/lib/firebase';
 import { 
   doc, getDoc, setDoc, updateDoc, deleteDoc, 
-  collection, query, where, getDocs, limit,
+  collection, query, where, onSnapshot, getDocs, limit,
   orderBy, Timestamp, writeBatch
 } from 'firebase/firestore';
 import { ref, set, get, update, remove, onValue, off } from 'firebase/database';
@@ -13,7 +13,7 @@ import { ref, set, get, update, remove, onValue, off } from 'firebase/database';
 // ============================================
 interface PendingOperation {
   id: string;
-  type: 'saveProducts' | 'saveClients' | 'saveTransaction' | 'saveAccount' | 'saveRegister' | 'clearRegister' | 'saveAccountingEntry';
+  type: string;
   data: any;
   timestamp: number;
   retries: number;
@@ -23,7 +23,6 @@ let pendingQueue: PendingOperation[] = [];
 let isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
 let isSyncing = false;
 
-// Cargar cola pendiente desde localStorage
 if (typeof window !== 'undefined') {
   const savedQueue = localStorage.getItem('firebase_pending_queue');
   if (savedQueue) {
@@ -33,28 +32,22 @@ if (typeof window !== 'undefined') {
   }
 }
 
-// Guardar cola en localStorage
 const saveQueue = () => {
   if (typeof window !== 'undefined') {
     localStorage.setItem('firebase_pending_queue', JSON.stringify(pendingQueue));
   }
 };
 
-// Detectar cambios de conectividad
 if (typeof window !== 'undefined') {
   window.addEventListener('online', () => {
     isOnline = true;
-    console.log('🟢 Conexión recuperada, sincronizando...');
     processQueue();
   });
-  
   window.addEventListener('offline', () => {
     isOnline = false;
-    console.log('🔴 Sin conexión, guardando operaciones en cola');
   });
 }
 
-// Limpiar datos undefined
 const cleanObject = (obj: any): any => {
   if (obj === null || obj === undefined) return null;
   if (Array.isArray(obj)) {
@@ -73,481 +66,156 @@ const cleanObject = (obj: any): any => {
   return obj;
 };
 
-// Procesar cola de operaciones pendientes
 const processQueue = async () => {
   if (!isOnline || isSyncing || pendingQueue.length === 0) return;
-  
   isSyncing = true;
-  console.log(`🔄 Sincronizando ${pendingQueue.length} operaciones pendientes...`);
-  
   const toRetry: PendingOperation[] = [];
   
   for (const op of pendingQueue) {
     try {
-      const cleanedData = cleanObject(op.data);
-      
-      switch (op.type) {
-        case 'saveProducts':
-          const batch = writeBatch(db);
-          if (Array.isArray(cleanedData)) {
-            cleanedData.forEach((product: any) => {
-              if (product && product.id) {
-                const docRef = doc(db, 'products', product.id.toString());
-                batch.set(docRef, { ...product, updatedAt: Date.now() });
-              }
-            });
-            await batch.commit();
-          }
-          break;
-        case 'saveClients':
-          const clientBatch = writeBatch(db);
-          if (Array.isArray(cleanedData)) {
-            cleanedData.forEach((client: any) => {
-              if (client && client.id) {
-                const docRef = doc(db, 'clients', client.id.toString());
-                clientBatch.set(docRef, { ...client, updatedAt: Date.now() });
-              }
-            });
-            await clientBatch.commit();
-          }
-          break;
-        case 'saveTransaction':
-          if (cleanedData && cleanedData.id) {
-            const txRef = doc(db, 'transactions', cleanedData.id.toString());
-            await setDoc(txRef, { ...cleanedData, createdAt: Date.now() });
-          }
-          break;
-        case 'saveAccount':
-          if (cleanedData && cleanedData.id) {
-            const accRef = doc(db, 'accounts', cleanedData.id.toString());
-            await setDoc(accRef, { ...cleanedData, updatedAt: Date.now() });
-          }
-          break;
-        case 'saveAccountingEntry':
-          if (cleanedData && cleanedData.id) {
-            const entryRef = doc(db, 'accounting_entries', cleanedData.id.toString());
-            await setDoc(entryRef, { ...cleanedData, createdAt: Date.now() });
-          }
-          break;
-        case 'saveRegister':
-          const registerRef = ref(rtdb, 'register');
-          const cleanedRegister = { ...cleanedData, updatedAt: Date.now() };
-          delete cleanedRegister.txs;
-          await set(registerRef, cleanedRegister);
-          break;
-        case 'clearRegister':
-          const clearRef = ref(rtdb, 'register');
-          await remove(clearRef);
-          break;
+      const data = cleanObject(op.data);
+      if (op.type === 'saveProducts') {
+        const batch = writeBatch(db);
+        data.forEach((p: any) => batch.set(doc(db, 'products', p.id.toString()), { ...p, updatedAt: Date.now() }));
+        await batch.commit();
+      } else if (op.type === 'saveTransaction') {
+        await setDoc(doc(db, 'transactions', data.id.toString()), { ...data, createdAt: Date.now() });
+      } else if (op.type === 'saveAccountingEntry') {
+        await setDoc(doc(db, 'accounting_entries', data.id.toString()), { ...data, createdAt: Date.now() });
+      } else if (op.type === 'saveSupplier') {
+        await setDoc(doc(db, 'suppliers', data.id.toString()), { ...data, updatedAt: Date.now() });
+      } else if (op.type === 'saveInvoice') {
+        await setDoc(doc(db, 'supplier_invoices', data.id.toString()), { ...data, updatedAt: Date.now() });
+      } else if (op.type === 'saveSupplierPayment') {
+        await setDoc(doc(db, 'supplier_payments', data.id.toString()), { ...data, createdAt: Date.now() });
       }
-      console.log(`✅ Operación ${op.type} sincronizada`);
     } catch (error) {
-      console.error(`❌ Error sincronizando ${op.type}:`, error);
       op.retries++;
-      if (op.retries < 5) {
-        toRetry.push(op);
-      } else {
-        console.error(`⚠️ Operación ${op.type} descartada después de 5 intentos`);
-      }
+      if (op.retries < 5) toRetry.push(op);
     }
   }
-  
   pendingQueue = toRetry;
   saveQueue();
   isSyncing = false;
-  
-  if (pendingQueue.length > 0) {
-    setTimeout(processQueue, 10000);
-  }
 };
 
-const addToQueue = (operation: Omit<PendingOperation, 'id' | 'timestamp' | 'retries'>) => {
-  const newOp: PendingOperation = {
-    ...operation,
-    id: `${Date.now()}_${Math.random()}`,
-    timestamp: Date.now(),
-    retries: 0
-  };
-  pendingQueue.push(newOp);
+const addToQueue = (type: string, data: any) => {
+  pendingQueue.push({ id: `${Date.now()}_${Math.random()}`, type, data, timestamp: Date.now(), retries: 0 });
   saveQueue();
-  
-  if (isOnline) {
-    processQueue();
-  }
+  if (isOnline) processQueue();
 };
-
-// ============================================
-// FIRESTORE - Colecciones
-// ============================================
 
 export const syncService = {
-  // ============================================
-  // PRODUCTOS
-  // ============================================
+  // Productos
+  async saveProduct(product: any) {
+    if (!isOnline) return addToQueue('saveProducts', [product]);
+    await setDoc(doc(db, 'products', product.id.toString()), { ...cleanObject(product), updatedAt: Date.now() });
+  },
   async saveProducts(products: any[]) {
-    const cleaned = cleanObject(products);
-    if (!isOnline) {
-      addToQueue({ type: 'saveProducts', data: cleaned });
-      return;
-    }
-    
-    try {
-      const batch = writeBatch(db);
-      cleaned.forEach((product: any) => {
-        if (product && product.id) {
-          const docRef = doc(db, 'products', product.id.toString());
-          batch.set(docRef, { ...product, updatedAt: Date.now() });
-        }
-      });
-      await batch.commit();
-    } catch (error) {
-      console.error('Error saving products:', error);
-      addToQueue({ type: 'saveProducts', data: cleaned });
-    }
+    if (!isOnline) return addToQueue('saveProducts', products);
+    const batch = writeBatch(db);
+    products.forEach(p => batch.set(doc(db, 'products', p.id.toString()), { ...cleanObject(p), updatedAt: Date.now() }));
+    await batch.commit();
   },
-
-  async loadProducts(): Promise<any[]> {
-    try {
-      const q = query(collection(db, 'products'), limit(200));
-      const snapshot = await getDocs(q);
-      const products = snapshot.docs.map(doc => ({ id: parseInt(doc.id), ...doc.data() }));
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('cache_products', JSON.stringify(products));
-      }
-      return products;
-    } catch (error) {
-      console.error('Error loading products:', error);
-      if (typeof window !== 'undefined') {
-        const cached = localStorage.getItem('cache_products');
-        if (cached) return JSON.parse(cached);
-      }
-      return [];
-    }
-  },
-
-  // ============================================
-  // CLIENTES
-  // ============================================
-  async saveClients(clients: any[]) {
-    const cleaned = cleanObject(clients);
-    if (!isOnline) {
-      addToQueue({ type: 'saveClients', data: cleaned });
-      return;
-    }
-    
-    try {
-      const batch = writeBatch(db);
-      cleaned.forEach((client: any) => {
-        if (client && client.id) {
-          const docRef = doc(db, 'clients', client.id.toString());
-          batch.set(docRef, { ...client, updatedAt: Date.now() });
-        }
-      });
-      await batch.commit();
-    } catch (error) {
-      console.error('Error saving clients:', error);
-      addToQueue({ type: 'saveClients', data: cleaned });
-    }
-  },
-
-  async loadClients(): Promise<any[]> {
-    try {
-      const snapshot = await getDocs(collection(db, 'clients'));
-      const clients = snapshot.docs.map(doc => ({ id: parseInt(doc.id), ...doc.data() }));
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('cache_clients', JSON.stringify(clients));
-      }
-      return clients;
-    } catch (error) {
-      console.error('Error loading clients:', error);
-      if (typeof window !== 'undefined') {
-        const cached = localStorage.getItem('cache_clients');
-        if (cached) return JSON.parse(cached);
-      }
-      return [];
-    }
-  },
-
-  // ============================================
-  // TRANSACCIONES
-  // ============================================
-  async saveTransaction(transaction: any) {
-    const cleaned = cleanObject(transaction);
-    if (!isOnline) {
-      addToQueue({ type: 'saveTransaction', data: cleaned });
-      return;
-    }
-    
-    try {
-      if (cleaned && cleaned.id) {
-        const docRef = doc(db, 'transactions', cleaned.id.toString());
-        await setDoc(docRef, { ...cleaned, createdAt: Date.now() });
-      }
-    } catch (error) {
-      console.error('Error saving transaction:', error);
-      addToQueue({ type: 'saveTransaction', data: cleaned });
-    }
-  },
-
-  async loadTransactions(): Promise<any[]> {
-    try {
-      const q = query(collection(db, 'transactions'), orderBy('date', 'desc'), limit(200));
-      const snapshot = await getDocs(q);
-      const transactions = snapshot.docs.map(doc => doc.data());
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('cache_transactions', JSON.stringify(transactions));
-      }
-      return transactions;
-    } catch (error) {
-      console.error('Error loading transactions:', error);
-      if (typeof window !== 'undefined') {
-        const cached = localStorage.getItem('cache_transactions');
-        if (cached) return JSON.parse(cached);
-      }
-      return [];
-    }
-  },
-
-  // ============================================
-  // ASIENTOS CONTABLES
-  // ============================================
-  async saveAccountingEntry(entry: any) {
-    const cleaned = cleanObject(entry);
-    if (!isOnline) {
-      addToQueue({ type: 'saveAccountingEntry', data: cleaned });
-      return;
-    }
-    
-    try {
-      if (cleaned && cleaned.id) {
-        const docRef = doc(db, 'accounting_entries', cleaned.id.toString());
-        await setDoc(docRef, { ...cleaned, createdAt: Date.now() });
-      }
-    } catch (error) {
-      console.error('Error saving accounting entry:', error);
-      addToQueue({ type: 'saveAccountingEntry', data: cleaned });
-    }
-  },
-
-  async loadAccountingEntries(): Promise<any[]> {
-    try {
-      const q = query(collection(db, 'accounting_entries'), orderBy('date', 'desc'), limit(500));
-      const snapshot = await getDocs(q);
-      const entries = snapshot.docs.map(doc => doc.data());
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('cache_accounting_entries', JSON.stringify(entries));
-      }
-      return entries;
-    } catch (error) {
-      console.error('Error loading accounting entries:', error);
-      if (typeof window !== 'undefined') {
-        const cached = localStorage.getItem('cache_accounting_entries');
-        if (cached) return JSON.parse(cached);
-      }
-      return [];
-    }
-  },
-
-  // ============================================
-  // CUENTAS (ACCOUNTS)
-  // ============================================
-  async saveAccount(account: any) {
-    const cleaned = cleanObject(account);
-    if (!isOnline) {
-      addToQueue({ type: 'saveAccount', data: cleaned });
-      return;
-    }
-    
-    try {
-      if (cleaned && cleaned.id) {
-        const docRef = doc(db, 'accounts', cleaned.id.toString());
-        await setDoc(docRef, { ...cleaned, updatedAt: Date.now() });
-      }
-    } catch (error) {
-      console.error('Error saving account:', error);
-      addToQueue({ type: 'saveAccount', data: cleaned });
-    }
-  },
-
-  async loadAccounts(): Promise<any[]> {
-    try {
-      const snapshot = await getDocs(collection(db, 'accounts'));
-      const accounts = snapshot.docs.map(doc => doc.data());
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('cache_accounts', JSON.stringify(accounts));
-      }
-      return accounts;
-    } catch (error) {
-      console.error('Error loading accounts:', error);
-      if (typeof window !== 'undefined') {
-        const cached = localStorage.getItem('cache_accounts');
-        if (cached) return JSON.parse(cached);
-      }
-      return [];
-    }
-  },
-
-  // ============================================
-  // CAJA (Realtime Database)
-  // ============================================
-  async saveRegister(register: any) {
-    const cleaned = cleanObject(register);
-    if (!isOnline) {
-      addToQueue({ type: 'saveRegister', data: cleaned });
-      return;
-    }
-    
-    try {
-      const registerRef = ref(rtdb, 'register');
-      const toSave = { ...cleaned, updatedAt: Date.now() };
-      delete toSave.txs;
-      await set(registerRef, toSave);
-    } catch (error) {
-      console.error('Error saving register:', error);
-      addToQueue({ type: 'saveRegister', data: cleaned });
-    }
-  },
-
-  async loadRegister(): Promise<any> {
-    try {
-      const registerRef = ref(rtdb, 'register');
-      const snapshot = await get(registerRef);
-      const data = snapshot.val();
-      if (data && typeof window !== 'undefined') {
-        localStorage.setItem('cache_register', JSON.stringify(data));
-      }
-      return data;
-    } catch (error) {
-      console.error('Error loading register:', error);
-      if (typeof window !== 'undefined') {
-        const cached = localStorage.getItem('cache_register');
-        if (cached) return JSON.parse(cached);
-      }
-      return null;
-    }
-  },
-
-  async clearRegister() {
-    if (!isOnline) {
-      addToQueue({ type: 'clearRegister', data: null });
-      return;
-    }
-    
-    try {
-      const registerRef = ref(rtdb, 'register');
-      await remove(registerRef);
-    } catch (error) {
-      console.error('Error clearing register:', error);
-      addToQueue({ type: 'clearRegister', data: null });
-    }
-  },
-
-  subscribeToRegister(callback: (data: any) => void) {
-    const registerRef = ref(rtdb, 'register');
-    const unsubscribe = onValue(registerRef, (snapshot) => {
-      callback(snapshot.val());
+  subscribeToProducts(callback: (data: any[]) => void) {
+    return onSnapshot(query(collection(db, 'products'), limit(500)), (snap) => {
+      callback(snap.docs.map(d => ({ id: parseInt(d.id), ...d.data() })));
     });
-    return unsubscribe;
   },
-  
-  getPendingQueueLength: () => pendingQueue.length,
-  forceSync: processQueue
+
+  // Clientes
+  async saveClient(client: any) {
+    await setDoc(doc(db, 'clients', client.id.toString()), { ...cleanObject(client), updatedAt: Date.now() });
+  },
+  async saveClients(clients: any[]) {
+    const batch = writeBatch(db);
+    clients.forEach(c => batch.set(doc(db, 'clients', c.id.toString()), { ...cleanObject(c), updatedAt: Date.now() }));
+    await batch.commit();
+  },
+  subscribeToClients(callback: (data: any[]) => void) {
+    return onSnapshot(collection(db, 'clients'), (snap) => {
+      callback(snap.docs.map(d => ({ id: parseInt(d.id), ...d.data() })));
+    });
+  },
+
+  // Transacciones
+  async saveTransaction(tx: any) {
+    if (!isOnline) return addToQueue('saveTransaction', tx);
+    await setDoc(doc(db, 'transactions', tx.id.toString()), { ...cleanObject(tx), createdAt: Date.now() });
+  },
+  subscribeToTransactions(callback: (data: any[]) => void) {
+    return onSnapshot(query(collection(db, 'transactions'), orderBy('date', 'desc'), limit(200)), (snap) => {
+      callback(snap.docs.map(d => d.data()));
+    });
+  },
+
+  // Cuentas por Cobrar
+  async saveAccount(acc: any) {
+    await setDoc(doc(db, 'accounts', acc.id.toString()), { ...cleanObject(acc), updatedAt: Date.now() });
+  },
+  subscribeToAccounts(callback: (data: any[]) => void) {
+    return onSnapshot(collection(db, 'accounts'), (snap) => {
+      callback(snap.docs.map(d => d.data()));
+    });
+  },
+
+  // Contabilidad
+  async saveAccountingEntry(entry: any) {
+    if (!isOnline) return addToQueue('saveAccountingEntry', entry);
+    await setDoc(doc(db, 'accounting_entries', entry.id.toString()), { ...cleanObject(entry), createdAt: Date.now() });
+  },
+  subscribeToAccounting(callback: (data: any[]) => void) {
+    return onSnapshot(query(collection(db, 'accounting_entries'), orderBy('date', 'desc'), limit(500)), (snap) => {
+      callback(snap.docs.map(d => d.data()));
+    });
+  },
+
+  // Proveedores
+  async saveSupplier(s: any) {
+    await setDoc(doc(db, 'suppliers', s.id.toString()), { ...cleanObject(s), updatedAt: Date.now() });
+  },
+  async deleteSupplier(id: number) {
+    await deleteDoc(doc(db, 'suppliers', id.toString()));
+  },
+  subscribeToSuppliers(callback: (data: any[]) => void) {
+    return onSnapshot(collection(db, 'suppliers'), (snap) => {
+      callback(snap.docs.map(d => ({ id: parseInt(d.id), ...d.data() })));
+    });
+  },
+
+  // Facturas de Proveedores
+  async saveInvoice(inv: any) {
+    await setDoc(doc(db, 'supplier_invoices', inv.id.toString()), { ...cleanObject(inv), updatedAt: Date.now() });
+  },
+  subscribeToInvoices(callback: (data: any[]) => void) {
+    return onSnapshot(collection(db, 'supplier_invoices'), (snap) => {
+      callback(snap.docs.map(d => ({ id: parseInt(d.id), ...d.data() })));
+    });
+  },
+
+  // Pagos a Proveedores
+  async saveSupplierPayment(p: any) {
+    await setDoc(doc(db, 'supplier_payments', p.id.toString()), { ...cleanObject(p), createdAt: Date.now() });
+  },
+  subscribeToSupplierPayments(callback: (data: any[]) => void) {
+    return onSnapshot(collection(db, 'supplier_payments'), (snap) => {
+      callback(snap.docs.map(d => ({ id: parseInt(d.id), ...d.data() })));
+    });
+  },
+
+  // Caja (Realtime)
+  async saveRegister(reg: any) {
+    const registerRef = ref(rtdb, 'register');
+    const cleaned = cleanObject(reg);
+    delete cleaned.txs;
+    await set(registerRef, { ...cleaned, updatedAt: Date.now() });
+  },
+  async clearRegister() {
+    await remove(ref(rtdb, 'register'));
+  },
+  subscribeToRegister(callback: (data: any) => void) {
+    return onValue(ref(rtdb, 'register'), (snap) => callback(snap.val()));
+  },
+
+  getPendingQueueLength: () => pendingQueue.length
 };
-
-// ============================================
-// MÚLTIPLES TERMINALES / CAJAS
-// ============================================
-
-// Guardar estado de caja por terminal
-export const saveRegisterByTerminal = async (terminalId: string, register: any) => {
-  const cleaned = cleanObject(register);
-  if (!isOnline) {
-    addToQueue({ type: 'saveRegister', data: { terminalId, register: cleaned } });
-    return;
-  }
-  
-  try {
-    const registerRef = ref(rtdb, `registers/${terminalId}`);
-    const toSave = { ...cleaned, updatedAt: Date.now() };
-    delete toSave.txs;
-    await set(registerRef, toSave);
-  } catch (error) {
-    console.error('Error saving register by terminal:', error);
-    addToQueue({ type: 'saveRegister', data: { terminalId, register: cleaned } });
-  }
-};
-
-// Cargar estado de caja por terminal
-export const loadRegisterByTerminal = async (terminalId: string): Promise<any> => {
-  try {
-    const registerRef = ref(rtdb, `registers/${terminalId}`);
-    const snapshot = await get(registerRef);
-    const data = snapshot.val();
-    if (data && typeof window !== 'undefined') {
-      localStorage.setItem(`cache_register_${terminalId}`, JSON.stringify(data));
-    }
-    return data;
-  } catch (error) {
-    console.error('Error loading register by terminal:', error);
-    if (typeof window !== 'undefined') {
-      const cached = localStorage.getItem(`cache_register_${terminalId}`);
-      if (cached) return JSON.parse(cached);
-    }
-    return null;
-  }
-};
-
-// Suscribirse a cambios de caja por terminal (tiempo real)
-export const subscribeToRegisterByTerminal = (terminalId: string, callback: (data: any) => void) => {
-  const registerRef = ref(rtdb, `registers/${terminalId}`);
-  const unsubscribe = onValue(registerRef, (snapshot) => {
-    callback(snapshot.val());
-  });
-  listeners.push(unsubscribe);
-  return unsubscribe;
-};
-
-// Obtener todas las cajas activas (para administrador)
-export const getAllActiveRegisters = async (): Promise<any[]> => {
-  try {
-    const registersRef = ref(rtdb, 'registers');
-    const snapshot = await get(registersRef);
-    const data = snapshot.val();
-    if (!data) return [];
-    return Object.entries(data).map(([terminalId, register]) => ({
-      terminalId,
-      ...(register as any)
-    }));
-  } catch (error) {
-    console.error('Error loading all registers:', error);
-    return [];
-  }
-};
-
-// Suscribirse a todas las cajas (tiempo real para admin)
-export const subscribeToAllRegisters = (callback: (registers: any[]) => void) => {
-  const registersRef = ref(rtdb, 'registers');
-  const unsubscribe = onValue(registersRef, (snapshot) => {
-    const data = snapshot.val();
-    if (!data) {
-      callback([]);
-      return;
-    }
-    const registers = Object.entries(data).map(([terminalId, register]) => ({
-      terminalId,
-      ...(register as any)
-    }));
-    callback(registers);
-  });
-  listeners.push(unsubscribe);
-  return unsubscribe;
-};
-
-// Declaraciones de tipo para las nuevas funciones
-declare module './syncService' {
-  export function saveRegisterByTerminal(terminalId: string, register: any): Promise<void>;
-  export function loadRegisterByTerminal(terminalId: string): Promise<any>;
-  export function subscribeToRegisterByTerminal(terminalId: string, callback: (data: any) => void): () => void;
-  export function getAllActiveRegisters(): Promise<any[]>;
-  export function subscribeToAllRegisters(callback: (registers: any[]) => void): () => void;
-}

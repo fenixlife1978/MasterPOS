@@ -2,11 +2,8 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { Supplier, SupplierInvoice, SupplierPayment } from '@/lib/types';
+import { syncService } from '@/services/syncService';
 import { registerSupplierPaymentEntry } from '@/services/accountingService';
-
-const STORAGE_KEY_SUPPLIERS = 'masterpos_suppliers';
-const STORAGE_KEY_INVOICES = 'masterpos_supplier_invoices';
-const STORAGE_KEY_PAYMENTS = 'masterpos_supplier_payments';
 
 export function useSuppliers() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -15,116 +12,72 @@ export function useSuppliers() {
   const [isLoaded, setIsLoaded] = useState(false);
 
   useEffect(() => {
-    const storedSuppliers = localStorage.getItem(STORAGE_KEY_SUPPLIERS);
-    const storedInvoices = localStorage.getItem(STORAGE_KEY_INVOICES);
-    const storedPayments = localStorage.getItem(STORAGE_KEY_PAYMENTS);
-
-    if (storedSuppliers) setSuppliers(JSON.parse(storedSuppliers));
-    if (storedInvoices) setInvoices(JSON.parse(storedInvoices));
-    if (storedPayments) setPayments(JSON.parse(storedPayments));
-    setIsLoaded(true);
-  }, []);
-
-  useEffect(() => {
-    if (isLoaded) {
-      localStorage.setItem(STORAGE_KEY_SUPPLIERS, JSON.stringify(suppliers));
-      localStorage.setItem(STORAGE_KEY_INVOICES, JSON.stringify(invoices));
-      localStorage.setItem(STORAGE_KEY_PAYMENTS, JSON.stringify(payments));
-    }
-  }, [suppliers, invoices, payments, isLoaded]);
-
-  const addSupplier = useCallback((supplier: Omit<Supplier, 'id' | 'totalDebt' | 'createdAt'>) => {
-    const newId = suppliers.length > 0 ? Math.max(...suppliers.map(s => s.id)) + 1 : 1;
-    const newSupplier: Supplier = {
-      ...supplier,
-      id: newId,
-      totalDebt: 0,
-      createdAt: new Date().toISOString(),
-    };
-    setSuppliers(prev => [...prev, newSupplier]);
-    return newSupplier;
-  }, [suppliers]);
-
-  const updateSupplier = useCallback((supplier: Supplier) => {
-    setSuppliers(prev => prev.map(s => s.id === supplier.id ? supplier : s));
-  }, []);
-
-  const deleteSupplier = useCallback((id: number) => {
-    setSuppliers(prev => prev.filter(s => s.id !== id));
-    setInvoices(prev => prev.filter(i => i.supplierId !== id));
-    setPayments(prev => prev.filter(p => p.supplierId !== id));
-  }, []);
-
-  const addInvoice = useCallback((invoice: Omit<SupplierInvoice, 'id' | 'paidAmount' | 'status' | 'createdAt'>) => {
-    const newId = invoices.length > 0 ? Math.max(...invoices.map(i => i.id)) + 1 : 1;
-    const newInvoice: SupplierInvoice = {
-      ...invoice,
-      id: newId,
-      paidAmount: 0,
-      status: 'pendiente',
-      createdAt: new Date().toISOString(),
-    };
-    setInvoices(prev => [...prev, newInvoice]);
+    const unsubSuppliers = syncService.subscribeToSuppliers(setSuppliers);
+    const unsubInvoices = syncService.subscribeToInvoices(setInvoices);
+    const unsubPayments = syncService.subscribeToSupplierPayments(setPayments as any);
     
-    const supplier = suppliers.find(s => s.id === invoice.supplierId);
+    setIsLoaded(true);
+
+    return () => {
+      unsubSuppliers();
+      unsubInvoices();
+      unsubPayments();
+    };
+  }, []);
+
+  const addSupplier = useCallback(async (s: Omit<Supplier, 'id' | 'totalDebt' | 'createdAt'>) => {
+    const newId = Date.now();
+    const newSupplier = { ...s, id: newId, totalDebt: 0, createdAt: new Date().toISOString() };
+    await syncService.saveSupplier(newSupplier);
+    return newSupplier;
+  }, []);
+
+  const updateSupplier = useCallback(async (s: Supplier) => {
+    await syncService.saveSupplier(s);
+  }, []);
+
+  const deleteSupplier = useCallback(async (id: number) => {
+    await syncService.deleteSupplier(id);
+  }, []);
+
+  const addInvoice = useCallback(async (inv: Omit<SupplierInvoice, 'id' | 'paidAmount' | 'status' | 'createdAt'>) => {
+    const newId = Date.now();
+    const newInvoice = { ...inv, id: newId, paidAmount: 0, status: 'pendiente' as const, createdAt: new Date().toISOString() };
+    await syncService.saveInvoice(newInvoice);
+    
+    const supplier = suppliers.find(s => s.id === inv.supplierId);
     if (supplier) {
-      setSuppliers(prev => prev.map(s => 
-        s.id === invoice.supplierId 
-          ? { ...s, totalDebt: (s.totalDebt || 0) + invoice.total }
-          : s
-      ));
+      await syncService.saveSupplier({ ...supplier, totalDebt: (supplier.totalDebt || 0) + inv.total });
     }
     return newInvoice;
-  }, [invoices, suppliers]);
+  }, [suppliers]);
 
-  const addPayment = useCallback(async (payment: Omit<SupplierPayment, 'id'>) => {
-    const newId = payments.length > 0 ? Math.max(...payments.map(p => p.id)) + 1 : 1;
-    const newPayment: SupplierPayment = { ...payment, id: newId };
-    setPayments(prev => [...prev, newPayment]);
+  const addPayment = useCallback(async (p: Omit<SupplierPayment, 'id'>) => {
+    const newId = Date.now();
+    const newPayment = { ...p, id: newId };
+    await syncService.saveSupplierPayment(newPayment);
     
-    const invoice = invoices.find(i => i.id === payment.invoiceId);
+    const invoice = invoices.find(i => i.id === p.invoiceId);
     if (invoice) {
-      const newPaidAmount = invoice.paidAmount + payment.amount;
-      const newStatus = newPaidAmount >= invoice.total ? 'pagada' : (newPaidAmount > 0 ? 'parcial' : 'pendiente');
-      setInvoices(prev => prev.map(i => 
-        i.id === payment.invoiceId 
-          ? { ...i, paidAmount: newPaidAmount, status: newStatus }
-          : i
-      ));
+      const newPaid = invoice.paidAmount + p.amount;
+      const status = newPaid >= invoice.total ? 'pagada' : (newPaid > 0 ? 'parcial' : 'pendiente');
+      await syncService.saveInvoice({ ...invoice, paidAmount: newPaid, status });
       
-      const supplier = suppliers.find(s => s.id === payment.supplierId);
+      const supplier = suppliers.find(s => s.id === p.supplierId);
       if (supplier) {
-        const newDebt = Math.max(0, (supplier.totalDebt || 0) - payment.amount);
-        setSuppliers(prev => prev.map(s => 
-          s.id === payment.supplierId ? { ...s, totalDebt: newDebt } : s
-        ));
-        
-        // REGISTRO ATÓMICO EN LIBRO DIARIO
+        await syncService.saveSupplier({ ...supplier, totalDebt: Math.max(0, (supplier.totalDebt || 0) - p.amount) });
         await registerSupplierPaymentEntry(newPayment, invoice, supplier);
       }
     }
     return newPayment;
-  }, [payments, invoices, suppliers]);
+  }, [invoices, suppliers]);
 
-  const getSupplierInvoices = useCallback((supplierId: number) => {
-    return invoices.filter(i => i.supplierId === supplierId).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [invoices]);
-
-  const getInvoicePayments = useCallback((invoiceId: number) => {
-    return payments.filter(p => p.invoiceId === invoiceId).sort((a, b) => new Date(a.date).getTime() - new Date(a.date).getTime());
-  }, [payments]);
+  const getSupplierInvoices = useCallback((id: number) => invoices.filter(i => i.supplierId === id).sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime()), [invoices]);
+  const getInvoicePayments = useCallback((id: number) => payments.filter(p => p.invoiceId === id).sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime()), [payments]);
 
   return {
-    suppliers,
-    invoices,
-    payments,
-    isLoaded,
-    addSupplier,
-    updateSupplier,
-    deleteSupplier,
-    addInvoice,
-    addPayment,
-    getSupplierInvoices,
-    getInvoicePayments,
+    suppliers, invoices, payments, isLoaded,
+    addSupplier, updateSupplier, deleteSupplier,
+    addInvoice, addPayment, getSupplierInvoices, getInvoicePayments
   };
 }

@@ -13,6 +13,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { db } from '@/lib/firebase';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { syncService } from '@/services/syncService';
+import { cn } from '@/lib/utils';
+import { useAuth } from '@/context/AuthContext';
 
 interface Terminal {
   id: number;
@@ -33,6 +35,7 @@ interface Cashier {
 }
 
 export default function TerminalManager() {
+  const { user } = useAuth();
   const [terminals, setTerminals] = useState<Terminal[]>([]);
   const [cashiers, setCashiers] = useState<Cashier[]>([]);
   const [showModal, setShowModal] = useState(false);
@@ -48,10 +51,10 @@ export default function TerminalManager() {
   });
 
   useEffect(() => {
-    // Suscripción real a terminales
+    if (!user) return;
+
     const unsub = syncService.subscribeToTerminals(setTerminals as any);
     
-    // Cargar cajeros
     const loadCashiers = async () => {
       setIsLoadingUsers(true);
       try {
@@ -73,7 +76,7 @@ export default function TerminalManager() {
 
     loadCashiers();
     return () => unsub();
-  }, []);
+  }, [user]);
 
   const handleSubmit = async () => {
     if (!formData.name) {

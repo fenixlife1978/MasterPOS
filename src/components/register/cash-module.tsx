@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { syncService } from '@/services/syncService';
+import { useAuth } from '@/context/AuthContext';
 
 interface CashModuleProps {
   state: ReturnType<typeof usePOSState>;
@@ -25,6 +26,7 @@ interface CashCount {
 }
 
 export default function CashModule({ state }: CashModuleProps) {
+  const { user } = useAuth();
   const [openAmountBs, setOpenAmountBs] = useState('0.00');
   const [openAmountUsd, setOpenAmountUsd] = useState('0.00');
   const [openRate, setOpenRate] = useState(state.exchangeRate.toString());
@@ -37,10 +39,10 @@ export default function CashModule({ state }: CashModuleProps) {
   const isClosed = !reg || !reg.isOpen;
 
   useEffect(() => {
-    // Suscripción real a cierres de caja en Firestore
+    if (!user) return;
     const unsub = syncService.subscribeToCashClosings(setCloseHistory);
     return () => unsub();
-  }, []);
+  }, [user]);
 
   const paymentMethods = [
     { id: 'efectivo_bs', label: 'Efectivo BS', icon: Banknote, order: 1, isUsd: false },

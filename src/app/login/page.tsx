@@ -4,17 +4,10 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { User, Building2, Store, Key, Mail, ArrowLeft } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { Auth } from 'firebase/auth';
-import type { Firestore } from 'firebase/firestore';
+import { auth, db } from '@/lib/firebase';
+import { signInWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
 import Image from 'next/image';
-
-// Extender Window interface
-declare global {
-  interface Window {
-    __auth: Auth;
-    __db: Firestore;
-  }
-}
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -25,7 +18,6 @@ export default function LoginPage() {
   const [showReset, setShowReset] = useState(false);
   const [resetEmail, setResetEmail] = useState('');
   const [resetMessage, setResetMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const [firebaseReady, setFirebaseReady] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
@@ -35,33 +27,20 @@ export default function LoginPage() {
     }
   }, [router]);
 
-  useEffect(() => {
-    const loadFirebase = async () => {
-      const firebaseModule = await import('@/lib/firebase');
-      window.__auth = firebaseModule.auth;
-      window.__db = firebaseModule.db;
-      setFirebaseReady(true);
-    };
-    loadFirebase();
-  }, []);
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!firebaseReady) {
-      setError('Cargando...');
+    if (!auth) {
+      setError('Firebase no está disponible');
       return;
     }
     setError('');
     setIsLoading(true);
     
     try {
-      const { signInWithEmailAndPassword } = await import('firebase/auth');
-      const { doc, getDoc } = await import('firebase/firestore');
-      
-      const userCredential = await signInWithEmailAndPassword(window.__auth, email, password);
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const firebaseUser = userCredential.user;
       
-      const userDoc = await getDoc(doc(window.__db, 'users', firebaseUser.uid));
+      const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
       let userRole = 'cashier';
       let userName = firebaseUser.displayName || email.split('@')[0] || 'Usuario';
       
@@ -73,12 +52,14 @@ export default function LoginPage() {
       
       if (mode === 'admin' && userRole !== 'admin') {
         setError('Esta cuenta no tiene permisos de administrador');
+        await auth.signOut();
         setIsLoading(false);
         return;
       }
       
       if (mode === 'cashier' && userRole !== 'cashier') {
         setError('Esta cuenta no tiene permisos de cajero');
+        await auth.signOut();
         setIsLoading(false);
         return;
       }
@@ -111,11 +92,11 @@ export default function LoginPage() {
       setResetMessage({ type: 'error', text: 'Ingrese su correo electrónico' });
       return;
     }
+    if (!auth) return;
     
     setIsLoading(true);
     try {
-      const { sendPasswordResetEmail } = await import('firebase/auth');
-      await sendPasswordResetEmail(window.__auth, resetEmail);
+      await sendPasswordResetEmail(auth, resetEmail);
       setResetMessage({ type: 'success', text: 'Correo de recuperación enviado. Revise su bandeja de entrada.' });
       setTimeout(() => {
         setShowReset(false);
@@ -132,16 +113,6 @@ export default function LoginPage() {
       setIsLoading(false);
     }
   };
-
-  if (!firebaseReady) {
-    return (
-      <div className="min-h-screen bg-[#D9D9D9] flex items-center justify-center">
-        <div className="bg-white rounded-2xl p-8 shadow-2xl">
-          <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto"></div>
-        </div>
-      </div>
-    );
-  }
 
   if (showReset) {
     return (

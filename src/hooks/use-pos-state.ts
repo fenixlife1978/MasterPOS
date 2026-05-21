@@ -4,8 +4,10 @@ import { useState, useEffect, useCallback } from 'react';
 import { Product, Client, Transaction, Account, CashRegister, Page, CartItem } from '@/lib/types';
 import { syncService } from '@/services/syncService';
 import { registerSaleEntry, registerCreditEntry, registerDebtPaymentEntry } from '@/services/accountingService';
+import { useAuth } from '@/context/AuthContext';
 
 export function usePOSState() {
+  const { user } = useAuth();
   const [products, setProducts] = useState<Product[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -17,8 +19,9 @@ export function usePOSState() {
   const [currentPage, setCurrentPage] = useState<Page>('pos');
   const [isHydrated, setIsHydrated] = useState(false);
 
-  // Suscripciones en tiempo real
   useEffect(() => {
+    if (!user) return;
+
     const unsubProducts = syncService.subscribeToProducts(setProducts);
     const unsubClients = syncService.subscribeToClients(setClients);
     const unsubTransactions = syncService.subscribeToTransactions(setTransactions as any);
@@ -34,11 +37,11 @@ export function usePOSState() {
       unsubAccounts();
       unsubRegister();
     };
-  }, []);
+  }, [user]);
 
   const addProduct = useCallback((p: Product) => syncService.saveProduct(p), []);
   const updateProduct = useCallback((p: Product) => syncService.saveProduct(p), []);
-  const deleteProduct = useCallback((id: number) => syncService.saveProduct({ id, deleted: true }), []); // Simplificado
+  const deleteProduct = useCallback((id: number) => syncService.saveProduct({ id, deleted: true }), []);
 
   const addToCart = useCallback((productId: number) => {
     const product = products.find(p => p.id === productId);

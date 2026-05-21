@@ -10,16 +10,20 @@ const firebaseConfig = {
   storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
   messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
-  databaseURL: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID 
-    ? `https://${process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID}-default-rtdb.firebaseio.com`
-    : undefined,
+  databaseURL: process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL || 
+    (process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID 
+      ? `https://${process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID}-default-rtdb.firebaseio.com`
+      : undefined),
 };
 
-// Inicializar siempre validando que existan apps para evitar colisiones en SSR
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
-const db = getFirestore(app);
-const rtdb = getDatabase(app);
-const auth = getAuth(app);
+
+// Solo inicializar servicios en el cliente para evitar errores en build
+const isClient = typeof window !== 'undefined';
+
+const db = isClient ? getFirestore(app) : null as any;
+const rtdb = isClient ? getDatabase(app) : null as any;
+const auth = isClient ? getAuth(app) : null as any;
 
 export { db, rtdb, auth };
 export default app;

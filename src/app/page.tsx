@@ -30,10 +30,30 @@ export default function LicoPOSApp() {
     if (!storedUser) {
       router.replace('/login');
     } else {
-      setUser(JSON.parse(storedUser));
+      try {
+        const parsedUser = JSON.parse(storedUser);
+        setUser(parsedUser);
+      } catch (e) {
+        console.error('Error parsing user data', e);
+        router.replace('/login');
+      }
     }
     setIsLoading(false);
   }, [router]);
+
+  // Redirección segura basada en permisos
+  useEffect(() => {
+    if (user && state.isHydrated) {
+      const isAdmin = user.role === 'admin';
+      const allowedPages = isAdmin 
+        ? ['dashboard', 'pos', 'inventario', 'clientes', 'cuentas', 'proveedores', 'contabilidad', 'devoluciones', 'caja']
+        : ['pos', 'devoluciones', 'caja'];
+
+      if (!allowedPages.includes(state.currentPage)) {
+        state.setCurrentPage('pos');
+      }
+    }
+  }, [user, state.isHydrated, state.currentPage, state.setCurrentPage]);
 
   useBarcode((code) => {
     const product = state.products.find(p => p.barcode === code);
@@ -65,16 +85,6 @@ export default function LicoPOSApp() {
   }
 
   const isAdmin = user.role === 'admin';
-  const isCashier = user.role === 'cashier';
-  
-  // Admin puede ver todo, Cajero puede ver POS, Caja y Devoluciones
-  const allowedPages = isAdmin 
-    ? ['dashboard', 'pos', 'inventario', 'clientes', 'cuentas', 'proveedores', 'contabilidad', 'devoluciones', 'caja']
-    : ['pos', 'devoluciones', 'caja'];
-
-  if (!allowedPages.includes(state.currentPage)) {
-    state.setCurrentPage('pos');
-  }
 
   return (
     <div className="flex h-screen overflow-hidden bg-background text-foreground selection:bg-primary selection:text-background">

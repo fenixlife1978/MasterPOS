@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { 
-  Plus, Edit, Trash2, X, Check, 
+  Plus, Edit, Trash2, X, 
   Computer, Users, MapPin, Power, 
   PowerOff, AlertTriangle, Search, Loader2 
 } from 'lucide-react';
@@ -10,9 +10,9 @@ import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { cn } from '@/lib/utils';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, query, where } from 'firebase/firestore';
+import { syncService } from '@/services/syncService';
 
 interface Terminal {
   id: number;
@@ -20,7 +20,7 @@ interface Terminal {
   description: string;
   location: string;
   status: 'active' | 'inactive' | 'maintenance';
-  assignedTo: string | null; // Cambiado a string para IDs de Firebase
+  assignedTo: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -47,80 +47,69 @@ export default function TerminalManager() {
     assignedTo: '',
   });
 
-  // Cargar terminales desde localStorage y cajeros desde Firestore
-  const loadData = async () => {
-    // 1. Cargar terminales
-    const stored = localStorage.getItem('masterpos_terminals');
-    if (stored) {
-      setTerminals(JSON.parse(stored));
-    } else {
-      setTerminals([]);
-    }
-    
-    // 2. Cargar cajeros reales desde Firestore (Sincronizado con pestaña Usuarios)
-    setIsLoadingUsers(true);
-    try {
-      const q = query(collection(db, 'users'), where('role', '==', 'cashier'));
-      const querySnapshot = await getDocs(q);
-      const cashiersList = querySnapshot.docs.map(doc => ({
-        id: doc.id,
-        name: doc.data().name,
-        email: doc.data().email,
-        role: doc.data().role
-      })) as Cashier[];
-      setCashiers(cashiersList);
-    } catch (error) {
-      console.error('Error loading cashiers from Firestore:', error);
-    } finally {
-      setIsLoadingUsers(false);
-    }
-  };
-
   useEffect(() => {
-    loadData();
+    // Suscripción real a terminales
+    const unsub = syncService.subscribeToTerminals(setTerminals as any);
+    
+    // Cargar cajeros
+    const loadCashiers = async () => {
+      setIsLoadingUsers(true);
+      try {
+        const q = query(collection(db, 'users'), where('role', '==', 'cashier'));
+        const querySnapshot = await getDocs(q);
+        const cashiersList = querySnapshot.docs.map(doc => ({
+          id: doc.id,
+          name: doc.data().name,
+          email: doc.data().email,
+          role: doc.data().role
+        })) as Cashier[];
+        setCashiers(cashiersList);
+      } catch (error) {
+        console.error('Error loading cashiers:', error);
+      } finally {
+        setIsLoadingUsers(false);
+      }
+    };
+
+    loadCashiers();
+    return () => unsub();
   }, []);
 
-  const saveTerminals = (newTerminals: Terminal[]) => {
-    setTerminals(newTerminals);
-    localStorage.setItem('masterpos_terminals', JSON.stringify(newTerminals));
-  };
-
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!formData.name) {
       alert('El nombre de la terminal es requerido');
       return;
     }
 
-    if (editingTerminal) {
-      const updated = terminals.map(t => 
-        t.id === editingTerminal.id 
-          ? {
-              ...t,
-              name: formData.name,
-              description: formData.description,
-              location: formData.location,
-              assignedTo: formData.assignedTo || null,
-              updatedAt: new Date().toISOString(),
-            }
-          : t
-      );
-      saveTerminals(updated);
-    } else {
-      const newTerminal: Terminal = {
-        id: Date.now(),
-        name: formData.name,
-        description: formData.description,
-        location: formData.location,
-        status: 'active',
-        assignedTo: formData.assignedTo || null,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-      saveTerminals([...terminals, newTerminal]);
-    }
+    const terminalData = {
+      id: editingTerminal ? editingTerminal.id : Date.now(),
+      name: formData.name,
+      description: formData.description,
+      location: formData.location,
+      assignedTo: formData.assignedTo || null,
+      status: editingTerminal ? editingTerminal.status : 'active',
+      updatedAt: new Date().toISOString(),
+      createdAt: editingTerminal ? editingTerminal.createdAt : new Date().toISOString(),
+    };
 
+    await syncService.saveTerminal(terminalData);
     resetForm();
     setShowModal(false);
+  };
+
+  const handleDelete = async (id: number) => {
+    if (confirm('¿Está seguro de eliminar esta terminal?')) {
+      await syncService.deleteTerminal(id);
+    }
+  };
+
+  const handleStatusToggle = async (terminal: Terminal) => {
+    const updated = {
+      ...terminal,
+      status: terminal.status === 'active' ? 'inactive' : 'active' as any,
+      updatedAt: new Date().toISOString()
+    };
+    await syncService.saveTerminal(updated);
   };
 
   const handleEdit = (terminal: Terminal) => {
@@ -134,43 +123,9 @@ export default function TerminalManager() {
     setShowModal(true);
   };
 
-  const handleDelete = (id: number) => {
-    if (confirm('¿Está seguro de eliminar esta terminal?')) {
-      const filtered = terminals.filter(t => t.id !== id);
-      saveTerminals(filtered);
-    }
-  };
-
-  const handleStatusToggle = (id: number, currentStatus: string) => {
-    const updated = terminals.map(t => 
-      t.id === id 
-        ? { ...t, status: currentStatus === 'active' ? 'inactive' : 'active' as any, updatedAt: new Date().toISOString() }
-        : t
-    );
-    saveTerminals(updated);
-  };
-
   const resetForm = () => {
     setEditingTerminal(null);
-    setFormData({
-      name: '',
-      description: '',
-      location: '',
-      assignedTo: '',
-    });
-  };
-
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'active':
-        return <span className="flex items-center gap-1 text-green-600 bg-green-100 px-2 py-0.5 rounded-full text-[10px] font-bold"><Power size={10} /> ACTIVA</span>;
-      case 'inactive':
-        return <span className="flex items-center gap-1 text-red-600 bg-red-100 px-2 py-0.5 rounded-full text-[10px] font-bold"><PowerOff size={10} /> INACTIVA</span>;
-      case 'maintenance':
-        return <span className="flex items-center gap-1 text-yellow-600 bg-yellow-100 px-2 py-0.5 rounded-full text-[10px] font-bold"><AlertTriangle size={10} /> MANTENIMIENTO</span>;
-      default:
-        return null;
-    }
+    setFormData({ name: '', description: '', location: '', assignedTo: '' });
   };
 
   const getAssignedUserName = (userId: string | null) => {
@@ -202,10 +157,7 @@ export default function TerminalManager() {
             />
           </div>
           <Button 
-            onClick={() => {
-              resetForm();
-              setShowModal(true);
-            }}
+            onClick={() => { resetForm(); setShowModal(true); }}
             className="bg-primary hover:brightness-110 text-black font-black h-8 px-3 text-xs"
           >
             <Plus size={14} className="mr-1" /> NUEVA TERMINAL
@@ -233,129 +185,49 @@ export default function TerminalManager() {
                 <TableCell className="text-black/60 text-xs flex items-center gap-1"><MapPin size={10} /> {terminal.location || '—'}</TableCell>
                 <TableCell className="text-black/60 text-xs flex items-center gap-1">
                   <Users size={10} /> 
-                  {isLoadingUsers ? 'Cargando...' : getAssignedUserName(terminal.assignedTo)}
+                  {isLoadingUsers ? '...' : getAssignedUserName(terminal.assignedTo)}
                 </TableCell>
-                <TableCell>{getStatusBadge(terminal.status)}</TableCell>
+                <TableCell>
+                  <span className={cn(
+                    "flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold",
+                    terminal.status === 'active' ? "text-green-600 bg-green-100" : "text-red-600 bg-red-100"
+                  )}>
+                    {terminal.status === 'active' ? 'ACTIVA' : 'INACTIVA'}
+                  </span>
+                </TableCell>
                 <TableCell className="text-right">
                   <div className="flex justify-end gap-1">
-                    <button
-                      onClick={() => handleStatusToggle(terminal.id, terminal.status)}
-                      className="p-1.5 rounded-lg hover:bg-gray-100 transition-all"
-                      title={terminal.status === 'active' ? 'Desactivar' : 'Activar'}
-                    >
+                    <button onClick={() => handleStatusToggle(terminal)} className="p-1.5 rounded-lg hover:bg-gray-100">
                       {terminal.status === 'active' ? <PowerOff size={14} className="text-red-500" /> : <Power size={14} className="text-green-500" />}
                     </button>
-                    <button
-                      onClick={() => handleEdit(terminal)}
-                      className="p-1.5 rounded-lg hover:bg-gray-100 transition-all"
-                    >
+                    <button onClick={() => handleEdit(terminal)} className="p-1.5 rounded-lg hover:bg-gray-100">
                       <Edit size={14} className="text-blue-500" />
                     </button>
-                    <button
-                      onClick={() => handleDelete(terminal.id)}
-                      className="p-1.5 rounded-lg hover:bg-gray-100 transition-all"
-                    >
+                    <button onClick={() => handleDelete(terminal.id)} className="p-1.5 rounded-lg hover:bg-gray-100">
                       <Trash2 size={14} className="text-red-500" />
                     </button>
                   </div>
                 </TableCell>
               </TableRow>
             ))}
-            {filteredTerminals.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={6} className="text-center py-8 text-black/50 italic">
-                  No hay terminales registradas
-                </TableCell>
-              </TableRow>
-            )}
           </TableBody>
         </Table>
       </div>
 
-      {/* Modal de creación/edición */}
       <Dialog open={showModal} onOpenChange={setShowModal}>
         <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-md p-0 overflow-hidden rounded-2xl">
-          <DialogHeader className="sr-only">
-            <DialogTitle>{editingTerminal ? 'Editar Terminal' : 'Nueva Terminal'}</DialogTitle>
-          </DialogHeader>
-          <div className="flex flex-col">
-            <div className="bg-[#1A2C4E] p-4 text-white">
-              <div className="flex justify-between items-center">
-                <div className="flex items-center gap-2">
-                  <Computer size={20} className="text-primary" />
-                  <h3 className="text-lg font-headline font-black">{editingTerminal ? 'Editar Terminal' : 'Nueva Terminal'}</h3>
-                </div>
-                <button onClick={() => setShowModal(false)} className="text-white/60 hover:text-white">
-                  <X size={18} />
-                </button>
-              </div>
-            </div>
-            <div className="p-5 space-y-4">
-              <div>
-                <label className="text-[10px] font-bold text-black/60 uppercase tracking-widest block mb-1">
-                  Nombre de la Terminal *
-                </label>
-                <Input 
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  placeholder="Ej: Caja Principal"
-                  className="bg-white border-[#9E9E9E]"
-                />
-              </div>
-              <div>
-                <label className="text-[10px] font-bold text-black/60 uppercase tracking-widest block mb-1">
-                  Descripción
-                </label>
-                <Input 
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  placeholder="Ej: Caja principal del local"
-                  className="bg-white border-[#9E9E9E]"
-                />
-              </div>
-              <div>
-                <label className="text-[10px] font-bold text-black/60 uppercase tracking-widest block mb-1">
-                  Ubicación
-                </label>
-                <Input 
-                  value={formData.location}
-                  onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-                  placeholder="Ej: Primer piso - Mostrador central"
-                  className="bg-white border-[#9E9E9E]"
-                />
-              </div>
-              <div>
-                <label className="text-[10px] font-bold text-black/60 uppercase tracking-widest block mb-1">
-                  Asignar a Cajero
-                </label>
-                <div className="relative">
-                  <select 
-                    value={formData.assignedTo}
-                    onChange={(e) => setFormData({ ...formData, assignedTo: e.target.value })}
-                    className="w-full h-10 bg-white border border-[#9E9E9E] rounded-lg px-3 text-sm appearance-none focus:outline-none focus:ring-2 focus:ring-primary/50"
-                    disabled={isLoadingUsers}
-                  >
-                    <option value="">Sin asignar</option>
-                    {cashiers.map(cashier => (
-                      <option key={cashier.id} value={cashier.id}>{cashier.name}</option>
-                    ))}
-                  </select>
-                  {isLoadingUsers && (
-                    <div className="absolute right-8 top-1/2 -translate-y-1/2">
-                      <Loader2 size={14} className="animate-spin text-black/40" />
-                    </div>
-                  )}
-                </div>
-                {!isLoadingUsers && cashiers.length === 0 && (
-                  <p className="text-[9px] text-red-500 mt-1">No hay cajeros registrados en Firestore. Cree un usuario con rol "Cajero" primero.</p>
-                )}
-              </div>
-            </div>
-            <div className="bg-[#F5F5F5] p-4 border-t border-[#9E9E9E] flex justify-end gap-3">
-              <Button variant="ghost" onClick={() => setShowModal(false)} className="px-4 text-black">CANCELAR</Button>
-              <Button onClick={handleSubmit} className="px-4 bg-primary text-black font-black">GUARDAR</Button>
+          <div className="bg-[#1A2C4E] p-4 text-white"><h3 className="text-lg font-black">{editingTerminal ? 'Editar Terminal' : 'Nueva Terminal'}</h3></div>
+          <div className="p-5 space-y-4">
+            <div><label className="text-[10px] font-bold text-black/60 uppercase block mb-1">Nombre de la Terminal *</label><Input value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} placeholder="Ej: Caja Principal" /></div>
+            <div><label className="text-[10px] font-bold text-black/60 uppercase block mb-1">Ubicación</label><Input value={formData.location} onChange={(e) => setFormData({ ...formData, location: e.target.value })} placeholder="Ej: Pasillo Central" /></div>
+            <div><label className="text-[10px] font-bold text-black/60 uppercase block mb-1">Asignar a Cajero</label>
+              <select value={formData.assignedTo} onChange={(e) => setFormData({ ...formData, assignedTo: e.target.value })} className="w-full h-10 border border-[#9E9E9E] rounded-lg px-3 text-sm">
+                <option value="">Sin asignar</option>
+                {cashiers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
             </div>
           </div>
+          <div className="bg-[#F5F5F5] p-4 border-t flex justify-end gap-3"><Button variant="ghost" onClick={() => setShowModal(false)}>CANCELAR</Button><Button onClick={handleSubmit} className="bg-primary text-black font-black">GUARDAR</Button></div>
         </DialogContent>
       </Dialog>
     </div>

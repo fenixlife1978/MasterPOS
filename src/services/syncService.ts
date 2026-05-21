@@ -2,11 +2,11 @@
 
 import { db, rtdb } from '@/lib/firebase';
 import { 
-  doc, getDoc, setDoc, updateDoc, deleteDoc, 
-  collection, query, where, onSnapshot, getDocs, limit,
-  orderBy, Timestamp, writeBatch
+  doc, setDoc, deleteDoc, 
+  collection, query, onSnapshot, limit,
+  orderBy, writeBatch
 } from 'firebase/firestore';
-import { ref, set, get, update, remove, onValue, off } from 'firebase/database';
+import { ref, set, remove, onValue } from 'firebase/database';
 
 // ============================================
 // COLA DE OPERACIONES OFFLINE
@@ -88,6 +88,10 @@ const processQueue = async () => {
         await setDoc(doc(db, 'supplier_invoices', data.id.toString()), { ...data, updatedAt: Date.now() });
       } else if (op.type === 'saveSupplierPayment') {
         await setDoc(doc(db, 'supplier_payments', data.id.toString()), { ...data, createdAt: Date.now() });
+      } else if (op.type === 'saveTerminal') {
+        await setDoc(doc(db, 'terminals', data.id.toString()), { ...data, updatedAt: Date.now() });
+      } else if (op.type === 'saveCashClosing') {
+        await setDoc(doc(db, 'cash_closings', data.id.toString()), { ...data, createdAt: Date.now() });
       }
     } catch (error) {
       op.retries++;
@@ -127,11 +131,6 @@ export const syncService = {
   async saveClient(client: any) {
     await setDoc(doc(db, 'clients', client.id.toString()), { ...cleanObject(client), updatedAt: Date.now() });
   },
-  async saveClients(clients: any[]) {
-    const batch = writeBatch(db);
-    clients.forEach(c => batch.set(doc(db, 'clients', c.id.toString()), { ...cleanObject(c), updatedAt: Date.now() }));
-    await batch.commit();
-  },
   subscribeToClients(callback: (data: any[]) => void) {
     return onSnapshot(collection(db, 'clients'), (snap) => {
       callback(snap.docs.map(d => ({ id: parseInt(d.id), ...d.data() })));
@@ -143,8 +142,11 @@ export const syncService = {
     if (!isOnline) return addToQueue('saveTransaction', tx);
     await setDoc(doc(db, 'transactions', tx.id.toString()), { ...cleanObject(tx), createdAt: Date.now() });
   },
+  async deleteTransaction(id: number) {
+    await deleteDoc(doc(db, 'transactions', id.toString()));
+  },
   subscribeToTransactions(callback: (data: any[]) => void) {
-    return onSnapshot(query(collection(db, 'transactions'), orderBy('date', 'desc'), limit(200)), (snap) => {
+    return onSnapshot(query(collection(db, 'transactions'), orderBy('date', 'desc'), limit(500)), (snap) => {
       callback(snap.docs.map(d => d.data()));
     });
   },
@@ -165,7 +167,7 @@ export const syncService = {
     await setDoc(doc(db, 'accounting_entries', entry.id.toString()), { ...cleanObject(entry), createdAt: Date.now() });
   },
   subscribeToAccounting(callback: (data: any[]) => void) {
-    return onSnapshot(query(collection(db, 'accounting_entries'), orderBy('date', 'desc'), limit(500)), (snap) => {
+    return onSnapshot(query(collection(db, 'accounting_entries'), orderBy('date', 'desc'), limit(1000)), (snap) => {
       callback(snap.docs.map(d => d.data()));
     });
   },
@@ -203,7 +205,32 @@ export const syncService = {
     });
   },
 
-  // Caja (Realtime)
+  // Terminales (Cajas)
+  async saveTerminal(terminal: any) {
+    if (!isOnline) return addToQueue('saveTerminal', terminal);
+    await setDoc(doc(db, 'terminals', terminal.id.toString()), { ...cleanObject(terminal), updatedAt: Date.now() });
+  },
+  async deleteTerminal(id: number) {
+    await deleteDoc(doc(db, 'terminals', id.toString()));
+  },
+  subscribeToTerminals(callback: (data: any[]) => void) {
+    return onSnapshot(collection(db, 'terminals'), (snap) => {
+      callback(snap.docs.map(d => ({ id: parseInt(d.id), ...d.data() })));
+    });
+  },
+
+  // Historial de Cierres de Caja
+  async saveCashClosing(closing: any) {
+    if (!isOnline) return addToQueue('saveCashClosing', closing);
+    await setDoc(doc(db, 'cash_closings', closing.id.toString()), { ...cleanObject(closing), createdAt: Date.now() });
+  },
+  subscribeToCashClosings(callback: (data: any[]) => void) {
+    return onSnapshot(query(collection(db, 'cash_closings'), orderBy('fecha', 'desc'), limit(100)), (snap) => {
+      callback(snap.docs.map(d => d.data()));
+    });
+  },
+
+  // Caja Abierta (Realtime)
   async saveRegister(reg: any) {
     const registerRef = ref(rtdb, 'register');
     const cleaned = cleanObject(reg);

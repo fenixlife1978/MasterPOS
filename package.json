@@ -29,7 +29,7 @@
           "arch": ["x64"]
         }
       ],
-      "publisherName": "MasterPOS"
+      "legalTrademarks": "MasterPOS"
     },
     "nsis": {
       "oneClick": false,

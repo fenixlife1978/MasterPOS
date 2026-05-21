@@ -9,7 +9,38 @@
     "build": "NODE_ENV=production next build",
     "start": "next start",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "electron": "concurrently \"npm run dev\" \"wait-on http://localhost:3000 && electron .\"",
+    "electron-build": "npm run build && electron-builder",
+    "electron-build-win": "npm run build && electron-builder --win",
+    "electron-dist": "electron-builder",
+    "deploy": "electron-builder build --win --publish always"
+  },
+  "build": {
+    "appId": "com.masterposv1.nextn",
+    "productName": "MasterPOS",
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "publisherName": "MasterPOS"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "fenixlife1978",
+      "repo": "MasterPOS"
+    }
   },
   "dependencies": {
     "@genkit-ai/google-genai": "^1.28.0",
@@ -39,6 +70,7 @@
     "clsx": "^2.1.1",
     "date-fns": "^3.6.0",
     "dotenv": "^16.5.0",
+    "electron-updater": "^6.1.0",
     "embla-carousel-react": "^8.6.0",
     "firebase": "^11.10.0",
     "genkit": "^1.28.0",
@@ -62,6 +94,7 @@
     "cross-env": "^10.1.0",
     "electron": "^42.2.0",
     "electron-builder": "^26.8.1",
+    "electron-next": "^3.1.5",
     "genkit-cli": "^1.28.0",
     "postcss": "^8",
     "tailwindcss": "^3.4.1",

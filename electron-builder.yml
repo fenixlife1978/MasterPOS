@@ -20,10 +20,7 @@ extraResources:
 
 win:
   target:
-    - target: nsis
-      arch:
-        - x64
-        - ia32
+    - nsis
   icon: public/logo-master.png
 
 nsis:
@@ -36,17 +33,9 @@ nsis:
 linux:
   target:
     - AppImage
-    - deb
   icon: public/logo-master.png
-  category: Office
 
 mac:
   target:
     - dmg
-    - zip
   icon: public/logo-master.png
-  category: public.app-category.business
-
-publish:
-  - provider: github
-    releaseType: release

@@ -1,25 +1,13 @@
-const { app, BrowserWindow, Menu } = require('electron');
+const { app, BrowserWindow, dialog } = require('electron');
 const path = require('path');
-const { spawn } = require('child_process');
-const fs = require('fs');
-const http = require('http');
+const next = require('electron-next');
+const { autoUpdater } = require('electron-updater');
 
-let mainWindow = null;
-let nextServer = null;
-let serverPort = 3000;
+let mainWindow;
 
-// Buscar un puerto disponible
-function findAvailablePort(startPort, callback) {
-  const server = http.createServer();
-  server.listen(startPort, () => {
-    server.close(() => callback(startPort));
-  });
-  server.on('error', () => {
-    findAvailablePort(startPort + 1, callback);
-  });
-}
-
-function createWindow() {
+async function createWindow() {
+  await next(path.join(__dirname, '..'));
+  
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
@@ -30,116 +18,74 @@ function createWindow() {
       contextIsolation: true,
     },
     icon: path.join(__dirname, '../public/logo-master.png'),
-    title: 'MasterPOS',
     show: false,
   });
 
-  // Esperar a que el servidor Next.js esté listo
-  const waitForServer = () => {
-    const options = {
-      hostname: 'localhost',
-      port: serverPort,
-      path: '/',
-      method: 'HEAD',
-      timeout: 1000
-    };
-    
-    const req = http.request(options, (res) => {
-      mainWindow.loadURL(`http://localhost:${serverPort}`);
-      mainWindow.show();
-    });
-    
-    req.on('error', () => {
-      setTimeout(waitForServer, 500);
-    });
-    
-    req.end();
-  };
-
-  waitForServer();
+  mainWindow.loadURL('http://localhost:8000');
+  
+  mainWindow.once('ready-to-show', () => {
+    mainWindow.show();
+  });
 
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
-
-  // Crear menú personalizado
-  const template = [
-    {
-      label: 'Archivo',
-      submenu: [
-        {
-          label: 'Salir',
-          click: () => { app.quit(); }
-        }
-      ]
-    },
-    {
-      label: 'Ver',
-      submenu: [
-        { role: 'reload' },
-        { role: 'forcereload' },
-        { role: 'toggledevtools' },
-        { type: 'separator' },
-        { role: 'resetzoom' },
-        { role: 'zoomin' },
-        { role: 'zoomout' },
-        { type: 'separator' },
-        { role: 'togglefullscreen' }
-      ]
-    }
-  ];
-
-  const menu = Menu.buildFromTemplate(template);
-  Menu.setApplicationMenu(menu);
 }
 
-function startNextServer() {
-  // Buscar puerto disponible
-  findAvailablePort(serverPort, (port) => {
-    serverPort = port;
-    console.log(`Servidor Next.js en puerto: ${serverPort}`);
-    
-    // Obtener la ruta al ejecutable de Node.js empaquetado
-    const nextPath = path.join(__dirname, '../node_modules/next/dist/bin/next');
-    
-    nextServer = spawn('node', [nextPath, 'start', '-p', serverPort], {
-      cwd: path.join(__dirname, '..'),
-      env: {
-        ...process.env,
-        NODE_ENV: 'production',
-        PORT: serverPort,
-        ELECTRON_START: 'true'
-      },
-      stdio: 'pipe'
-    });
+// ========== AUTO-UPDATER ==========
+autoUpdater.setFeedURL({
+  provider: 'github',
+  owner: 'fenixlife1978',
+  repo: 'MasterPOS'
+});
 
-    nextServer.stdout.on('data', (data) => {
-      console.log(`Next.js: ${data}`);
-    });
+autoUpdater.autoDownload = true;
+autoUpdater.autoInstallOnAppQuit = true;
 
-    nextServer.stderr.on('data', (data) => {
-      console.error(`Next.js error: ${data}`);
-    });
+autoUpdater.on('checking-for-update', () => {
+  console.log('🔍 Buscando actualizaciones...');
+});
 
-    nextServer.on('close', (code) => {
-      console.log(`Next.js proceso cerrado con código: ${code}`);
-    });
+autoUpdater.on('update-available', (info) => {
+  console.log('🆕 Actualización disponible:', info.version);
+});
+
+autoUpdater.on('update-not-available', () => {
+  console.log('✅ Ya tienes la última versión');
+});
+
+autoUpdater.on('error', (err) => {
+  console.log('❌ Error en actualización:', err.message);
+});
+
+autoUpdater.on('download-progress', (progressObj) => {
+  console.log(`📥 Descargando: ${Math.floor(progressObj.percent)}%`);
+});
+
+autoUpdater.on('update-downloaded', () => {
+  console.log('✅ Actualización descargada');
+  const response = dialog.showMessageBoxSync({
+    type: 'info',
+    title: 'Actualización lista',
+    message: 'Se ha descargado una nueva versión. ¿Reiniciar ahora para instalarla?',
+    buttons: ['Reiniciar ahora', 'Más tarde']
   });
-}
+  
+  if (response === 0) {
+    autoUpdater.quitAndInstall();
+  }
+});
+// ========== FIN AUTO-UPDATER ==========
 
-app.whenReady().then(() => {
-  startNextServer();
+app.on('ready', () => {
+  createWindow();
+  // Verificar updates 5 segundos después de abrir
   setTimeout(() => {
-    if (!mainWindow) {
-      createWindow();
-    }
-  }, 3000);
+    autoUpdater.checkForUpdatesAndNotify();
+  }, 5000);
 });
 
 app.on('window-all-closed', () => {
-  if (nextServer) {
-    nextServer.kill();
-  }
   if (process.platform !== 'darwin') {
     app.quit();
   }

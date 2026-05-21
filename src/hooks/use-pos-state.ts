@@ -41,7 +41,10 @@ export function usePOSState() {
 
   const addProduct = useCallback((p: Product) => syncService.saveProduct(p), []);
   const updateProduct = useCallback((p: Product) => syncService.saveProduct(p), []);
-  const deleteProduct = useCallback((id: number) => syncService.saveProduct({ id, deleted: true }), []);
+  const deleteProduct = useCallback((id: number) => syncService.deleteProduct(id), []);
+
+  const saveClient = useCallback((c: Client) => syncService.saveClient(c), []);
+  const deleteClient = useCallback((id: number) => syncService.deleteClient(id), []);
 
   const addToCart = useCallback((productId: number) => {
     const product = products.find(p => p.id === productId);
@@ -146,7 +149,7 @@ export function usePOSState() {
     if (!client) return;
 
     let remaining = amount;
-    const clientAccounts = accounts.filter(a => a.clientId === clientId && a.status !== 'pagada').sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    const clientAccounts = accounts.filter(a => a.clientId === clientId && a.status !== 'pagada').sort((a,b) => new Date(a.date).getTime() - new Date(a.date).getTime());
 
     for (const acc of clientAccounts) {
       if (remaining <= 0) break;
@@ -165,7 +168,7 @@ export function usePOSState() {
 
   return {
     products, setProducts, addProduct, updateProduct, deleteProduct,
-    clients, setClients, transactions, setTransactions, accounts, setAccounts,
+    clients, setClients, saveClient, deleteClient, transactions, setTransactions, accounts, setAccounts,
     register, setRegister, openCashRegister, closeCashRegister,
     exchangeRate, setExchangeRate, cart, addToCart, removeFromCart, updateCartQty,
     isIvaEnabled, setIsIvaEnabled, currentPage, setCurrentPage,

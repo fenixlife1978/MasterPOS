@@ -121,6 +121,9 @@ export const syncService = {
     products.forEach(p => batch.set(doc(db, 'products', p.id.toString()), { ...cleanObject(p), updatedAt: Date.now() }));
     await batch.commit();
   },
+  async deleteProduct(id: number) {
+    await deleteDoc(doc(db, 'products', id.toString()));
+  },
   subscribeToProducts(callback: (data: any[]) => void) {
     return onSnapshot(query(collection(db, 'products'), limit(500)), (snap) => {
       callback(snap.docs.map(d => ({ id: parseInt(d.id), ...d.data() })));
@@ -130,6 +133,9 @@ export const syncService = {
   // Clientes
   async saveClient(client: any) {
     await setDoc(doc(db, 'clients', client.id.toString()), { ...cleanObject(client), updatedAt: Date.now() });
+  },
+  async deleteClient(id: number) {
+    await deleteDoc(doc(db, 'clients', id.toString()));
   },
   subscribeToClients(callback: (data: any[]) => void) {
     return onSnapshot(collection(db, 'clients'), (snap) => {

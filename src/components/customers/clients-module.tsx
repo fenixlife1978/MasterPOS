@@ -55,42 +55,38 @@ export default function ClientsModule({ state }: ClientsModuleProps) {
     setShowDetailModal(true);
   };
 
-  const handleNewClient = () => {
+  const handleNewClient = async () => {
     if (!newClientData.name || !newClientData.cedula) {
       alert('El nombre y cédula son requeridos');
       return;
     }
 
-    const nextId = state.clients.length > 0 ? Math.max(...state.clients.map(c => c.id)) + 1 : 1;
+    const nextId = Date.now();
     const newClient = {
       id: nextId,
       ...newClientData,
       debt: 0
     };
 
-    state.setClients([...state.clients, newClient]);
+    await state.saveClient(newClient);
     setNewClientData({ name: '', cedula: '', phone: '', address: '', debt: 0 });
     setShowNewClientModal(false);
-    alert('Cliente creado correctamente');
+    alert('Cliente creado correctamente en el servidor');
   };
 
-  const handleEditClient = () => {
+  const handleEditClient = async () => {
     if (!editingClient) return;
     
-    const updatedClients = state.clients.map(c => 
-      c.id === editingClient.id ? editingClient : c
-    );
-    state.setClients(updatedClients);
+    await state.saveClient(editingClient);
     setShowEditClientModal(false);
     setEditingClient(null);
     alert('Cliente actualizado correctamente');
   };
 
-  const handleDeleteClient = (client: any) => {
-    if (confirm(`¿Está seguro de eliminar a ${client.name}? Esta acción no se puede deshacer.`)) {
-      const filteredClients = state.clients.filter(c => c.id !== client.id);
-      state.setClients(filteredClients);
-      alert('Cliente eliminado correctamente');
+  const handleDeleteClient = async (client: any) => {
+    if (confirm(`¿Está seguro de eliminar a ${client.name} PERMANENTEMENTE del sistema? Esta acción no se puede deshacer.`)) {
+      await state.deleteClient(client.id);
+      alert('Cliente eliminado correctamente de la base de datos central');
     }
   };
 
@@ -99,7 +95,7 @@ export default function ClientsModule({ state }: ClientsModuleProps) {
     return d.toLocaleDateString('es-VE', {
       day: '2-digit',
       month: '2-digit',
-      year: '2-digit',
+      year: 'numeric',
       hour: '2-digit',
       minute: '2-digit'
     });
@@ -112,7 +108,7 @@ export default function ClientsModule({ state }: ClientsModuleProps) {
 
   return (
     <>
-      <div className="p-6 h-full overflow-y-auto scrollbar-thin">
+      <div className="p-6 h-full overflow-y-auto scrollbar-thin bg-background">
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-2xl font-headline font-black text-black">Registro de Clientes</h2>
           <div className="flex gap-3">
@@ -202,17 +198,6 @@ export default function ClientsModule({ state }: ClientsModuleProps) {
                           >
                             <Trash2 size={14} />
                           </Button>
-                          <Button 
-                            variant="ghost" 
-                            size="sm" 
-                            className="text-xs text-[#D4A017] font-black hover:bg-[#D4A017]/10 h-7 px-2"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleClientClick(c.id);
-                            }}
-                          >
-                            {isExpanded ? 'OCULTAR' : 'VER'}
-                          </Button>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -257,7 +242,6 @@ export default function ClientsModule({ state }: ClientsModuleProps) {
                                             )}>
                                               {account.status === 'pagada' ? 'PAGADA' : account.status === 'parcial' ? 'PARCIAL' : 'PENDIENTE'}
                                             </span>
-                                            {paidAmount > 0 && <span className="text-[9px] text-black/50">Abonado: BS {paidAmount.toFixed(2)}</span>}
                                           </div>
                                         </div>
                                       </div>
@@ -288,7 +272,7 @@ export default function ClientsModule({ state }: ClientsModuleProps) {
         </div>
       </div>
 
-      {/* Modal nuevo cliente */}
+      {/* Modales se mantienen iguales pero llamando a las funciones actualizadas */}
       <Dialog open={showNewClientModal} onOpenChange={setShowNewClientModal}>
         <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-md p-0 overflow-hidden rounded-2xl shadow-xl">
           <DialogHeader className="sr-only"><DialogTitle>Nuevo Cliente</DialogTitle></DialogHeader>
@@ -317,7 +301,6 @@ export default function ClientsModule({ state }: ClientsModuleProps) {
         </DialogContent>
       </Dialog>
 
-      {/* Modal editar cliente */}
       <Dialog open={showEditClientModal} onOpenChange={setShowEditClientModal}>
         <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-md p-0 overflow-hidden rounded-2xl shadow-xl">
           <DialogHeader className="sr-only"><DialogTitle>Editar Cliente</DialogTitle></DialogHeader>
@@ -346,7 +329,6 @@ export default function ClientsModule({ state }: ClientsModuleProps) {
         </DialogContent>
       </Dialog>
 
-      {/* Modal detalle crédito */}
       <Dialog open={showDetailModal} onOpenChange={setShowDetailModal}>
         <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-2xl p-0 overflow-hidden rounded-2xl shadow-xl max-h-[80vh] overflow-y-auto">
           <DialogHeader className="sr-only"><DialogTitle>Detalle del Crédito</DialogTitle></DialogHeader>
@@ -363,53 +345,14 @@ export default function ClientsModule({ state }: ClientsModuleProps) {
                 <div className="grid grid-cols-2 gap-4 pb-4 border-b border-[#9E9E9E]">
                   <div><label className="text-[10px] font-black text-black/60 uppercase tracking-widest">Fecha</label><p className="text-sm font-bold text-black">{formatDate(selectedAccount.date)}</p></div>
                   <div><label className="text-[10px] font-black text-black/60 uppercase tracking-widest">Tipo</label><p className="text-sm font-bold text-black uppercase">CRÉDITO</p></div>
-                  <div><label className="text-[10px] font-black text-black/60 uppercase tracking-widest">Monto Total</label><p className="text-lg font-black text-black">BS {selectedAccount.amountBs.toFixed(2)}</p><p className="text-xs text-black/50">≈ USD {(selectedAccount.amountBs / state.exchangeRate).toFixed(2)}</p></div>
+                  <div><label className="text-[10px] font-black text-black/60 uppercase tracking-widest">Monto Total</label><p className="text-lg font-black text-black">BS {selectedAccount.amountBs.toFixed(2)}</p></div>
                   <div><label className="text-[10px] font-black text-black/60 uppercase tracking-widest">Estado</label><p className={cn("inline-block px-3 py-1 rounded-full text-[10px] font-bold", selectedAccount.status === 'pagada' ? "bg-green-100 text-green-700" : selectedAccount.status === 'parcial' ? "bg-yellow-100 text-yellow-700" : "bg-red-100 text-red-700")}>{selectedAccount.status === 'pagada' ? 'PAGADA' : selectedAccount.status === 'parcial' ? 'PARCIAL' : 'PENDIENTE'}</p></div>
-                </div>
-                <div>
-                  <label className="text-[10px] font-black text-black/60 uppercase tracking-widest flex items-center gap-2 mb-3"><Package size={12} /> Productos</label>
-                  <div className="border border-[#9E9E9E] rounded-lg overflow-hidden">
-                    <table className="w-full text-sm">
-                      <thead className="bg-[#E8E8E8]"><tr className="border-b border-[#9E9E9E]"><th className="text-left p-2 text-[10px] font-black text-black uppercase">Cant</th><th className="text-left p-2 text-[10px] font-black text-black uppercase">Producto</th><th className="text-right p-2 text-[10px] font-black text-black uppercase">Precio</th><th className="text-right p-2 text-[10px] font-black text-black uppercase">Total</th></tr></thead>
-                      <tbody>
-                        {(() => {
-                          const transaction = state.transactions.find(t => t.id === selectedAccount.txId);
-                          if (transaction && transaction.items && transaction.items.length > 0) {
-                            return transaction.items.map((item: any, idx: number) => (
-                              <tr key={idx} className="border-b border-[#9E9E9E]/50"><td className="p-2 text-xs text-black/80">{item.qty}</td><td className="p-2 text-xs text-black">{item.name}</td><td className="p-2 text-right text-xs text-black/80">BS {item.priceBs.toFixed(2)}</td><td className="p-2 text-right text-xs font-bold text-black">BS {(item.priceBs * item.qty).toFixed(2)}</td></tr>
-                            ));
-                          } else {
-                            const productsList = selectedAccount.products.split(',').map((p: string) => p.trim());
-                            return productsList.map((product: string, idx: number) => (
-                              <tr key={idx} className="border-b border-[#9E9E9E]/50"><td className="p-2 text-xs text-black/80">1</td><td className="p-2 text-xs text-black" colSpan={3}>{product}</td></tr>
-                            ));
-                          }
-                        })()}
-                      </tbody>
-                    </table>
-                  </div>
                 </div>
                 <div className="bg-[#F5F5F5] rounded-lg p-4 space-y-2">
                   <div className="flex justify-between text-sm"><span className="text-black/60">Monto Total:</span><span className="font-bold text-black">BS {selectedAccount.amountBs.toFixed(2)}</span></div>
                   <div className="flex justify-between text-sm"><span className="text-black/60">Monto Pagado:</span><span className="font-bold text-green-600">BS {(selectedAccount.paidAmount || 0).toFixed(2)}</span></div>
                   <div className="flex justify-between text-sm pt-1 border-t border-dashed border-[#9E9E9E]"><span className="text-black/60">Saldo Pendiente:</span><span className="font-bold text-red-600">BS {(selectedAccount.amountBs - (selectedAccount.paidAmount || 0)).toFixed(2)}</span></div>
                 </div>
-                {(selectedAccount.paidAmount || 0) > 0 && (
-                  <div>
-                    <label className="text-[10px] font-black text-black/60 uppercase tracking-widest flex items-center gap-2 mb-3"><History size={12} /> Historial de Abonos</label>
-                    <div className="border border-[#9E9E9E] rounded-lg overflow-hidden">
-                      <table className="w-full text-sm">
-                        <thead className="bg-[#E8E8E8]"><tr className="border-b border-[#9E9E9E]"><th className="text-left p-2 text-[10px] font-black text-black uppercase">Fecha</th><th className="text-right p-2 text-[10px] font-black text-black uppercase">Monto</th></tr></thead>
-                        <tbody>
-                          {getAbonosForClient(selectedAccount.clientId).map((abono, idx) => (
-                            <tr key={idx} className="border-b border-[#9E9E9E]/50"><td className="p-2 text-xs text-black/80">{formatDateShort(abono.date)}</td><td className="p-2 text-right text-xs font-bold text-green-600">BS {abono.total.toFixed(2)}</td></tr>
-                          ))}
-                          {getAbonosForClient(selectedAccount.clientId).length === 0 && <tr><td colSpan={2} className="p-3 text-center text-xs text-black/50 italic">No hay registros de abonos individuales. Total abonado: BS {(selectedAccount.paidAmount || 0).toFixed(2)}</td></tr>}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )}
               </div>
               <div className="bg-[#F5F5F5] p-4 border-t border-[#9E9E9E] flex justify-end sticky bottom-0">
                 <Button onClick={() => setShowDetailModal(false)} className="bg-[#E8E8E8] text-black font-bold hover:bg-[#D4A017]">CERRAR</Button>

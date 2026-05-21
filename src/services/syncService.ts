@@ -1,16 +1,12 @@
 "use client";
 
-import { db, rtdb } from '@/lib/firebase';
+import { db } from '@/lib/firebase';
 import { 
   doc, setDoc, deleteDoc, 
   collection, query, onSnapshot, limit,
   orderBy, writeBatch
 } from 'firebase/firestore';
-import { ref, set, remove, onValue } from 'firebase/database';
 
-// ============================================
-// COLA DE OPERACIONES OFFLINE
-// ============================================
 interface PendingOperation {
   id: string;
   type: string;
@@ -26,9 +22,7 @@ let isSyncing = false;
 if (typeof window !== 'undefined') {
   const savedQueue = localStorage.getItem('firebase_pending_queue');
   if (savedQueue) {
-    try {
-      pendingQueue = JSON.parse(savedQueue);
-    } catch(e) {}
+    try { pendingQueue = JSON.parse(savedQueue); } catch(e) {}
   }
 }
 
@@ -39,27 +33,18 @@ const saveQueue = () => {
 };
 
 if (typeof window !== 'undefined') {
-  window.addEventListener('online', () => {
-    isOnline = true;
-    processQueue();
-  });
-  window.addEventListener('offline', () => {
-    isOnline = false;
-  });
+  window.addEventListener('online', () => { isOnline = true; processQueue(); });
+  window.addEventListener('offline', () => { isOnline = false; });
 }
 
 const cleanObject = (obj: any): any => {
   if (obj === null || obj === undefined) return null;
-  if (Array.isArray(obj)) {
-    return obj.map(item => cleanObject(item)).filter(item => item !== null);
-  }
+  if (Array.isArray(obj)) return obj.map(item => cleanObject(item)).filter(item => item !== null);
   if (typeof obj === 'object') {
     const cleaned: any = {};
     for (const key in obj) {
       const value = cleanObject(obj[key]);
-      if (value !== undefined && value !== null) {
-        cleaned[key] = value;
-      }
+      if (value !== undefined && value !== null) cleaned[key] = value;
     }
     return cleaned;
   }
@@ -67,7 +52,7 @@ const cleanObject = (obj: any): any => {
 };
 
 const processQueue = async () => {
-  if (!isOnline || isSyncing || pendingQueue.length === 0) return;
+  if (!isOnline || isSyncing || pendingQueue.length === 0 || !db) return;
   isSyncing = true;
   const toRetry: PendingOperation[] = [];
   
@@ -92,6 +77,8 @@ const processQueue = async () => {
         await setDoc(doc(db, 'terminals', data.id.toString()), { ...data, updatedAt: Date.now() });
       } else if (op.type === 'saveCashClosing') {
         await setDoc(doc(db, 'cash_closings', data.id.toString()), { ...data, createdAt: Date.now() });
+      } else if (op.type === 'saveRegister') {
+        await setDoc(doc(db, 'register', 'current'), { ...data, updatedAt: Date.now() });
       }
     } catch (error) {
       op.retries++;
@@ -112,19 +99,19 @@ const addToQueue = (type: string, data: any) => {
 export const syncService = {
   // Productos
   async saveProduct(product: any) {
+    if (!db) return;
     if (!isOnline) return addToQueue('saveProducts', [product]);
     await setDoc(doc(db, 'products', product.id.toString()), { ...cleanObject(product), updatedAt: Date.now() });
   },
   async saveProducts(products: any[]) {
+    if (!db) return;
     if (!isOnline) return addToQueue('saveProducts', products);
     const batch = writeBatch(db);
     products.forEach(p => batch.set(doc(db, 'products', p.id.toString()), { ...cleanObject(p), updatedAt: Date.now() }));
     await batch.commit();
   },
-  async deleteProduct(id: number) {
-    await deleteDoc(doc(db, 'products', id.toString()));
-  },
   subscribeToProducts(callback: (data: any[]) => void) {
+    if (!db) return () => {};
     return onSnapshot(query(collection(db, 'products'), limit(500)), (snap) => {
       callback(snap.docs.map(d => ({ id: parseInt(d.id), ...d.data() })));
     });
@@ -132,12 +119,11 @@ export const syncService = {
 
   // Clientes
   async saveClient(client: any) {
+    if (!db) return;
     await setDoc(doc(db, 'clients', client.id.toString()), { ...cleanObject(client), updatedAt: Date.now() });
   },
-  async deleteClient(id: number) {
-    await deleteDoc(doc(db, 'clients', id.toString()));
-  },
   subscribeToClients(callback: (data: any[]) => void) {
+    if (!db) return () => {};
     return onSnapshot(collection(db, 'clients'), (snap) => {
       callback(snap.docs.map(d => ({ id: parseInt(d.id), ...d.data() })));
     });
@@ -145,13 +131,16 @@ export const syncService = {
 
   // Transacciones
   async saveTransaction(tx: any) {
+    if (!db) return;
     if (!isOnline) return addToQueue('saveTransaction', tx);
     await setDoc(doc(db, 'transactions', tx.id.toString()), { ...cleanObject(tx), createdAt: Date.now() });
   },
   async deleteTransaction(id: number) {
+    if (!db) return;
     await deleteDoc(doc(db, 'transactions', id.toString()));
   },
   subscribeToTransactions(callback: (data: any[]) => void) {
+    if (!db) return () => {};
     return onSnapshot(query(collection(db, 'transactions'), orderBy('date', 'desc'), limit(500)), (snap) => {
       callback(snap.docs.map(d => d.data()));
     });
@@ -159,9 +148,11 @@ export const syncService = {
 
   // Cuentas por Cobrar
   async saveAccount(acc: any) {
+    if (!db) return;
     await setDoc(doc(db, 'accounts', acc.id.toString()), { ...cleanObject(acc), updatedAt: Date.now() });
   },
   subscribeToAccounts(callback: (data: any[]) => void) {
+    if (!db) return () => {};
     return onSnapshot(collection(db, 'accounts'), (snap) => {
       callback(snap.docs.map(d => d.data()));
     });
@@ -169,10 +160,12 @@ export const syncService = {
 
   // Contabilidad
   async saveAccountingEntry(entry: any) {
+    if (!db) return;
     if (!isOnline) return addToQueue('saveAccountingEntry', entry);
     await setDoc(doc(db, 'accounting_entries', entry.id.toString()), { ...cleanObject(entry), createdAt: Date.now() });
   },
   subscribeToAccounting(callback: (data: any[]) => void) {
+    if (!db) return () => {};
     return onSnapshot(query(collection(db, 'accounting_entries'), orderBy('date', 'desc'), limit(1000)), (snap) => {
       callback(snap.docs.map(d => d.data()));
     });
@@ -180,74 +173,91 @@ export const syncService = {
 
   // Proveedores
   async saveSupplier(s: any) {
+    if (!db) return;
     await setDoc(doc(db, 'suppliers', s.id.toString()), { ...cleanObject(s), updatedAt: Date.now() });
   },
   async deleteSupplier(id: number) {
+    if (!db) return;
     await deleteDoc(doc(db, 'suppliers', id.toString()));
   },
   subscribeToSuppliers(callback: (data: any[]) => void) {
+    if (!db) return () => {};
     return onSnapshot(collection(db, 'suppliers'), (snap) => {
       callback(snap.docs.map(d => ({ id: parseInt(d.id), ...d.data() })));
     });
   },
 
-  // Facturas de Proveedores
+  // Facturas
   async saveInvoice(inv: any) {
+    if (!db) return;
     await setDoc(doc(db, 'supplier_invoices', inv.id.toString()), { ...cleanObject(inv), updatedAt: Date.now() });
   },
   subscribeToInvoices(callback: (data: any[]) => void) {
+    if (!db) return () => {};
     return onSnapshot(collection(db, 'supplier_invoices'), (snap) => {
       callback(snap.docs.map(d => ({ id: parseInt(d.id), ...d.data() })));
     });
   },
 
-  // Pagos a Proveedores
+  // Pagos
   async saveSupplierPayment(p: any) {
+    if (!db) return;
     await setDoc(doc(db, 'supplier_payments', p.id.toString()), { ...cleanObject(p), createdAt: Date.now() });
   },
   subscribeToSupplierPayments(callback: (data: any[]) => void) {
+    if (!db) return () => {};
     return onSnapshot(collection(db, 'supplier_payments'), (snap) => {
       callback(snap.docs.map(d => ({ id: parseInt(d.id), ...d.data() })));
     });
   },
 
-  // Terminales (Cajas)
+  // Terminales
   async saveTerminal(terminal: any) {
+    if (!db) return;
     if (!isOnline) return addToQueue('saveTerminal', terminal);
     await setDoc(doc(db, 'terminals', terminal.id.toString()), { ...cleanObject(terminal), updatedAt: Date.now() });
   },
   async deleteTerminal(id: number) {
+    if (!db) return;
     await deleteDoc(doc(db, 'terminals', id.toString()));
   },
   subscribeToTerminals(callback: (data: any[]) => void) {
+    if (!db) return () => {};
     return onSnapshot(collection(db, 'terminals'), (snap) => {
       callback(snap.docs.map(d => ({ id: parseInt(d.id), ...d.data() })));
     });
   },
 
-  // Historial de Cierres de Caja
+  // Cierres de Caja
   async saveCashClosing(closing: any) {
+    if (!db) return;
     if (!isOnline) return addToQueue('saveCashClosing', closing);
     await setDoc(doc(db, 'cash_closings', closing.id.toString()), { ...cleanObject(closing), createdAt: Date.now() });
   },
   subscribeToCashClosings(callback: (data: any[]) => void) {
+    if (!db) return () => {};
     return onSnapshot(query(collection(db, 'cash_closings'), orderBy('fecha', 'desc'), limit(100)), (snap) => {
       callback(snap.docs.map(d => d.data()));
     });
   },
 
-  // Caja Abierta (Realtime)
+  // Caja (Firestore)
   async saveRegister(reg: any) {
-    const registerRef = ref(rtdb, 'register');
+    if (!db) return;
+    if (!isOnline) return addToQueue('saveRegister', reg);
     const cleaned = cleanObject(reg);
     delete cleaned.txs;
-    await set(registerRef, { ...cleaned, updatedAt: Date.now() });
+    await setDoc(doc(db, 'register', 'current'), { ...cleaned, updatedAt: Date.now() });
   },
   async clearRegister() {
-    await remove(ref(rtdb, 'register'));
+    if (!db) return;
+    await deleteDoc(doc(db, 'register', 'current'));
   },
   subscribeToRegister(callback: (data: any) => void) {
-    return onValue(ref(rtdb, 'register'), (snap) => callback(snap.val()));
+    if (!db) return () => {};
+    return onSnapshot(doc(db, 'register', 'current'), (snap) => {
+      callback(snap.exists() ? snap.data() : null);
+    });
   },
 
   getPendingQueueLength: () => pendingQueue.length

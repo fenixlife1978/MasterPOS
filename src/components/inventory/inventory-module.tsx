@@ -2,14 +2,14 @@
 
 import { useState, useEffect } from 'react';
 import { usePOSState } from '@/hooks/use-pos-state';
-import { Plus, Search, Info, Pencil, Trash2, X, Barcode as BarcodeIcon, Tag, Boxes, TrendingUp, DollarSign, Percent, Filter, Download, Printer, Share2, FileText, FileSpreadsheet, File, AlertTriangle, FolderPlus, Package, History, RefreshCw, Save, Minus, Plus as PlusIcon, LayoutGrid } from 'lucide-react';
+import { Plus, Search, Info, Pencil, Trash2, X, Barcode as BarcodeIcon, Tag, Boxes, TrendingUp, DollarSign, Percent, Filter, Download, Printer, Share2, FileText, FileSpreadsheet, File, AlertTriangle, FolderPlus, Package, History, RefreshCw, Save, Minus, Plus as PlusIcon, LayoutGrid, Layers, FolderMinus } from 'lucide-react';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
-import { Product } from '@/lib/types';
+import { Product, Category } from '@/lib/types';
 
 interface InventoryModuleProps {
   state: ReturnType<typeof usePOSState>;
@@ -50,6 +50,8 @@ interface KardexEntry {
 
 // Departamentos predefinidos
 const DEFAULT_DEPARTMENTS = ['Polar', 'Munchy'];
+// Categorías predefinidas como Category type
+const DEFAULT_CATEGORIES: Category[] = ['Whisky', 'Ron', 'Cerveza', 'Vino', 'Vodka', 'Tequila', 'Licor', 'Gin', 'Otro'];
 
 // Umbral mínimo global por defecto
 const DEFAULT_MIN_STOCK = 5;
@@ -68,6 +70,7 @@ export default function InventoryModule({ state }: InventoryModuleProps) {
   const [search, setSearch] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'outOfStock' | 'lowStock'>('all');
   const [filterDepartment, setFilterDepartment] = useState<string>('all');
+  const [filterCategory, setFilterCategory] = useState<Category | 'all'>('all');
   const [editingProduct, setEditingProduct] = useState<ProductWithDetails | null>(null);
   const [viewingProduct, setViewingProduct] = useState<Product | null>(null);
   const [viewingKardex, setViewingKardex] = useState<Product | null>(null);
@@ -82,8 +85,11 @@ export default function InventoryModule({ state }: InventoryModuleProps) {
   const [calculatedPriceBs, setCalculatedPriceBs] = useState(0);
   const [showExportModal, setShowExportModal] = useState(false);
   const [showDepartmentModal, setShowDepartmentModal] = useState(false);
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [newDepartment, setNewDepartment] = useState('');
+  const [newCategory, setNewCategory] = useState('');
   const [departments, setDepartments] = useState<string[]>(DEFAULT_DEPARTMENTS);
+  const [categories, setCategories] = useState<Category[]>(DEFAULT_CATEGORIES);
   const [kardexEntries, setKardexEntries] = useState<Record<number, KardexEntry[]>>({});
   const [adjustmentQuantity, setAdjustmentQuantity] = useState('');
   const [adjustmentReason, setAdjustmentReason] = useState('');
@@ -102,6 +108,24 @@ export default function InventoryModule({ state }: InventoryModuleProps) {
   useEffect(() => {
     localStorage.setItem('inventory_departments', JSON.stringify(departments));
   }, [departments]);
+
+  // Cargar categorías guardadas
+  useEffect(() => {
+    const saved = localStorage.getItem('inventory_categories');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      // Validate that parsed categories are valid Category types
+      const validCategories = parsed.filter((cat: string): cat is Category => 
+        DEFAULT_CATEGORIES.includes(cat as Category) || true // Allow custom categories
+      );
+      setCategories(validCategories);
+    }
+  }, []);
+
+  // Guardar categorías
+  useEffect(() => {
+    localStorage.setItem('inventory_categories', JSON.stringify(categories));
+  }, [categories]);
 
   // Cargar historial de Kardex
   useEffect(() => {
@@ -232,6 +256,7 @@ export default function InventoryModule({ state }: InventoryModuleProps) {
     const profitPercentNum = parseFloat(formData.get('profitPercent') as string) || 0;
     const minStockNum = parseInt(formData.get('minStock') as string) || DEFAULT_MIN_STOCK;
     const selectedDepartment = formData.get('department') as string;
+    const selectedCategory = formData.get('category') as Category;
     
     const salePriceUsd = costUsdNum + (costUsdNum * profitPercentNum / 100);
     const salePriceBs = salePriceUsd * state.exchangeRate;
@@ -240,7 +265,7 @@ export default function InventoryModule({ state }: InventoryModuleProps) {
     const data = {
       barcode: formData.get('barcode') as string,
       name: formData.get('name') as string,
-      category: formData.get('category') as any,
+      category: selectedCategory,
       department: selectedDepartment,
       costBs: costBsNum,
       costUsd: costUsdNum,
@@ -280,6 +305,59 @@ export default function InventoryModule({ state }: InventoryModuleProps) {
       toast({ title: "Departamento creado", description: `"${newDepartment.trim()}" agregado correctamente.` });
     } else if (departments.includes(newDepartment.trim())) {
       toast({ title: "Error", description: "Este departamento ya existe", variant: "destructive" });
+    }
+  };
+
+  const deleteDepartment = (deptToDelete: string) => {
+    // Check if any product uses this department
+    const productsInDepartment = state.products.filter(p => (p as any).department === deptToDelete);
+    if (productsInDepartment.length > 0) {
+      toast({ 
+        title: "No se puede eliminar", 
+        description: `Hay ${productsInDepartment.length} producto(s) en este departamento. Reasígnelos primero.`, 
+        variant: "destructive" 
+      });
+      return;
+    }
+    
+    if (confirm(`¿Eliminar el departamento "${deptToDelete}"? Esta acción no se puede deshacer.`)) {
+      setDepartments(departments.filter(d => d !== deptToDelete));
+      if (filterDepartment === deptToDelete) {
+        setFilterDepartment('all');
+      }
+      toast({ title: "Departamento eliminado", description: `"${deptToDelete}" ha sido eliminado.` });
+    }
+  };
+
+  const addCategory = () => {
+    if (newCategory.trim() && !categories.includes(newCategory.trim() as Category)) {
+      setCategories([...categories, newCategory.trim() as Category]);
+      setNewCategory('');
+      setShowCategoryModal(false);
+      toast({ title: "Categoría creada", description: `"${newCategory.trim()}" agregada correctamente.` });
+    } else if (categories.includes(newCategory.trim() as Category)) {
+      toast({ title: "Error", description: "Esta categoría ya existe", variant: "destructive" });
+    }
+  };
+
+  const deleteCategory = (catToDelete: Category) => {
+    // Check if any product uses this category
+    const productsInCategory = state.products.filter(p => p.category === catToDelete);
+    if (productsInCategory.length > 0) {
+      toast({ 
+        title: "No se puede eliminar", 
+        description: `Hay ${productsInCategory.length} producto(s) en esta categoría. Reasígnelos primero.`, 
+        variant: "destructive" 
+      });
+      return;
+    }
+    
+    if (confirm(`¿Eliminar la categoría "${catToDelete}"? Esta acción no se puede deshacer.`)) {
+      setCategories(categories.filter(c => c !== catToDelete));
+      if (filterCategory === catToDelete) {
+        setFilterCategory('all');
+      }
+      toast({ title: "Categoría eliminada", description: `"${catToDelete}" ha sido eliminada.` });
     }
   };
 
@@ -327,8 +405,9 @@ export default function InventoryModule({ state }: InventoryModuleProps) {
     }
     
     const matchesDepartment = filterDepartment === 'all' || (p as any).department === filterDepartment;
+    const matchesCategory = filterCategory === 'all' || p.category === filterCategory;
     
-    return matchesSearch && matchesStock && matchesDepartment;
+    return matchesSearch && matchesStock && matchesDepartment && matchesCategory;
   });
 
   // Totales del inventario
@@ -530,7 +609,7 @@ export default function InventoryModule({ state }: InventoryModuleProps) {
               <th>STOCK</th>
               <th>ESTADO</th>
               <th>VALOR INVENTARIO USD</th>
-             </tr>
+            </tr>
           </thead>
           <tbody>
             ${filtered.map(p => {
@@ -564,7 +643,7 @@ export default function InventoryModule({ state }: InventoryModuleProps) {
             <tr class="total-row">
               <td colspan="7" class="text-right text-bold">TOTALES:</td>
               <td class="text-right text-bold">$${totalInventoryValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-             </tr>
+            </tr>
           </tbody>
         </table>
         
@@ -882,25 +961,51 @@ export default function InventoryModule({ state }: InventoryModuleProps) {
         
         <div className="h-6 w-px bg-slate-300 mx-1" />
         
-        <select
-          value={filterDepartment}
-          onChange={(e) => setFilterDepartment(e.target.value)}
-          className="px-3 py-1.5 rounded-lg text-[11px] font-bold border border-slate-300 bg-white"
-        >
-          <option value="all">📁 TODOS LOS DEPARTAMENTOS</option>
-          {departments.map(dept => (
-            <option key={dept} value={dept}>{dept}</option>
-          ))}
-        </select>
-        
-        <Button
-          onClick={() => setShowDepartmentModal(true)}
-          variant="outline"
-          size="sm"
-          className="text-[10px] font-bold border-dashed"
-        >
-          <FolderPlus size={12} className="mr-1" /> NUEVO DEPARTAMENTO
-        </Button>
+        {/* Filtro por Departamento con gestión */}
+        <div className="relative group">
+          <select
+            value={filterDepartment}
+            onChange={(e) => setFilterDepartment(e.target.value)}
+            className="px-3 py-1.5 rounded-lg text-[11px] font-bold border border-slate-300 bg-white pr-8"
+          >
+            <option value="all">📁 TODOS LOS DEPARTAMENTOS</option>
+            {departments.map(dept => (
+              <option key={dept} value={dept}>{dept}</option>
+            ))}
+          </select>
+          <div className="absolute right-1 top-1/2 -translate-y-1/2 flex gap-0.5">
+            <button
+              onClick={() => setShowDepartmentModal(true)}
+              className="p-1 hover:bg-slate-100 rounded"
+              title="Nuevo departamento"
+            >
+              <FolderPlus size={12} />
+            </button>
+          </div>
+        </div>
+
+        {/* Filtro por Categoría con gestión */}
+        <div className="relative group">
+          <select
+            value={filterCategory}
+            onChange={(e) => setFilterCategory(e.target.value as Category | 'all')}
+            className="px-3 py-1.5 rounded-lg text-[11px] font-bold border border-slate-300 bg-white pr-8"
+          >
+            <option value="all">🏷️ TODAS LAS CATEGORÍAS</option>
+            {categories.map(cat => (
+              <option key={cat} value={cat}>{cat}</option>
+            ))}
+          </select>
+          <div className="absolute right-1 top-1/2 -translate-y-1/2 flex gap-0.5">
+            <button
+              onClick={() => setShowCategoryModal(true)}
+              className="p-1 hover:bg-slate-100 rounded"
+              title="Nueva categoría"
+            >
+              <FolderPlus size={12} />
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* Modal de nuevo departamento */}
@@ -908,22 +1013,92 @@ export default function InventoryModule({ state }: InventoryModuleProps) {
         <div className="fixed inset-0 z-[200] bg-black/50 flex items-center justify-center p-4">
           <div className="bg-white rounded-xl p-6 max-w-sm w-full border border-[#9E9E9E]">
             <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-bold text-black">Nuevo Departamento</h3>
+              <h3 className="text-lg font-bold text-black">Gestionar Departamentos</h3>
               <button onClick={() => setShowDepartmentModal(false)} className="text-black/50 hover:text-black">
                 <X size={18} />
               </button>
             </div>
-            <input
-              type="text"
-              value={newDepartment}
-              onChange={(e) => setNewDepartment(e.target.value)}
-              placeholder="Nombre del departamento"
-              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm mb-4"
-              autoFocus
-            />
-            <div className="flex gap-2">
-              <Button onClick={addDepartment} className="flex-1 bg-[#1A2C4E] text-white font-bold">CREAR</Button>
-              <Button onClick={() => setShowDepartmentModal(false)} variant="ghost" className="flex-1">CANCELAR</Button>
+            <div className="mb-4">
+              <label className="text-xs font-bold text-slate-500 block mb-1">Crear nuevo</label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={newDepartment}
+                  onChange={(e) => setNewDepartment(e.target.value)}
+                  placeholder="Nombre del departamento"
+                  className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm"
+                  autoFocus
+                />
+                <Button onClick={addDepartment} size="sm" className="bg-[#1A2C4E] text-white">AGREGAR</Button>
+              </div>
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-500 block mb-1">Departamentos existentes</label>
+              <div className="max-h-48 overflow-y-auto border border-slate-200 rounded-lg divide-y">
+                {departments.map(dept => (
+                  <div key={dept} className="flex justify-between items-center px-3 py-2 hover:bg-slate-50">
+                    <span className="text-sm">{dept}</span>
+                    <button
+                      onClick={() => deleteDepartment(dept)}
+                      className="text-red-500 hover:text-red-700 p-1"
+                      title="Eliminar departamento"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="flex justify-end mt-4">
+              <Button onClick={() => setShowDepartmentModal(false)} variant="ghost" size="sm">CERRAR</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de nueva categoría */}
+      {showCategoryModal && (
+        <div className="fixed inset-0 z-[200] bg-black/50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl p-6 max-w-sm w-full border border-[#9E9E9E]">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-bold text-black">Gestionar Categorías</h3>
+              <button onClick={() => setShowCategoryModal(false)} className="text-black/50 hover:text-black">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="mb-4">
+              <label className="text-xs font-bold text-slate-500 block mb-1">Crear nueva</label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={newCategory}
+                  onChange={(e) => setNewCategory(e.target.value)}
+                  placeholder="Nombre de la categoría"
+                  className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm"
+                  autoFocus
+                />
+                <Button onClick={addCategory} size="sm" className="bg-[#1A2C4E] text-white">AGREGAR</Button>
+              </div>
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-500 block mb-1">Categorías existentes</label>
+              <div className="max-h-48 overflow-y-auto border border-slate-200 rounded-lg divide-y">
+                {categories.map(cat => (
+                  <div key={cat} className="flex justify-between items-center px-3 py-2 hover:bg-slate-50">
+                    <span className="text-sm">{cat}</span>
+                    <button
+                      onClick={() => deleteCategory(cat)}
+                      className="text-red-500 hover:text-red-700 p-1"
+                      title="Eliminar categoría"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="flex justify-end mt-4">
+              <Button onClick={() => setShowCategoryModal(false)} variant="ghost" size="sm">CERRAR</Button>
             </div>
           </div>
         </div>
@@ -1145,15 +1320,9 @@ export default function InventoryModule({ state }: InventoryModuleProps) {
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Categoría</label>
                   <select name="category" defaultValue={editingProduct?.category} className="w-full h-10 bg-background border border-border rounded-md px-3 text-sm focus:ring-2 focus:ring-secondary outline-none text-foreground">
-                    <option value="Whisky">Whisky</option>
-                    <option value="Ron">Ron</option>
-                    <option value="Cerveza">Cerveza</option>
-                    <option value="Vino">Vino</option>
-                    <option value="Vodka">Vodka</option>
-                    <option value="Tequila">Tequila</option>
-                    <option value="Licor">Licor</option>
-                    <option value="Gin">Gin</option>
-                    <option value="Otro">Otro</option>
+                    {categories.map(cat => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
                   </select>
                 </div>
                 <div className="space-y-1.5">

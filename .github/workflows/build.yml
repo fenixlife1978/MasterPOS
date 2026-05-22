@@ -3,14 +3,15 @@ name: Build and Release Windows EXE
 on:
   push:
     branches: [ main ]
-    tags:
-      - 'v*'
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: windows-latest
     
+    permissions:
+      contents: write # Permiso explícito para crear los Releases en tu repositorio
+
     steps:
     - uses: actions/checkout@v4
     
@@ -18,11 +19,12 @@ jobs:
       uses: actions/setup-node@v4
       with:
         node-version: '20'
+        cache: 'npm'
         
     - name: Install dependencies
-      run: npm install
+      run: npm install --ignore-scripts
       
-    - name: Build Next.js
+    - name: Build Next.js (Export con Credenciales)
       run: npm run build
       env:
         NEXT_PUBLIC_FIREBASE_API_KEY: ${{ secrets.NEXT_PUBLIC_FIREBASE_API_KEY }}
@@ -34,23 +36,17 @@ jobs:
         NEXT_PUBLIC_FIREBASE_DATABASE_URL: ${{ secrets.NEXT_PUBLIC_FIREBASE_DATABASE_URL }}
         GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       
-    - name: Build Windows EXE
-      run: npm run electron-build-win
+    - name: Build and Publish Windows EXE
+      # CORRECCIÓN: Llamamos directo a electron-builder para empaquetar lo ya compilado 
+      # y activar '--publish always' para que suba el instalador junto al 'latest.yml'
+      run: npx electron-builder --win --publish always
       env:
         GH_TOKEN: ${{ secrets.GH_TOKEN }}
-        
-    - name: Upload artifact
+
+    - name: Upload artifact (Copia de seguridad en GitHub Actions)
       uses: actions/upload-artifact@v4
       with:
         name: MasterPOS-Installer
-        path: dist/*.exe
-        
-    - name: Release
-      uses: softprops/action-gh-release@v1
-      if: startsWith(github.ref, 'refs/tags/v')
-      with:
-        files: dist/*.exe
-        draft: false
-        prerelease: false
-      env:
-        GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+        path: |
+          dist/*.exe
+          dist/*.yml

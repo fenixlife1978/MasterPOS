@@ -1,13 +1,16 @@
-const { app, BrowserWindow, dialog } = require('electron');
+const { app, BrowserWindow, dialog, protocol, net } = require('electron');
 const path = require('path');
-const next = require('electron-next');
+const { pathToFileURL } = require('url');
 const { autoUpdater } = require('electron-updater');
 
 let mainWindow;
 
+// Registrar el protocolo seguro 'app' antes de que la aplicación esté lista (vital para el offline)
+protocol.registerSchemesAsPrivileged([
+  { scheme: "app", privileges: { standard: true, secure: true, supportFetchAPI: true } }
+]);
+
 async function createWindow() {
-  await next(path.join(__dirname, '..'));
-  
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
@@ -21,7 +24,12 @@ async function createWindow() {
     show: false,
   });
 
-  mainWindow.loadURL('http://localhost:8000');
+  // CORRECCIÓN: Si está empaquetada (.exe), usa el modo offline nativo. Si estás desarrollando, usa el puerto 9002.
+  if (app.isPackaged) {
+    mainWindow.loadURL('app://-');
+  } else {
+    mainWindow.loadURL('http://localhost:9002');
+  }
   
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
@@ -32,7 +40,7 @@ async function createWindow() {
   });
 }
 
-// ========== AUTO-UPDATER ==========
+// ========== AUTO-UPDATER (Tu lógica intacta) ==========
 autoUpdater.setFeedURL({
   provider: 'github',
   owner: 'fenixlife1978',
@@ -77,12 +85,31 @@ autoUpdater.on('update-downloaded', () => {
 });
 // ========== FIN AUTO-UPDATER ==========
 
-app.on('ready', () => {
+app.whenReady().then(() => {
+  // Manejador nativo de archivos (Carga tu HTML/CSS directo desde el .exe rápido y offline)
+  protocol.handle("app", (request) => {
+    const url = new URL(request.url);
+    let pathname = url.pathname;
+
+    if (pathname === "/" || pathname === "") {
+      pathname = "/index.html";
+    } else if (!path.extname(pathname)) {
+      pathname = path.join(pathname, "index.html");
+    }
+
+    // Como este archivo está dentro de la carpeta 'electron', usamos '..' para subir un nivel y hallar 'out'
+    const filePath = path.join(__dirname, "..", "out", pathname);
+    return net.fetch(pathToFileURL(filePath).toString());
+  });
+
   createWindow();
-  // Verificar updates 5 segundos después de abrir
-  setTimeout(() => {
-    autoUpdater.checkForUpdatesAndNotify();
-  }, 5000);
+
+  // Verificar actualizaciones automáticas 5 segundos después de abrir (Solo en el ejecutable final)
+  if (app.isPackaged) {
+    setTimeout(() => {
+      autoUpdater.checkForUpdatesAndNotify();
+    }, 5000);
+  }
 });
 
 app.on('window-all-closed', () => {

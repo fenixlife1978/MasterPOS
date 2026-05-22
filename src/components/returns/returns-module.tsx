@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { usePOSState } from '@/hooks/use-pos-state';
-import { Search, Package, X, CheckCircle, AlertCircle } from 'lucide-react';
+import { Search, X, CheckCircle, AlertCircle, Receipt, Hash, User, Calendar, Banknote, Minus, Plus, RefreshCw } from 'lucide-react';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -68,14 +68,19 @@ export default function ReturnsModule() {
     setReturnItems(updated);
   };
 
+  const totalReturnAmount = returnItems.reduce((s, i) => s + i.amount, 0);
+  const hasItemsToReturn = returnItems.some(i => i.returnQty > 0);
+
   const processReturn = async () => {
     if (!selectedTransaction || !register?.isOpen) {
       setMessage({ type: 'error', text: 'La caja debe estar abierta' });
       return;
     }
 
-    const totalReturn = returnItems.reduce((s, i) => s + i.amount, 0);
-    if (totalReturn <= 0) return;
+    if (totalReturnAmount <= 0) {
+      setMessage({ type: 'error', text: 'Seleccione al menos un producto para devolver' });
+      return;
+    }
 
     const returnItemsList: CartItem[] = returnItems.filter(i => i.returnQty > 0).map(i => ({
       productId: i.productId, name: i.name, priceBs: i.priceBs, priceUsd: i.priceBs / exchangeRate, qty: i.returnQty, category: 'Otro' as any
@@ -86,12 +91,12 @@ export default function ReturnsModule() {
       date: new Date().toISOString(),
       type: 'devolucion',
       items: returnItemsList,
-      subtotal: totalReturn,
+      subtotal: totalReturnAmount,
       iva: 0,
-      total: totalReturn,
-      totalUsd: totalReturn / exchangeRate,
+      total: totalReturnAmount,
+      totalUsd: totalReturnAmount / exchangeRate,
       payMethod: selectedTransaction.payMethod,
-      paidBs: totalReturn,
+      paidBs: totalReturnAmount,
       change: 0,
       clientId: selectedTransaction.clientId,
       clientName: selectedTransaction.clientName,
@@ -127,14 +132,15 @@ export default function ReturnsModule() {
 
       <div className="bg-white border border-[#9E9E9E] rounded-xl overflow-hidden shadow-md">
         <Table>
-          <TableHeader className="bg-[#E8E8E8]"><TableRow><TableHead className="text-[10px] font-black"># VENTA</TableHead><TableHead className="text-[10px] font-black">CLIENTE</TableHead><TableHead className="text-[10px] font-black text-right">TOTAL</TableHead><TableHead className="text-[10px] font-black text-center">ACCIONES</TableHead></TableRow></TableHeader>
+          <TableHeader className="bg-[#E8E8E8]"><TableRow><TableHead className="text-[10px] font-black"># VENTA</TableHead><TableHead className="text-[10px] font-black">CLIENTE</TableHead><TableHead className="text-[10px] font-black">FECHA</TableHead><TableHead className="text-[10px] font-black text-right">TOTAL</TableHead><TableHead className="text-[10px] font-black text-center">ACCIONES</TableHead></TableRow></TableHeader>
           <TableBody>
             {filteredSales.map((t) => {
               const returned = isTransactionReturned(t.id);
               return (
                 <TableRow key={t.id} className="border-b border-[#9E9E9E] hover:bg-[#F5F5F5]">
-                  <TableCell className="font-bold">#{t.id}</TableCell>
+                  <TableCell className="font-bold text-sm">#{t.id}</TableCell>
                   <TableCell className="text-sm">{t.clientName || 'Cliente Final'}</TableCell>
+                  <TableCell className="text-xs text-black/60">{new Date(t.date).toLocaleDateString()}</TableCell>
                   <TableCell className="text-right font-bold">Bs {t.total.toFixed(2)}</TableCell>
                   <TableCell className="text-center">
                     <div className="flex justify-center gap-2">
@@ -149,37 +155,189 @@ export default function ReturnsModule() {
         </Table>
       </div>
 
-      {/* Dialog Devolución Parcial */}
+      {/* Dialog Devolución Parcial - DETALLADO */}
       <Dialog open={showReturnModal} onOpenChange={setShowReturnModal}>
-        <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-lg p-0 rounded-2xl shadow-xl">
-          <DialogHeader className="bg-[#1A2C4E] p-4 text-white">
-            <DialogTitle className="text-lg font-black">Devolución Sincronizada</DialogTitle>
+        <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-2xl p-0 rounded-2xl shadow-xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader className="bg-[#1A2C4E] p-5 text-white sticky top-0 z-10">
+            <div className="flex justify-between items-center">
+              <DialogTitle className="text-lg font-black flex items-center gap-2">
+                <RefreshCw size={20} className="text-primary" /> Devolución Parcial
+              </DialogTitle>
+              <button onClick={() => setShowReturnModal(false)} className="text-white/60 hover:text-white"><X size={20} /></button>
+            </div>
           </DialogHeader>
+
           <div className="p-5 space-y-4">
-            {returnItems.map((item, idx) => (
-              <div key={item.productId} className="flex items-center justify-between p-3 bg-[#F5F5F5] rounded-lg">
-                <p className="font-bold text-sm">{item.name}</p>
-                <div className="flex items-center gap-2">
-                  <button onClick={() => updateReturnQty(idx, item.returnQty - 1)} className="w-7 h-7 bg-white rounded-md border font-bold">-</button>
-                  <span className="w-8 text-center font-bold">{item.returnQty}</span>
-                  <button onClick={() => updateReturnQty(idx, item.returnQty + 1)} className="w-7 h-7 bg-white rounded-md border font-bold">+</button>
-                </div>
+            {/* Info de la venta original */}
+            {selectedTransaction && (
+              <div className="bg-[#F5F5F5] rounded-xl p-4 grid grid-cols-2 gap-3 text-sm">
+                <div className="flex items-center gap-2"><Hash size={14} className="text-primary" /><span className="font-bold">Venta #{selectedTransaction.id}</span></div>
+                <div className="flex items-center gap-2"><User size={14} className="text-primary" /><span>{selectedTransaction.clientName || 'Cliente Final'}</span></div>
+                <div className="flex items-center gap-2"><Calendar size={14} className="text-primary" /><span className="text-xs">{new Date(selectedTransaction.date).toLocaleString()}</span></div>
+                <div className="flex items-center gap-2"><Banknote size={14} className="text-primary" /><span className="font-bold">Total venta: Bs {selectedTransaction.total.toFixed(2)}</span></div>
               </div>
-            ))}
-            <Button onClick={processReturn} className="w-full bg-primary text-black font-black">PROCESAR Y SINCRONIZAR</Button>
+            )}
+
+            {/* Tabla de productos con detalle */}
+            <div>
+              <p className="text-[10px] font-black text-black/50 uppercase mb-3">Productos a devolver - Ajuste las cantidades</p>
+              <div className="border border-[#9E9E9E] rounded-lg overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-[#E8E8E8]">
+                    <tr>
+                      <th className="text-left p-2.5 text-[9px] font-black uppercase">Producto</th>
+                      <th className="text-center p-2.5 text-[9px] font-black uppercase w-20">Precio Unit.</th>
+                      <th className="text-center p-2.5 text-[9px] font-black uppercase w-16">Vendido</th>
+                      <th className="text-center p-2.5 text-[9px] font-black uppercase w-28">A Devolver</th>
+                      <th className="text-right p-2.5 text-[9px] font-black uppercase w-24">Subtotal</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {returnItems.map((item, idx) => (
+                      <tr key={item.productId} className="border-b border-[#9E9E9E]/50 hover:bg-[#F5F5F5]">
+                        <td className="p-2.5">
+                          <p className="font-bold text-xs">{item.name}</p>
+                        </td>
+                        <td className="p-2.5 text-center text-xs font-mono">
+                          Bs {item.priceBs.toFixed(2)}
+                        </td>
+                        <td className="p-2.5 text-center text-xs text-black/60">
+                          {item.originalQty} und
+                        </td>
+                        <td className="p-2.5">
+                          <div className="flex items-center justify-center gap-1.5">
+                            <button 
+                              onClick={() => updateReturnQty(idx, item.returnQty - 1)}
+                              disabled={item.returnQty <= 0}
+                              className="w-6 h-6 bg-white rounded-md border border-[#9E9E9E] font-bold text-xs flex items-center justify-center hover:bg-gray-100 disabled:opacity-30"
+                            >
+                              <Minus size={10} />
+                            </button>
+                            <span className={cn(
+                              "w-8 text-center font-bold text-sm",
+                              item.returnQty > 0 ? "text-red-600" : "text-black/40"
+                            )}>
+                              {item.returnQty}
+                            </span>
+                            <button 
+                              onClick={() => updateReturnQty(idx, item.returnQty + 1)}
+                              disabled={item.returnQty >= item.originalQty}
+                              className="w-6 h-6 bg-white rounded-md border border-[#9E9E9E] font-bold text-xs flex items-center justify-center hover:bg-gray-100 disabled:opacity-30"
+                            >
+                              <Plus size={10} />
+                            </button>
+                          </div>
+                          {item.returnQty > 0 && (
+                            <p className="text-[9px] text-red-500 text-center mt-0.5">
+                              {item.returnQty} de {item.originalQty}
+                            </p>
+                          )}
+                        </td>
+                        <td className={cn(
+                          "p-2.5 text-right font-bold text-xs",
+                          item.amount > 0 ? "text-red-600" : "text-black/30"
+                        )}>
+                          Bs {item.amount.toFixed(2)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Total a devolver */}
+            <div className={cn(
+              "rounded-xl p-4 flex justify-between items-center transition-all",
+              totalReturnAmount > 0 ? "bg-red-50 border-2 border-red-200" : "bg-[#F5F5F5] border border-[#9E9E9E]"
+            )}>
+              <div>
+                <span className="text-xs font-black uppercase">MONTO A DEVOLVER</span>
+                <p className="text-[10px] text-black/50">{(totalReturnAmount / exchangeRate).toFixed(2)} USD</p>
+              </div>
+              <span className={cn(
+                "text-2xl font-black",
+                totalReturnAmount > 0 ? "text-red-600" : "text-black/30"
+              )}>
+                Bs {totalReturnAmount.toFixed(2)}
+              </span>
+            </div>
+
+            <Button 
+              onClick={processReturn} 
+              disabled={!hasItemsToReturn}
+              className="w-full bg-red-600 hover:bg-red-700 text-white font-black h-11 disabled:opacity-50"
+            >
+              <Receipt size={16} className="mr-2" /> PROCESAR DEVOLUCIÓN
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
 
-      {/* Dialog Confirmación Devolución Total */}
+      {/* Dialog Confirmación Devolución Total - con detalle */}
       <Dialog open={showConfirmModal} onOpenChange={setShowConfirmModal}>
-        <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-md p-0 rounded-2xl shadow-xl">
-          <DialogHeader className="bg-red-600 p-4 text-white">
-            <DialogTitle className="font-black">Confirmar Devolución de Stock</DialogTitle>
+        <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-xl p-0 rounded-2xl shadow-xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader className="bg-red-600 p-5 text-white sticky top-0 z-10">
+            <div className="flex justify-between items-center">
+              <DialogTitle className="text-lg font-black flex items-center gap-2">
+                <Receipt size={20} /> Confirmar Devolución Total
+              </DialogTitle>
+              <button onClick={() => setShowConfirmModal(false)} className="text-white/60 hover:text-white"><X size={20} /></button>
+            </div>
           </DialogHeader>
-          <div className="p-5">
-            <p className="text-sm mb-4">Esta acción repondrá el inventario y registrará el egreso contable en tiempo real para todos los usuarios.</p>
-            <div className="flex gap-2"><Button variant="ghost" onClick={() => setShowConfirmModal(false)} className="flex-1">CANCELAR</Button><Button onClick={processReturn} className="flex-1 bg-red-600 text-white font-black">CONFIRMAR</Button></div>
+          <div className="p-5 space-y-4">
+            {/* Info de la venta */}
+            {selectedTransaction && (
+              <div className="bg-[#F5F5F5] rounded-xl p-4 grid grid-cols-2 gap-3 text-sm">
+                <div className="flex items-center gap-2"><Hash size={14} className="text-primary" /><span className="font-bold">Venta #{selectedTransaction.id}</span></div>
+                <div className="flex items-center gap-2"><User size={14} className="text-primary" /><span>{selectedTransaction.clientName || 'Cliente Final'}</span></div>
+                <div className="flex items-center gap-2"><Calendar size={14} className="text-primary" /><span className="text-xs">{new Date(selectedTransaction.date).toLocaleString()}</span></div>
+                <div className="flex items-center gap-2"><Banknote size={14} className="text-primary" /><span className="font-bold">Total: Bs {selectedTransaction.total.toFixed(2)}</span></div>
+              </div>
+            )}
+
+            {/* Lista detallada de items */}
+            <div>
+              <p className="text-[10px] font-black text-black/50 uppercase mb-3">Productos a devolver (completo)</p>
+              <div className="border border-[#9E9E9E] rounded-lg overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-[#E8E8E8]">
+                    <tr>
+                      <th className="text-left p-2.5 text-[9px] font-black uppercase">Producto</th>
+                      <th className="text-center p-2.5 text-[9px] font-black uppercase w-20">Precio Unit.</th>
+                      <th className="text-center p-2.5 text-[9px] font-black uppercase w-16">Cant.</th>
+                      <th className="text-right p-2.5 text-[9px] font-black uppercase w-24">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {returnItems.map((item) => (
+                      <tr key={item.productId} className="border-b border-[#9E9E9E]/50">
+                        <td className="p-2.5 font-bold text-xs">{item.name}</td>
+                        <td className="p-2.5 text-center text-xs font-mono">Bs {item.priceBs.toFixed(2)}</td>
+                        <td className="p-2.5 text-center text-xs">{item.originalQty} und</td>
+                        <td className="p-2.5 text-right font-bold text-red-600 text-xs">Bs {item.amount.toFixed(2)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Total */}
+            <div className="bg-red-50 border-2 border-red-200 rounded-xl p-4 flex justify-between items-center">
+              <div>
+                <span className="text-xs font-black text-red-700 uppercase">TOTAL A DEVOLVER</span>
+                <p className="text-[10px] text-red-500">{(totalReturnAmount / exchangeRate).toFixed(2)} USD</p>
+              </div>
+              <span className="text-2xl font-black text-red-700">Bs {totalReturnAmount.toFixed(2)}</span>
+            </div>
+
+            <p className="text-xs text-black/50 text-center">Esta acción repondrá el inventario y registrará el egreso contable en tiempo real.</p>
+            
+            <div className="flex gap-2">
+              <Button variant="ghost" onClick={() => setShowConfirmModal(false)} className="flex-1">CANCELAR</Button>
+              <Button onClick={processReturn} className="flex-1 bg-red-600 hover:bg-red-700 text-white font-black"><CheckCircle size={16} className="mr-2" /> CONFIRMAR DEVOLUCIÓN</Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>

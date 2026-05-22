@@ -47,6 +47,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             name: parsed.name || firebaseUser.displayName || 'Usuario',
             role: parsed.role || 'cashier',
           });
+        } else {
+          // CORRECCIÓN 1: Si Firebase ya dio luz verde pero el localStorage está tardando en responder,
+          // creamos un estado temporal seguro para evitar que el usuario quede en 'null' y rompa el flujo.
+          setUser({
+            uid: firebaseUser.uid,
+            email: firebaseUser.email,
+            name: firebaseUser.displayName || 'Usuario',
+            role: 'cashier', 
+          });
         }
       } else {
         setUser(null);
@@ -59,7 +68,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (!loading && !user && pathname !== '/login') {
+    // CORRECCIÓN 2: En entornos estáticos de Electron, evaluamos si la ruta contiene 'login' 
+    // en lugar de una igualdad estricta, protegiéndonos de extensiones '.html' o barras diagonales extras.
+    const isLoginPage = pathname?.includes('/login');
+
+    if (!loading && !user && !isLoginPage) {
       router.replace('/login');
     }
   }, [user, loading, pathname, router]);

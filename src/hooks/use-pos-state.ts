@@ -6,6 +6,33 @@ import { syncService } from '@/services/syncService';
 import { registerSaleEntry, registerCreditEntry, registerDebtPaymentEntry } from '@/services/accountingService';
 import { useAuth } from '@/context/AuthContext';
 
+// ✅ CORREGIDO: Genera el string ISO real adaptado estrictamente a la zona horaria de Venezuela (Caracas)
+function getVenezuelaISOString(): string {
+  const now = new Date();
+  
+  // Usamos Intl para extraer la fecha exacta según el huso horario de Venezuela sin desfases
+  const formatter = new Intl.DateTimeFormat('sv-SE', { // 'sv-SE' da formato estructurado YYYY-MM-DD HH:mm:ss
+    timeZone: 'America/Caracas',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+  
+  const parts = formatter.formatToParts(now);
+  const partMap = Object.fromEntries(parts.map(p => [p.type, p.value]));
+  
+  // Construimos un string ISO 8601 legítimo especificando el desfase -04:00 de Venezuela
+  return `${partMap.year}-${partMap.month}-${partMap.day}T${partMap.hour}:${partMap.minute}:${partMap.second}.000-04:00`;
+}
+
+// ✅ CORREGIDO: El ID de la transacción debe ser el tiempo Unix puro de la máquina para evitar saltos de día
+function getVenezuelaTimestamp(): number {
+  return Date.now();
+}
+
 export function usePOSState() {
   const { user } = useAuth();
   const [products, setProducts] = useState<Product[]>([]);
@@ -78,7 +105,7 @@ export function usePOSState() {
   }, [products]);
 
   const openCashRegister = useCallback((amount: number) => {
-    syncService.saveRegister({ isOpen: true, openTime: new Date().toISOString(), openAmount: amount });
+    syncService.saveRegister({ isOpen: true, openTime: getVenezuelaISOString(), openAmount: amount });
   }, []);
 
   const closeCashRegister = useCallback(() => syncService.clearRegister(), []);
@@ -94,15 +121,19 @@ export function usePOSState() {
 
     let targetClientId = paymentData.clientId;
     if (type === 'credito' && paymentData.isNewClient) {
-      const nextClientId = Date.now();
+      const nextClientId = getVenezuelaTimestamp();
       const newCli: Client = { id: nextClientId, name: paymentData.clientName, cedula: paymentData.clientCedula, phone: paymentData.clientPhone || '', address: paymentData.clientAddress || '', debt: 0 };
       await syncService.saveClient(newCli);
       targetClientId = nextClientId;
     }
 
+    // Usar la fecha corregida de Venezuela
+    const venezuelaDate = getVenezuelaISOString();
+    const venezuelaTimestamp = getVenezuelaTimestamp();
+
     const tx: Transaction = {
-      id: Date.now(),
-      date: new Date().toISOString(),
+      id: venezuelaTimestamp,
+      date: venezuelaDate,
       type: type,
       items: type === 'cobro_deuda' ? [] : [...cart],
       subtotal: type === 'cobro_deuda' ? paymentData.totalPaid : subtotal,
@@ -127,7 +158,7 @@ export function usePOSState() {
     }
 
     if (type === 'credito') {
-      const acc: Account = { id: Date.now(), txId: tx.id, date: tx.date, clientId: targetClientId, clientName: paymentData.clientName, clientCedula: paymentData.clientCedula || '', products: cart.map(i => `${i.name} x${i.qty}`).join(', '), amountBs: total, amountUsd: total / exchangeRate, paidAmount: 0, status: 'pendiente' };
+      const acc: Account = { id: getVenezuelaTimestamp(), txId: tx.id, date: venezuelaDate, clientId: targetClientId, clientName: paymentData.clientName, clientCedula: paymentData.clientCedula || '', products: cart.map(i => `${i.name} x${i.qty}`).join(', '), amountBs: total, amountUsd: total / exchangeRate, paidAmount: 0, status: 'pendiente' };
       await syncService.saveAccount(acc);
       const client = clients.find(c => c.id === targetClientId);
       if (client) await syncService.saveClient({ ...client, debt: (client.debt || 0) + total });
@@ -160,7 +191,10 @@ export function usePOSState() {
       remaining -= pay;
     }
 
-    const tx: Transaction = { id: Date.now(), date: new Date().toISOString(), type: 'cobro_deuda', items: [], subtotal: amount, iva: 0, total: amount, totalUsd: amount / exchangeRate, payMethod: 'efectivo_bs', paidBs: amount, change: 0, clientId, clientName: client.name };
+    const venezuelaDate = getVenezuelaISOString();
+    const venezuelaTimestamp = getVenezuelaTimestamp();
+
+    const tx: Transaction = { id: venezuelaTimestamp, date: venezuelaDate, type: 'cobro_deuda', items: [], subtotal: amount, iva: 0, total: amount, totalUsd: amount / exchangeRate, payMethod: 'efectivo_bs', paidBs: amount, change: 0, clientId, clientName: client.name };
     await syncService.saveTransaction(tx);
     await syncService.saveClient({ ...client, debt: Math.max(0, (client.debt || 0) - amount) });
     await registerDebtPaymentEntry(tx, client);

@@ -2,27 +2,45 @@
 
 import { useState, useMemo, useEffect } from 'react';
 import { usePOSState } from '@/hooks/use-pos-state';
-import { Vault, Lock, Unlock, FileText, Banknote, Smartphone, Fingerprint, Plane, DollarSign, History, Download, CheckCircle, Calculator, X, Archive, CreditCard, Printer } from 'lucide-react';
-import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
+import { 
+  Vault, Lock, Unlock, Banknote, Smartphone, Fingerprint, 
+  Plane, DollarSign, Archive, CreditCard, Receipt, 
+  ArrowLeftRight, BarChart3, Clock, RefreshCw 
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { syncService } from '@/services/syncService';
 import { useAuth } from '@/context/AuthContext';
+import CorteParcialForm from '@/components/register/CorteParcialForm';
+import CierreFinalForm from '@/components/register/CierreFinalForm';
 
 interface CashModuleProps {
   state: ReturnType<typeof usePOSState>;
 }
 
-interface CashCount {
-  method: string;
-  label: string;
-  icon: any;
-  systemAmount: number;
-  actualAmount: number;
-  actualUsdAmount?: number;
-  difference: number;
+// ✅ Optimizada la normalización de fechas nativas utilizando la API internacional del navegador
+function getVenezuelaDateString(date: Date | string | number): string {
+  try {
+    const d = new Date(date);
+    if (isNaN(d.getTime())) return "";
+    
+    // Extrae de manera inequívoca el año, mes y día en la zona horaria del país
+    const formatter = new Intl.DateTimeFormat('fr-CA', {
+      timeZone: 'America/Caracas',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    });
+    return formatter.format(d); // Retorna estrictamente "YYYY-MM-DD"
+  } catch (e) {
+    return "";
+  }
+}
+
+function isTodayVenezuela(date: Date | string | number): boolean {
+  const today = getVenezuelaDateString(new Date());
+  const dateStr = getVenezuelaDateString(date);
+  return today !== "" && today === dateStr;
 }
 
 export default function CashModule({ state }: CashModuleProps) {
@@ -30,199 +48,409 @@ export default function CashModule({ state }: CashModuleProps) {
   const [openAmountBs, setOpenAmountBs] = useState('0.00');
   const [openAmountUsd, setOpenAmountUsd] = useState('0.00');
   const [openRate, setOpenRate] = useState(state.exchangeRate.toString());
-  const [showCloseDialog, setShowCloseDialog] = useState(false);
-  const [cashCounts, setCashCounts] = useState<CashCount[]>([]);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [closeHistory, setCloseHistory] = useState<any[]>([]);
+  const [showDailyTx, setShowDailyTx] = useState(true);
+  const [showCorteParcial, setShowCorteParcial] = useState(false);
+  const [showCierreFinal, setShowCierreFinal] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const reg = state.register;
   const isClosed = !reg || !reg.isOpen;
 
+  // Sincronizar campo de tasa cuando el estado global cambie de valor
   useEffect(() => {
-    if (!user) return;
-    const unsub = syncService.subscribeToCashClosings(setCloseHistory);
-    return () => unsub();
-  }, [user]);
+    if (state.exchangeRate) {
+      setOpenRate(state.exchangeRate.toString());
+    }
+  }, [state.exchangeRate]);
+
+  // Forzar refresco periódico para capturar actualizaciones en background
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setRefreshKey(prev => prev + 1);
+    }, 3000);
+    return () => clearInterval(interval);
+  }, []);
 
   const paymentMethods = [
-    { id: 'efectivo_bs', label: 'Efectivo BS', icon: Banknote, order: 1, isUsd: false },
-    { id: 'tarjeta', label: 'Tarjeta', icon: CreditCard, order: 2, isUsd: false },
-    { id: 'usd_efectivo', label: 'USD Efectivo', icon: DollarSign, order: 3, isUsd: true },
-    { id: 'biopago', label: 'Biopago', icon: Fingerprint, order: 4, isUsd: false },
-    { id: 'pago_movil', label: 'Pago Móvil', icon: Smartphone, order: 5, isUsd: false },
-    { id: 'zelle', label: 'Zelle', icon: Plane, order: 6, isUsd: false },
+    { id: 'efectivo_bs', label: 'EFECTIVO BS', icon: Banknote },
+    { id: 'usd_efectivo', label: 'EFECTIVO USD', icon: DollarSign },
+    { id: 'tarjeta', label: 'TARJETA', icon: CreditCard },
+    { id: 'biopago', label: 'BIOPAGO', icon: Fingerprint },
+    { id: 'pago_movil', label: 'PAGO MÓVIL', icon: Smartphone },
+    { id: 'zelle', label: 'ZELLE', icon: Plane },
   ];
 
+  const methodLabels: Record<string, string> = {};
+  paymentMethods.forEach(m => methodLabels[m.id] = m.label);
+
+  // Obtener todas las transacciones del registro
+  const allTransactions = useMemo(() => {
+    return reg?.txs || [];
+  }, [reg?.txs, refreshKey]);
+
+  // Filtrar transacciones del día actual usando la hora de Venezuela corregida
+  const dailyTransactions = useMemo(() => {
+    return allTransactions
+      .filter(t => {
+        const isSameDay = isTodayVenezuela(t.date);
+        const isValidType = t.type === 'contado' || t.type === 'cobro_deuda';
+        return isValidType && isSameDay;
+      })
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [allTransactions, refreshKey]);
+
+  // ✅ CORREGIDO: Mapeo y totalización financiera exacta según el tipo de flujo monetario
   const salesByMethod = useMemo(() => {
     const totals: Record<string, number> = {};
     paymentMethods.forEach(m => totals[m.id] = 0);
-    if (reg?.txs && Array.isArray(reg.txs)) {
-      reg.txs.forEach(t => {
-        if (t.type === 'contado' || t.type === 'cobro_deuda') {
-          const method = t.payMethod || 'efectivo_bs';
-          totals[method] = (totals[method] || 0) + (t.total || 0);
-        }
-      });
-    }
-    return totals;
-  }, [reg]);
-
-  const totalContado = (reg?.txs || [])
-    .filter(t => t.type === 'contado' || t.type === 'cobro_deuda')
-    .reduce((s, t) => s + (t.total || 0), 0);
     
+    dailyTransactions.forEach(t => {
+      const method = t.payMethod || 'efectivo_bs';
+      // Si es un cobro de deuda, el ingreso real de dinero es lo que pagó ("paidBs"), no el total de la cuenta original
+      const montoEfectivo = t.type === 'cobro_deuda' ? (t.paidBs || t.total || 0) : (t.total || 0);
+      totals[method] = (totals[method] || 0) + montoEfectivo;
+    });
+    
+    return totals;
+  }, [dailyTransactions]);
+
+  const totalContado = useMemo(() => {
+    return Object.values(salesByMethod).reduce((s, v) => s + v, 0);
+  }, [salesByMethod]);
+
+  const totalCredito = useMemo(() => {
+    return allTransactions
+      .filter(t => t.type === 'credito' && isTodayVenezuela(t.date))
+      .reduce((s, t) => s + (t.total || 0), 0);
+  }, [allTransactions, refreshKey]);
+
   const totalEnCaja = (reg?.openAmount || 0) + totalContado;
+  const totalEnCajaUSD = totalEnCaja / (state.exchangeRate || 1);
 
   const handleOpenCash = () => {
     const bsAmount = parseFloat(openAmountBs) || 0;
     const usdAmount = parseFloat(openAmountUsd) || 0;
     const rate = parseFloat(openRate) || state.exchangeRate;
     const totalOpenAmount = bsAmount + (usdAmount * rate);
+    if (rate !== state.exchangeRate) state.setExchangeRate(rate);
     state.openCashRegister(totalOpenAmount);
   };
 
-  const handleConfirmClose = async () => {
-    const totalSystemAmount = cashCounts.reduce((sum, c) => sum + c.systemAmount, 0);
-    const totalActualAmount = cashCounts.reduce((sum, c) => sum + c.actualAmount, 0);
-    const diff = totalActualAmount - totalSystemAmount;
-
-    const closeReport = {
-      id: Date.now(),
-      fecha: new Date().toISOString(),
-      apertura: {
-        totalBs: reg?.openAmount || 0,
-        tasa: state.exchangeRate
-      },
-      ventas: {
-        total: totalContado,
-        porMetodo: salesByMethod
-      },
-      cuadre: {
-        sistema: totalSystemAmount,
-        real: totalActualAmount,
-        diferencia: diff,
-        estado: Math.abs(diff) < 0.01 ? "CONCILIADO" : (diff > 0 ? "SOBRANTE" : "FALTANTE")
-      }
-    };
-
-    await syncService.saveCashClosing(closeReport);
-    state.closeCashRegister();
-    setShowCloseDialog(false);
-    setCashCounts([]);
+  const handleRefresh = () => {
+    setRefreshKey(prev => prev + 1);
   };
 
-  useEffect(() => {
-    if (showCloseDialog && cashCounts.length === 0) {
-      const initialCounts: CashCount[] = paymentMethods.map(method => ({
-        method: method.id,
-        label: method.label,
-        icon: method.icon,
-        systemAmount: salesByMethod[method.id] || 0,
-        actualAmount: 0,
-        difference: 0
-      }));
-      setCashCounts(initialCounts);
-    }
-  }, [showCloseDialog, salesByMethod]);
-
-  const handleActualAmountChange = (methodId: string, value: number) => {
-    setCashCounts(prev => prev.map(c => 
-      c.method === methodId ? { ...c, actualAmount: value, difference: value - c.systemAmount } : c
-    ));
-  };
-
-  const totalSystemAmount = cashCounts.reduce((sum, c) => sum + c.systemAmount, 0);
-  const totalActualAmount = cashCounts.reduce((sum, c) => sum + c.actualAmount, 0);
-  const totalDifference = totalActualAmount - totalSystemAmount;
+  if (showCorteParcial) {
+    return <CorteParcialForm 
+      onClose={() => setShowCorteParcial(false)} 
+      onCorteConfirmado={() => setShowCorteParcial(false)}
+      tasaActual={state.exchangeRate}
+      onTasaActualizada={(nuevaTasa) => state.setExchangeRate(nuevaTasa)}
+    />;
+  }
+  if (showCierreFinal) {
+    return <CierreFinalForm 
+      onClose={() => setShowCierreFinal(false)}
+      tasaActual={state.exchangeRate}
+    />;
+  }
 
   return (
-    <div className="p-6 h-full overflow-y-auto scrollbar-thin bg-background">
-      <h2 className="text-2xl font-headline font-black text-black mb-6">Gestión de Bóveda (Tiempo Real)</h2>
-
-      {isClosed ? (
-        <div className="bg-white border border-[#9E9E9E] rounded-xl p-6 shadow-md max-w-2xl mx-auto">
-          <div className="text-center mb-6"><Vault size={48} className="mx-auto text-black/20 mb-2" /><h3 className="text-xl font-black">La caja está cerrada</h3><p className="text-sm text-black/50">Ingrese el monto inicial para comenzar a vender</p></div>
-          <div className="grid grid-cols-2 gap-4 mb-4">
-            <div><label className="text-[10px] font-bold uppercase block mb-1">Monto en BS</label><Input type="number" value={openAmountBs} onChange={(e) => setOpenAmountBs(e.target.value)} className="font-bold" /></div>
-            <div><label className="text-[10px] font-bold uppercase block mb-1">Monto en USD</label><Input type="number" value={openAmountUsd} onChange={(e) => setOpenAmountUsd(e.target.value)} className="font-bold" /></div>
+    <div className="h-full w-full overflow-y-auto overflow-x-hidden bg-[#F9F4E1]">
+      <div className="min-h-full p-4 pb-8">
+        
+        {/* HEADER */}
+        <header className="bg-[#1E3A8A] text-white p-4 rounded-t-xl shadow-md text-center relative border-b-4 border-[#0284C7]">
+          <div className="absolute left-4 top-4 bg-amber-500 text-[10px] font-bold px-2 py-1 rounded text-slate-900">
+            GESTIÓN DE BÓVEDA
           </div>
-          <Button onClick={handleOpenCash} className="w-full bg-[#2ECC71] hover:bg-[#27AE60] text-white font-black h-12"><Unlock size={18} className="mr-2" /> ABRIR CAJA</Button>
-        </div>
-      ) : (
-        <div className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-white border border-[#9E9E9E] p-4 rounded-xl shadow-sm">
-              <p className="text-[10px] font-black text-black/50 uppercase">Apertura</p>
-              <p className="text-xl font-black">Bs {reg?.openAmount.toFixed(2)}</p>
-            </div>
-            <div className="bg-white border border-[#9E9E9E] p-4 rounded-xl shadow-sm">
-              <p className="text-[10px] font-black text-black/50 uppercase">Ventas (Hoy)</p>
-              <p className="text-xl font-black text-green-600">Bs {totalContado.toFixed(2)}</p>
-            </div>
-            <div className="bg-[#1A2C4E] p-4 rounded-xl shadow-sm text-white">
-              <p className="text-[10px] font-black text-white/50 uppercase">Total Estimado en Caja</p>
-              <p className="text-xl font-black">Bs {totalEnCaja.toFixed(2)}</p>
-            </div>
+          <div className="absolute right-4 top-4">
+            <Button 
+              onClick={handleRefresh} 
+              variant="ghost" 
+              size="sm" 
+              className="text-white hover:bg-white/20 h-7 w-7 p-0"
+            >
+              <RefreshCw size={14} />
+            </Button>
           </div>
+          <h1 className="text-lg md:text-xl font-black tracking-wider uppercase">
+            MasterPOS - Control de Caja
+          </h1>
+          <p className="text-[10px] text-blue-200 mt-1 font-mono flex items-center justify-center gap-1">
+            <Clock size={10} /> {new Date().toLocaleDateString('es-VE')} • {new Date().toLocaleTimeString('es-VE')}
+          </p>
+        </header>
 
-          <div className="flex gap-2">
-            <Button onClick={() => setShowCloseDialog(true)} variant="destructive" className="font-black"><Lock size={16} className="mr-2" /> CERRAR CAJA</Button>
-            <Button onClick={() => setShowHistoryModal(true)} variant="outline" className="border-[#9E9E9E] font-black"><Archive size={16} className="mr-2" /> HISTORIAL</Button>
+        {/* TASA BCV Y ESTADO */}
+        <section className="bg-white p-4 grid grid-cols-1 md:grid-cols-3 gap-4 border-x border-slate-200 shadow-sm">
+          <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
+            <span className="text-slate-500 block text-[10px] font-bold uppercase">Tasa BCV Actual:</span>
+            <span className="text-base font-mono font-bold text-slate-900">
+              Bs {state.exchangeRate.toFixed(2)} / $
+            </span>
           </div>
-
-          <div className="bg-white border border-[#9E9E9E] rounded-xl overflow-hidden shadow-md">
-            <Table>
-              <TableHeader className="bg-[#E8E8E8]"><TableRow><TableHead className="text-[10px] font-black">METODO</TableHead><TableHead className="text-[10px] font-black text-right">TOTAL BS</TableHead></TableRow></TableHeader>
-              <TableBody>
-                {paymentMethods.map(m => (
-                  <TableRow key={m.id} className="border-b border-[#9E9E9E]"><TableCell className="py-3 font-bold text-xs"><div className="flex items-center gap-2"><m.icon size={14} className="text-primary" /> {m.label}</div></TableCell><TableCell className="text-right font-black">Bs {(salesByMethod[m.id] || 0).toFixed(2)}</TableCell></TableRow>
-                ))}
-              </TableBody>
-            </Table>
+          <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
+            <span className="text-slate-500 block text-[10px] font-bold uppercase">Estado Actual:</span>
+            <span className={cn("text-sm font-mono font-bold px-3 py-1 rounded-full inline-block", isClosed ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700")}>
+              {isClosed ? 'CAJA CERRADA' : 'CAJA ABIERTA'}
+            </span>
           </div>
-        </div>
-      )}
-
-      <Dialog open={showCloseDialog} onOpenChange={setShowCloseDialog}>
-        <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-4xl p-0 overflow-hidden rounded-2xl shadow-xl">
-          <div className="bg-[#1A2C4E] p-4 text-white"><h3 className="text-lg font-black">Cuadre de Caja</h3></div>
-          <div className="p-6">
-            <Table>
-              <TableHeader><TableRow><TableHead className="text-[10px] font-black">METODO</TableHead><TableHead className="text-[10px] font-black text-right">SISTEMA</TableHead><TableHead className="text-[10px] font-black text-right">CONTADO REAL</TableHead><TableHead className="text-[10px] font-black text-right">DIFERENCIA</TableHead></TableRow></TableHeader>
-              <TableBody>
-                {cashCounts.map(c => (
-                  <TableRow key={c.method} className="border-b"><TableCell className="font-bold text-xs">{c.label}</TableCell><TableCell className="text-right">Bs {c.systemAmount.toFixed(2)}</TableCell><TableCell className="text-right"><Input type="number" value={c.actualAmount} onChange={(e) => handleActualAmountChange(c.method, parseFloat(e.target.value) || 0)} className="w-32 ml-auto text-right font-bold" /></TableCell><TableCell className={cn("text-right font-bold", c.difference < 0 ? "text-red-600" : "text-green-600")}>{c.difference.toFixed(2)}</TableCell></TableRow>
-                ))}
-                <TableRow className="bg-[#F5F5F5] font-black"><TableCell>TOTALES</TableCell><TableCell className="text-right">Bs {totalSystemAmount.toFixed(2)}</TableCell><TableCell className="text-right">Bs {totalActualAmount.toFixed(2)}</TableCell><TableCell className={cn("text-right", totalDifference < 0 ? "text-red-600" : "text-green-600")}>{totalDifference.toFixed(2)}</TableCell></TableRow>
-              </TableBody>
-            </Table>
-            <Button onClick={handleConfirmClose} className="w-full mt-6 bg-[#2ECC71] text-white font-black h-12">CONFIRMAR CIERRE</Button>
+          <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
+            <span className="text-slate-500 block text-[10px] font-bold uppercase">Total en Caja:</span>
+            <span className="text-base font-mono font-bold text-blue-700">
+              {!isClosed ? `Bs ${totalEnCaja.toFixed(2)}` : '—'}
+            </span>
+            {!isClosed && <span className="text-[10px] text-slate-500 block">≈ $ {totalEnCajaUSD.toFixed(2)}</span>}
           </div>
-        </DialogContent>
-      </Dialog>
+        </section>
 
-      <Dialog open={showHistoryModal} onOpenChange={setShowHistoryModal}>
-        <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-4xl p-0 overflow-hidden rounded-2xl shadow-xl max-h-[80vh] overflow-y-auto">
-          <div className="bg-[#1A2C4E] p-4 text-white"><h3 className="text-lg font-black">Historial de Cierres (Sincronizado)</h3></div>
-          <div className="p-6">
-            {closeHistory.length === 0 ? <p className="text-center text-black/40 italic">No hay cierres registrados</p> : (
-              <div className="space-y-3">
-                {closeHistory.map(h => (
-                  <div key={h.id} className="border border-[#9E9E9E] p-4 rounded-xl flex justify-between items-center hover:bg-[#F5F5F5]">
-                    <div>
-                      <p className="font-bold">{new Date(h.fecha).toLocaleString()}</p>
-                      <p className="text-xs text-black/50">Ventas: Bs {h.ventas.total.toFixed(2)} | Estado: <span className="font-bold">{h.cuadre.estado}</span></p>
-                    </div>
-                    <div className="text-right">
-                      <p className={cn("font-black", h.cuadre.diferencia < 0 ? "text-red-600" : "text-green-600")}>Dif: {h.cuadre.diferencia.toFixed(2)}</p>
-                    </div>
-                  </div>
-                ))}
+        {/* APERTURA DE CAJA */}
+        {isClosed ? (
+          <div className="bg-white border-x border-b border-slate-200 rounded-b-xl p-6 shadow-md">
+            <h2 className="text-sm font-black uppercase mb-4 text-[#1E3A8A] flex items-center gap-2">
+              <Unlock size={14} /> APERTURA DE CAJA
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div>
+                <label className="text-[9px] font-bold uppercase block mb-1 text-slate-500">Apertura BS</label>
+                <Input 
+                  type="number" 
+                  step="0.01" 
+                  value={openAmountBs} 
+                  onChange={(e) => setOpenAmountBs(e.target.value)} 
+                  className="font-bold h-8 text-sm" 
+                  placeholder="0.00" 
+                />
               </div>
-            )}
+              <div>
+                <label className="text-[9px] font-bold uppercase block mb-1 text-slate-500">Apertura USD</label>
+                <Input 
+                  type="number" 
+                  step="0.01" 
+                  value={openAmountUsd} 
+                  onChange={(e) => setOpenAmountUsd(e.target.value)} 
+                  className="font-bold h-8 text-sm" 
+                  placeholder="0.00" 
+                />
+              </div>
+              <div>
+                <label className="text-[9px] font-bold uppercase block mb-1 text-slate-500">Tasa BCV</label>
+                <Input 
+                  type="number" 
+                  step="0.01" 
+                  value={openRate} 
+                  onChange={(e) => setOpenRate(e.target.value)} 
+                  className="font-bold h-8 text-sm" 
+                  placeholder="0.00" 
+                />
+              </div>
+              <div className="flex items-end">
+                <Button onClick={handleOpenCash} className="w-full bg-[#2ECC71] hover:bg-[#27AE60] text-white font-black h-8 text-xs">
+                  <Unlock size={12} className="mr-1" /> ABRIR CAJA
+                </Button>
+              </div>
+            </div>
           </div>
-        </DialogContent>
-      </Dialog>
+        ) : (
+          <div className="bg-white border-x border-b border-slate-200 rounded-b-xl p-6 shadow-md">
+            <div className="flex gap-3 flex-wrap justify-center">
+              <Button 
+                onClick={() => setShowCorteParcial(true)} 
+                className="bg-amber-500 hover:bg-amber-600 text-white font-black py-4 px-6 text-sm"
+              >
+                <ArrowLeftRight size={16} className="mr-2" /> 
+                CORTE PARCIAL
+              </Button>
+              <Button 
+                onClick={() => setShowCierreFinal(true)} 
+                className="bg-[#1E3A8A] hover:bg-[#2c3e50] text-white font-black py-4 px-6 text-sm"
+              >
+                <BarChart3 size={16} className="mr-2" /> 
+                CIERRE FINAL
+              </Button>
+              <Button 
+                onClick={() => setShowHistoryModal(true)} 
+                variant="outline" 
+                className="border-[#9E9E9E] font-black py-4 px-6 text-sm"
+              >
+                <Archive size={16} className="mr-2" /> 
+                HISTORIAL
+              </Button>
+              <Button 
+                onClick={handleRefresh} 
+                variant="outline" 
+                className="border-[#9E9E9E] font-black py-4 px-6 text-sm"
+              >
+                <RefreshCw size={16} className="mr-2" /> 
+                REFRESCAR
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* VENTAS POR MÉTODO */}
+        {!isClosed && (
+          <div className="mt-6">
+            <h3 className="text-xs font-black uppercase mb-3 flex items-center gap-2 text-[#1E3A8A]">
+              <Vault size={12} /> Ventas del Período Actual
+              <span className="text-[9px] text-green-600 font-normal ml-2">
+                ({dailyTransactions.length} ventas hoy)
+              </span>
+            </h3>
+            <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-md">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-[#2c3e50] text-white text-[9px] uppercase font-bold tracking-wider">
+                    <th className="p-2">MÉTODO DE PAGO</th>
+                    <th className="p-2 text-right">TOTAL {state.isIvaEnabled ? "Con IVA" : ""} Bs</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200 text-[10px]">
+                  {paymentMethods.map(({ id, label, icon: Icon }) => {
+                    const monto = salesByMethod[id] || 0;
+                    return (
+                      <tr key={id} className="hover:bg-slate-50">
+                        <td className="p-2">
+                          <div className="flex items-center gap-2">
+                            <Icon size={12} className="text-[#1E3A8A]" />
+                            <span className="font-bold">{label}</span>
+                          </div>
+                        </td>
+                        <td className="p-2 text-right font-mono font-bold">
+                          Bs {monto.toFixed(2)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  <tr className="bg-[#F0F0F0] font-black">
+                    <td className="p-2">TOTAL VENTAS CONTADO / INGRESOS</td>
+                    <td className="p-2 text-right font-mono">Bs {totalContado.toFixed(2)}</td>
+                  </tr>
+                  <tr className="bg-[#E8E8E8]">
+                    <td className="p-2">VENTAS CRÉDITO (Cuentas por Cobrar)</td>
+                    <td className="p-2 text-right font-mono">Bs {totalCredito.toFixed(2)}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* HISTORIAL DE TRANSACCIONES DEL DÍA */}
+        <div className="mt-6 bg-white border border-slate-200 rounded-xl overflow-hidden shadow-md">
+          <div 
+            className="bg-[#1E3A8A] p-2 flex justify-between items-center cursor-pointer" 
+            onClick={() => setShowDailyTx(!showDailyTx)}
+          >
+            <div className="flex items-center gap-2 text-white">
+              <Receipt size={12} />
+              <h3 className="text-xs font-black">Transacciones del Día ({dailyTransactions.length})</h3>
+            </div>
+            <button className="text-white/60 hover:text-white text-xs">{showDailyTx ? '▲' : '▼'}</button>
+          </div>
+          {showDailyTx && (
+            <div className="max-h-64 overflow-y-auto">
+              {dailyTransactions.length === 0 ? (
+                <div className="text-center py-8">
+                  <p className="text-black/40 italic text-xs">Sin movimientos registrados hoy</p>
+                  <p className="text-[9px] text-black/30 mt-1">Realiza una venta para verla reflejada aquí</p>
+                </div>
+              ) : (
+                <table className="w-full text-left border-collapse">
+                  <thead className="bg-[#F5F5F5] sticky top-0">
+                    <tr className="text-[8px] font-black uppercase">
+                      <th className="p-1.5">#</th>
+                      <th className="p-1.5">HORA</th>
+                      <th className="p-1.5">TIPO</th>
+                      <th className="p-1.5">MÉTODO</th>
+                      <th className="p-1.5">CLIENTE</th>
+                      <th className="p-1.5 text-right">MONTO</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200 text-[9px]">
+                    {dailyTransactions.map((tx, idx) => {
+                      let timeStr = "—";
+                      try {
+                        const txDate = new Date(tx.date);
+                        if (!isNaN(txDate.getTime())) {
+                          timeStr = txDate.toLocaleTimeString("es-VE", { 
+                            timeZone: "America/Caracas",
+                            hour: "2-digit", 
+                            minute: "2-digit", 
+                            second: "2-digit" 
+                          });
+                        }
+                      } catch(e){}
+                      
+                      const displayAmount = tx.type === 'cobro_deuda' ? (tx.paidBs || tx.total || 0) : (tx.total || 0);
+
+                      return (
+                        <tr key={tx.id || idx} className="hover:bg-slate-50">
+                          <td className="p-1.5 text-black/40">{idx + 1}</td>
+                          <td className="p-1.5 text-black/60 font-mono">{timeStr}</td>
+                          <td className="p-1.5">
+                            <span className={cn("px-1 py-0.5 rounded text-[8px] font-bold", tx.type === 'contado' ? "bg-green-100 text-green-700" : "bg-blue-100 text-blue-700")}>
+                              {tx.type === 'contado' ? 'VENTA' : 'COBRO'}
+                            </span>
+                          </td>
+                          <td className="p-1.5 text-black/50 uppercase text-[8px]">{methodLabels[tx.payMethod] || tx.payMethod || 'N/A'}</td>
+                          <td className="p-1.5 text-black/60 max-w-[100px] truncate">{tx.clientName || 'CLIENTE FINAL'}</td>
+                          <td className="p-1.5 text-right font-bold font-mono">Bs {displayAmount.toFixed(2)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* MODAL DE HISTORIAL */}
+        {showHistoryModal && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[80vh] overflow-hidden">
+              <div className="bg-[#1E3A8A] p-4 text-white">
+                <div className="flex justify-between items-center">
+                  <h2 className="text-base font-black flex items-center gap-2">
+                    <Archive size={18} /> Historial de Cortes y Cierres
+                  </h2>
+                  <button onClick={() => setShowHistoryModal(false)} className="text-white/60 hover:text-white text-xl">&times;</button>
+                </div>
+              </div>
+              <div className="p-4 overflow-y-auto max-h-[60vh]">
+                {closeHistory.length === 0 ? (
+                  <p className="text-center text-black/40 italic py-6 text-sm">No hay cortes ni cierres registrados</p>
+                ) : (
+                  <div className="space-y-2">
+                    {closeHistory.map((h: any) => (
+                      <div key={h.id} className="border border-slate-200 p-3 rounded-lg hover:bg-slate-50">
+                        <div className="flex justify-between items-center flex-wrap gap-2">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <p className="font-bold text-xs">{new Date(h.fecha).toLocaleString('es-VE')}</p>
+                              <span className={cn("text-[8px] px-2 py-0.5 rounded-full font-bold", h.tipoCorte === 'corte_tasa' ? "bg-yellow-100 text-yellow-700" : "bg-red-100 text-red-700")}>
+                                {h.tipoCorte === 'corte_tasa' ? 'CORTE PARCIAL' : 'CIERRE TOTAL'}
+                              </span>
+                            </div>
+                            <p className="text-[9px] text-black/50">Tasa: Bs {h.tasaBCV?.toFixed(2)} | Ventas: Bs {h.ventas?.totalContado?.toFixed(2)}</p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="bg-slate-50 p-3 border-t flex justify-end">
+                <Button onClick={() => setShowHistoryModal(false)} className="font-bold text-xs h-7">CERRAR</Button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

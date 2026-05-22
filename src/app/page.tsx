@@ -41,13 +41,9 @@ export default function LicoPOSApp() {
     setIsLoading(false);
   }, [router]);
 
-  // Redirección segura basada en permisos
   useEffect(() => {
     if (user && state.isHydrated) {
-      const isAdmin = user.role === 'admin';
-      const allowedPages = isAdmin 
-        ? ['dashboard', 'pos', 'inventario', 'clientes', 'cuentas', 'proveedores', 'contabilidad', 'devoluciones', 'caja']
-        : ['pos', 'devoluciones', 'caja'];
+      const allowedPages = ['dashboard', 'pos', 'inventario', 'clientes', 'cuentas', 'proveedores', 'contabilidad', 'devoluciones', 'caja'];
 
       if (!allowedPages.includes(state.currentPage)) {
         state.setCurrentPage('pos');
@@ -84,8 +80,6 @@ export default function LicoPOSApp() {
     );
   }
 
-  const isAdmin = user.role === 'admin';
-
   return (
     <div className="flex h-screen overflow-hidden bg-background text-foreground selection:bg-primary selection:text-background">
       <Sidebar 
@@ -103,18 +97,17 @@ export default function LicoPOSApp() {
         />
         
         <div className="flex-1 overflow-hidden relative">
-          {state.currentPage === 'dashboard' && isAdmin && <AdminDashboard state={state} />}
+          {state.currentPage === 'dashboard' && <AdminDashboard state={state} />}
           {state.currentPage === 'pos' && <POSModule state={state} />}
-          {state.currentPage === 'inventario' && isAdmin && <InventoryModule state={state} />}
-          {state.currentPage === 'clientes' && isAdmin && <ClientsModule state={state} />}
-          {state.currentPage === 'cuentas' && isAdmin && <AccountsModule state={state} />}
-          {state.currentPage === 'proveedores' && isAdmin && <SuppliersModule />}
-          {state.currentPage === 'contabilidad' && isAdmin && <AccountingModule />}
+          {state.currentPage === 'inventario' && <InventoryModule state={state} />}
+          {state.currentPage === 'clientes' && <ClientsModule state={state} />}
+          {state.currentPage === 'cuentas' && <AccountsModule state={state} />}
+          {state.currentPage === 'proveedores' && <SuppliersModule />}
+          {state.currentPage === 'contabilidad' && <AccountingModule />}
           {state.currentPage === 'devoluciones' && <ReturnsModule />}
           {state.currentPage === 'caja' && <CashModule state={state} />}
         </div>
       </main>
-
       <Toaster />
     </div>
   );

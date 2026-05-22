@@ -98,7 +98,6 @@ export default function ReturnsModule() {
       originalSaleId: selectedTransaction.id
     };
 
-    // Actualizar stock atómicamente
     const updates = products.map(p => {
       const ret = returnItems.find(i => i.productId === p.id);
       return ret && ret.returnQty > 0 ? { ...p, stock: p.stock + ret.returnQty } : null;
@@ -150,9 +149,12 @@ export default function ReturnsModule() {
         </Table>
       </div>
 
+      {/* Dialog Devolución Parcial */}
       <Dialog open={showReturnModal} onOpenChange={setShowReturnModal}>
         <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-lg p-0 rounded-2xl shadow-xl">
-          <div className="bg-[#1A2C4E] p-4 text-white"><h3 className="text-lg font-black">Devolución Sincronizada</h3></div>
+          <DialogHeader className="bg-[#1A2C4E] p-4 text-white">
+            <DialogTitle className="text-lg font-black">Devolución Sincronizada</DialogTitle>
+          </DialogHeader>
           <div className="p-5 space-y-4">
             {returnItems.map((item, idx) => (
               <div key={item.productId} className="flex items-center justify-between p-3 bg-[#F5F5F5] rounded-lg">
@@ -169,9 +171,12 @@ export default function ReturnsModule() {
         </DialogContent>
       </Dialog>
 
+      {/* Dialog Confirmación Devolución Total */}
       <Dialog open={showConfirmModal} onOpenChange={setShowConfirmModal}>
         <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-md p-0 rounded-2xl shadow-xl">
-          <div className="bg-red-600 p-4 text-white font-black">Confirmar Devolución de Stock</div>
+          <DialogHeader className="bg-red-600 p-4 text-white">
+            <DialogTitle className="font-black">Confirmar Devolución de Stock</DialogTitle>
+          </DialogHeader>
           <div className="p-5">
             <p className="text-sm mb-4">Esta acción repondrá el inventario y registrará el egreso contable en tiempo real para todos los usuarios.</p>
             <div className="flex gap-2"><Button variant="ghost" onClick={() => setShowConfirmModal(false)} className="flex-1">CANCELAR</Button><Button onClick={processReturn} className="flex-1 bg-red-600 text-white font-black">CONFIRMAR</Button></div>

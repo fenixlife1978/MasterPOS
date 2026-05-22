@@ -10,6 +10,29 @@ interface ReceiptModalProps {
   onClose: () => void;
 }
 
+// Formatea la fecha de forma nativa para Venezuela sin romper el motor de JavaScript
+function formatToVenezuelaTime(dateStr: string): string {
+  try {
+    const dateObj = new Date(dateStr);
+    if (isNaN(dateObj.getTime())) {
+      return new Date().toLocaleString('es-VE', { timeZone: 'America/Caracas' });
+    }
+    
+    return dateObj.toLocaleString('es-VE', {
+      timeZone: 'America/Caracas',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true
+    });
+  } catch (error) {
+    return dateStr;
+  }
+}
+
 export default function ReceiptModal({ transaction, exchangeRate, onClose }: ReceiptModalProps) {
   const printRef = useRef<HTMLDivElement>(null);
 
@@ -21,85 +44,102 @@ export default function ReceiptModal({ transaction, exchangeRate, onClose }: Rec
     printWindow?.document.write(`
       <html>
         <head>
-          <title>Recibo de Venta</title>
+          <title>Recibo de Venta - LICOPOS</title>
           <style>
             @page {
               size: 80mm auto;
               margin: 0;
             }
             body {
-              font-family: 'Courier New', monospace;
-              width: 80mm;
+              font-family: 'Courier New', Courier, monospace;
+              width: 72mm;
               margin: 0;
-              padding: 8px;
-              font-size: 10px;
-              background: white;
+              padding: 4mm;
+              font-size: 11px;
+              color: #000;
+              background: #fff;
+              line-height: 1.2;
             }
+            .text-center { text-align: center; }
+            .text-right { text-align: right; }
+            .bold { font-weight: bold; }
             .header {
-              text-align: center;
+              margin-bottom: 6px;
+              padding-bottom: 6px;
               border-bottom: 1px dashed #000;
-              padding-bottom: 8px;
-              margin-bottom: 8px;
             }
             .title {
-              font-size: 14px;
+              font-size: 16px;
               font-weight: bold;
-              margin: 0;
+              margin: 0 0 4px 0;
+              letter-spacing: 1px;
             }
             .subtitle {
-              font-size: 9px;
-              margin: 4px 0;
+              font-size: 10px;
+              margin: 2px 0;
+            }
+            .info-block {
+              margin: 6px 0;
+              font-size: 10px;
             }
             .info-row {
               display: flex;
               justify-content: space-between;
-              margin-bottom: 4px;
+              margin: 2px 0;
             }
             table {
               width: 100%;
               border-collapse: collapse;
               margin: 8px 0;
             }
-            th, td {
-              text-align: left;
-              padding: 4px 0;
-            }
             th {
               border-bottom: 1px dashed #000;
+              border-top: 1px dashed #000;
+              font-weight: bold;
+              padding: 4px 0;
+              font-size: 10px;
+            }
+            td {
+              padding: 4px 0;
+              vertical-align: top;
+              font-size: 10px;
             }
             .totals {
               border-top: 1px dashed #000;
-              padding-top: 8px;
-              margin-top: 8px;
+              padding-top: 4px;
+              margin-top: 4px;
             }
             .total-grand {
-              font-size: 12px;
+              font-size: 13px;
               font-weight: bold;
-              margin-top: 8px;
-              padding-top: 4px;
-              border-top: 2px solid #000;
-            }
-            .footer {
-              text-align: center;
-              margin-top: 16px;
-              padding-top: 8px;
-              border-top: 1px dashed #000;
-              font-size: 8px;
+              margin: 6px 0;
+              padding: 4px 0;
+              border-top: 1px solid #000;
+              border-bottom: 1px solid #000;
             }
             .payment-method {
-              background: #f0f0f0;
+              border: 1px solid #000;
               padding: 4px;
               margin: 8px 0;
               text-align: center;
               font-weight: bold;
+              font-size: 11px;
+            }
+            .footer {
+              margin-top: 12px;
+              padding-top: 6px;
+              border-top: 1px dashed #000;
+              font-size: 9px;
             }
           </style>
         </head>
         <body>
-          <div>\${printContent}</div>
+          ${printContent}
           <script>
-            window.print();
-            window.onafterprint = () => window.close();
+            window.onload = function() {
+              window.print();
+              setTimeout(function() { window.close(); }, 500);
+            };
           <\/script>
         </body>
       </html>
@@ -107,30 +147,19 @@ export default function ReceiptModal({ transaction, exchangeRate, onClose }: Rec
     printWindow?.document.close();
   };
 
-  const formatDate = (dateStr: string) => {
-    const d = new Date(dateStr);
-    return d.toLocaleString('es-VE', {
-      day: '2-digit',
-      month: '2-digit',
-      year: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  };
-
   const paymentMethodLabels: Record<string, string> = {
     efectivo_bs: 'EFECTIVO BS',
-    tarjeta: 'TARJETA',
-    usd_efectivo: 'EFECTIVO USD',
-    biopago: 'BIOPAGO',
-    pago_movil: 'PAGO MÓVIL',
-    zelle: 'ZELLE',
+    tarjeta: 'TARJETA DE DÉBITO/CRÉDITO',
+    usd_efectivo: 'EFECTIVO USD ($)',
+    biopago: 'BIOPAGO BANCO DE VENEZUELA',
+    pago_movil: 'PAGO MÓVIL INTERBANCARIO',
+    zelle: 'TRANSFERENCIA ZELLE',
   };
 
-  // Protección contra undefined
-  const transactionId = transaction?.id ? transaction.id.toString().padStart(8, '0') : '00000000';
-  const transactionDate = transaction?.date ? formatDate(transaction.date) : '';
-  const transactionClientName = transaction?.clientName || '';
+  // Mapeo seguro de datos de la transacción
+  const transactionId = transaction?.id ? transaction.id.toString().slice(-8) : '00000000';
+  const transactionDate = transaction?.date ? formatToVenezuelaTime(transaction.date) : '';
+  const transactionClientName = transaction?.clientName || 'CONSUMIDOR FINAL';
   const transactionSubtotal = transaction?.subtotal || 0;
   const transactionIva = transaction?.iva || 0;
   const transactionTotal = transaction?.total || 0;
@@ -140,111 +169,147 @@ export default function ReceiptModal({ transaction, exchangeRate, onClose }: Rec
   const transactionItems = transaction?.items || [];
 
   return (
-    <div className="fixed inset-0 z-[300] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl animate-in zoom-in-95 overflow-hidden">
-        <div className="bg-[#1A2C4E] p-4 flex justify-between items-center">
-          <h3 className="text-white font-bold flex items-center gap-2">
-            <Printer size={18} /> Recibo de Venta
+    <div className="fixed inset-0 z-[300] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className="bg-white rounded-xl max-w-sm w-full shadow-2xl overflow-hidden flex flex-col border border-gray-200">
+        
+        {/* BARRA SUPERIOR DE CONTROL */}
+        <div className="bg-[#1A2C4E] p-3.5 flex justify-between items-center border-b border-gray-700">
+          <h3 className="text-white font-bold text-sm flex items-center gap-2 tracking-wide">
+            <Printer size={16} className="text-amber-400" /> VISTA PREVIA DEL RECIBO
           </h3>
-          <button onClick={onClose} className="text-white/60 hover:text-white">
-            <X size={20} />
+          <button onClick={onClose} className="text-white/70 hover:text-white transition-colors">
+            <X size={18} />
           </button>
         </div>
 
-        <div className="p-4 max-h-[70vh] overflow-y-auto bg-gray-50">
-          <div ref={printRef} className="bg-white p-4 rounded-lg shadow-inner" style={{ width: '80mm', margin: '0 auto' }}>
-            <div className="header text-center">
-              <h1 className="title">LICOPOS ELITE</h1>
-              <p className="subtitle">Sistema de Punto de Venta</p>
-              <p className="subtitle">RIF: J-12345678-0</p>
-              <p className="subtitle">Tel: (0212) 555-1234</p>
-              <div className="info-row" style={{ justifyContent: 'center', gap: '8px', fontSize: '9px', marginTop: '8px' }}>
-                <span>FECHA: {transactionDate}</span>
-              </div>
-              <div className="info-row" style={{ justifyContent: 'center', gap: '8px', fontSize: '9px' }}>
-                <span>N°: {transactionId}</span>
-              </div>
-              {transactionClientName && (
-                <div className="info-row" style={{ justifyContent: 'center', fontSize: '9px', marginTop: '4px' }}>
-                  <span>CLIENTE: {transactionClientName}</span>
-                </div>
-              )}
+        {/* CONTENEDOR EN PANTALLA DEL TICKET TÉRMICO */}
+        <div className="p-4 max-h-[65vh] overflow-y-auto bg-gray-100 flex justify-center">
+          <div 
+            ref={printRef} 
+            className="bg-white p-5 shadow-sm text-black font-mono select-none"
+            style={{ width: '72mm', boxSizing: 'border-box', color: '#000' }}
+          >
+            {/* ENCEBEZADO COMERCIAL */}
+            <div className="text-center" style={{ marginBottom: '6px', paddingBottom: '6px', borderBottom: '1px dashed #000' }}>
+              <h1 style={{ fontSize: '16px', fontWeight: 'bold', margin: '0 0 2px 0', letterSpacing: '1px' }}>LICOPOS ELITE</h1>
+              <p style={{ fontSize: '10px', margin: '2px 0', fontWeight: 'bold' }}>LICORERÍA & BODEGÓN</p>
+              <p style={{ fontSize: '9px', margin: '2px 0' }}>RIF: J-12345678-0</p>
+              <p style={{ fontSize: '9px', margin: '2px 0' }}>TEL: (0212) 555-1234</p>
+              <p style={{ fontSize: '9px', margin: '2px 0' }}>SAN FELIPE - YARACUY</p>
             </div>
 
-            <table style={{ width: '100%', borderCollapse: 'collapse', margin: '8px 0' }}>
+            {/* METADATOS DE CONTROL */}
+            <div style={{ margin: '6px 0', fontSize: '9px' }}>
+              {/* ✅ CORREGIDO: 'justifyBetween' cambiado a 'justifyContent' */}
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span>FACTURA N°: <span style={{ fontWeight: 'bold' }}>{transactionId}</span></span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', margin: '2px 0' }}>
+                <span>FECHA: {transactionDate}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', margin: '2px 0' }}>
+                <span>CLIENTE: {transactionClientName.toUpperCase()}</span>
+              </div>
+            </div>
+
+            {/* TABLA DE ARTÍCULOS VENDIDOS */}
+            <table style={{ width: '100%', borderCollapse: 'collapse', margin: '6px 0' }}>
               <thead>
-                <tr style={{ borderBottom: '1px dashed #000' }}>
-                  <th style={{ textAlign: 'left', padding: '4px 0' }}>CANT</th>
-                  <th style={{ textAlign: 'left', padding: '4px 0' }}>DESCRIPCIÓN</th>
-                  <th style={{ textAlign: 'right', padding: '4px 0' }}>PRECIO</th>
-                  <th style={{ textAlign: 'right', padding: '4px 0' }}>TOTAL</th>
+                <tr style={{ borderBottom: '1px dashed #000', borderTop: '1px dashed #000' }}>
+                  <th style={{ textAlign: 'left', padding: '3px 0', fontSize: '9px' }}>CANT</th>
+                  <th style={{ textAlign: 'left', padding: '3px 0', fontSize: '9px', paddingLeft: '4px' }}>PRODUCTO</th>
+                  <th style={{ textAlign: 'right', padding: '3px 0', fontSize: '9px' }}>TOTAL (Bs)</th>
                 </tr>
               </thead>
               <tbody>
-                {transactionItems.map((item, idx) => (
-                  <tr key={idx}>
-                    <td style={{ padding: '4px 0' }}>{item.qty}</td>
-                    <td style={{ padding: '4px 0', fontSize: '9px' }}>{item.name.slice(0, 20)}</td>
-                    <td style={{ textAlign: 'right', padding: '4px 0' }}>BS {item.priceBs.toFixed(2)}</td>
-                    <td style={{ textAlign: 'right', padding: '4px 0' }}>BS {(item.priceBs * item.qty).toFixed(2)}</td>
+                {transactionItems.length > 0 ? (
+                  transactionItems.map((item, idx) => (
+                    <tr key={idx} style={{ borderBottom: '1px dotted #eee' }}>
+                      <td style={{ padding: '4px 0', fontSize: '9px', fontWeight: 'bold' }}>{item.qty} x</td>
+                      <td style={{ padding: '4px 0', paddingLeft: '4px', fontSize: '9px' }}>
+                        {item.name.toUpperCase().slice(0, 22)}
+                        <div style={{ fontSize: '8px', color: '#555' }}>Ref: Bs {item.priceBs.toFixed(2)}</div>
+                      </td>
+                      <td style={{ textAlign: 'right', padding: '4px 0', fontSize: '9px', fontWeight: 'bold' }}>
+                        {(item.priceBs * item.qty).toFixed(2)}
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={3} style={{ textAlign: 'center', padding: '8px 0', color: '#666', fontStyle: 'italic' }}>
+                      * Operación de Pago / Abono de Cuenta *
+                    </td>
                   </tr>
-                ))}
+                )}
               </tbody>
             </table>
 
-            <div className="totals" style={{ borderTop: '1px dashed #000', paddingTop: '8px', marginTop: '8px' }}>
-              <div className="info-row" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+            {/* TOTALIZACIÓN FINANCIERA */}
+            <div style={{ borderTop: '1px dashed #000', paddingTop: '4px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', margin: '2px 0' }}>
                 <span>SUBTOTAL:</span>
-                <span>BS {transactionSubtotal.toFixed(2)}</span>
+                <span>Bs {transactionSubtotal.toFixed(2)}</span>
               </div>
-              <div className="info-row" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                <span>IVA (16%):</span>
-                <span>BS {transactionIva.toFixed(2)}</span>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', margin: '2px 0' }}>
+                <span>IVA (16.00%):</span>
+                <span>Bs {transactionIva.toFixed(2)}</span>
               </div>
-              <div className="total-grand" style={{ fontSize: '12px', fontWeight: 'bold', marginTop: '8px', paddingTop: '4px', borderTop: '2px solid #000' }}>
-                <div className="info-row" style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span>TOTAL:</span>
-                  <span>BS {transactionTotal.toFixed(2)}</span>
+              
+              {/* GRAN TOTAL RESALTADO */}
+              <div style={{ fontSize: '13px', fontWeight: 'bold', margin: '5px 0', padding: '3px 0', borderTop: '1px solid #000', borderBottom: '1px solid #000' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+                  <span>TOTAL A PAGAR:</span>
+                  <span>Bs {transactionTotal.toFixed(2)}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#333', fontWeight: 'normal', marginTop: '2px' }}>
+                  <span>REF. DIVISAS:</span>
+                  <span>$ {(transactionTotal / exchangeRate).toFixed(2)}</span>
                 </div>
               </div>
-              <div className="info-row" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                <span>MONTO PAGADO:</span>
-                <span>BS {transactionPaidBs.toFixed(2)}</span>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', margin: '2px 0' }}>
+                <span>MONTO RECIBIDO:</span>
+                <span>Bs {transactionPaidBs.toFixed(2)}</span>
               </div>
               {transactionChange > 0 && (
-                <div className="info-row" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                  <span>VUELTO:</span>
-                  <span>BS {transactionChange.toFixed(2)}</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', margin: '2px 0', fontWeight: 'bold' }}>
+                  <span>SU CAMBIO (VUELTO):</span>
+                  <span>Bs {transactionChange.toFixed(2)}</span>
                 </div>
               )}
             </div>
 
-            <div className="payment-method" style={{ background: '#f0f0f0', padding: '4px', margin: '8px 0', textAlign: 'center', fontWeight: 'bold' }}>
-              {paymentMethodLabels[transactionPayMethod] || transactionPayMethod.toUpperCase()}
+            {/* MÉTODO DE PAGO */}
+            <div style={{ border: '1px solid #000', padding: '3px', margin: '8px 0', textAlign: 'center', fontWeight: 'bold', fontSize: '10px' }}>
+              FORMA DE PAGO: {paymentMethodLabels[transactionPayMethod] || transactionPayMethod.toUpperCase()}
             </div>
 
-            <div className="footer" style={{ textAlign: 'center', marginTop: '16px', paddingTop: '8px', borderTop: '1px dashed #000', fontSize: '8px' }}>
-              <p>¡Gracias por su compra!</p>
-              <p>Válido como comprobante fiscal</p>
-              <p style={{ fontSize: '7px', marginTop: '8px' }}>www.masterpos.com</p>
+            {/* FOOTER DE LEY */}
+            <div style={{ textAlign: 'center', marginTop: '12px', paddingTop: '6px', borderTop: '1px dashed #000', fontSize: '8px' }}>
+              <p style={{ margin: '2px 0', fontWeight: 'bold' }}>¡GRACIAS POR SU PREFERENCIA!</p>
+              <p style={{ margin: '2px 0' }}>CONSERVE ESTE TICKET COMO COMPROBANTE</p>
+              <p style={{ fontSize: '7px', marginTop: '6px', color: '#444' }}>Desarrollado por MasterPOS v1.0</p>
             </div>
           </div>
         </div>
 
-        <div className="p-4 border-t border-gray-200 flex gap-3">
+        {/* ACCIONES DEL PANEL INFERIOR */}
+        <div className="p-3 bg-gray-50 border-t border-gray-200 flex gap-3">
           <button
             onClick={onClose}
-            className="flex-1 py-2 bg-gray-200 text-black font-bold rounded-lg hover:bg-gray-300 transition-all"
+            className="flex-1 py-2 bg-gray-200 text-slate-800 font-bold text-xs rounded-lg hover:bg-gray-300 transition-colors uppercase tracking-wider"
           >
-            CERRAR
+            Cerrar Ventana
           </button>
           <button
             onClick={handlePrint}
-            className="flex-1 py-2 bg-[#D4A017] text-black font-bold rounded-lg hover:bg-[#C4940F] transition-all flex items-center justify-center gap-2"
+            className="flex-1 py-2 bg-[#D4A017] text-slate-950 font-black text-xs rounded-lg hover:bg-[#C4940F] transition-colors flex items-center justify-center gap-2 uppercase tracking-wider shadow-sm"
           >
-            <Printer size={16} /> IMPRIMIR
+            <Printer size={14} /> Imprimir Copia
           </button>
         </div>
+
       </div>
     </div>
   );

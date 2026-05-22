@@ -30,19 +30,37 @@ export default function POSModule({ state }: POSModuleProps) {
     }
   }, []);
 
-  const cartTotal = state.cart.reduce((s,i) => s + (i.priceBs * i.qty), 0);
+  const cartTotal = state.cart.reduce((s, i) => s + (i.priceBs * i.qty), 0);
   const totalWithIva = state.isIvaEnabled ? cartTotal * 1.16 : cartTotal;
 
-  const handlePaymentConfirm = (data: any) => {
-    const tx = state.finalizeSale('contado', data);
-    setLastTransaction(tx);
-    setShowReceipt(true);
-    setShowContado(false);
+  // ✅ CORREGIDO: Espera los datos reales de la venta al contado mediante async/await
+  const handlePaymentConfirm = async (data: any) => {
+    try {
+      const tx = await state.finalizeSale('contado', data);
+      if (tx) {
+        setLastTransaction(tx);
+        setShowReceipt(true);
+      }
+    } catch (error) {
+      console.error("Error al procesar venta al contado:", error);
+    } finally {
+      setShowContado(false);
+    }
   };
 
-  const handleCreditConfirm = (data: any) => {
-    state.finalizeSale('credito', data);
-    setShowCredito(false);
+  // ✅ CORREGIDO: Ahora las ventas a crédito también generan y muestran su recibo correspondiente
+  const handleCreditConfirm = async (data: any) => {
+    try {
+      const tx = await state.finalizeSale('credito', data);
+      if (tx) {
+        setLastTransaction(tx);
+        setShowReceipt(true);
+      }
+    } catch (error) {
+      console.error("Error al procesar venta a crédito:", error);
+    } finally {
+      setShowCredito(false);
+    }
   };
 
   return (
@@ -126,6 +144,7 @@ export default function POSModule({ state }: POSModuleProps) {
         />
       )}
 
+      {/* RENDERIZADO DEL RECIBO CON LOS DATOS DE TRANSACCIÓN REALES */}
       {showReceipt && lastTransaction && (
         <ReceiptModal 
           transaction={lastTransaction}

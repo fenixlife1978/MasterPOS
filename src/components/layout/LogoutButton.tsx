@@ -7,13 +7,13 @@ import { cn } from '@/lib/utils';
 interface LogoutButtonProps {
   className?: string;
   variant?: 'sidebar' | 'topbar' | 'text';
+  collapsed?: boolean;
 }
 
-export default function LogoutButton({ className, variant = 'sidebar' }: LogoutButtonProps) {
+export default function LogoutButton({ className, variant = 'sidebar', collapsed = false }: LogoutButtonProps) {
   const router = useRouter();
 
   const handleLogout = () => {
-    // Limpiar toda la sesión
     localStorage.removeItem('user');
     localStorage.removeItem('masterpos_users');
     localStorage.removeItem('masterpos_terminals');
@@ -30,19 +30,12 @@ export default function LogoutButton({ className, variant = 'sidebar' }: LogoutB
     localStorage.removeItem('cache_accounts');
     localStorage.removeItem('cache_register');
     
-    // Redirigir al login
     router.push('/login');
   };
 
   if (variant === 'topbar') {
     return (
-      <button
-        onClick={handleLogout}
-        className={cn(
-          "flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-400 transition-all",
-          className
-        )}
-      >
+      <button onClick={handleLogout} className={cn("flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-400 transition-all", className)}>
         <DoorOpen size={16} />
         <span className="text-xs font-bold">Salir</span>
       </button>
@@ -51,30 +44,24 @@ export default function LogoutButton({ className, variant = 'sidebar' }: LogoutB
 
   if (variant === 'text') {
     return (
-      <button
-        onClick={handleLogout}
-        className={cn(
-          "flex items-center gap-2 text-black/60 hover:text-red-600 transition-colors",
-          className
-        )}
-      >
+      <button onClick={handleLogout} className={cn("flex items-center gap-2 text-black/60 hover:text-red-600 transition-colors", className)}>
         <DoorOpen size={16} />
         <span className="text-xs font-medium">Cerrar Sesión</span>
       </button>
     );
   }
 
-  // Variante sidebar (default)
+  // Sidebar - adaptado para colapsable
   return (
     <button
       onClick={handleLogout}
       className={cn(
-        "w-[52px] h-[52px] rounded-xl flex flex-col items-center justify-center transition-all text-black/60 hover:bg-red-500/20 hover:text-red-400",
-        className
+        "w-full rounded-lg flex items-center transition-all text-black/60 hover:bg-red-500/20 hover:text-red-400",
+        collapsed ? "justify-center h-[38px]" : "gap-2.5 px-3 h-[38px]"
       )}
     >
-      <DoorOpen size={18} strokeWidth={2} />
-      <span className="text-[9px] font-bold uppercase tracking-tight mt-0.5">Salir</span>
+      <DoorOpen size={16} className="shrink-0" />
+      {!collapsed && <span className="text-xs font-medium">Cerrar Sesión</span>}
     </button>
   );
 }

@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
-import { Product, SupplierInvoice } from '@/lib/types';
+import { Product, SupplierInvoice, PurchaseInvoiceItem } from '@/lib/types';
 import { syncService } from '@/services/syncService';
 
 interface PurchaseItemTemp {
@@ -86,7 +86,6 @@ export default function RegisterPurchase() {
       const timestamp = new Date().toISOString();
       const invoiceId = Date.now();
       
-      // 1. Guardar la factura en purchase_invoices (ESQUEMA ESTRICTO SOLICITADO)
       const newInvoice: SupplierInvoice = {
         id: invoiceId,
         supplierId: parseInt(selectedSupplierId),
@@ -106,30 +105,26 @@ export default function RegisterPurchase() {
       
       await syncService.savePurchaseInvoice(newInvoice);
       
-      // 2. Guardar los items de la factura en purchase_items
-      const items = tempItems.map((item, idx) => ({
+      const items: PurchaseInvoiceItem[] = tempItems.map((item, idx) => ({
         id: `${invoiceId}_${idx}`,
         invoiceId: invoiceId,
         productId: item.productId,
         productName: item.name,
         qty: item.qty,
         costUsd: item.costUsd,
-        totalUsd: Number((item.qty * item.costUsd).toFixed(4))
+        totalUsd: Number((item.qty * item.costUsd).toFixed(4)),
+        createdAt: timestamp
       }));
       
       await syncService.savePurchaseInvoiceItems(invoiceId, items);
       
-      // 3. Actualizar productos y generar Kardex (lógica local para vista inmediata)
       for (const item of tempItems) {
         const product = state.products.find(p => p.id === item.productId);
         if (product) {
           const currentStock = product.stock;
           const currentCost = product.costUsd || 0;
           const newStock = currentStock + item.qty;
-          
-          // Costo Promedio Ponderado
           const newAverageCost = ((currentStock * currentCost) + (item.qty * item.costUsd)) / newStock;
-          
           const profitPercent = product.profitPercent || 30;
           const newPriceUsd = newAverageCost * (1 + profitPercent / 100);
           
@@ -145,14 +140,14 @@ export default function RegisterPurchase() {
         }
       }
       
-      alert('✅ Compra registrada exitosamente en la colección purchase_invoices');
+      alert('✅ Compra registrada exitosamente');
       setTempItems([]);
       setInvoiceNumber('');
       setSelectedSupplierId('');
       
     } catch (error) {
       console.error('Error al registrar compra:', error);
-      alert('❌ Error al registrar la compra en Firestore');
+      alert('❌ Error al registrar la compra');
     }
     
     setIsProcessing(false);
@@ -166,7 +161,7 @@ export default function RegisterPurchase() {
             <h2 className="text-xl font-headline font-black text-black flex items-center gap-2">
               <Truck size={24} className="text-primary" /> Registrar Entrada por Compra
             </h2>
-            <p className="text-xs text-black/50">Datos almacenados en colección: purchase_invoices</p>
+            <p className="text-xs text-black/50">Módulo de gestión de ingresos masivos</p>
           </div>
         </div>
 

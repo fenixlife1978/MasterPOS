@@ -127,6 +127,17 @@ export interface SupplierInvoice {
   createdAt: string;
 }
 
+export interface PurchaseInvoiceItem {
+  id: string;                    // ID compuesto: `${invoiceId}_${idx}`
+  invoiceId: number;             // ID de la factura padre
+  productId: number;             // ID del producto
+  productName: string;           // Nombre del producto
+  qty: number;                   // Cantidad comprada
+  costUsd: number;               // Costo unitario en USD
+  totalUsd: number;              // Subtotal por producto (qty * costUsd)
+  createdAt: string;             // Fecha de creación
+}
+
 export interface SupplierPayment {
   id: number;
   supplierId: number;

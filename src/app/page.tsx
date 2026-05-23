@@ -16,6 +16,7 @@ import AdminDashboard from '@/components/dashboard/AdminDashboard';
 import SuppliersModule from '@/components/suppliers/suppliers-module';
 import AccountingModule from '@/components/accounting/accounting-module';
 import ReturnsModule from '@/components/returns/returns-module';
+import RegisterPurchase from '@/components/inventory/RegisterPurchase';
 import { Toaster } from '@/components/ui/toaster';
 
 export default function LicoPOSApp() {
@@ -43,7 +44,7 @@ export default function LicoPOSApp() {
 
   useEffect(() => {
     if (user && state.isHydrated) {
-      const allowedPages = ['dashboard', 'pos', 'inventario', 'clientes', 'cuentas', 'proveedores', 'contabilidad', 'devoluciones', 'caja'];
+      const allowedPages = ['dashboard', 'pos', 'inventario', 'clientes', 'cuentas', 'proveedores', 'contabilidad', 'devoluciones', 'caja', 'registrar_compra'];
 
       if (!allowedPages.includes(state.currentPage)) {
         state.setCurrentPage('pos');
@@ -106,6 +107,7 @@ export default function LicoPOSApp() {
           {state.currentPage === 'contabilidad' && <AccountingModule />}
           {state.currentPage === 'devoluciones' && <ReturnsModule />}
           {state.currentPage === 'caja' && <CashModule state={state} />}
+          {state.currentPage === 'registrar_compra' && <RegisterPurchase />}
         </div>
       </main>
       <Toaster />

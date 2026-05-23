@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { usePOSState } from '@/hooks/use-pos-state';
-import { Plus, Search, Info, Pencil, Trash2, X, Barcode as BarcodeIcon, Tag, Boxes, TrendingUp, DollarSign, Percent, Filter, Download, Printer, Share2, FileText, FileSpreadsheet, File, AlertTriangle, FolderPlus, Package, History, RefreshCw, Save, Minus, Plus as PlusIcon, LayoutGrid, Layers, FolderMinus } from 'lucide-react';
+import { Plus, Search, Info, Pencil, Trash2, X, Barcode as BarcodeIcon, Tag, Boxes, TrendingUp, DollarSign, Percent, Filter, Download, Printer, Share2, FileText, FileSpreadsheet, File, AlertTriangle, FolderPlus, Package, History, RefreshCw, Save, Minus, Plus as PlusIcon, LayoutGrid, Layers, FolderMinus, ShoppingBag } from 'lucide-react';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -22,19 +22,6 @@ interface ProductWithDetails extends Product {
   profitPercent: number;
   minStock: number;
   department: string;
-}
-
-interface StockAdjustment {
-  id: number;
-  productId: number;
-  productName: string;
-  previousStock: number;
-  newStock: number;
-  adjustment: number;
-  reason: string;
-  date: string;
-  userId: string;
-  userName: string;
 }
 
 interface KardexEntry {
@@ -908,10 +895,17 @@ export default function InventoryModule({ state }: InventoryModuleProps) {
           </div>
           
           <Button 
+            onClick={() => state.setCurrentPage('registrar_compra')}
+            className="bg-secondary hover:brightness-105 text-white font-black shadow-md"
+          >
+            <ShoppingBag size={18} className="mr-2" /> REGISTRAR COMPRA
+          </Button>
+
+          <Button 
             onClick={() => setIsAdding(true)}
             className="bg-primary hover:brightness-105 text-black font-black shadow-md"
           >
-            <Plus size={18} className="mr-2" /> AGREGAR
+            <Plus size={18} className="mr-2" /> NUEVO PRODUCTO
           </Button>
 
           <Button 

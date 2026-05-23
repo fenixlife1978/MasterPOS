@@ -1,10 +1,12 @@
+
 "use client";
 
 import { useState, useEffect } from 'react';
 import { usePOSState } from '@/hooks/use-pos-state';
 import { 
   Plus, Search, Pencil, Trash2, X, 
-  Tag, Settings, History, RefreshCw, Save
+  Tag, Settings, History, RefreshCw, Save,
+  FileText, Share2, Printer
 } from 'lucide-react';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
@@ -97,6 +99,90 @@ export default function InventoryModule({ state }: InventoryModuleProps) {
     const matchesDepartment = filterDepartment === 'all' || (p as any).department === filterDepartment;
     return matchesSearch && matchesCategory && matchesDepartment;
   });
+
+  const handleExportPDF = () => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    const html = `
+      <html>
+        <head>
+          <title>Reporte de Inventario - MasterPOS</title>
+          <style>
+            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 30px; color: #333; }
+            .header { text-align: center; border-bottom: 2px solid #D4A017; padding-bottom: 10px; margin-bottom: 20px; }
+            h1 { margin: 0; color: #1A2C4E; font-size: 24px; text-transform: uppercase; }
+            .info { display: flex; justify-content: space-between; font-size: 10px; color: #666; margin-bottom: 20px; }
+            table { width: 100%; border-collapse: collapse; }
+            th { background-color: #1A2C4E; color: white; text-align: left; padding: 10px; font-size: 10px; text-transform: uppercase; }
+            td { padding: 8px 10px; border-bottom: 1px solid #eee; font-size: 10px; }
+            .text-right { text-align: right; }
+            .text-center { text-align: center; }
+            .bold { font-weight: bold; }
+            .low-stock { color: #e74c3c; font-weight: bold; }
+            .footer { margin-top: 30px; text-align: center; font-size: 9px; color: #999; border-top: 1px solid #eee; padding-top: 10px; }
+            .summary { margin-bottom: 15px; padding: 10px; background: #f9f9f9; border-radius: 8px; font-size: 11px; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>LICOPOS ELITE - REPORTE DE INVENTARIO</h1>
+          </div>
+          <div class="info">
+            <span>FECHA: ${new Date().toLocaleString('es-VE')}</span>
+            <span>TASA BCV: Bs ${state.exchangeRate.toFixed(2)}</span>
+          </div>
+          <div class="summary">
+            <span class="bold">RESUMEN:</span> ${filteredProducts.length} productos listados | 
+            Total ítems en stock: ${filteredProducts.reduce((s, p) => s + p.stock, 0)}
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>CÓDIGO</th>
+                <th>PRODUCTO</th>
+                <th>CATEGORÍA</th>
+                <th class="text-center">STOCK</th>
+                <th class="text-right">PRECIO USD</th>
+                <th class="text-right">PRECIO BS</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${filteredProducts.map(p => `
+                <tr>
+                  <td>${p.barcode}</td>
+                  <td class="bold">${p.name}</td>
+                  <td>${p.category}</td>
+                  <td class="text-center ${p.stock <= (p.minStock || 5) ? 'low-stock' : ''}">${p.stock}</td>
+                  <td class="text-right">$${p.priceUsd.toFixed(2)}</td>
+                  <td class="text-right">Bs ${p.priceBs.toFixed(2)}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+          <div class="footer">Este documento es una representación digital del inventario actual en el sistema MasterPOS.</div>
+        </body>
+      </html>
+    `;
+
+    printWindow.document.write(html);
+    printWindow.document.close();
+    setTimeout(() => {
+      printWindow.print();
+      printWindow.close();
+    }, 500);
+  };
+
+  const handleSharePDF = () => {
+    if (navigator.share) {
+      navigator.share({
+        title: 'Inventario MasterPOS',
+        text: `Reporte de inventario generado el ${new Date().toLocaleDateString()}. Total productos: ${filteredProducts.length}`,
+      }).catch(() => handleExportPDF());
+    } else {
+      handleExportPDF();
+    }
+  };
 
   const addKardexEntry = (productId: number, entry: KardexEntry) => {
     setKardexEntries(prev => ({
@@ -260,18 +346,21 @@ export default function InventoryModule({ state }: InventoryModuleProps) {
           <h2 className="text-xl font-headline font-black text-black">Catálogo de Inventario</h2>
           <p className="text-xs text-black/50">Consulta de existencias y gestión de catálogo</p>
         </div>
-        <div className="bg-[#1A2C4E] px-3 py-1.5 rounded-xl text-white">
-          <span className="text-[9px] font-black uppercase opacity-60">Tasa Sistema</span>
-          <div className="text-base font-black text-primary">Bs {state.exchangeRate.toFixed(2)}</div>
+        <div className="flex items-center gap-3">
+          <div className="bg-[#1A2C4E] px-3 py-1.5 rounded-xl text-white">
+            <span className="text-[9px] font-black uppercase opacity-60">Tasa Sistema</span>
+            <div className="text-base font-black text-primary">Bs {state.exchangeRate.toFixed(2)}</div>
+          </div>
         </div>
       </div>
 
       <div className="flex-1 flex flex-col overflow-hidden px-6 mt-4">
-        <div className="flex justify-between items-center mb-3 gap-3 flex-wrap flex-shrink-0">
-          <div className="relative flex-1 max-w-md">
+        <div className="flex justify-between items-center mb-3 gap-2 flex-wrap flex-shrink-0">
+          <div className="relative flex-1 max-w-sm">
             <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-black/40" />
             <Input placeholder="Buscar..." className="pl-9 h-8 border-[#9E9E9E] text-xs" value={search} onChange={(e) => setSearch(e.target.value)} />
           </div>
+          
           <div className="flex items-center gap-1">
             <select value={filterDepartment} onChange={(e) => setFilterDepartment(e.target.value)} className="h-8 border rounded-lg px-2 text-xs font-bold">
               <option value="all">📁 Deptos.</option>
@@ -279,6 +368,7 @@ export default function InventoryModule({ state }: InventoryModuleProps) {
             </select>
             <button onClick={() => setShowDepartmentModal(true)} className="h-8 w-8 border rounded-lg flex items-center justify-center hover:bg-gray-100"><Settings size={13} /></button>
           </div>
+          
           <div className="flex items-center gap-1">
             <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value as any)} className="h-8 border rounded-lg px-2 text-xs font-bold">
               <option value="all">🏷️ Cats.</option>
@@ -286,9 +376,18 @@ export default function InventoryModule({ state }: InventoryModuleProps) {
             </select>
             <button onClick={() => setShowCategoryModal(true)} className="h-8 w-8 border rounded-lg flex items-center justify-center hover:bg-gray-100"><Settings size={13} /></button>
           </div>
-          <Button onClick={() => { resetForm(); setEditingProduct(null); setIsAdding(true); }} className="bg-primary text-black font-black h-8 text-xs px-3">
-            <Plus size={13} className="mr-1" /> NUEVO PRODUCTO
-          </Button>
+
+          <div className="flex items-center gap-1 ml-auto">
+            <Button onClick={handleExportPDF} variant="outline" className="h-8 text-[10px] font-black border-[#9E9E9E] text-black">
+              <Printer size={13} className="mr-1" /> EXPORTAR PDF
+            </Button>
+            <Button onClick={handleSharePDF} variant="outline" className="h-8 text-[10px] font-black border-[#9E9E9E] text-black">
+              <Share2 size={13} className="mr-1" /> COMPARTIR
+            </Button>
+            <Button onClick={() => { resetForm(); setEditingProduct(null); setIsAdding(true); }} className="bg-primary text-black font-black h-8 text-[10px] px-3">
+              <Plus size={13} className="mr-1" /> NUEVO PRODUCTO
+            </Button>
+          </div>
         </div>
 
         <div className="bg-white border border-[#9E9E9E] rounded-xl overflow-hidden shadow-sm flex-1 flex flex-col min-h-0">
@@ -338,12 +437,13 @@ export default function InventoryModule({ state }: InventoryModuleProps) {
       {viewingKardex && (
         <Dialog open={true} onOpenChange={() => setViewingKardex(null)}>
           <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-3xl p-0 overflow-hidden rounded-xl shadow-xl max-h-[85vh]">
-            <DialogHeader className="sr-only"><DialogTitle>Kardex - {viewingKardex.name}</DialogTitle></DialogHeader>
-            <div className="flex flex-col h-full">
-              <div className="bg-[#1A2C4E] p-4 text-white flex justify-between items-center">
-                <div><h3 className="text-base font-black flex items-center gap-2"><History size={16} /> Tarjeta Kardex</h3><p className="text-xs">{viewingKardex.name}</p></div>
+            <DialogHeader className="bg-[#1A2C4E] p-4 text-white">
+              <div className="flex justify-between items-center">
+                <div><DialogTitle className="text-base font-black flex items-center gap-2"><History size={16} /> Tarjeta Kardex</DialogTitle><p className="text-xs opacity-70">{viewingKardex.name}</p></div>
                 <button onClick={() => setViewingKardex(null)}><X size={18} /></button>
               </div>
+            </DialogHeader>
+            <div className="flex flex-col h-full">
               <div className="p-4 overflow-y-auto flex-1">
                 <div className="bg-slate-50 p-3 rounded-lg mb-4 grid grid-cols-3 gap-3">
                   <div><p className="text-[8px] font-black uppercase text-slate-500">Stock Actual</p><p className={cn("text-xl font-black", viewingKardex.stock === 0 ? "text-red-600" : "text-green-600")}>{viewingKardex.stock} UDS</p></div>
@@ -360,25 +460,47 @@ export default function InventoryModule({ state }: InventoryModuleProps) {
 
       <Dialog open={!!adjustingStock} onOpenChange={() => setAdjustingStock(null)}>
         <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-md p-0 rounded-xl">
-          <DialogHeader className="bg-amber-500 p-3 text-white rounded-t-xl"><DialogTitle className="sr-only">Ajustar Stock</DialogTitle><div className="flex justify-between items-center"><h3 className="text-sm font-black">Ajustar Stock</h3><button onClick={() => setAdjustingStock(null)}><X size={16} /></button></div></DialogHeader>
+          <DialogHeader className="bg-amber-500 p-3 text-white rounded-t-xl">
+            <div className="flex justify-between items-center"><DialogTitle className="text-sm font-black">Ajustar Stock</DialogTitle><button onClick={() => setAdjustingStock(null)}><X size={16} /></button></div>
+          </DialogHeader>
           <div className="p-4 space-y-3"><div><label className="text-[9px] font-black uppercase block mb-1">Nueva Cantidad</label><Input type="number" value={adjustmentQuantity} onChange={(e) => setAdjustmentQuantity(e.target.value)} className="text-sm" /></div><div><label className="text-[9px] font-black uppercase block mb-1">Motivo</label><textarea value={adjustmentReason} onChange={(e) => setAdjustmentReason(e.target.value)} rows={2} className="w-full border rounded-lg px-2 py-1 text-xs" /></div></div>
           <div className="bg-slate-50 p-3 border-t flex justify-end gap-2"><Button onClick={confirmStockAdjustment} className="bg-amber-500 text-white font-black h-7 text-xs px-4">CONFIRMAR</Button></div>
         </DialogContent>
       </Dialog>
 
       <Dialog open={showCategoryModal} onOpenChange={setShowCategoryModal}>
-        <DialogContent className="bg-white max-w-md p-0 rounded-xl"><DialogHeader className="bg-[#1A2C4E] p-3 text-white rounded-t-xl"><DialogTitle className="text-xs font-black">🏷️ Categorías</DialogTitle></DialogHeader><div className="p-3"><div className="flex gap-2 mb-3"><Input placeholder="Nueva..." value={newCategory} onChange={(e) => setNewCategory(e.target.value)} className="flex-1 h-7 text-xs" /><Button onClick={addCategory} className="bg-primary text-black h-7 text-xs px-3">ADD</Button></div><div className="max-h-52 overflow-y-auto border rounded-lg divide-y">{categories.map(cat => (<div key={cat} className="flex justify-between items-center px-2 py-1.5"><span className="text-xs">{cat}</span>{cat !== 'Otro' && <button onClick={() => deleteCategory(cat)} className="text-red-500"><Trash2 size={12} /></button>}</div>))}</div></div></DialogContent>
+        <DialogContent className="bg-white max-w-md p-0 rounded-xl">
+          <DialogHeader className="bg-[#1A2C4E] p-3 text-white rounded-t-xl">
+            <DialogTitle className="text-xs font-black">🏷️ Categorías</DialogTitle>
+          </DialogHeader>
+          <div className="p-3">
+            <div className="flex gap-2 mb-3"><Input placeholder="Nueva..." value={newCategory} onChange={(e) => setNewCategory(e.target.value)} className="flex-1 h-7 text-xs" /><Button onClick={addCategory} className="bg-primary text-black h-7 text-xs px-3">ADD</Button></div>
+            <div className="max-h-52 overflow-y-auto border rounded-lg divide-y">{categories.map(cat => (<div key={cat} className="flex justify-between items-center px-2 py-1.5"><span className="text-xs">{cat}</span>{cat !== 'Otro' && <button onClick={() => deleteCategory(cat)} className="text-red-500"><Trash2 size={12} /></button>}</div>))}</div>
+          </div>
+        </DialogContent>
       </Dialog>
 
       <Dialog open={showDepartmentModal} onOpenChange={setShowDepartmentModal}>
-        <DialogContent className="bg-white max-w-md p-0 rounded-xl"><DialogHeader className="bg-[#1A2C4E] p-3 text-white rounded-t-xl"><DialogTitle className="text-xs font-black">📁 Departamentos</DialogTitle></DialogHeader><div className="p-3"><div className="flex gap-2 mb-3"><Input placeholder="Nuevo..." value={newDepartment} onChange={(e) => setNewDepartment(e.target.value)} className="flex-1 h-7 text-xs" /><Button onClick={addDepartment} className="bg-primary text-black h-7 text-xs px-3">ADD</Button></div><div className="max-h-52 overflow-y-auto border rounded-lg divide-y">{departments.map(dept => (<div key={dept} className="flex justify-between items-center px-2 py-1.5"><span className="text-xs">{dept}</span>{dept !== 'Otros' && <button onClick={() => deleteDepartment(dept)} className="text-red-500"><Trash2 size={12} /></button>}</div>))}</div></div></DialogContent>
+        <DialogContent className="bg-white max-w-md p-0 rounded-xl">
+          <DialogHeader className="bg-[#1A2C4E] p-3 text-white rounded-t-xl">
+            <DialogTitle className="text-xs font-black">📁 Departamentos</DialogTitle>
+          </DialogHeader>
+          <div className="p-3">
+            <div className="flex gap-2 mb-3"><Input placeholder="Nuevo..." value={newDepartment} onChange={(e) => setNewDepartment(e.target.value)} className="flex-1 h-7 text-xs" /><Button onClick={addDepartment} className="bg-primary text-black h-7 text-xs px-3">ADD</Button></div>
+            <div className="max-h-52 overflow-y-auto border rounded-lg divide-y">{departments.map(dept => (<div key={dept} className="flex justify-between items-center px-2 py-1.5"><span className="text-xs">{dept}</span>{dept !== 'Otros' && <button onClick={() => deleteDepartment(dept)} className="text-red-500"><Trash2 size={12} /></button>}</div>))}</div>
+          </div>
+        </DialogContent>
       </Dialog>
 
       <Dialog open={isAdding} onOpenChange={(val) => { if(!val) { setIsAdding(false); setEditingProduct(null); } }}>
         <DialogContent className="bg-white max-w-2xl p-0 rounded-xl">
-          <DialogHeader className="sr-only"><DialogTitle>Producto</DialogTitle></DialogHeader>
+          <DialogHeader className="bg-[#1A2C4E] p-3 text-white rounded-t-xl">
+            <div className="flex justify-between items-center">
+              <DialogTitle className="text-sm font-black">{editingProduct ? 'Editar' : 'Nuevo'} Producto</DialogTitle>
+              <button type="button" onClick={() => setIsAdding(false)}><X size={16} /></button>
+            </div>
+          </DialogHeader>
           <form onSubmit={handleSave}>
-            <div className="bg-[#1A2C4E] p-3 text-white flex justify-between"><h3 className="text-sm font-black">{editingProduct ? 'Editar' : 'Nuevo'} Producto</h3><button type="button" onClick={() => setIsAdding(false)}><X size={16} /></button></div>
             <div className="p-4 grid grid-cols-2 gap-3">
               <div className="space-y-2">
                 <div><label className="text-[8px] font-black uppercase">Código</label><Input value={formData.barcode} onChange={e => setFormData({...formData, barcode: e.target.value})} className="h-7 text-xs" required /></div>

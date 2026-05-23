@@ -73,6 +73,7 @@ export function usePOSState() {
   const saveClient = useCallback((c: Client) => syncService.saveClient(c), []);
   const deleteClient = useCallback((id: number) => syncService.deleteClient(id), []);
 
+  // ✅ CORREGIDO: El precio en Bs se calcula en tiempo real usando el USD fijo del producto y la tasa actual
   const addToCart = useCallback((productId: number) => {
     const product = products.find(p => p.id === productId);
     if (!product || product.stock <= 0) return false;
@@ -82,15 +83,25 @@ export function usePOSState() {
         if (existing.qty >= product.stock) return prev;
         return prev.map(item => item.productId === productId ? { ...item, qty: item.qty + 1 } : item);
       }
-      return [...prev, { productId: product.id, name: product.name, priceBs: product.priceBs, priceUsd: product.priceUsd, qty: 1, category: product.category }];
+      // ✅ Calcular priceBs basado en priceUsd (fijo) y la tasa actual
+      const calculatedPriceBs = product.priceUsd * exchangeRate;
+      return [...prev, { 
+        productId: product.id, 
+        name: product.name, 
+        priceBs: calculatedPriceBs, 
+        priceUsd: product.priceUsd, 
+        qty: 1, 
+        category: product.category 
+      }];
     });
     return true;
-  }, [products]);
+  }, [products, exchangeRate]);
 
   const removeFromCart = useCallback((productId: number) => {
     setCart(prev => prev.filter(item => item.productId !== productId));
   }, []);
 
+  // ✅ CORREGIDO: Al actualizar cantidad, también se recalcula el precio Bs por si acaso
   const updateCartQty = useCallback((productId: number, delta: number) => {
     const product = products.find(p => p.id === productId);
     setCart(prev => prev.map(item => {
@@ -98,14 +109,16 @@ export function usePOSState() {
         const newQty = item.qty + delta;
         if (newQty <= 0) return null as any;
         if (product && newQty > product.stock) return item;
-        return { ...item, qty: newQty };
+        // ✅ Recalcular priceBs por si la tasa cambió
+        const updatedPriceBs = product ? product.priceUsd * exchangeRate : item.priceBs;
+        return { ...item, qty: newQty, priceBs: updatedPriceBs };
       }
       return item;
     }).filter(Boolean));
-  }, [products]);
+  }, [products, exchangeRate]);
 
   const openCashRegister = useCallback((amount: number) => {
-    syncService.saveRegister({ isOpen: true, openTime: getVenezuelaISOString(), openAmount: amount });
+    syncService.saveRegister({ isOpen: true, openTime: getVenezuelaISOString(), openAmount: amount, txs: [] });
   }, []);
 
   const closeCashRegister = useCallback(() => syncService.clearRegister(), []);
@@ -130,6 +143,12 @@ export function usePOSState() {
     // Usar la fecha corregida de Venezuela
     const venezuelaDate = getVenezuelaISOString();
     const venezuelaTimestamp = getVenezuelaTimestamp();
+    
+    // ✅ NUEVO: Guardar la tasa de cambio actual para mantenerla como valor histórico
+    const currentExchangeRate = exchangeRate;
+    
+    // ✅ CORREGIDO: El total en USD se calcula como suma de (priceUsd fijo * cantidad)
+    const totalUsd = cart.reduce((acc, item) => acc + (item.priceUsd * item.qty), 0);
 
     const tx: Transaction = {
       id: venezuelaTimestamp,
@@ -139,15 +158,26 @@ export function usePOSState() {
       subtotal: type === 'cobro_deuda' ? paymentData.totalPaid : subtotal,
       iva: type === 'cobro_deuda' ? 0 : iva,
       total: finalTotal,
-      totalUsd: finalTotal / exchangeRate,
+      totalUsd: totalUsd, // ✅ Usar el total en USD calculado desde precios fijos
       payMethod: paymentData.method || 'efectivo_bs',
       paidBs: paymentData.totalPaid || paymentData.amount || finalTotal,
       change: paymentData.change || 0,
       clientId: targetClientId,
-      clientName: paymentData.clientName
+      clientName: paymentData.clientName,
+      exchangeRate: currentExchangeRate // ✅ TASA HISTÓRICA GUARDADA EN LA TRANSACCIÓN
     };
 
     await syncService.saveTransaction(tx);
+
+    // ✅ ACTUALIZAR EL REGISTRO DE CAJA CON LA NUEVA TRANSACCIÓN (solo para ventas de contado y cobros)
+    if (register && type !== 'credito') {
+      const updatedRegister = {
+        ...register,
+        txs: [...(register.txs || []), tx]
+      };
+      await syncService.saveRegister(updatedRegister);
+      setRegister(updatedRegister);
+    }
 
     if (type !== 'cobro_deuda') {
       const updates = cart.map(item => {
@@ -158,7 +188,21 @@ export function usePOSState() {
     }
 
     if (type === 'credito') {
-      const acc: Account = { id: getVenezuelaTimestamp(), txId: tx.id, date: venezuelaDate, clientId: targetClientId, clientName: paymentData.clientName, clientCedula: paymentData.clientCedula || '', products: cart.map(i => `${i.name} x${i.qty}`).join(', '), amountBs: total, amountUsd: total / exchangeRate, paidAmount: 0, status: 'pendiente' };
+      // ✅ NUEVO: Guardar la tasa de cambio en la cuenta por cobrar también
+      const acc: Account = { 
+        id: getVenezuelaTimestamp(), 
+        txId: tx.id, 
+        date: venezuelaDate, 
+        clientId: targetClientId, 
+        clientName: paymentData.clientName, 
+        clientCedula: paymentData.clientCedula || '', 
+        products: cart.map(i => `${i.name} x${i.qty}`).join(', '), 
+        amountBs: total, 
+        amountUsd: totalUsd, // ✅ Usar totalUsd calculado correctamente
+        paidAmount: 0, 
+        status: 'pendiente',
+        exchangeRate: currentExchangeRate // ✅ TASA HISTÓRICA GUARDADA EN LA CUENTA
+      };
       await syncService.saveAccount(acc);
       const client = clients.find(c => c.id === targetClientId);
       if (client) await syncService.saveClient({ ...client, debt: (client.debt || 0) + total });
@@ -193,9 +237,37 @@ export function usePOSState() {
 
     const venezuelaDate = getVenezuelaISOString();
     const venezuelaTimestamp = getVenezuelaTimestamp();
+    const currentExchangeRate = exchangeRate;
 
-    const tx: Transaction = { id: venezuelaTimestamp, date: venezuelaDate, type: 'cobro_deuda', items: [], subtotal: amount, iva: 0, total: amount, totalUsd: amount / exchangeRate, payMethod: 'efectivo_bs', paidBs: amount, change: 0, clientId, clientName: client.name };
+    const tx: Transaction = { 
+      id: venezuelaTimestamp, 
+      date: venezuelaDate, 
+      type: 'cobro_deuda', 
+      items: [], 
+      subtotal: amount, 
+      iva: 0, 
+      total: amount, 
+      totalUsd: amount / currentExchangeRate, 
+      payMethod: 'efectivo_bs', 
+      paidBs: amount, 
+      change: 0, 
+      clientId, 
+      clientName: client.name,
+      exchangeRate: currentExchangeRate
+    };
+    
     await syncService.saveTransaction(tx);
+    
+    // ✅ ACTUALIZAR EL REGISTRO DE CAJA CON EL COBRO
+    if (register) {
+      const updatedRegister = {
+        ...register,
+        txs: [...(register.txs || []), tx]
+      };
+      await syncService.saveRegister(updatedRegister);
+      setRegister(updatedRegister);
+    }
+    
     await syncService.saveClient({ ...client, debt: Math.max(0, (client.debt || 0) - amount) });
     await registerDebtPaymentEntry(tx, client);
   }, [register, clients, accounts, exchangeRate]);

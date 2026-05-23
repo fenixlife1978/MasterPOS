@@ -2,26 +2,26 @@
 
 import { useState, useMemo } from 'react';
 import { Client, CartItem } from '@/lib/types';
-import { Handshake, X, Search, UserPlus, UserCheck } from 'lucide-react';
+import { Handshake, X, Search, UserPlus, UserCheck, DollarSign } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { usePOSState } from '@/hooks/use-pos-state';
 
 interface CreditModalProps {
   cart: CartItem[];
   clients: Client[];
+  exchangeRate: number; // Tasa actual del POS
+  total: number; // ✅ RECIBIR EL TOTAL YA CALCULADO (con o sin IVA según el estado del POS)
   onClose: () => void;
   onConfirm: (data: any) => void;
 }
 
-export default function CreditModal({ cart, clients, onClose, onConfirm }: CreditModalProps) {
-  const { isIvaEnabled } = usePOSState();
+export default function CreditModal({ cart, clients, exchangeRate, total, onClose, onConfirm }: CreditModalProps) {
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<Client | null>(null);
   const [isNewMode, setIsNewMode] = useState(false);
   const [newClient, setNewClient] = useState({ name: '', cedula: '', phone: '', address: '' });
 
-  const subtotal = cart.reduce((s, i) => s + (i.priceBs * i.qty), 0);
-  const total = isIvaEnabled ? subtotal * 1.16 : subtotal;
+  // ✅ Usar el total recibido como prop, NO recalcular
+  const totalUsd = total / exchangeRate;
 
   const results = useMemo(() => {
     if (!query.trim()) return [];
@@ -38,14 +38,20 @@ export default function CreditModal({ cart, clients, onClose, onConfirm }: Credi
         clientName: newClient.name,
         clientCedula: newClient.cedula,
         clientPhone: newClient.phone,
-        clientAddress: newClient.address
+        clientAddress: newClient.address,
+        exchangeRate: exchangeRate,
+        totalBs: total,
+        totalUsd: totalUsd
       });
     } else if (selected) {
       onConfirm({ 
         method: 'credito', 
         clientId: selected.id, 
         clientName: selected.name, 
-        clientCedula: selected.cedula 
+        clientCedula: selected.cedula,
+        exchangeRate: exchangeRate,
+        totalBs: total,
+        totalUsd: totalUsd
       });
     }
   };
@@ -60,6 +66,20 @@ export default function CreditModal({ cart, clients, onClose, onConfirm }: Credi
           <button onClick={onClose} className="text-white/60 hover:text-white transition-colors">
             <X size={20} />
           </button>
+        </div>
+
+        {/* Mostrar Tasa BCV actual que se guardará */}
+        <div className="bg-amber-500/20 border border-amber-500/30 rounded-lg p-3 mb-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <DollarSign size={14} className="text-amber-400" />
+              <span className="text-[10px] font-black text-amber-400 uppercase tracking-widest">Tasa BCV al momento</span>
+            </div>
+            <div className="text-right">
+              <p className="text-sm font-black text-white">1 USD = Bs {exchangeRate.toFixed(2)}</p>
+              <p className="text-[8px] text-amber-400/70">Esta tasa quedará registrada permanentemente</p>
+            </div>
+          </div>
         </div>
 
         {!isNewMode ? (
@@ -170,8 +190,12 @@ export default function CreditModal({ cart, clients, onClose, onConfirm }: Credi
             </div>
           )}
           <div className="flex justify-between text-xs pt-2 mt-2 border-t border-white/20">
-            <span className="text-white/60">Nuevo crédito:</span>
+            <span className="text-white/60">Nuevo crédito (Bs):</span>
             <span className="font-black text-primary">BS {total.toFixed(2)}</span>
+          </div>
+          <div className="flex justify-between text-xs pt-1">
+            <span className="text-white/60">Equivalente en USD:</span>
+            <span className="font-black text-amber-400">${totalUsd.toFixed(2)}</span>
           </div>
         </div>
 

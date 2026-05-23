@@ -31,7 +31,9 @@ export default function POSModule({ state }: POSModuleProps) {
   }, []);
 
   const cartTotal = state.cart.reduce((s, i) => s + (i.priceBs * i.qty), 0);
+  // ✅ Calcular el total correcto según el estado del IVA
   const totalWithIva = state.isIvaEnabled ? cartTotal * 1.16 : cartTotal;
+  const totalForCredit = state.isIvaEnabled ? cartTotal * 1.16 : cartTotal; // ✅ Mismo cálculo
 
   // ✅ CORREGIDO: Espera los datos reales de la venta al contado mediante async/await
   const handlePaymentConfirm = async (data: any) => {
@@ -48,10 +50,20 @@ export default function POSModule({ state }: POSModuleProps) {
     }
   };
 
-  // ✅ CORREGIDO: Ahora las ventas a crédito también generan y muestran su recibo correspondiente
+  // ✅ CORREGIDO: Ventas a crédito con tasa histórica
   const handleCreditConfirm = async (data: any) => {
     try {
-      const tx = await state.finalizeSale('credito', data);
+      const tx = await state.finalizeSale('credito', {
+        clientId: data.clientId,
+        clientName: data.clientName,
+        clientCedula: data.clientCedula,
+        isNewClient: data.isNewClient,
+        clientPhone: data.clientPhone,
+        clientAddress: data.clientAddress,
+        exchangeRate: data.exchangeRate,
+        totalBs: data.totalBs,
+        totalUsd: data.totalUsd
+      });
       if (tx) {
         setLastTransaction(tx);
         setShowReceipt(true);
@@ -139,6 +151,8 @@ export default function POSModule({ state }: POSModuleProps) {
         <CreditModal 
           cart={state.cart}
           clients={state.clients}
+          exchangeRate={state.exchangeRate}
+          total={totalForCredit} // ✅ PASAR EL TOTAL CORRECTO (con o sin IVA según el estado)
           onClose={() => setShowCredito(false)}
           onConfirm={handleCreditConfirm}
         />

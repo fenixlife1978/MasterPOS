@@ -148,7 +148,8 @@ export default function ProductSearch({ state, onAdd }: ProductSearchProps) {
                       <div className="flex-1 min-w-0">
                         <div className="text-[13px] font-medium truncate text-black">{p.name}</div>
                         <div className="flex items-center gap-3 mt-0.5">
-                          <span className="text-[12px] font-bold text-black/80">BS {p.priceBs.toFixed(2)}</span>
+                          {/* ✅ SOLO PRECIO EN USD - ELIMINADO EL PRECIO EN BS */}
+                          <span className="text-[12px] font-bold text-[#D4A017]">${p.priceUsd.toFixed(2)}</span>
                           <span className={cn(
                             "text-[10px] font-bold px-1.5 py-0.5 rounded-full",
                             stockColor

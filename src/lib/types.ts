@@ -8,6 +8,11 @@ export interface Product {
   priceUsd: number;
   stock: number;
   category: Category;
+  minStock?: number;
+  costBs?: number;
+  costUsd?: number;
+  profitPercent?: number;
+  department?: string;
 }
 
 export interface Client {
@@ -42,6 +47,7 @@ export interface Transaction {
   change: number;
   clientId?: number;
   clientName?: string;
+  exchangeRate?: number; // ✅ Tasa BCV al momento de la transacción (valor histórico)
 }
 
 export interface Account {
@@ -56,6 +62,7 @@ export interface Account {
   amountUsd: number;
   paidAmount: number;
   status: 'pendiente' | 'parcial' | 'pagada';
+  exchangeRate?: number; // ✅ Tasa BCV al momento del crédito (valor histórico)
 }
 
 export interface CashRegister {
@@ -181,3 +188,121 @@ export const EXPENSE_CATEGORIES: ExpenseCategory[] = [
   { id: 'sueldos', name: 'Pago de Sueldos' },
   { id: 'otros', name: 'Otros Gastos' },
 ];
+
+// ============================================
+// Tipos para Devoluciones / Notas de Crédito
+// ============================================
+
+export interface Return {
+  id: number;
+  originalTransactionId: number;
+  date: string;
+  clientId?: number;
+  clientName?: string;
+  items: ReturnItem[];
+  subtotal: number;
+  iva: number;
+  total: number;
+  reason: string;
+  status: 'pending' | 'approved' | 'rejected' | 'completed';
+  approvedBy?: number;
+  approvedAt?: string;
+  notes: string;
+}
+
+export interface ReturnItem {
+  productId: number;
+  productName: string;
+  qty: number;
+  priceBs: number;
+  priceUsd: number;
+  totalBs: number;
+  totalUsd: number;
+  reason: string;
+}
+
+export interface CreditNote {
+  id: number;
+  returnId: number;
+  number: string;
+  date: string;
+  clientId: number;
+  clientName: string;
+  amount: number;
+  amountUsd: number;
+  usedAmount: number;
+  status: 'active' | 'used' | 'expired' | 'cancelled';
+  expiresAt: string;
+  createdAt: string;
+}
+
+// ============================================
+// Tipos para Reportes / Auditoría
+// ============================================
+
+export interface AuditLog {
+  id: number;
+  userId: number;
+  userName: string;
+  action: string;
+  entity: string;
+  entityId: number;
+  oldValues?: any;
+  newValues?: any;
+  ipAddress: string;
+  userAgent: string;
+  createdAt: string;
+}
+
+export interface ReportFilter {
+  startDate: string;
+  endDate: string;
+  userId?: number;
+  clientId?: number;
+  status?: string;
+  type?: string;
+}
+
+export interface SalesReport {
+  totalSales: number;
+  totalSalesUsd: number;
+  totalCash: number;
+  totalCard: number;
+  totalTransfer: number;
+  totalCredit: number;
+  totalIva: number;
+  transactionCount: number;
+  averageTicket: number;
+  topProducts: Array<{ name: string; qty: number; total: number }>;
+  salesByDay: Array<{ date: string; total: number; count: number }>;
+}
+
+export interface CashClosing {
+  id: number;
+  openTime: string;
+  closeTime: string;
+  openAmount: number;
+  expectedAmount: number;
+  actualAmount: number;
+  difference: number;
+  totalSales: number;
+  totalExpenses: number;
+  totalWithdrawals: number;
+  transactions: Transaction[];
+  closedBy: number;
+  closedByName: string;
+  notes: string;
+}
+
+export interface Withdrawal {
+  id: number;
+  date: string;
+  amount: number;
+  reason: string;
+  userId: number;
+  userName: string;
+  approvedBy?: number;
+  approvedByName?: string;
+  status: 'pending' | 'approved' | 'rejected';
+  notes: string;
+}

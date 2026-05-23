@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef } from 'react';
-import { Printer, X } from 'lucide-react';
+import { Printer, X, FileText, Share2 } from 'lucide-react';
 import { Transaction } from '@/lib/types';
 
 interface ReceiptModalProps {
@@ -36,6 +36,7 @@ function formatToVenezuelaTime(dateStr: string): string {
 export default function ReceiptModal({ transaction, exchangeRate, onClose }: ReceiptModalProps) {
   const printRef = useRef<HTMLDivElement>(null);
 
+  // ✅ Función para imprimir directamente
   const handlePrint = () => {
     const printContent = printRef.current?.innerHTML;
     if (!printContent) return;
@@ -44,6 +45,7 @@ export default function ReceiptModal({ transaction, exchangeRate, onClose }: Rec
     printWindow?.document.write(`
       <html>
         <head>
+          <meta charset="UTF-8">
           <title>Recibo de Venta - LICOPOS</title>
           <style>
             @page {
@@ -131,6 +133,24 @@ export default function ReceiptModal({ transaction, exchangeRate, onClose }: Rec
               border-top: 1px dashed #000;
               font-size: 9px;
             }
+            .credit-badge {
+              background: #e74c3c;
+              color: white;
+              padding: 3px 6px;
+              text-align: center;
+              font-weight: bold;
+              font-size: 9px;
+              margin: 5px 0;
+              border-radius: 2px;
+            }
+            .credit-note {
+              border: 1px dashed #e74c3c;
+              padding: 6px;
+              margin: 8px 0;
+              text-align: center;
+              font-size: 9px;
+              background: #fff5f5;
+            }
           </style>
         </head>
         <body>
@@ -147,6 +167,277 @@ export default function ReceiptModal({ transaction, exchangeRate, onClose }: Rec
     printWindow?.document.close();
   };
 
+  // ✅ Función para exportar a PDF
+  const handleExportPDF = () => {
+    const printContent = printRef.current?.innerHTML;
+    if (!printContent) return;
+
+    const printWindow = window.open('', '_blank');
+    printWindow?.document.write(`
+      <html>
+        <head>
+          <meta charset="UTF-8">
+          <title>Recibo_Venta_${transaction.id}</title>
+          <style>
+            @page {
+              size: 80mm auto;
+              margin: 0;
+            }
+            body {
+              font-family: 'Courier New', Courier, monospace;
+              width: 72mm;
+              margin: 0;
+              padding: 4mm;
+              font-size: 11px;
+              color: #000;
+              background: #fff;
+              line-height: 1.2;
+            }
+            .text-center { text-align: center; }
+            .text-right { text-align: right; }
+            .bold { font-weight: bold; }
+            .header {
+              margin-bottom: 6px;
+              padding-bottom: 6px;
+              border-bottom: 1px dashed #000;
+            }
+            .title {
+              font-size: 16px;
+              font-weight: bold;
+              margin: 0 0 4px 0;
+              letter-spacing: 1px;
+            }
+            .subtitle {
+              font-size: 10px;
+              margin: 2px 0;
+            }
+            .info-block {
+              margin: 6px 0;
+              font-size: 10px;
+            }
+            .info-row {
+              display: flex;
+              justify-content: space-between;
+              margin: 2px 0;
+            }
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              margin: 8px 0;
+            }
+            th {
+              border-bottom: 1px dashed #000;
+              border-top: 1px dashed #000;
+              font-weight: bold;
+              padding: 4px 0;
+              font-size: 10px;
+            }
+            td {
+              padding: 4px 0;
+              vertical-align: top;
+              font-size: 10px;
+            }
+            .totals {
+              border-top: 1px dashed #000;
+              padding-top: 4px;
+              margin-top: 4px;
+            }
+            .total-grand {
+              font-size: 13px;
+              font-weight: bold;
+              margin: 6px 0;
+              padding: 4px 0;
+              border-top: 1px solid #000;
+              border-bottom: 1px solid #000;
+            }
+            .payment-method {
+              border: 1px solid #000;
+              padding: 4px;
+              margin: 8px 0;
+              text-align: center;
+              font-weight: bold;
+              font-size: 11px;
+            }
+            .footer {
+              margin-top: 12px;
+              padding-top: 6px;
+              border-top: 1px dashed #000;
+              font-size: 9px;
+            }
+            .credit-badge {
+              background: #e74c3c;
+              color: white;
+              padding: 3px 6px;
+              text-align: center;
+              font-weight: bold;
+              font-size: 9px;
+              margin: 5px 0;
+              border-radius: 2px;
+            }
+            .credit-note {
+              border: 1px dashed #e74c3c;
+              padding: 6px;
+              margin: 8px 0;
+              text-align: center;
+              font-size: 9px;
+              background: #fff5f5;
+            }
+          </style>
+        </head>
+        <body>
+          ${printContent}
+          <script>
+            window.onload = function() {
+              window.print();
+              setTimeout(function() { window.close(); }, 500);
+            };
+          <\/script>
+        </body>
+      </html>
+    `);
+    printWindow?.document.close();
+  };
+
+  // ✅ Función para compartir el PDF
+  const handleSharePDF = async () => {
+    const printContent = printRef.current?.innerHTML;
+    if (!printContent) return;
+
+    const shareWindow = window.open('', '_blank');
+    if (!shareWindow) {
+      alert('No se pudo abrir la ventana para compartir. Permita las ventanas emergentes.');
+      return;
+    }
+
+    shareWindow.document.write(`
+      <html>
+        <head>
+          <meta charset="UTF-8">
+          <title>Recibo_Venta_${transaction.id}</title>
+          <style>
+            @page {
+              size: 80mm auto;
+              margin: 0;
+            }
+            body {
+              font-family: 'Courier New', Courier, monospace;
+              width: 72mm;
+              margin: 0;
+              padding: 4mm;
+              font-size: 11px;
+              color: #000;
+              background: #fff;
+              line-height: 1.2;
+            }
+            .text-center { text-align: center; }
+            .text-right { text-align: right; }
+            .bold { font-weight: bold; }
+            .header {
+              margin-bottom: 6px;
+              padding-bottom: 6px;
+              border-bottom: 1px dashed #000;
+            }
+            .title {
+              font-size: 16px;
+              font-weight: bold;
+              margin: 0 0 4px 0;
+              letter-spacing: 1px;
+            }
+            .subtitle {
+              font-size: 10px;
+              margin: 2px 0;
+            }
+            .info-block {
+              margin: 6px 0;
+              font-size: 10px;
+            }
+            .info-row {
+              display: flex;
+              justify-content: space-between;
+              margin: 2px 0;
+            }
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              margin: 8px 0;
+            }
+            th {
+              border-bottom: 1px dashed #000;
+              border-top: 1px dashed #000;
+              font-weight: bold;
+              padding: 4px 0;
+              font-size: 10px;
+            }
+            td {
+              padding: 4px 0;
+              vertical-align: top;
+              font-size: 10px;
+            }
+            .totals {
+              border-top: 1px dashed #000;
+              padding-top: 4px;
+              margin-top: 4px;
+            }
+            .total-grand {
+              font-size: 13px;
+              font-weight: bold;
+              margin: 6px 0;
+              padding: 4px 0;
+              border-top: 1px solid #000;
+              border-bottom: 1px solid #000;
+            }
+            .payment-method {
+              border: 1px solid #000;
+              padding: 4px;
+              margin: 8px 0;
+              text-align: center;
+              font-weight: bold;
+              font-size: 11px;
+            }
+            .footer {
+              margin-top: 12px;
+              padding-top: 6px;
+              border-top: 1px dashed #000;
+              font-size: 9px;
+            }
+            .credit-badge {
+              background: #e74c3c;
+              color: white;
+              padding: 3px 6px;
+              text-align: center;
+              font-weight: bold;
+              font-size: 9px;
+              margin: 5px 0;
+              border-radius: 2px;
+            }
+            .credit-note {
+              border: 1px dashed #e74c3c;
+              padding: 6px;
+              margin: 8px 0;
+              text-align: center;
+              font-size: 9px;
+              background: #fff5f5;
+            }
+          </style>
+        </head>
+        <body>
+          ${printContent}
+        </body>
+      </html>
+    `);
+    shareWindow.document.close();
+
+    setTimeout(() => {
+      shareWindow.print();
+      if (navigator.share) {
+        navigator.share({
+          title: `Recibo ${transaction.id}`,
+          text: `Recibo de venta por Bs ${transaction.total.toFixed(2)}`,
+        }).catch(() => {});
+      }
+    }, 500);
+  };
+
   const paymentMethodLabels: Record<string, string> = {
     efectivo_bs: 'EFECTIVO BS',
     tarjeta: 'TARJETA DE DÉBITO/CRÉDITO',
@@ -155,6 +446,10 @@ export default function ReceiptModal({ transaction, exchangeRate, onClose }: Rec
     pago_movil: 'PAGO MÓVIL INTERBANCARIO',
     zelle: 'TRANSFERENCIA ZELLE',
   };
+
+  // ✅ Determinar tipo de transacción
+  const isCredito = transaction?.type === 'credito';
+  const isCobroDeuda = transaction?.type === 'cobro_deuda';
 
   // Mapeo seguro de datos de la transacción
   const transactionId = transaction?.id ? transaction.id.toString().slice(-8) : '00000000';
@@ -167,6 +462,14 @@ export default function ReceiptModal({ transaction, exchangeRate, onClose }: Rec
   const transactionChange = transaction?.change || 0;
   const transactionPayMethod = transaction?.payMethod || 'efectivo_bs';
   const transactionItems = transaction?.items || [];
+  const transactionExchangeRate = transaction?.exchangeRate || exchangeRate;
+
+  // ✅ Título del documento según el tipo
+  const getDocumentTitle = () => {
+    if (isCredito) return 'DOCUMENTO DE CRÉDITO';
+    if (isCobroDeuda) return 'RECIBO DE PAGO';
+    return 'FACTURA DE VENTA';
+  };
 
   return (
     <div className="fixed inset-0 z-[300] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
@@ -189,7 +492,7 @@ export default function ReceiptModal({ transaction, exchangeRate, onClose }: Rec
             className="bg-white p-5 shadow-sm text-black font-mono select-none"
             style={{ width: '72mm', boxSizing: 'border-box', color: '#000' }}
           >
-            {/* ENCEBEZADO COMERCIAL */}
+            {/* ENCABEZADO COMERCIAL */}
             <div className="text-center" style={{ marginBottom: '6px', paddingBottom: '6px', borderBottom: '1px dashed #000' }}>
               <h1 style={{ fontSize: '16px', fontWeight: 'bold', margin: '0 0 2px 0', letterSpacing: '1px' }}>LICOPOS ELITE</h1>
               <p style={{ fontSize: '10px', margin: '2px 0', fontWeight: 'bold' }}>LICORERÍA & BODEGÓN</p>
@@ -198,11 +501,24 @@ export default function ReceiptModal({ transaction, exchangeRate, onClose }: Rec
               <p style={{ fontSize: '9px', margin: '2px 0' }}>SAN FELIPE - YARACUY</p>
             </div>
 
+            {/* BADGE DEL TIPO DE DOCUMENTO */}
+            <div style={{ textAlign: 'center', marginBottom: '6px' }}>
+              <span style={{ 
+                background: isCredito ? '#e74c3c' : (isCobroDeuda ? '#27ae60' : '#2c3e50'),
+                color: 'white', 
+                padding: '2px 8px', 
+                fontSize: '9px', 
+                fontWeight: 'bold',
+                display: 'inline-block'
+              }}>
+                {getDocumentTitle()}
+              </span>
+            </div>
+
             {/* METADATOS DE CONTROL */}
             <div style={{ margin: '6px 0', fontSize: '9px' }}>
-              {/* ✅ CORREGIDO: 'justifyBetween' cambiado a 'justifyContent' */}
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span>FACTURA N°: <span style={{ fontWeight: 'bold' }}>{transactionId}</span></span>
+                <span>{isCredito ? 'CRÉDITO N°:' : 'FACTURA N°:'} <span style={{ fontWeight: 'bold' }}>{transactionId}</span></span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', margin: '2px 0' }}>
                 <span>FECHA: {transactionDate}</span>
@@ -238,7 +554,7 @@ export default function ReceiptModal({ transaction, exchangeRate, onClose }: Rec
                 ) : (
                   <tr>
                     <td colSpan={3} style={{ textAlign: 'center', padding: '8px 0', color: '#666', fontStyle: 'italic' }}>
-                      * Operación de Pago / Abono de Cuenta *
+                      {isCobroDeuda ? '* Abono de cuenta aplicado *' : '* Operación de Pago *'}
                     </td>
                   </tr>
                 )}
@@ -256,38 +572,71 @@ export default function ReceiptModal({ transaction, exchangeRate, onClose }: Rec
                 <span>Bs {transactionIva.toFixed(2)}</span>
               </div>
               
-              {/* GRAN TOTAL RESALTADO */}
               <div style={{ fontSize: '13px', fontWeight: 'bold', margin: '5px 0', padding: '3px 0', borderTop: '1px solid #000', borderBottom: '1px solid #000' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
-                  <span>TOTAL A PAGAR:</span>
+                  <span>{isCredito ? 'TOTAL ADEUDADO:' : 'TOTAL A PAGAR:'}</span>
                   <span>Bs {transactionTotal.toFixed(2)}</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#333', fontWeight: 'normal', marginTop: '2px' }}>
                   <span>REF. DIVISAS:</span>
-                  <span>$ {(transactionTotal / exchangeRate).toFixed(2)}</span>
+                  <span>$ {(transactionTotal / transactionExchangeRate).toFixed(2)}</span>
                 </div>
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', margin: '2px 0' }}>
-                <span>MONTO RECIBIDO:</span>
-                <span>Bs {transactionPaidBs.toFixed(2)}</span>
-              </div>
-              {transactionChange > 0 && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', margin: '2px 0', fontWeight: 'bold' }}>
-                  <span>SU CAMBIO (VUELTO):</span>
-                  <span>Bs {transactionChange.toFixed(2)}</span>
+              {isCredito && transactionExchangeRate && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '8px', margin: '2px 0', color: '#e67e22' }}>
+                  <span>TASA BCV APLICADA:</span>
+                  <span>1 USD = Bs {transactionExchangeRate.toFixed(2)}</span>
                 </div>
+              )}
+
+              {!isCredito && (
+                <>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', margin: '2px 0' }}>
+                    <span>MONTO RECIBIDO:</span>
+                    <span>Bs {transactionPaidBs.toFixed(2)}</span>
+                  </div>
+                  {transactionChange > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', margin: '2px 0', fontWeight: 'bold' }}>
+                      <span>SU CAMBIO (VUELTO):</span>
+                      <span>Bs {transactionChange.toFixed(2)}</span>
+                    </div>
+                  )}
+                </>
               )}
             </div>
 
-            {/* MÉTODO DE PAGO */}
-            <div style={{ border: '1px solid #000', padding: '3px', margin: '8px 0', textAlign: 'center', fontWeight: 'bold', fontSize: '10px' }}>
-              FORMA DE PAGO: {paymentMethodLabels[transactionPayMethod] || transactionPayMethod.toUpperCase()}
-            </div>
+            {!isCredito && (
+              <div style={{ border: '1px solid #000', padding: '3px', margin: '8px 0', textAlign: 'center', fontWeight: 'bold', fontSize: '10px' }}>
+                FORMA DE PAGO: {paymentMethodLabels[transactionPayMethod] || transactionPayMethod.toUpperCase()}
+              </div>
+            )}
 
-            {/* FOOTER DE LEY */}
+            {isCredito && (
+              <div style={{ border: '1px dashed #e74c3c', padding: '6px', margin: '8px 0', textAlign: 'center', fontSize: '9px', background: '#fff5f5' }}>
+                <p style={{ margin: '2px 0', fontWeight: 'bold', color: '#e74c3c' }}>📋 ESTE ES UN DOCUMENTO DE CRÉDITO</p>
+                <p style={{ margin: '2px 0' }}>El cliente ha recibido los productos a crédito</p>
+                <p style={{ margin: '2px 0', fontWeight: 'bold' }}>Saldo pendiente: Bs {transactionTotal.toFixed(2)}</p>
+                <p style={{ margin: '2px 0', fontSize: '8px' }}>Conserve este documento como comprobante de deuda</p>
+              </div>
+            )}
+
+            {isCobroDeuda && (
+              <div style={{ border: '1px solid #27ae60', padding: '4px', margin: '8px 0', textAlign: 'center', fontSize: '9px', background: '#e8f8f5' }}>
+                <p style={{ margin: '2px 0', fontWeight: 'bold', color: '#27ae60' }}>✓ PAGO REGISTRADO EXITOSAMENTE</p>
+                <p style={{ margin: '2px 0', fontSize: '8px' }}>La deuda ha sido actualizada</p>
+              </div>
+            )}
+
             <div style={{ textAlign: 'center', marginTop: '12px', paddingTop: '6px', borderTop: '1px dashed #000', fontSize: '8px' }}>
-              <p style={{ margin: '2px 0', fontWeight: 'bold' }}>¡GRACIAS POR SU PREFERENCIA!</p>
+              {isCredito ? (
+                <>
+                  <p style={{ margin: '2px 0', fontWeight: 'bold' }}>CONDICIONES DE CRÉDITO</p>
+                  <p style={{ margin: '2px 0' }}>El pago debe realizarse en la fecha acordada</p>
+                </>
+              ) : (
+                <p style={{ margin: '2px 0', fontWeight: 'bold' }}>¡GRACIAS POR SU PREFERENCIA!</p>
+              )}
               <p style={{ margin: '2px 0' }}>CONSERVE ESTE TICKET COMO COMPROBANTE</p>
               <p style={{ fontSize: '7px', marginTop: '6px', color: '#444' }}>Desarrollado por MasterPOS v1.0</p>
             </div>
@@ -295,18 +644,30 @@ export default function ReceiptModal({ transaction, exchangeRate, onClose }: Rec
         </div>
 
         {/* ACCIONES DEL PANEL INFERIOR */}
-        <div className="p-3 bg-gray-50 border-t border-gray-200 flex gap-3">
+        <div className="p-3 bg-gray-50 border-t border-gray-200 flex gap-2">
           <button
             onClick={onClose}
             className="flex-1 py-2 bg-gray-200 text-slate-800 font-bold text-xs rounded-lg hover:bg-gray-300 transition-colors uppercase tracking-wider"
           >
-            Cerrar Ventana
+            Cerrar
+          </button>
+          <button
+            onClick={handleExportPDF}
+            className="flex-1 py-2 bg-red-600 text-white font-bold text-xs rounded-lg hover:bg-red-700 transition-colors flex items-center justify-center gap-2 uppercase tracking-wider shadow-sm"
+          >
+            <FileText size={14} /> PDF
+          </button>
+          <button
+            onClick={handleSharePDF}
+            className="flex-1 py-2 bg-green-600 text-white font-bold text-xs rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center gap-2 uppercase tracking-wider shadow-sm"
+          >
+            <Share2 size={14} /> Compartir
           </button>
           <button
             onClick={handlePrint}
             className="flex-1 py-2 bg-[#D4A017] text-slate-950 font-black text-xs rounded-lg hover:bg-[#C4940F] transition-colors flex items-center justify-center gap-2 uppercase tracking-wider shadow-sm"
           >
-            <Printer size={14} /> Imprimir Copia
+            <Printer size={14} /> Imprimir
           </button>
         </div>
 

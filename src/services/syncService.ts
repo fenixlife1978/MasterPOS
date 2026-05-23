@@ -4,7 +4,7 @@ import { db } from '@/lib/firebase';
 import { 
   doc, setDoc, deleteDoc, 
   collection, query, onSnapshot, limit,
-  orderBy, writeBatch, getDoc
+  orderBy, writeBatch, getDoc, getDocs, where
 } from 'firebase/firestore';
 
 interface PendingOperation {
@@ -69,8 +69,15 @@ const processQueue = async () => {
         await setDoc(doc(db, 'accounting_entries', data.id.toString()), { ...data, createdAt: Date.now() });
       } else if (op.type === 'saveSupplier') {
         await setDoc(doc(db, 'suppliers', data.id.toString()), { ...data, updatedAt: Date.now() });
-      } else if (op.type === 'saveInvoice') {
-        await setDoc(doc(db, 'supplier_invoices', data.id.toString()), { ...data, updatedAt: Date.now() });
+      } else if (op.type === 'savePurchaseInvoice') {
+        await setDoc(doc(db, 'purchase_invoices', data.id.toString()), { ...data });
+      } else if (op.type === 'savePurchaseInvoiceItems') {
+        const batch = writeBatch(db);
+        data.items.forEach((item: any) => {
+          const itemDoc = doc(db, 'purchase_items', item.id);
+          batch.set(itemDoc, { ...item, createdAt: Date.now() });
+        });
+        await batch.commit();
       } else if (op.type === 'saveSupplierPayment') {
         await setDoc(doc(db, 'supplier_payments', data.id.toString()), { ...data, createdAt: Date.now() });
       } else if (op.type === 'saveTerminal') {
@@ -202,16 +209,38 @@ export const syncService = {
     });
   },
 
-  // Facturas de Proveedores
-  async saveInvoice(inv: any) {
+  // Facturas de Compras (Collection: purchase_invoices)
+  async savePurchaseInvoice(invoice: any) {
     if (!db) return;
-    if (!isOnline) return addToQueue('saveInvoice', inv);
-    await setDoc(doc(db, 'supplier_invoices', inv.id.toString()), { ...cleanObject(inv), updatedAt: Date.now() });
+    if (!isOnline) return addToQueue('savePurchaseInvoice', invoice);
+    await setDoc(doc(db, 'purchase_invoices', invoice.id.toString()), cleanObject(invoice));
   },
-  subscribeToInvoices(callback: (data: any[]) => void) {
+  async deletePurchaseInvoice(id: number) {
+    if (!db) return;
+    await deleteDoc(doc(db, 'purchase_invoices', id.toString()));
+  },
+  subscribeToPurchaseInvoices(callback: (data: any[]) => void) {
     if (!db) return () => {};
-    return onSnapshot(collection(db, 'supplier_invoices'), (snap) => {
+    return onSnapshot(query(collection(db, 'purchase_invoices'), orderBy('date', 'desc')), (snap) => {
       callback(snap.docs.map(d => ({ id: parseInt(d.id), ...d.data() })));
+    });
+  },
+
+  // Items de Facturas de Compras (Collection: purchase_items)
+  async savePurchaseInvoiceItems(invoiceId: number, items: any[]) {
+    if (!db) return;
+    if (!isOnline) return addToQueue('savePurchaseInvoiceItems', { invoiceId, items });
+    const batch = writeBatch(db);
+    items.forEach((item) => {
+      const itemDoc = doc(db, 'purchase_items', item.id);
+      batch.set(itemDoc, { ...cleanObject(item), createdAt: Date.now() });
+    });
+    await batch.commit();
+  },
+  subscribeToPurchaseItems(callback: (items: any[]) => void) {
+    if (!db) return () => {};
+    return onSnapshot(collection(db, 'purchase_items'), (snap) => {
+      callback(snap.docs.map((doc) => doc.data()));
     });
   },
 
@@ -258,20 +287,16 @@ export const syncService = {
     });
   },
 
-  // Caja (Firestore) - CORREGIDO: mantiene los txs del día
+  // Caja (Firestore)
   async saveRegister(reg: any) {
     if (!db) return;
     if (!isOnline) return addToQueue('saveRegister', reg);
     
-    // Obtener el registro actual para preservar las transacciones existentes
     const currentDoc = await getDoc(doc(db, 'register', 'current'));
     const currentTxs = currentDoc.exists() ? currentDoc.data().txs || [] : [];
-    
-    // Combinar las transacciones existentes con las nuevas
     const newTxs = reg.txs || [];
     const allTxs = [...currentTxs, ...newTxs];
     
-    // Eliminar duplicados por id
     const uniqueTxs = allTxs.filter((tx: any, index: number, self: any[]) => 
       index === self.findIndex((t: any) => t.id === tx.id)
     );

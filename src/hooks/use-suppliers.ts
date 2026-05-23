@@ -15,7 +15,7 @@ export function useSuppliers() {
     if (!user) return;
 
     const unsubSuppliers = syncService.subscribeToSuppliers(setSuppliers);
-    const unsubInvoices = syncService.subscribeToInvoices(setInvoices);
+    const unsubInvoices = syncService.subscribeToPurchaseInvoices(setInvoices);
     const unsubPayments = syncService.subscribeToSupplierPayments(setPayments as any);
     setIsHydrated(true);
 
@@ -41,7 +41,7 @@ export function useSuppliers() {
 
   const addInvoice = useCallback((inv: any) => {
     const id = inv.id || Date.now();
-    return syncService.saveInvoice({ ...inv, id, createdAt: new Date().toISOString() });
+    return syncService.savePurchaseInvoice({ ...inv, id });
   }, []);
 
   const addPayment = useCallback(async (p: any) => {
@@ -49,13 +49,13 @@ export function useSuppliers() {
     // 1. Guardar el registro del pago
     await syncService.saveSupplierPayment({ ...p, id, createdAt: new Date().toISOString() });
     
-    // 2. Actualizar la factura relacionada (paidAmount y status) en Firestore
+    // 2. Actualizar la factura relacionada en la nueva colección
     const invoice = invoices.find(inv => inv.id === p.invoiceId);
     if (invoice) {
       const newPaidAmount = (invoice.paidAmount || 0) + p.amount;
       const newStatus = newPaidAmount >= invoice.total ? 'pagada' : 'parcial';
       
-      await syncService.saveInvoice({
+      await syncService.savePurchaseInvoice({
         ...invoice,
         paidAmount: newPaidAmount,
         status: newStatus
@@ -63,7 +63,6 @@ export function useSuppliers() {
     }
   }, [invoices]);
 
-  // Funciones auxiliares para filtrar datos en la UI
   const getSupplierInvoices = useCallback((supplierId: number) => {
     return invoices.filter(inv => inv.supplierId === supplierId);
   }, [invoices]);

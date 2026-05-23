@@ -16,9 +16,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { Supplier, SupplierInvoice, SupplierPayment, Product } from '@/lib/types';
+import { syncService } from '@/services/syncService';
 
 interface PurchaseHistoryItem {
-  id: number;
+  id: string;
   productId: number;
   productName: string;
   qty: number;
@@ -31,9 +32,15 @@ interface ExpandedInvoice {
   items: PurchaseHistoryItem[];
 }
 
+// Extender SupplierInvoice para propiedades adicionales
+interface ExtendedSupplierInvoice extends SupplierInvoice {
+  itemsCount?: number;
+  exchangeRate?: number;
+}
+
 export default function SuppliersModule() {
   const state = usePOSState();
-  const { suppliers, addSupplier, updateSupplier, deleteSupplier, loading } = useSuppliers();
+  const { suppliers, addSupplier, updateSupplier, deleteSupplier } = useSuppliers();
   const [search, setSearch] = useState('');
   const [isAdding, setIsAdding] = useState(false);
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
@@ -52,32 +59,39 @@ export default function SuppliersModule() {
   });
   const { toast } = useToast();
 
-  // Cargar facturas desde localStorage (simulado - conectar con tu servicio real)
-  const [invoices, setInvoices] = useState<SupplierInvoice[]>([]);
+  // Cargar facturas desde Firestore
+  const [invoices, setInvoices] = useState<ExtendedSupplierInvoice[]>([]);
   const [purchaseItems, setPurchaseItems] = useState<Record<number, PurchaseHistoryItem[]>>({});
 
+  // Suscribirse a facturas de compras desde Firestore
   useEffect(() => {
-    // Cargar facturas guardadas
-    const savedInvoices = localStorage.getItem('supplier_invoices');
-    if (savedInvoices) {
-      setInvoices(JSON.parse(savedInvoices));
-    }
-    const savedItems = localStorage.getItem('purchase_items');
-    if (savedItems) {
-      setPurchaseItems(JSON.parse(savedItems));
-    }
-  }, []);
-
-  // Guardar facturas
-  const saveInvoice = (invoice: SupplierInvoice, items: PurchaseHistoryItem[]) => {
-    const newInvoices = [...invoices, invoice];
-    setInvoices(newInvoices);
-    localStorage.setItem('supplier_invoices', JSON.stringify(newInvoices));
+    const unsubscribeInvoices = syncService.subscribeToPurchaseInvoices((data) => {
+      setInvoices(data);
+    });
     
-    const newItems = { ...purchaseItems, [invoice.id]: items };
-    setPurchaseItems(newItems);
-    localStorage.setItem('purchase_items', JSON.stringify(newItems));
-  };
+    const unsubscribeItems = syncService.subscribeToPurchaseItems((data) => {
+      // Agrupar items por invoiceId
+      const grouped = data.reduce((acc, item) => {
+        const invoiceId = item.invoiceId;
+        if (!acc[invoiceId]) acc[invoiceId] = [];
+        acc[invoiceId].push({
+          id: item.id,
+          productId: item.productId,
+          productName: item.productName,
+          qty: item.qty,
+          costUsd: item.costUsd,
+          totalUsd: item.totalUsd
+        });
+        return acc;
+      }, {} as Record<number, PurchaseHistoryItem[]>);
+      setPurchaseItems(grouped);
+    });
+    
+    return () => {
+      unsubscribeInvoices();
+      unsubscribeItems();
+    };
+  }, []);
 
   // Filtrar proveedores
   const filteredSuppliers = useMemo(() => {
@@ -253,6 +267,8 @@ export default function SuppliersModule() {
                   {supplierInvoices.map(inv => {
                     const isExpanded = expandedInvoice?.invoiceId === inv.id;
                     const items = purchaseItems[inv.id] || [];
+                    const itemsCount = inv.itemsCount || items.length;
+                    const exchangeRate = (inv as any).exchangeRate || 'N/A';
                     
                     return (
                       <div key={inv.id} className="border border-[#9E9E9E] rounded-lg overflow-hidden">
@@ -271,7 +287,7 @@ export default function SuppliersModule() {
                                 Factura N° {inv.invoiceNumber}
                               </p>
                               <p className={cn("text-[9px]", isExpanded ? "text-white/60" : "text-black/50")}>
-                                {formatDate(inv.date)} • {inv.itemsCount || items.length} productos
+                                {formatDate(inv.date)} • {itemsCount} productos
                               </p>
                             </div>
                           </div>
@@ -280,7 +296,7 @@ export default function SuppliersModule() {
                               ${inv.total.toFixed(2)}
                             </p>
                             <p className={cn("text-[8px] font-bold", isExpanded ? "text-white/40" : "text-black/40")}>
-                              Tasa: Bs {inv.exchangeRate?.toFixed(2) || 'N/A'}
+                              Tasa: Bs {exchangeRate !== 'N/A' ? exchangeRate.toFixed(2) : 'N/A'}
                             </p>
                           </div>
                         </div>

@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
-import { Product, Supplier } from '@/lib/types';
+import { Product, SupplierInvoice } from '@/lib/types';
 import { syncService } from '@/services/syncService';
 
 interface PurchaseItemTemp {
@@ -86,16 +86,16 @@ export default function RegisterPurchase() {
       const timestamp = new Date().toISOString();
       const invoiceId = Date.now();
       
-      // 1. Guardar la factura en purchase_invoices (Esquema estricto)
-      const newInvoice = {
+      // 1. Guardar la factura en purchase_invoices (ESQUEMA ESTRICTO SOLICITADO)
+      const newInvoice: SupplierInvoice = {
         id: invoiceId,
         supplierId: parseInt(selectedSupplierId),
         invoiceNumber: invoiceNumber,
         date: timestamp,
         dueDate: timestamp,
-        subtotal: subtotal,
-        iva: iva,
-        total: totalInvoiceUsd,
+        subtotal: Number(subtotal.toFixed(4)),
+        iva: Number(iva.toFixed(4)),
+        total: Number(totalInvoiceUsd.toFixed(4)),
         paidAmount: 0,
         status: 'pendiente',
         notes: '',
@@ -106,7 +106,7 @@ export default function RegisterPurchase() {
       
       await syncService.savePurchaseInvoice(newInvoice);
       
-      // 2. Guardar los items de la factura
+      // 2. Guardar los items de la factura en purchase_items
       const items = tempItems.map((item, idx) => ({
         id: `${invoiceId}_${idx}`,
         invoiceId: invoiceId,
@@ -114,18 +114,20 @@ export default function RegisterPurchase() {
         productName: item.name,
         qty: item.qty,
         costUsd: item.costUsd,
-        totalUsd: item.qty * item.costUsd
+        totalUsd: Number((item.qty * item.costUsd).toFixed(4))
       }));
       
       await syncService.savePurchaseInvoiceItems(invoiceId, items);
       
-      // 3. Actualizar productos y generar Kardex
+      // 3. Actualizar productos y generar Kardex (lógica local para vista inmediata)
       for (const item of tempItems) {
         const product = state.products.find(p => p.id === item.productId);
         if (product) {
           const currentStock = product.stock;
           const currentCost = product.costUsd || 0;
           const newStock = currentStock + item.qty;
+          
+          // Costo Promedio Ponderado
           const newAverageCost = ((currentStock * currentCost) + (item.qty * item.costUsd)) / newStock;
           
           const profitPercent = product.profitPercent || 30;
@@ -143,14 +145,14 @@ export default function RegisterPurchase() {
         }
       }
       
-      alert('✅ Compra registrada exitosamente');
+      alert('✅ Compra registrada exitosamente en la colección purchase_invoices');
       setTempItems([]);
       setInvoiceNumber('');
       setSelectedSupplierId('');
       
     } catch (error) {
       console.error('Error al registrar compra:', error);
-      alert('❌ Error al registrar la compra');
+      alert('❌ Error al registrar la compra en Firestore');
     }
     
     setIsProcessing(false);
@@ -164,7 +166,7 @@ export default function RegisterPurchase() {
             <h2 className="text-xl font-headline font-black text-black flex items-center gap-2">
               <Truck size={24} className="text-primary" /> Registrar Entrada por Compra
             </h2>
-            <p className="text-xs text-black/50">Sincronizado con colecciones purchase_invoices y purchase_items</p>
+            <p className="text-xs text-black/50">Datos almacenados en colección: purchase_invoices</p>
           </div>
         </div>
 
@@ -173,7 +175,7 @@ export default function RegisterPurchase() {
             <div className="lg:col-span-1 space-y-4">
               <div className="bg-white border border-[#9E9E9E] rounded-xl p-4 shadow-sm">
                 <h3 className="text-[11px] font-black uppercase text-black/60 mb-3 flex items-center gap-2">
-                  <Receipt size={13} /> Datos del Proveedor
+                  <Receipt size={13} /> Datos de la Factura
                 </h3>
                 <div className="space-y-3">
                   <div>
@@ -181,7 +183,7 @@ export default function RegisterPurchase() {
                     <select 
                       value={selectedSupplierId}
                       onChange={(e) => setSelectedSupplierId(e.target.value)}
-                      className="w-full h-8 border border-[#9E9E9E] rounded-lg px-2 text-sm font-bold"
+                      className="w-full h-8 border border-[#9E9E9E] rounded-lg px-2 text-sm font-bold bg-white"
                     >
                       <option value="">Seleccionar Proveedor...</option>
                       {suppliers.map(s => (
@@ -199,7 +201,7 @@ export default function RegisterPurchase() {
                     />
                   </div>
                   <div>
-                    <label className="text-[9px] font-bold uppercase text-black/40">Tasa BCV (Bs/$)</label>
+                    <label className="text-[9px] font-bold uppercase text-black/40">Tasa BCV Aplicada (Bs/$)</label>
                     <div className="relative">
                       <DollarSign size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-black/30" />
                       <Input 
@@ -216,13 +218,13 @@ export default function RegisterPurchase() {
 
               <div className="bg-white border border-[#9E9E9E] rounded-xl p-4 shadow-sm">
                 <h3 className="text-[11px] font-black uppercase text-black/60 mb-3 flex items-center gap-2">
-                  <Package size={13} /> Añadir Productos
+                  <Package size={13} /> Añadir Productos al Lote
                 </h3>
                 <div className="space-y-3">
                   <div className="relative">
                     <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-black/30" />
                     <Input 
-                      placeholder="Nombre o código..."
+                      placeholder="Buscar producto..."
                       value={productQuery}
                       onChange={(e) => setProductQuery(e.target.value)}
                       className="pl-7 h-8 text-sm"
@@ -249,19 +251,19 @@ export default function RegisterPurchase() {
 
                   {selectedProduct && (
                     <div className="bg-primary/5 border border-primary/20 rounded-lg p-3">
-                      <p className="text-[9px] font-black text-primary uppercase mb-1">Seleccionado: {selectedProduct.name}</p>
+                      <p className="text-[9px] font-black text-primary uppercase mb-1">Producto: {selectedProduct.name}</p>
                       <div className="grid grid-cols-2 gap-2">
                         <div>
-                          <label className="text-[8px] font-bold text-black/50 uppercase">Cant.</label>
+                          <label className="text-[8px] font-bold text-black/50 uppercase">Cant. Entrante</label>
                           <Input type="number" value={itemQty} onChange={(e) => setItemQty(e.target.value)} className="h-7 text-sm" />
                         </div>
                         <div>
-                          <label className="text-[8px] font-bold text-black/50 uppercase">Costo USD</label>
+                          <label className="text-[8px] font-bold text-black/50 uppercase">Costo USD (Unit)</label>
                           <Input type="number" step="0.01" value={itemCostUsd} onChange={(e) => setItemCostUsd(e.target.value)} className="h-7 text-sm font-mono" />
                         </div>
                       </div>
                       <Button onClick={handleAddTempItem} className="w-full mt-2 bg-primary text-black font-black h-7 text-xs">
-                        <Plus size={12} className="mr-1" /> AÑADIR
+                        <Plus size={12} className="mr-1" /> AGREGAR A LISTA
                       </Button>
                     </div>
                   )}
@@ -272,9 +274,9 @@ export default function RegisterPurchase() {
             <div className="lg:col-span-2 flex flex-col">
               <div className="bg-white border border-[#9E9E9E] rounded-xl shadow-sm overflow-hidden flex flex-col">
                 <div className="bg-[#1A2C4E] p-3 text-white flex justify-between items-center">
-                  <h3 className="text-xs font-black uppercase tracking-wider">Ítems en Factura ({tempItems.length})</h3>
+                  <h3 className="text-xs font-black uppercase tracking-wider">Detalle del Ingreso ({tempItems.length} items)</h3>
                   <div className="text-right">
-                    <p className="text-[9px] text-white/60">Total USD</p>
+                    <p className="text-[9px] text-white/60">Total Factura USD</p>
                     <p className="text-lg font-black text-primary">${totalInvoiceUsd.toFixed(2)}</p>
                   </div>
                 </div>
@@ -292,7 +294,7 @@ export default function RegisterPurchase() {
                     </TableHeader>
                     <TableBody>
                       {tempItems.length === 0 ? (
-                        <TableRow><TableCell colSpan={5} className="text-center py-12 text-black/30 italic text-xs">No hay productos en la lista</TableCell></TableRow>
+                        <TableRow><TableCell colSpan={5} className="text-center py-12 text-black/30 italic text-xs">Añada productos para comenzar</TableCell></TableRow>
                       ) : (
                         tempItems.map((item, idx) => (
                           <TableRow key={idx}>
@@ -311,7 +313,7 @@ export default function RegisterPurchase() {
                 <div className="bg-[#F5F5F5] p-3 border-t flex justify-between items-center">
                   <div className="flex gap-3">
                     <div className="bg-white border border-gray-300 rounded px-2 py-1">
-                      <span className="text-[8px] block text-gray-500 uppercase">Total Bs</span>
+                      <span className="text-[8px] block text-gray-500 uppercase">Total en Bolívares</span>
                       <span className="text-xs font-black text-secondary">Bs {totalInvoiceBs.toFixed(2)}</span>
                     </div>
                   </div>
@@ -320,7 +322,7 @@ export default function RegisterPurchase() {
                     onClick={handleProcessPurchase}
                     className="bg-primary hover:brightness-110 text-black font-black px-6 h-8 text-xs"
                   >
-                    {isProcessing ? <Loader2 size={14} className="animate-spin" /> : <><Save size={14} className="mr-1" /> PROCESAR</>}
+                    {isProcessing ? <Loader2 size={14} className="animate-spin" /> : <><Save size={14} className="mr-1" /> PROCESAR COMPRA</>}
                   </Button>
                 </div>
               </div>

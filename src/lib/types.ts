@@ -122,6 +122,8 @@ export interface SupplierInvoice {
   paidAmount: number;
   status: 'pendiente' | 'parcial' | 'pagada';
   notes: string;
+  exchangeRate: number; // Tasa BCV al momento de la compra
+  itemsCount: number;   // Cantidad de productos en la factura
   createdAt: string;
 }
 

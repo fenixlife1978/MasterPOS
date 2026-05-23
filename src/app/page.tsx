@@ -8,12 +8,10 @@ import { useToast } from '@/hooks/use-toast';
 import Sidebar from '@/components/layout/sidebar';
 import Topbar from '@/components/layout/topbar';
 import POSModule from '@/components/pos/pos-module';
-import InventoryModule from '@/components/inventory/inventory-module';
 import ClientsModule from '@/components/customers/clients-module';
 import AccountsModule from '@/components/accounts/accounts-module';
 import CashModule from '@/components/register/cash-module';
 import AdminDashboard from '@/components/dashboard/AdminDashboard';
-import SuppliersModule from '@/components/suppliers/suppliers-module';
 import AccountingModule from '@/components/accounting/accounting-module';
 import ReturnsModule from '@/components/returns/returns-module';
 import RegisterPurchase from '@/components/inventory/RegisterPurchase';
@@ -100,14 +98,17 @@ export default function LicoPOSApp() {
         <div className="flex-1 overflow-hidden relative">
           {state.currentPage === 'dashboard' && <AdminDashboard state={state} />}
           {state.currentPage === 'pos' && <POSModule state={state} />}
-          {state.currentPage === 'inventario' && <InventoryModule state={state} />}
+          
+          {/* ✅ MODELO DE ENTRADA ÚNICA: Inventario y Proveedores ahora redirigen a Registrar Compra */}
+          {(state.currentPage === 'inventario' || state.currentPage === 'proveedores' || state.currentPage === 'registrar_compra') && (
+            <RegisterPurchase />
+          )}
+          
           {state.currentPage === 'clientes' && <ClientsModule state={state} />}
           {state.currentPage === 'cuentas' && <AccountsModule state={state} />}
-          {state.currentPage === 'proveedores' && <SuppliersModule />}
           {state.currentPage === 'contabilidad' && <AccountingModule />}
           {state.currentPage === 'devoluciones' && <ReturnsModule />}
           {state.currentPage === 'caja' && <CashModule state={state} />}
-          {state.currentPage === 'registrar_compra' && <RegisterPurchase />}
         </div>
       </main>
       <Toaster />

@@ -160,6 +160,9 @@ export default function SuppliersModule() {
       {/* Modal Proveedor */}
       <Dialog open={showSupplierModal} onOpenChange={setShowSupplierModal}>
         <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-md p-0 rounded-2xl shadow-2xl overflow-hidden">
+          <DialogHeader className="sr-only">
+            <DialogTitle>{editingSupplier ? 'Editar Perfil' : 'Nuevo Proveedor'}</DialogTitle>
+          </DialogHeader>
           <div className="bg-[#1A2C4E] p-4 text-white">
             <div className="flex justify-between items-center">
               <div className="flex items-center gap-2">

@@ -219,6 +219,9 @@ export default function TerminalManager() {
 
       <Dialog open={showModal} onOpenChange={setShowModal}>
         <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-md p-0 overflow-hidden rounded-2xl">
+          <DialogHeader className="sr-only">
+            <DialogTitle>{editingTerminal ? 'Editar Terminal' : 'Nueva Terminal'}</DialogTitle>
+          </DialogHeader>
           <div className="bg-[#1A2C4E] p-4 text-white"><h3 className="text-lg font-black">{editingTerminal ? 'Editar Terminal' : 'Nueva Terminal'}</h3></div>
           <div className="p-5 space-y-4">
             <div><label className="text-[10px] font-bold text-black/60 uppercase block mb-1">Nombre de la Terminal *</label><Input value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} placeholder="Ej: Caja Principal" /></div>

@@ -4,7 +4,7 @@ import { db } from '@/lib/firebase';
 import { 
   doc, setDoc, deleteDoc, 
   collection, query, onSnapshot, limit,
-  orderBy, writeBatch
+  orderBy, writeBatch, getDoc
 } from 'firebase/firestore';
 
 interface PendingOperation {
@@ -79,6 +79,10 @@ const processQueue = async () => {
         await setDoc(doc(db, 'cash_closings', data.id.toString()), { ...data, createdAt: Date.now() });
       } else if (op.type === 'saveRegister') {
         await setDoc(doc(db, 'register', 'current'), { ...data, updatedAt: Date.now() });
+      } else if (op.type === 'saveClient') {
+        await setDoc(doc(db, 'clients', data.id.toString()), { ...data, updatedAt: Date.now() });
+      } else if (op.type === 'saveAccount') {
+        await setDoc(doc(db, 'accounts', data.id.toString()), { ...data, updatedAt: Date.now() });
       }
     } catch (error) {
       op.retries++;
@@ -124,6 +128,7 @@ export const syncService = {
   // Clientes
   async saveClient(client: any) {
     if (!db) return;
+    if (!isOnline) return addToQueue('saveClient', client);
     await setDoc(doc(db, 'clients', client.id.toString()), { ...cleanObject(client), updatedAt: Date.now() });
   },
   async deleteClient(id: number) {
@@ -157,6 +162,7 @@ export const syncService = {
   // Cuentas por Cobrar
   async saveAccount(acc: any) {
     if (!db) return;
+    if (!isOnline) return addToQueue('saveAccount', acc);
     await setDoc(doc(db, 'accounts', acc.id.toString()), { ...cleanObject(acc), updatedAt: Date.now() });
   },
   subscribeToAccounts(callback: (data: any[]) => void) {
@@ -182,6 +188,7 @@ export const syncService = {
   // Proveedores
   async saveSupplier(s: any) {
     if (!db) return;
+    if (!isOnline) return addToQueue('saveSupplier', s);
     await setDoc(doc(db, 'suppliers', s.id.toString()), { ...cleanObject(s), updatedAt: Date.now() });
   },
   async deleteSupplier(id: number) {
@@ -195,9 +202,10 @@ export const syncService = {
     });
   },
 
-  // Facturas
+  // Facturas de Proveedores
   async saveInvoice(inv: any) {
     if (!db) return;
+    if (!isOnline) return addToQueue('saveInvoice', inv);
     await setDoc(doc(db, 'supplier_invoices', inv.id.toString()), { ...cleanObject(inv), updatedAt: Date.now() });
   },
   subscribeToInvoices(callback: (data: any[]) => void) {
@@ -207,9 +215,10 @@ export const syncService = {
     });
   },
 
-  // Pagos
+  // Pagos a Proveedores
   async saveSupplierPayment(p: any) {
     if (!db) return;
+    if (!isOnline) return addToQueue('saveSupplierPayment', p);
     await setDoc(doc(db, 'supplier_payments', p.id.toString()), { ...cleanObject(p), createdAt: Date.now() });
   },
   subscribeToSupplierPayments(callback: (data: any[]) => void) {
@@ -249,13 +258,32 @@ export const syncService = {
     });
   },
 
-  // Caja (Firestore)
+  // Caja (Firestore) - CORREGIDO: mantiene los txs del día
   async saveRegister(reg: any) {
     if (!db) return;
     if (!isOnline) return addToQueue('saveRegister', reg);
+    
+    // Obtener el registro actual para preservar las transacciones existentes
+    const currentDoc = await getDoc(doc(db, 'register', 'current'));
+    const currentTxs = currentDoc.exists() ? currentDoc.data().txs || [] : [];
+    
+    // Combinar las transacciones existentes con las nuevas
+    const newTxs = reg.txs || [];
+    const allTxs = [...currentTxs, ...newTxs];
+    
+    // Eliminar duplicados por id
+    const uniqueTxs = allTxs.filter((tx: any, index: number, self: any[]) => 
+      index === self.findIndex((t: any) => t.id === tx.id)
+    );
+    
     const cleaned = cleanObject(reg);
     delete cleaned.txs;
-    await setDoc(doc(db, 'register', 'current'), { ...cleaned, updatedAt: Date.now() });
+    
+    await setDoc(doc(db, 'register', 'current'), { 
+      ...cleaned, 
+      txs: uniqueTxs,
+      updatedAt: Date.now() 
+    });
   },
   async clearRegister() {
     if (!db) return;

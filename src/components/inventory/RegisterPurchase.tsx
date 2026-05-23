@@ -1,5 +1,3 @@
-'use client';
-
 import { useState, useMemo } from 'react';
 import { usePOSState } from '@/hooks/use-pos-state';
 import { useSuppliers } from '@/hooks/use-suppliers';
@@ -26,7 +24,7 @@ export default function RegisterPurchase() {
   const [invoiceNumber, setInvoiceNumber] = useState('');
   const [exchangeRate, setExchangeRate] = useState(state.exchangeRate.toString());
   
-  const [productQuery, setQuery] = useState('');
+  const [productQuery, setProductQuery] = useState('');
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [itemQty, setItemQty] = useState('1');
   const [itemCostUsd, setItemCostUsd] = useState('');
@@ -64,7 +62,7 @@ export default function RegisterPurchase() {
 
     // Reset campos de búsqueda
     setSelectedProduct(null);
-    setQuery('');
+    setProductQuery('');
     setItemQty('1');
     setItemCostUsd('');
   };
@@ -103,219 +101,221 @@ export default function RegisterPurchase() {
   };
 
   return (
-    <div className="p-6 h-full overflow-y-auto scrollbar-thin bg-background">
-      <div className="mb-6 flex justify-between items-center">
-        <div>
-          <h2 className="text-2xl font-headline font-black text-black flex items-center gap-2">
-            <Truck size={28} className="text-primary" /> Registrar Entrada por Compra
-          </h2>
-          <p className="text-sm text-black/50">Ingreso masivo de mercancía con recalculo de costo promedio</p>
+    <div className="h-full w-full overflow-hidden">
+      <div className="h-full flex flex-col overflow-hidden">
+        {/* Header compacto - SIN PADDING EXCESIVO */}
+        <div className="flex justify-between items-center flex-shrink-0">
+          <div>
+            <h2 className="text-xl font-headline font-black text-black flex items-center gap-2">
+              <Truck size={24} className="text-primary" /> Registrar Entrada por Compra
+            </h2>
+            <p className="text-xs text-black/50">Ingreso masivo de mercancía con recalculo de costo promedio</p>
+          </div>
         </div>
-      </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
-        {/* COLUMNA IZQUIERDA: CABECERA Y BUSCADOR */}
-        <div className="lg:col-span-1 space-y-6">
-          
-          {/* Datos de la Factura */}
-          <div className="bg-white border border-[#9E9E9E] rounded-xl p-5 shadow-md">
-            <h3 className="text-xs font-black uppercase text-black/60 mb-4 flex items-center gap-2">
-              <Receipt size={14} /> Datos del Proveedor
-            </h3>
-            <div className="space-y-4">
-              <div>
-                <label className="text-[10px] font-bold uppercase text-black/40">Proveedor</label>
-                <select 
-                  value={selectedSupplierId}
-                  onChange={(e) => setSelectedSupplierId(e.target.value)}
-                  className="w-full h-10 border border-[#9E9E9E] rounded-lg px-3 text-sm font-bold"
-                >
-                  <option value="">Seleccionar Proveedor...</option>
-                  {suppliers.map(s => (
-                    <option key={s.id} value={s.id}>{s.name} ({s.rif})</option>
-                  ))}
-                </select>
+        <div className="flex-1 overflow-y-auto scrollbar-thin mt-3">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            
+            {/* COLUMNA IZQUIERDA */}
+            <div className="lg:col-span-1 space-y-4">
+              
+              {/* Datos de la Factura */}
+              <div className="bg-white border border-[#9E9E9E] rounded-xl p-4 shadow-sm">
+                <h3 className="text-[11px] font-black uppercase text-black/60 mb-3 flex items-center gap-2">
+                  <Receipt size={13} /> Datos del Proveedor
+                </h3>
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-[9px] font-bold uppercase text-black/40">Proveedor</label>
+                    <select 
+                      value={selectedSupplierId}
+                      onChange={(e) => setSelectedSupplierId(e.target.value)}
+                      className="w-full h-8 border border-[#9E9E9E] rounded-lg px-2 text-sm font-bold"
+                    >
+                      <option value="">Seleccionar Proveedor...</option>
+                      {suppliers.map(s => (
+                        <option key={s.id} value={s.id}>{s.name} ({s.rif})</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[9px] font-bold uppercase text-black/40">N° Factura</label>
+                    <Input 
+                      value={invoiceNumber}
+                      onChange={(e) => setInvoiceNumber(e.target.value)}
+                      placeholder="Ej: 000123"
+                      className="h-8 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[9px] font-bold uppercase text-black/40">Tasa BCV (Bs/$)</label>
+                    <div className="relative">
+                      <DollarSign size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-black/30" />
+                      <Input 
+                        type="number"
+                        step="0.01"
+                        value={exchangeRate}
+                        onChange={(e) => setExchangeRate(e.target.value)}
+                        className="pl-7 h-8 text-sm font-mono"
+                      />
+                    </div>
+                  </div>
+                </div>
               </div>
-              <div>
-                <label className="text-[10px] font-bold uppercase text-black/40">N° Factura Física</label>
-                <Input 
-                  value={invoiceNumber}
-                  onChange={(e) => setInvoiceNumber(e.target.value)}
-                  placeholder="Ej: 000123"
-                  className="font-bold"
-                />
-              </div>
-              <div>
-                <label className="text-[10px] font-bold uppercase text-black/40">Tasa BCV del Día (Bs/$)</label>
-                <div className="relative">
-                  <DollarSign size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-black/30" />
-                  <Input 
-                    type="number"
-                    step="0.01"
-                    value={exchangeRate}
-                    onChange={(e) => setExchangeRate(e.target.value)}
-                    className="pl-9 font-mono font-bold"
-                  />
+
+              {/* Buscador de Productos */}
+              <div className="bg-white border border-[#9E9E9E] rounded-xl p-4 shadow-sm">
+                <h3 className="text-[11px] font-black uppercase text-black/60 mb-3 flex items-center gap-2">
+                  <Package size={13} /> Añadir Productos
+                </h3>
+                <div className="space-y-3">
+                  <div className="relative">
+                    <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-black/30" />
+                    <Input 
+                      placeholder="Nombre o código..."
+                      value={productQuery}
+                      onChange={(e) => setProductQuery(e.target.value)}
+                      className="pl-7 h-8 text-sm"
+                    />
+                    {productResults.length > 0 && (
+                      <div className="absolute top-full left-0 right-0 bg-white border border-[#9E9E9E] rounded-lg shadow-lg z-20 mt-1 overflow-hidden">
+                        {productResults.map(p => (
+                          <button
+                            key={p.id}
+                            onClick={() => {
+                              setSelectedProduct(p);
+                              setProductQuery(p.name);
+                              setItemCostUsd(p.costUsd?.toString() || '');
+                            }}
+                            className="w-full text-left p-2 hover:bg-primary/10 transition-colors border-b border-gray-100 last:border-0 text-xs"
+                          >
+                            <p className="font-bold">{p.name}</p>
+                            <p className="text-[9px] text-black/40">Stock: {p.stock} | Costo: ${p.costUsd?.toFixed(2)}</p>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {selectedProduct && (
+                    <div className="bg-primary/5 border border-primary/20 rounded-lg p-3 animate-in fade-in slide-in-from-top-2">
+                      <p className="text-[9px] font-black text-primary uppercase mb-1">Producto Seleccionado</p>
+                      <p className="text-xs font-bold mb-2">{selectedProduct.name}</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-[8px] font-bold text-black/50 uppercase">Cantidad</label>
+                          <Input 
+                            type="number" 
+                            value={itemQty} 
+                            onChange={(e) => setItemQty(e.target.value)}
+                            className="h-7 text-sm"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[8px] font-bold text-black/50 uppercase">Costo USD</label>
+                          <Input 
+                            type="number" 
+                            step="0.01"
+                            value={itemCostUsd} 
+                            onChange={(e) => setItemCostUsd(e.target.value)}
+                            className="h-7 text-sm font-mono"
+                          />
+                        </div>
+                      </div>
+                      <Button 
+                        onClick={handleAddTempItem}
+                        className="w-full mt-2 bg-primary text-black font-black h-7 text-xs"
+                      >
+                        <Plus size={12} className="mr-1" /> AÑADIR
+                      </Button>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
-          </div>
 
-          {/* Buscador de Productos */}
-          <div className="bg-white border border-[#9E9E9E] rounded-xl p-5 shadow-md">
-            <h3 className="text-xs font-black uppercase text-black/60 mb-4 flex items-center gap-2">
-              <Package size={14} /> Añadir Productos
-            </h3>
-            <div className="space-y-4">
-              <div className="relative">
-                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-black/30" />
-                <Input 
-                  placeholder="Nombre o código..."
-                  value={productQuery}
-                  onChange={(e) => setQuery(e.target.value)}
-                  className="pl-9"
-                />
-                {productResults.length > 0 && (
-                  <div className="absolute top-full left-0 right-0 bg-white border border-[#9E9E9E] rounded-lg shadow-xl z-20 mt-1 overflow-hidden">
-                    {productResults.map(p => (
-                      <button
-                        key={p.id}
-                        onClick={() => {
-                          setSelectedProduct(p);
-                          setQuery(p.name);
-                          setItemCostUsd(p.costUsd?.toString() || '');
-                        }}
-                        className="w-full text-left p-3 hover:bg-primary/10 transition-colors border-b border-gray-100 last:border-0"
-                      >
-                        <p className="text-xs font-bold">{p.name}</p>
-                        <p className="text-[10px] text-black/40">Stock: {p.stock} | Costo: ${p.costUsd?.toFixed(2)}</p>
-                      </button>
-                    ))}
+            {/* COLUMNA DERECHA: TABLA DE REVISIÓN */}
+            <div className="lg:col-span-2 flex flex-col">
+              <div className="bg-white border border-[#9E9E9E] rounded-xl shadow-sm overflow-hidden flex flex-col">
+                <div className="bg-[#1A2C4E] p-3 text-white flex justify-between items-center flex-shrink-0">
+                  <h3 className="text-xs font-black uppercase tracking-wider">Ítems para Ingresar ({tempItems.length})</h3>
+                  <div className="text-right">
+                    <p className="text-[9px] text-white/60">Total Factura</p>
+                    <p className="text-lg font-black text-primary">${totalInvoiceUsd.toFixed(2)}</p>
                   </div>
-                )}
-              </div>
+                </div>
+                
+                <div className="max-h-[350px] overflow-y-auto">
+                  <Table>
+                    <TableHeader className="bg-[#E8E8E8] sticky top-0 z-10">
+                      <TableRow>
+                        <TableHead className="text-[9px] font-black uppercase">Producto</TableHead>
+                        <TableHead className="text-[9px] font-black uppercase text-center w-16">Cant.</TableHead>
+                        <TableHead className="text-[9px] font-black uppercase text-right w-20">Costo $</TableHead>
+                        <TableHead className="text-[9px] font-black uppercase text-right w-20">Costo Bs</TableHead>
+                        <TableHead className="text-[9px] font-black uppercase text-right w-20">Subtotal $</TableHead>
+                        <TableHead className="text-center w-8"></TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {tempItems.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={6} className="text-center py-12 text-black/30 italic text-xs">
+                            No hay productos en la lista
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        tempItems.map((item, idx) => (
+                          <TableRow key={idx} className="hover:bg-[#F5F5F5]">
+                            <TableCell className="font-bold text-xs">{item.name}</TableCell>
+                            <TableCell className="text-center text-xs">{item.qty}</TableCell>
+                            <TableCell className="text-right font-mono text-xs">${item.costUsd.toFixed(2)}</TableCell>
+                            <TableCell className="text-right font-mono text-xs">Bs {(item.costUsd * rateNum).toFixed(2)}</TableCell>
+                            <TableCell className="text-right font-black text-xs">${(item.qty * item.costUsd).toFixed(2)}</TableCell>
+                            <TableCell>
+                              <button 
+                                onClick={() => handleRemoveTempItem(idx)}
+                                className="text-red-500 hover:text-red-700 transition-colors"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
 
-              {selectedProduct && (
-                <div className="bg-primary/5 border border-primary/20 rounded-lg p-4 animate-in fade-in slide-in-from-top-2">
-                  <p className="text-[10px] font-black text-primary uppercase mb-2">Producto Seleccionado</p>
-                  <p className="text-sm font-bold mb-3">{selectedProduct.name}</p>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-[9px] font-bold text-black/50 uppercase">Cantidad</label>
-                      <Input 
-                        type="number" 
-                        value={itemQty} 
-                        onChange={(e) => setItemQty(e.target.value)}
-                        className="h-8 text-sm"
-                      />
+                <div className="bg-[#F5F5F5] p-3 border-t flex justify-between items-center flex-shrink-0">
+                  <div className="flex gap-3">
+                    <div className="bg-white border border-gray-300 rounded px-2 py-1">
+                      <span className="text-[8px] block text-gray-500 uppercase">Subtotal USD</span>
+                      <span className="text-xs font-black text-black">${totalInvoiceUsd.toFixed(2)}</span>
                     </div>
-                    <div>
-                      <label className="text-[9px] font-bold text-black/50 uppercase">Costo USD</label>
-                      <Input 
-                        type="number" 
-                        step="0.01"
-                        value={itemCostUsd} 
-                        onChange={(e) => setItemCostUsd(e.target.value)}
-                        className="h-8 text-sm font-mono"
-                      />
+                    <div className="bg-white border border-gray-300 rounded px-2 py-1">
+                      <span className="text-[8px] block text-gray-500 uppercase">Total Bs</span>
+                      <span className="text-xs font-black text-secondary">Bs {totalInvoiceBs.toFixed(2)}</span>
                     </div>
                   </div>
+                  
                   <Button 
-                    onClick={handleAddTempItem}
-                    className="w-full mt-4 bg-primary text-black font-black h-9 text-xs"
+                    disabled={isProcessing || tempItems.length === 0}
+                    onClick={handleProcessPurchase}
+                    className="bg-primary hover:brightness-110 text-black font-black px-6 h-8 text-xs shadow-sm transition-all active:scale-95 disabled:opacity-50"
                   >
-                    <Plus size={14} className="mr-1" /> AÑADIR A LISTA
+                    {isProcessing ? (
+                      <>
+                        <Loader2 size={14} className="mr-1 animate-spin" /> PROCESANDO...
+                      </>
+                    ) : (
+                      <>
+                        <Save size={14} className="mr-1" /> PROCESAR
+                      </>
+                    )}
                   </Button>
                 </div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* COLUMNA DERECHA: TABLA DE REVISIÓN */}
-        <div className="lg:col-span-2 flex flex-col h-full">
-          <div className="bg-white border border-[#9E9E9E] rounded-xl shadow-md overflow-hidden flex-1 flex flex-col">
-            <div className="bg-[#1A2C4E] p-4 text-white flex justify-between items-center">
-              <h3 className="text-sm font-black uppercase tracking-wider">Ítems para Ingresar ({tempItems.length})</h3>
-              <div className="text-right">
-                <p className="text-[10px] text-white/60">Total Factura Acumulado</p>
-                <p className="text-xl font-black text-primary">${totalInvoiceUsd.toFixed(2)}</p>
               </div>
-            </div>
-            
-            <div className="flex-1 overflow-y-auto">
-              <Table>
-                <TableHeader className="bg-[#E8E8E8] sticky top-0 z-10">
-                  <TableRow>
-                    <TableHead className="text-[10px] font-black uppercase">Producto</TableHead>
-                    <TableHead className="text-[10px] font-black uppercase text-center">Cant.</TableHead>
-                    <TableHead className="text-[10px] font-black uppercase text-right">Costo $</TableHead>
-                    <TableHead className="text-[10px] font-black uppercase text-right">Costo Bs</TableHead>
-                    <TableHead className="text-[10px] font-black uppercase text-right">Subtotal $</TableHead>
-                    <TableHead className="text-center w-10"></TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {tempItems.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={6} className="text-center py-20 text-black/30 italic">
-                        No hay productos en la lista de compra
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    tempItems.map((item, idx) => (
-                      <TableRow key={idx} className="hover:bg-[#F5F5F5]">
-                        <TableCell className="font-bold text-xs">{item.name}</TableCell>
-                        <TableCell className="text-center text-xs">{item.qty}</TableCell>
-                        <TableCell className="text-right font-mono text-xs">${item.costUsd.toFixed(2)}</TableCell>
-                        <TableCell className="text-right font-mono text-xs">Bs {(item.costUsd * rateNum).toFixed(2)}</TableCell>
-                        <TableCell className="text-right font-black text-xs">${(item.qty * item.costUsd).toFixed(2)}</TableCell>
-                        <TableCell>
-                          <button 
-                            onClick={() => handleRemoveTempItem(idx)}
-                            className="text-red-500 hover:text-red-700 transition-colors"
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-
-            <div className="bg-[#F5F5F5] p-6 border-t border-[#9E9E9E] flex justify-between items-center">
-              <div className="space-y-1">
-                <p className="text-[10px] font-bold text-black/50 uppercase">Validación de Totales</p>
-                <div className="flex gap-4">
-                  <div className="bg-white border border-gray-300 rounded px-3 py-1.5">
-                    <span className="text-[9px] block text-gray-500 uppercase">Subtotal USD</span>
-                    <span className="text-sm font-black text-black">${totalInvoiceUsd.toFixed(2)}</span>
-                  </div>
-                  <div className="bg-white border border-gray-300 rounded px-3 py-1.5">
-                    <span className="text-[9px] block text-gray-500 uppercase">Total en Bs</span>
-                    <span className="text-sm font-black text-secondary">Bs {totalInvoiceBs.toFixed(2)}</span>
-                  </div>
-                </div>
-              </div>
-              
-              <Button 
-                disabled={isProcessing || tempItems.length === 0}
-                onClick={handleProcessPurchase}
-                className="bg-primary hover:brightness-110 text-black font-black px-10 h-12 shadow-lg transition-all active:scale-95 disabled:opacity-50"
-              >
-                {isProcessing ? (
-                  <>
-                    <Loader2 size={20} className="mr-2 animate-spin" /> PROCESANDO...
-                  </>
-                ) : (
-                  <>
-                    <Save size={20} className="mr-2" /> PROCESAR INGRESO
-                  </>
-                )}
-              </Button>
             </div>
           </div>
         </div>

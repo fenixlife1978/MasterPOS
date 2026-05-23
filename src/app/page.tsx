@@ -15,6 +15,8 @@ import AdminDashboard from '@/components/dashboard/AdminDashboard';
 import AccountingModule from '@/components/accounting/accounting-module';
 import ReturnsModule from '@/components/returns/returns-module';
 import RegisterPurchase from '@/components/inventory/RegisterPurchase';
+import InventoryModule from '@/components/inventory/inventory-module';
+import SuppliersModule from '@/components/suppliers/suppliers-module';
 import { Toaster } from '@/components/ui/toaster';
 
 export default function LicoPOSApp() {
@@ -98,12 +100,9 @@ export default function LicoPOSApp() {
         <div className="flex-1 overflow-hidden relative">
           {state.currentPage === 'dashboard' && <AdminDashboard state={state} />}
           {state.currentPage === 'pos' && <POSModule state={state} />}
-          
-          {/* ✅ MODELO DE ENTRADA ÚNICA: Inventario y Proveedores ahora redirigen a Registrar Compra */}
-          {(state.currentPage === 'inventario' || state.currentPage === 'proveedores' || state.currentPage === 'registrar_compra') && (
-            <RegisterPurchase />
-          )}
-          
+          {state.currentPage === 'inventario' && <InventoryModule state={state} />}
+          {state.currentPage === 'registrar_compra' && <RegisterPurchase />}
+          {state.currentPage === 'proveedores' && <SuppliersModule />}
           {state.currentPage === 'clientes' && <ClientsModule state={state} />}
           {state.currentPage === 'cuentas' && <AccountsModule state={state} />}
           {state.currentPage === 'contabilidad' && <AccountingModule />}

@@ -33,8 +33,15 @@ export default function Sidebar({ currentPage, onPageChange, userRole }: Sidebar
   ];
 
   const items = allItems.filter(item => {
-    if (isAdmin) return true;
-    if (isCashier) return !item.adminOnly;
+    if (isAdmin) {
+      // Excluir Punto de Venta y Caja para administradores según solicitud
+      if (item.id === 'pos' || item.id === 'caja') return false;
+      return true;
+    }
+    if (isCashier) {
+      // Los cajeros no ven módulos marcados como adminOnly
+      return !item.adminOnly;
+    }
     return false;
   });
 

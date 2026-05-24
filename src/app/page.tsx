@@ -47,6 +47,17 @@ export default function LicoPOSApp() {
       const allowedPages = ['dashboard', 'pos', 'inventario', 'clientes', 'cuentas', 'proveedores', 'contabilidad', 'devoluciones', 'caja', 'registrar_compra'];
 
       if (!allowedPages.includes(state.currentPage)) {
+        state.setCurrentPage(user.role === 'admin' ? 'dashboard' : 'pos');
+      }
+
+      // Redirigir administradores que aterrizan en POS por defecto
+      if (user.role === 'admin' && (state.currentPage === 'pos' || state.currentPage === 'caja')) {
+        state.setCurrentPage('dashboard');
+      }
+      
+      // Redirigir cajeros que intentan entrar a módulos de admin
+      const adminOnlyPages = ['dashboard', 'clientes', 'cuentas', 'contabilidad'];
+      if (user.role === 'cashier' && adminOnlyPages.includes(state.currentPage)) {
         state.setCurrentPage('pos');
       }
     }

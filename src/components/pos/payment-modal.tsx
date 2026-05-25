@@ -30,6 +30,7 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
   const [showPagoMovilModal, setShowPagoMovilModal] = useState(false);
   const [showChangeDialog, setShowChangeDialog] = useState(false);
   const [pendingChange, setPendingChange] = useState(0);
+  const [pendingSimpleChange, setPendingSimpleChange] = useState(0);
   const [lastAction, setLastAction] = useState<{ type: string; data: any } | null>(null);
   
   // Refs para inputs del modal de Pago Móvil
@@ -110,8 +111,16 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
       amountToSet = enteredAmount * exchangeRate;
     }
     
-    setCurrentAmount(amountToSet);
-    setBuffer('');
+    // ✅ Verificar si el monto excede el total (vuelto en modo simple)
+    if (amountToSet > total) {
+      setPendingSimpleChange(amountToSet - total);
+      setCurrentAmount(amountToSet);
+      setBuffer('');
+      setShowChangeDialog(true);
+    } else {
+      setCurrentAmount(amountToSet);
+      setBuffer('');
+    }
   };
 
   const handleCompoundAddPayment = () => {
@@ -255,6 +264,7 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
   const handleConfirmChange = () => {
     setShowChangeDialog(false);
     setPendingChange(0);
+    setPendingSimpleChange(0);
   };
 
   const getMethodLabel = (methodId: string) => {
@@ -392,55 +402,64 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
     );
   };
 
-  // Diálogo de vuelto
-  const ChangeDialog = () => (
-    <div className="fixed inset-0 z-[300] bg-black/90 backdrop-blur-sm flex items-center justify-start p-4 ml-6">
-      <div className="bg-[#1A2C4E] border-2 border-[#2ECC71] rounded-2xl w-full max-w-sm p-6 shadow-2xl text-center">
-        <div className="w-16 h-16 mx-auto mb-2 rounded-full bg-[#2ECC71]/20 flex items-center justify-center">
-          <span className="text-3xl">💰</span>
-        </div>
-        
-        <h2 className="text-xl font-black text-white mb-2">¡VUELTO!</h2>
-        
-        <div className="bg-white/10 rounded-lg p-4 my-3">
-          <p className="text-[10px] text-white/60 uppercase tracking-widest mb-1">Monto a devolver</p>
-          <div className="text-4xl font-black text-[#2ECC71] mb-1">
-            BS {pendingChange.toFixed(2)}
+  // Diálogo de vuelto (funciona para ambos modos)
+  const ChangeDialog = () => {
+    const changeAmountToShow = showCompoundModal ? pendingChange : pendingSimpleChange;
+    return (
+      <div className="fixed inset-0 z-[300] bg-black/90 backdrop-blur-sm flex items-center justify-start p-4 ml-6">
+        <div className="bg-[#1A2C4E] border-2 border-[#2ECC71] rounded-2xl w-full max-w-sm p-6 shadow-2xl text-center">
+          <div className="w-16 h-16 mx-auto mb-2 rounded-full bg-[#2ECC71]/20 flex items-center justify-center">
+            <span className="text-3xl">💰</span>
           </div>
-          <div className="text-xs text-white/40">
-            ≈ USD {(pendingChange / exchangeRate).toFixed(2)}
+          
+          <h2 className="text-xl font-black text-white mb-2">¡VUELTO!</h2>
+          
+          <div className="bg-white/10 rounded-lg p-4 my-3">
+            <p className="text-[10px] text-white/60 uppercase tracking-widest mb-1">Monto a devolver</p>
+            <div className="text-4xl font-black text-[#2ECC71] mb-1">
+              BS {changeAmountToShow.toFixed(2)}
+            </div>
+            <div className="text-xs text-white/40">
+              ≈ USD {(changeAmountToShow / exchangeRate).toFixed(2)}
+            </div>
           </div>
+          
+          <p className="text-white/60 text-[11px] mb-4">
+            El cliente pagó más del total. Entregue el vuelto y confirme.
+          </p>
+          
+          <div className="flex gap-2">
+            <button 
+              onClick={() => {
+                setShowChangeDialog(false);
+                if (showCompoundModal) {
+                  setCompoundPayments([]);
+                  setPendingChange(0);
+                } else {
+                  setCurrentAmount(0);
+                  setPendingSimpleChange(0);
+                }
+                setBuffer('');
+              }}
+              className="flex-1 py-2 rounded-lg border border-white/30 bg-transparent text-white font-bold text-sm hover:bg-white/10"
+            >
+              CORREGIR
+            </button>
+            <button 
+              onClick={handleConfirmChange}
+              className="flex-1 py-2 bg-[#2ECC71] rounded-lg text-black font-black text-sm hover:brightness-110 shadow-md"
+            >
+              CONFIRMAR
+            </button>
+          </div>
+          
+          <p className="text-[9px] text-white/30 mt-3">
+            ESC para corregir | ENTER para confirmar
+          </p>
         </div>
-        
-        <p className="text-white/60 text-[11px] mb-4">
-          El cliente pagó más del total. Entregue el vuelto y confirme.
-        </p>
-        
-        <div className="flex gap-2">
-          <button 
-            onClick={() => {
-              setShowChangeDialog(false);
-              setCompoundPayments([]);
-              setPendingChange(0);
-            }}
-            className="flex-1 py-2 rounded-lg border border-white/30 bg-transparent text-white font-bold text-sm hover:bg-white/10"
-          >
-            CORREGIR
-          </button>
-          <button 
-            onClick={handleConfirmChange}
-            className="flex-1 py-2 bg-[#2ECC71] rounded-lg text-black font-black text-sm hover:brightness-110 shadow-md"
-          >
-            CONFIRMAR
-          </button>
-        </div>
-        
-        <p className="text-[9px] text-white/30 mt-3">
-          ESC para corregir | ENTER para confirmar
-        </p>
       </div>
-    </div>
-  );
+    );
+  };
 
   // Modal de pago compuesto
   const CompoundModal = () => (

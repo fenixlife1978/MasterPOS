@@ -15,7 +15,7 @@ interface TopbarProps {
 }
 
 export default function Topbar({ register, rate, onRateChange }: TopbarProps) {
-  const { user } = useAuth();
+  const { user, loading } = useAuth(); // ✅ Agregar loading
   const [time, setTime] = useState(new Date());
   const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
   const [pendingSync, setPendingSync] = useState(0);
@@ -68,8 +68,8 @@ export default function Topbar({ register, rate, onRateChange }: TopbarProps) {
         <span className="text-white">POS</span>
       </div>
       
-      {/* Ocultar el badge de caja para administradores */}
-      {!isAdmin && (
+      {/* Ocultar el badge de caja para administradores (y mientras carga) */}
+      {!loading && !isAdmin && (
         <div className={cn(
           "px-4 py-1 rounded-full text-[12px] font-bold tracking-tight transition-all duration-200 shadow-md flex items-center gap-2",
           isOpen 
@@ -85,7 +85,6 @@ export default function Topbar({ register, rate, onRateChange }: TopbarProps) {
       )}
 
       <div className="ml-auto flex items-center gap-6">
-        {/* Indicador de conexión */}
         <div className="flex items-center gap-2">
           {isOnline ? (
             <Wifi size={14} className="text-green-400" />
@@ -99,7 +98,6 @@ export default function Topbar({ register, rate, onRateChange }: TopbarProps) {
           )}
         </div>
 
-        {/* Notificaciones de facturas por pagar */}
         <InvoiceNotifications variant="cashier" />
 
         <div className="bg-black/30 px-5 py-1.5 rounded-full flex items-center gap-3 border border-white/5 shadow-inner">

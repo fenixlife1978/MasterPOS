@@ -8,18 +8,19 @@ import InvoiceReminderModal from '@/components/ui/InvoiceReminderModal';
 import { 
   TrendingUp, DollarSign, Users, Package, 
   CreditCard, ShoppingBag, Computer, FileText,
-  Calendar, ArrowUp, ArrowDown, Truck
+  Calendar, ArrowUp, ArrowDown, Truck, Eye
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import TerminalManager from '@/components/admin/TerminalManager';
 import UserManager from '@/components/admin/UserManager';
 import ReportsModule from '@/components/admin/ReportsModule';
+import CashSupervision from '@/components/admin/CashSupervision';
 
 interface AdminDashboardProps {
   state: ReturnType<typeof usePOSState>;
 }
 
-type AdminTab = 'dashboard' | 'reports' | 'terminals' | 'users';
+type AdminTab = 'dashboard' | 'reports' | 'terminals' | 'users' | 'supervision';
 
 export default function AdminDashboard({ state }: AdminDashboardProps) {
   const [activeTab, setActiveTab] = useState<AdminTab>('dashboard');
@@ -81,6 +82,7 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
     { id: 'reports' as AdminTab, label: 'Reportes', icon: FileText },
     { id: 'terminals' as AdminTab, label: 'Terminales', icon: Computer },
     { id: 'users' as AdminTab, label: 'Usuarios', icon: Users },
+    { id: 'supervision' as AdminTab, label: 'Supervisión', icon: Eye },
   ];
 
   return (
@@ -97,7 +99,7 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
             </div>
           </div>
           
-          <div className="flex gap-2 mt-4 border-b border-[#9E9E9E] pb-2">
+          <div className="flex gap-2 mt-4 border-b border-[#9E9E9E] pb-2 flex-wrap">
             {tabs.map((tab) => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
@@ -189,6 +191,7 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
         {activeTab === 'reports' && <ReportsModule state={state} />}
         {activeTab === 'terminals' && <TerminalManager />}
         {activeTab === 'users' && <UserManager />}
+        {activeTab === 'supervision' && <CashSupervision />}
       </div>
     </>
   );

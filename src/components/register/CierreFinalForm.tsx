@@ -71,15 +71,18 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
     { id: 6, metodo: 'ZELLE', key: 'zelle', isUsd: true },
   ];
 
-  // Ventas totales del día (desde reg.txs)
+  // Ventas totales del día (SOLO CONTADO Y COBROS)
   const totalSalesByMethod = useMemo(() => {
     const totals: Record<string, number> = {};
     paymentMethods.forEach(m => totals[m.key] = 0);
     if (reg?.txs) {
       reg.txs.forEach(t => {
-        const method = t.payMethod || 'efectivo_bs';
-        const monto = (t as any).paidBs || t.total || 0;
-        totals[method] = (totals[method] || 0) + monto;
+        // ✅ CORRECCIÓN: Solo sumar ventas de contado y abonos de deuda. El crédito no entra a caja física.
+        if (t.type === 'contado' || t.type === 'cobro_deuda') {
+          const method = t.payMethod || 'efectivo_bs';
+          const monto = (t as any).paidBs || t.total || 0;
+          totals[method] = (totals[method] || 0) + monto;
+        }
       });
     }
     return totals;

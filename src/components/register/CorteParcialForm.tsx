@@ -35,7 +35,7 @@ export default function CorteParcialForm({ onClose, onCorteConfirmado, tasaActua
   const state = usePOSState();
   const reg = state.register;
 
-  // Obtener valores reales de apertura de forma segura
+  // Obtener valores reales de apertura de forma segura desde el estado de la caja
   const finalOpenAmountBs = reg?.openAmountBs ?? 0;
   const finalOpenAmountUSD = reg?.openAmountUsd ?? 0;
 
@@ -54,13 +54,14 @@ export default function CorteParcialForm({ onClose, onCorteConfirmado, tasaActua
     { id: 6, metodo: 'ZELLE', key: 'zelle', isUsd: true, hasInitialBalance: false },
   ];
 
-  // Ventas totales del día por método
+  // Ventas totales del día por método (SOLO CONTADO Y COBROS, EXCLUYE CRÉDITO)
   const salesByMethod = useMemo(() => {
     const totals: Record<string, number> = {};
     paymentMethods.forEach(m => totals[m.key] = 0);
     if (reg?.txs && Array.isArray(reg.txs)) {
       reg.txs.forEach(t => {
-        if (t.type === 'contado' || t.type === 'cobro_deuda' || t.type === 'credito') {
+        // ✅ CORRECCIÓN: Solo sumar ventas de contado y abonos de deuda. El crédito no entra a caja física.
+        if (t.type === 'contado' || t.type === 'cobro_deuda') {
           const method = t.payMethod || 'efectivo_bs';
           const monto = (t as any).paidBs || t.total || 0;
           totals[method] = (totals[method] || 0) + monto;
@@ -70,7 +71,7 @@ export default function CorteParcialForm({ onClose, onCorteConfirmado, tasaActua
     return totals;
   }, [reg]);
 
-  // Ventas crédito
+  // Ventas crédito (Solo para información estadística)
   const creditSalesTotal = useMemo(() => {
     if (!reg?.txs) return 0;
     return reg.txs

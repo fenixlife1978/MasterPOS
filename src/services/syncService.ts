@@ -81,12 +81,12 @@ const processQueue = async () => {
       } else if (op.type === 'saveSupplier') {
         await setDoc(doc(db, 'suppliers', data.id.toString()), { ...data, updatedAt: Date.now() });
       } else if (op.type === 'savePurchaseInvoice') {
-        await setDoc(doc(db, 'purchase_invoices', data.id.toString()), { ...data });
+        await setDoc(doc(db, 'purchase_invoices', data.id.toString()), sanitizeForFirestore(data));
       } else if (op.type === 'savePurchaseInvoiceItems') {
         const batch = writeBatch(db);
         data.items.forEach((item: any) => {
           const itemDoc = doc(db, 'purchase_items', item.id);
-          batch.set(itemDoc, { ...item, createdAt: Date.now() });
+          batch.set(itemDoc, { ...sanitizeForFirestore(item), createdAt: Date.now() });
         });
         await batch.commit();
       } else if (op.type === 'saveSupplierPayment') {
@@ -337,6 +337,8 @@ export const syncService = {
         isOpen: reg.isOpen === true,
         openTime: reg.openTime || new Date().toISOString(),
         openAmount: typeof reg.openAmount === 'number' ? reg.openAmount : 0,
+        openAmountBs: typeof reg.openAmountBs === 'number' ? reg.openAmountBs : 0,
+        openAmountUsd: typeof reg.openAmountUsd === 'number' ? reg.openAmountUsd : 0,
         exchangeRate: typeof reg.exchangeRate === 'number' ? reg.exchangeRate : 36.50,
         txs: uniqueTxs,
         updatedAt: Date.now()

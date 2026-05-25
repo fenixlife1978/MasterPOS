@@ -10,32 +10,37 @@ import PaymentModal from './payment-modal';
 import SaleTypeModal from './sale-type-modal';
 import CreditModal from './credit-modal';
 import ReceiptModal from '@/components/receipt-modal';
+import AuthorizationModal from './AuthorizationModal'; // ✅ NUEVO
+import { syncService } from '@/services/syncService';   // ✅ Para validar PIN
+import { useAuth } from '@/context/AuthContext';        // ✅ Para obtener el usuario autorizante
 
 interface POSModuleProps {
   state: ReturnType<typeof usePOSState>;
 }
 
 export default function POSModule({ state }: POSModuleProps) {
+  const { user } = useAuth(); // ✅ Obtener usuario actual
   const [showSaleType, setShowSaleType] = useState(false);
   const [showContado, setShowContado] = useState(false);
   const [showCredito, setShowCredito] = useState(false);
   const [showReceipt, setShowReceipt] = useState(false);
   const [lastTransaction, setLastTransaction] = useState<any>(null);
-  const [user, setUser] = useState<{ name: string; role: string } | null>(null);
   const [nextReceiptNumber, setNextReceiptNumber] = useState(1);
-  const lastReceiptNumberRef = useRef<number>(1); // ✅ REF para pasar al modal de forma precisa
+  const lastReceiptNumberRef = useRef<number>(1);
+  // ✅ Estados para el modal de autorización
+  const [showAuthorizationModal, setShowAuthorizationModal] = useState(false);
+  const [pendingOperationType, setPendingOperationType] = useState<'colaboracion' | 'consumo_propio'>('colaboracion');
+  const [isVerifying, setIsVerifying] = useState(false);
 
   useEffect(() => {
     const storedUser = localStorage.getItem('user');
     if (storedUser) {
-      setUser(JSON.parse(storedUser));
+      // No modificamos el user del contexto, solo para compatibilidad
     }
     
-    // Cargar el último número de recibo usado
     const lastReceipt = localStorage.getItem('last_receipt_number');
     if (lastReceipt) {
       const lastNum = parseInt(lastReceipt);
-      // Si el numero guardado es un ID gigante de firestore, resetear a 1
       if (lastNum > 10000000) {
         setNextReceiptNumber(1);
         lastReceiptNumberRef.current = 1;
@@ -49,7 +54,6 @@ export default function POSModule({ state }: POSModuleProps) {
     }
   }, []);
 
-  // Calcular total con IVA
   const subtotal = state.cart.reduce((s, i) => s + (i.priceBs * i.qty), 0);
   const iva = state.cart.reduce((total, item) => {
     const hasIva = (item as any).ivaType === 'con_iva';
@@ -64,17 +68,13 @@ export default function POSModule({ state }: POSModuleProps) {
 
   const handlePaymentConfirm = async (data: any) => {
     try {
-      const receiptNum = nextReceiptNumber; // Número actual para esta venta
-      // Se incluye el receiptNumber en la data para finalizeSale
+      const receiptNum = nextReceiptNumber;
       const tx = await state.finalizeSale('contado', { ...data, receiptNumber: receiptNum });
       if (tx) {
-        lastReceiptNumberRef.current = receiptNum; // Fijar el número usado en la ref para el modal
+        lastReceiptNumberRef.current = receiptNum;
         setLastTransaction(tx);
-        
-        // Persistir el número usado e incrementar para la próxima venta
         localStorage.setItem('last_receipt_number', receiptNum.toString());
         setNextReceiptNumber(receiptNum + 1);
-        
         setShowReceipt(true);
       }
     } catch (error) {
@@ -86,7 +86,7 @@ export default function POSModule({ state }: POSModuleProps) {
 
   const handleCreditConfirm = async (data: any) => {
     try {
-      const receiptNum = nextReceiptNumber; // Número actual para esta venta
+      const receiptNum = nextReceiptNumber;
       const tx = await state.finalizeSale('credito', {
         clientId: data.clientId,
         clientName: data.clientName,
@@ -97,22 +97,53 @@ export default function POSModule({ state }: POSModuleProps) {
         exchangeRate: data.exchangeRate,
         totalBs: data.totalBs,
         totalUsd: data.totalUsd,
-        receiptNumber: receiptNum // ✅ Se pasa el numero correlativo
+        receiptNumber: receiptNum
       });
       if (tx) {
-        lastReceiptNumberRef.current = receiptNum; // Fijar el número usado
+        lastReceiptNumberRef.current = receiptNum;
         setLastTransaction(tx);
-        
-        // Persistir e incrementar
         localStorage.setItem('last_receipt_number', receiptNum.toString());
         setNextReceiptNumber(receiptNum + 1);
-        
         setShowReceipt(true);
       }
     } catch (error) {
       console.error("Error al procesar venta a crédito:", error);
     } finally {
       setShowCredito(false);
+    }
+  };
+
+  // ✅ Nueva función para manejar la autorización y posterior finalización
+  const handleAuthorizationConfirm = async (type: 'colaboracion' | 'consumo_propio', motivo: string, pin: string) => {
+    setIsVerifying(true);
+    try {
+      // Validar PIN contra el código de administrador
+      const adminCodeData = await syncService.getAdminCode();
+      if (!adminCodeData || adminCodeData.code !== pin) {
+        alert('PIN de autorización incorrecto');
+        setIsVerifying(false);
+        return;
+      }
+
+      const receiptNum = nextReceiptNumber;
+      const tx = await state.finalizeSale(type, {
+        receiptNumber: receiptNum,
+        notes: motivo,
+        authorizedBy: user?.name || 'Supervisor',
+      });
+      if (tx) {
+        lastReceiptNumberRef.current = receiptNum;
+        setLastTransaction(tx);
+        localStorage.setItem('last_receipt_number', receiptNum.toString());
+        setNextReceiptNumber(receiptNum + 1);
+        setShowReceipt(true);
+      }
+    } catch (error) {
+      console.error("Error al procesar colaboración/consumo:", error);
+      alert('Error al procesar la solicitud');
+    } finally {
+      setIsVerifying(false);
+      setShowAuthorizationModal(false);
     }
   };
 
@@ -144,7 +175,12 @@ export default function POSModule({ state }: POSModuleProps) {
           onSelect={(type) => {
             setShowSaleType(false);
             if (type === 'contado') setShowContado(true);
-            else setShowCredito(true);
+            else if (type === 'credito') setShowCredito(true);
+            else {
+              // ✅ Para colaboración o consumo propio, abrir modal de autorización
+              setPendingOperationType(type === 'colaboracion' ? 'colaboracion' : 'consumo_propio');
+              setShowAuthorizationModal(true);
+            }
           }}
         />
       )}
@@ -169,11 +205,20 @@ export default function POSModule({ state }: POSModuleProps) {
         />
       )}
 
+      {/* ✅ Nuevo modal de autorización */}
+      {showAuthorizationModal && (
+        <AuthorizationModal
+          onClose={() => setShowAuthorizationModal(false)}
+          onConfirm={handleAuthorizationConfirm}
+          isVerifying={isVerifying}
+        />
+      )}
+
       {showReceipt && lastTransaction && (
         <ReceiptModal 
           transaction={lastTransaction}
           exchangeRate={state.exchangeRate}
-          receiptNumber={lastReceiptNumberRef.current} // ✅ Usar el valor exacto de la venta finalizada
+          receiptNumber={lastReceiptNumberRef.current}
           onClose={() => {
             setShowReceipt(false);
             setLastTransaction(null);

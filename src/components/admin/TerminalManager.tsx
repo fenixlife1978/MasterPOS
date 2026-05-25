@@ -217,23 +217,53 @@ export default function TerminalManager() {
         </Table>
       </div>
 
-      <Dialog open={showModal} onOpenChange={setShowModal}>
+      {/* Modal corregido */}
+      <Dialog open={showModal} onOpenChange={(open) => {
+        if (!open) {
+          setShowModal(false);
+          resetForm();
+        } else {
+          setShowModal(true);
+        }
+      }}>
         <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-md p-0 overflow-hidden rounded-2xl">
-          <DialogHeader className="sr-only">
-            <DialogTitle>{editingTerminal ? 'Editar Terminal' : 'Nueva Terminal'}</DialogTitle>
+          <DialogHeader className="p-4 bg-[#1A2C4E] text-white">
+            <DialogTitle className="text-lg font-black">{editingTerminal ? 'Editar Terminal' : 'Nueva Terminal'}</DialogTitle>
           </DialogHeader>
-          <div className="bg-[#1A2C4E] p-4 text-white"><h3 className="text-lg font-black">{editingTerminal ? 'Editar Terminal' : 'Nueva Terminal'}</h3></div>
           <div className="p-5 space-y-4">
-            <div><label className="text-[10px] font-bold text-black/60 uppercase block mb-1">Nombre de la Terminal *</label><Input value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} placeholder="Ej: Caja Principal" /></div>
-            <div><label className="text-[10px] font-bold text-black/60 uppercase block mb-1">Ubicación</label><Input value={formData.location} onChange={(e) => setFormData({ ...formData, location: e.target.value })} placeholder="Ej: Pasillo Central" /></div>
-            <div><label className="text-[10px] font-bold text-black/60 uppercase block mb-1">Asignar a Cajero</label>
-              <select value={formData.assignedTo} onChange={(e) => setFormData({ ...formData, assignedTo: e.target.value })} className="w-full h-10 border border-[#9E9E9E] rounded-lg px-3 text-sm">
+            <div>
+              <label className="text-[10px] font-bold text-black/60 uppercase block mb-1">Nombre de la Terminal *</label>
+              <Input 
+                value={formData.name} 
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })} 
+                placeholder="Ej: Caja Principal" 
+                autoFocus
+              />
+            </div>
+            <div>
+              <label className="text-[10px] font-bold text-black/60 uppercase block mb-1">Ubicación</label>
+              <Input 
+                value={formData.location} 
+                onChange={(e) => setFormData({ ...formData, location: e.target.value })} 
+                placeholder="Ej: Pasillo Central" 
+              />
+            </div>
+            <div>
+              <label className="text-[10px] font-bold text-black/60 uppercase block mb-1">Asignar a Cajero</label>
+              <select 
+                value={formData.assignedTo} 
+                onChange={(e) => setFormData({ ...formData, assignedTo: e.target.value })} 
+                className="w-full h-10 border border-[#9E9E9E] rounded-lg px-3 text-sm"
+              >
                 <option value="">Sin asignar</option>
                 {cashiers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             </div>
           </div>
-          <div className="bg-[#F5F5F5] p-4 border-t flex justify-end gap-3"><Button variant="ghost" onClick={() => setShowModal(false)}>CANCELAR</Button><Button onClick={handleSubmit} className="bg-primary text-black font-black">GUARDAR</Button></div>
+          <div className="bg-[#F5F5F5] p-4 border-t flex justify-end gap-3">
+            <Button variant="ghost" onClick={() => setShowModal(false)}>CANCELAR</Button>
+            <Button onClick={handleSubmit} className="bg-primary text-black font-black">GUARDAR</Button>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

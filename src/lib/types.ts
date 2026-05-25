@@ -54,7 +54,7 @@ export interface CartItem {
 export interface Transaction {
   id: number;
   date: string;
-  type: 'contado' | 'credito' | 'cobro_deuda' | 'devolucion';
+  type: 'contado' | 'credito' | 'cobro_deuda' | 'devolucion' | 'colaboracion' | 'consumo_propio';
   items: CartItem[];
   subtotal: number;
   iva: number;
@@ -67,6 +67,10 @@ export interface Transaction {
   clientName?: string;
   exchangeRate?: number;
   receiptNumber?: number; // ✅ Numero correlativo para el recibo (00000001...)
+  // ✅ Nuevos campos para colaboraciones y consumo propio
+  costoTotalOperacion?: number;
+  notes?: string;
+  authorizedBy?: string;
 }
 
 export interface Account {
@@ -185,7 +189,7 @@ export interface AccountingEntry {
   description: string;
   amount: number;
   referenceId?: number;
-  referenceType?: 'sale' | 'supplier_payment' | 'expense' | 'return' | 'payment_reversal' | 'credit_sale' | 'debt_payment';
+  referenceType?: 'sale' | 'supplier_payment' | 'expense' | 'return' | 'payment_reversal' | 'credit_sale' | 'debt_payment' | 'colaboracion' | 'consumo_propio';
   createdAt: string;
 }
 

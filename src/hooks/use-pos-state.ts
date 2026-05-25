@@ -196,18 +196,35 @@ export function usePOSState() {
     }));
   };
 
-  const finalizeSale = useCallback(async (type: 'contado' | 'credito' | 'cobro_deuda', paymentData: any) => {
+  // ✅ FINALIZAR VENTA (MODIFICADO PARA INCLUIR COLABORACIONES Y CONSUMO PROPIO)
+  const finalizeSale = useCallback(async (type: 'contado' | 'credito' | 'cobro_deuda' | 'colaboracion' | 'consumo_propio', paymentData: any) => {
     if (!register?.isOpen) return;
 
-    const subtotal = cart.reduce((acc, item) => acc + (item.priceBs * item.qty), 0);
-    const iva = cart.reduce((total, item) => {
-      if (item.ivaType === 'con_iva') {
-        return total + (item.priceBs * item.qty * 0.16);
+    const isSpecial = type === 'colaboracion' || type === 'consumo_propio';
+    
+    // Para operaciones especiales, los valores financieros son cero
+    let subtotal = 0, iva = 0, total = 0, finalTotal = 0;
+    let costoTotalOperacion = 0;
+    
+    if (!isSpecial) {
+      subtotal = cart.reduce((acc, item) => acc + (item.priceBs * item.qty), 0);
+      iva = cart.reduce((total, item) => {
+        if (item.ivaType === 'con_iva') return total + (item.priceBs * item.qty * 0.16);
+        return total;
+      }, 0);
+      total = subtotal + iva;
+      finalTotal = type === 'cobro_deuda' ? (paymentData.totalPaid || paymentData.amount) : total;
+    } else {
+      // Calcular costo real de los productos (precio de costo en USD)
+      for (const item of cart) {
+        const product = products.find(p => p.id === item.productId);
+        if (product && product.costUsd) {
+          costoTotalOperacion += (item.qty * product.costUsd);
+        }
       }
-      return total;
-    }, 0);
-    const total = subtotal + iva;
-    const finalTotal = type === 'cobro_deuda' ? (paymentData.totalPaid || paymentData.amount) : total;
+      costoTotalOperacion = parseFloat(costoTotalOperacion.toFixed(2));
+      finalTotal = 0; // No hay ingreso
+    }
 
     let targetClientId = paymentData.clientId;
     if (type === 'credito' && paymentData.isNewClient) {
@@ -226,19 +243,22 @@ export function usePOSState() {
     const tx: Transaction = {
       id: getVenezuelaTimestamp(),
       date: getVenezuelaISOString(),
-      type,
+      type: type as any,
       items: type === 'cobro_deuda' ? [] : [...cart],
-      subtotal: type === 'cobro_deuda' ? finalTotal : subtotal,
-      iva,
-      total: finalTotal,
-      totalUsd: finalTotal / exchangeRate,
+      subtotal: isSpecial ? 0 : (type === 'cobro_deuda' ? finalTotal : subtotal),
+      iva: isSpecial ? 0 : iva,
+      total: isSpecial ? 0 : finalTotal,
+      totalUsd: isSpecial ? 0 : (finalTotal / exchangeRate),
       payMethod: paymentData.method || 'efectivo_bs',
-      paidBs: paymentData.totalPaid || paymentData.amount || finalTotal,
-      change: paymentData.change || 0,
+      paidBs: isSpecial ? 0 : (paymentData.totalPaid || paymentData.amount || finalTotal),
+      change: isSpecial ? 0 : (paymentData.change || 0),
       clientId: targetClientId,
       clientName: paymentData.clientName,
       exchangeRate,
-      receiptNumber: paymentData.receiptNumber // ✅ Se guarda el numero correlativo en la transaccion
+      receiptNumber: paymentData.receiptNumber,
+      costoTotalOperacion: isSpecial ? costoTotalOperacion : undefined,
+      notes: isSpecial ? paymentData.notes : undefined,
+      authorizedBy: isSpecial ? paymentData.authorizedBy : undefined,
     };
 
     await syncService.saveTransaction(tx);
@@ -251,6 +271,7 @@ export function usePOSState() {
     setRegister(updatedRegister);
     saveRegisterToLocalStorage(updatedRegister);
 
+    // Descuento de stock y registro en Kardex (si no es cobro deuda)
     if (type !== 'cobro_deuda') {
       const stockUpdates: Map<number, number> = new Map();
       
@@ -279,9 +300,31 @@ export function usePOSState() {
         if (prod) {
           const newStock = prod.stock - qtyToSubtract;
           await syncService.saveProduct({ ...prod, stock: Math.max(0, newStock) });
+          
+          // Registrar en Kardex (tipo 'ajuste_negativo' para colaboraciones/consumo)
+          const kardexType = isSpecial ? 'ajuste_negativo' : 'salida_venta';
+          const reference = isSpecial 
+            ? `[${type === 'colaboracion' ? 'Colaboración' : 'Consumo Propio'}] ${paymentData.notes || 'Sin motivo'}`
+            : `Venta #${tx.id}`;
+          
+          const kardexEntry: any = {
+            id: `${Date.now()}_${Math.random()}`,
+            productId: prod.id,
+            date: tx.date,
+            type: kardexType,
+            quantity: qtyToSubtract,
+            previousStock: prod.stock,
+            newStock,
+            reference,
+            note: isSpecial ? paymentData.notes : `Venta ID: ${tx.id}`,
+            costUsd: prod.costUsd,
+            costBs: prod.costBs,
+          };
+          await syncService.saveKardexEntry(kardexEntry);
         }
       }
       
+      // Actualizar estado local de productos
       const updatedProducts = [...products];
       for (const [prodId, qtyToSubtract] of stockUpdates.entries()) {
         const index = updatedProducts.findIndex(p => p.id === prodId);
@@ -292,6 +335,7 @@ export function usePOSState() {
       setProducts(updatedProducts);
     }
 
+    // Gestión de cuentas por cobrar (crédito)
     if (type === 'credito') {
       await syncService.saveAccount({ 
         id: getVenezuelaTimestamp(), 
@@ -316,6 +360,22 @@ export function usePOSState() {
     } else if (type === 'cobro_deuda') {
       const client = clients.find(c => c.id === targetClientId);
       if (client) await registerDebtPaymentEntry(tx, client);
+    } else if (isSpecial) {
+      // Registrar asiento contable para colaboraciones/consumo propio (egreso)
+      const accountingEntry = {
+        id: getVenezuelaTimestamp(),
+        date: tx.date,
+        type: 'egreso',
+        category: 'otros',
+        subcategory: type === 'colaboracion' ? 'Donaciones' : 'Consumo Interno',
+        concept: `Salida por ${type === 'colaboracion' ? 'Colaboración' : 'Consumo Propio'}`,
+        description: paymentData.notes || 'Sin motivo detallado',
+        amount: costoTotalOperacion,
+        referenceId: tx.id,
+        referenceType: type === 'colaboracion' ? 'colaboracion' : 'consumo_propio',
+        createdAt: tx.date,
+      };
+      await syncService.saveAccountingEntry(accountingEntry);
     }
 
     if (type !== 'cobro_deuda') setCart([]);

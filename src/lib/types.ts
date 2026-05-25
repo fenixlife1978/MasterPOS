@@ -13,11 +13,9 @@ export interface Product {
   costUsd?: number;
   profitPercent?: number;
   department?: string;
-  // Nuevos campos para los tres tipos de precio
-  priceRetail?: number;     // Precio al detal (calculado con fórmula + IVA)
-  priceWholesale?: number;  // Precio al mayor (fijo)
-  priceCost?: number;       // Precio de costo (fijo)
-  // Configuración de IVA por producto
+  priceRetail?: number;
+  priceWholesale?: number;
+  priceCost?: number;
   ivaType?: 'con_iva' | 'sin_iva';
   ivaPercentage?: number;
 }
@@ -38,6 +36,8 @@ export interface CartItem {
   priceUsd: number;
   qty: number;
   category: Category;
+  ivaType?: 'con_iva' | 'sin_iva';
+  ivaPercentage?: number;
 }
 
 export interface Transaction {
@@ -76,11 +76,10 @@ export interface CashRegister {
   isOpen: boolean;
   openTime: string;
   openAmount: number;
-  openAmountBs?: number;   // ✅ NUEVO: Efectivo en BS al abrir (se guarda separado)
-  openAmountUsd?: number;  // ✅ NUEVO: Efectivo en USD al abrir
+  openAmountBs: number;
+  openAmountUsd: number;
   txs: Transaction[];
-  closeTime?: string;
-  exchangeRate?: number;
+  exchangeRate: number;
 }
 
 export type Page = 'dashboard' | 'pos' | 'inventario' | 'clientes' | 'cuentas' | 'caja' | 'proveedores' | 'contabilidad' | 'devoluciones' | 'registrar_compra';
@@ -89,12 +88,16 @@ export interface KardexEntry {
   id?: string;
   productId: number;
   date: string;
-  type: 'entrada_compra' | 'salida_venta' | 'ajuste_positivo' | 'ajuste_negativo' | 'devolucion';
+  type: 'entrada_compra' | 'salida_venta' | 'ajuste_positivo' | 'ajuste_negativo' | 'devolucion' | 'ajuste_inicial' | 'ajuste_manual';
   reference: string;
-  qty: number;
-  costUsd: number;
-  costBs: number;
-  stockAfter: number;
+  qty?: number;
+  quantity: number;
+  previousStock: number;
+  newStock: number;
+  note?: string;
+  costUsd?: number;
+  costBs?: number;
+  stockAfter?: number;
 }
 
 export interface Terminal {
@@ -170,7 +173,7 @@ export interface AccountingEntry {
   description: string;
   amount: number;
   referenceId?: number;
-  referenceType?: 'sale' | 'supplier_payment' | 'expense' | 'return';
+  referenceType?: 'sale' | 'supplier_payment' | 'expense' | 'return' | 'payment_reversal' | 'credit_sale' | 'debt_payment';
   createdAt: string;
 }
 
@@ -181,6 +184,8 @@ export interface ExpenseCategory {
 }
 
 export const EXPENSE_CATEGORIES: ExpenseCategory[] = [
+  { id: 'ventas', name: 'Ventas' },
+  { id: 'pagos_proveedores', name: 'Pagos a Proveedores' },
   { id: 'servicios_publicos', name: 'Pago de Servicios Públicos', subcategories: ['Agua', 'Aseo', 'Electricidad', 'Teléfono CANTV'] },
   { id: 'alquiler', name: 'Pago de Alquiler' },
   { id: 'telefonia', name: 'Pago de Telefonía', subcategories: ['Movistar', 'Movilnet', 'Digitel'] },
@@ -192,16 +197,17 @@ export const EXPENSE_CATEGORIES: ExpenseCategory[] = [
   { id: 'otros', name: 'Otros Gastos' },
 ];
 
-// Interfaz para el código de autorización de ajustes de inventario
 export interface AdminCode {
-  id: string;        // Siempre 'adjustment_code'
+  id: string;
   code: string;
   updatedAt: string;
 }
 
-// Interfaz para la configuración global del sistema (IVA, etc.)
 export interface GlobalSettings {
-  id: string;               // Siempre 'global'
+  id: string;
   defaultIvaPercentage: number;
+  exchangeRate?: number;
+  categories?: string[];
+  departments?: string[];
   updatedAt: string;
 }

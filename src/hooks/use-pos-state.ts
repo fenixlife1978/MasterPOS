@@ -1,15 +1,13 @@
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
-import { Product, Client, Transaction, Account, CashRegister, Page, CartItem, AdminCode, GlobalSettings } from '@/lib/types';
+import { Product, Client, Transaction, Account, CashRegister, Page, CartItem } from '@/lib/types';
 import { syncService } from '@/services/syncService';
 import { registerSaleEntry, registerCreditEntry, registerDebtPaymentEntry } from '@/services/accountingService';
 import { useAuth } from '@/context/AuthContext';
 
-// ✅ CORREGIDO: Genera el string ISO real adaptado estrictamente a la zona horaria de Venezuela (Caracas)
 function getVenezuelaISOString(): string {
   const now = new Date();
-  
   const formatter = new Intl.DateTimeFormat('sv-SE', {
     timeZone: 'America/Caracas',
     year: 'numeric',
@@ -19,22 +17,18 @@ function getVenezuelaISOString(): string {
     minute: '2-digit',
     second: '2-digit',
   });
-  
   const parts = formatter.formatToParts(now);
   const partMap = Object.fromEntries(parts.map(p => [p.type, p.value]));
-  
   return `${partMap.year}-${partMap.month}-${partMap.day}T${partMap.hour}:${partMap.minute}:${partMap.second}.000-04:00`;
 }
 
-// ✅ CORREGIDO: El ID de la transacción debe ser el tiempo Unix puro de la máquina para evitar saltos de día
 function getVenezuelaTimestamp(): number {
   return Date.now();
 }
 
-// Clave para localStorage de la tasa BCV
 const STORAGE_KEYS = {
   EXCHANGE_RATE: 'bcv_exchange_rate',
-  POS_REGISTER: 'pos_register', // ✅ CLAVE PARA LOCALSTORAGE
+  POS_REGISTER: 'pos_register',
 };
 
 export function usePOSState() {
@@ -49,86 +43,31 @@ export function usePOSState() {
   const [isIvaEnabled, setIsIvaEnabled] = useState(true);
   const [currentPage, setCurrentPage] = useState<Page>('pos');
   const [isHydrated, setIsHydrated] = useState(false);
-  
-  // ✅ Nuevos estados para gestión global
   const [globalIvaPercentage, setGlobalIvaPercentage] = useState(16);
   const [adminCode, setAdminCode] = useState<string>('');
 
-  // ✅ Función para guardar register en localStorage
   const saveRegisterToLocalStorage = useCallback((registerData: CashRegister | null) => {
-    if (registerData) {
-      localStorage.setItem(STORAGE_KEYS.POS_REGISTER, JSON.stringify(registerData));
-    } else {
-      localStorage.removeItem(STORAGE_KEYS.POS_REGISTER);
+    if (typeof window !== 'undefined') {
+      if (registerData) {
+        localStorage.setItem(STORAGE_KEYS.POS_REGISTER, JSON.stringify(registerData));
+      } else {
+        localStorage.removeItem(STORAGE_KEYS.POS_REGISTER);
+      }
     }
   }, []);
 
-  // ✅ Cargar register desde localStorage al iniciar
   useEffect(() => {
     const cachedRegister = localStorage.getItem(STORAGE_KEYS.POS_REGISTER);
     if (cachedRegister) {
       try {
-        const parsed = JSON.parse(cachedRegister);
-        setRegister(parsed);
-      } catch (e) {
-        console.error('Error al cargar register desde localStorage:', e);
-      }
+        setRegister(JSON.parse(cachedRegister));
+      } catch (e) {}
     }
-  }, []);
-
-  // ✅ Cargar tasa BCV desde Firestore y localStorage al iniciar
-  useEffect(() => {
-    const loadExchangeRate = async () => {
-      // 1. Intentar cargar desde localStorage (caché rápido)
-      const cachedRate = localStorage.getItem(STORAGE_KEYS.EXCHANGE_RATE);
-      if (cachedRate) {
-        const rate = parseFloat(cachedRate);
-        if (!isNaN(rate) && rate > 0) {
-          setExchangeRate(rate);
-        }
-      }
-      
-      // 2. Cargar desde Firestore (fuente de verdad)
-      const settings = await syncService.getGlobalSettings();
-      if (settings && typeof settings.exchangeRate === 'number' && settings.exchangeRate > 0) {
-        setExchangeRate(settings.exchangeRate);
-        localStorage.setItem(STORAGE_KEYS.EXCHANGE_RATE, settings.exchangeRate.toString());
-      } else if (settings && typeof settings.defaultIvaPercentage === 'number') {
-        // Si existe global_settings pero no tiene exchangeRate, guardamos el actual
-        await syncService.saveGlobalSettings({ 
-          defaultIvaPercentage: settings.defaultIvaPercentage || 16,
-          exchangeRate: exchangeRate,
-          categories: settings.categories,
-          departments: settings.departments
-        });
-        localStorage.setItem(STORAGE_KEYS.EXCHANGE_RATE, exchangeRate.toString());
-      }
-    };
     
-    loadExchangeRate();
-  }, []);
-
-  // ✅ Función para actualizar la tasa BCV (guarda en Firestore y localStorage)
-  const updateExchangeRate = useCallback(async (newRate: number) => {
-    if (isNaN(newRate) || newRate <= 0) return;
-    
-    // Actualizar estado local
-    setExchangeRate(newRate);
-    
-    // Guardar en localStorage
-    localStorage.setItem(STORAGE_KEYS.EXCHANGE_RATE, newRate.toString());
-    
-    // Guardar en Firestore dentro de global_settings
-    try {
-      const currentSettings = await syncService.getGlobalSettings();
-      await syncService.saveGlobalSettings({
-        defaultIvaPercentage: currentSettings?.defaultIvaPercentage || 16,
-        exchangeRate: newRate,
-        categories: currentSettings?.categories,
-        departments: currentSettings?.departments
-      });
-    } catch (error) {
-      console.error('Error al guardar la tasa BCV en Firestore:', error);
+    const cachedRate = localStorage.getItem(STORAGE_KEYS.EXCHANGE_RATE);
+    if (cachedRate) {
+      const rate = parseFloat(cachedRate);
+      if (!isNaN(rate)) setExchangeRate(rate);
     }
   }, []);
 
@@ -141,27 +80,22 @@ export function usePOSState() {
     const unsubAccounts = syncService.subscribeToAccounts(setAccounts as any);
     const unsubRegister = syncService.subscribeToRegister((registerData) => {
       setRegister(registerData);
-      // ✅ Guardar en localStorage cada vez que cambie el register
       saveRegisterToLocalStorage(registerData);
     });
     
-    // ✅ Cargar configuración global y código de administrador desde Firestore
     const loadGlobalSettings = async () => {
       const settings = await syncService.getGlobalSettings();
-      if (settings && typeof settings.defaultIvaPercentage === 'number') {
-        setGlobalIvaPercentage(settings.defaultIvaPercentage);
-      }
-      // Cargar tasa BCV si no se cargó antes
-      if (settings && typeof settings.exchangeRate === 'number' && settings.exchangeRate > 0) {
-        setExchangeRate(settings.exchangeRate);
-        localStorage.setItem(STORAGE_KEYS.EXCHANGE_RATE, settings.exchangeRate.toString());
+      if (settings) {
+        if (typeof settings.defaultIvaPercentage === 'number') setGlobalIvaPercentage(settings.defaultIvaPercentage);
+        if (typeof settings.exchangeRate === 'number') {
+          setExchangeRate(settings.exchangeRate);
+          localStorage.setItem(STORAGE_KEYS.EXCHANGE_RATE, settings.exchangeRate.toString());
+        }
       }
       const code = await syncService.getAdminCode();
-      if (code && typeof code.code === 'string') {
-        setAdminCode(code.code);
-      }
+      if (code) setAdminCode(code.code);
     };
-    loadGlobalSettings(); // No es necesario await porque no bloquea el renderizado
+    loadGlobalSettings();
     
     setIsHydrated(true);
 
@@ -177,11 +111,9 @@ export function usePOSState() {
   const addProduct = useCallback((p: Product) => syncService.saveProduct(p), []);
   const updateProduct = useCallback((p: Product) => syncService.saveProduct(p), []);
   const deleteProduct = useCallback((id: number) => syncService.deleteProduct(id), []);
-
   const saveClient = useCallback((c: Client) => syncService.saveClient(c), []);
   const deleteClient = useCallback((id: number) => syncService.deleteClient(id), []);
 
-  // ✅ addToCart conserva la información de IVA del producto
   const addToCart = useCallback((productId: number) => {
     const product = products.find(p => p.id === productId);
     if (!product || product.stock <= 0) return false;
@@ -191,11 +123,10 @@ export function usePOSState() {
         if (existing.qty >= product.stock) return prev;
         return prev.map(item => item.productId === productId ? { ...item, qty: item.qty + 1 } : item);
       }
-      const calculatedPriceBs = product.priceUsd * exchangeRate;
       return [...prev, { 
         productId: product.id, 
         name: product.name, 
-        priceBs: calculatedPriceBs, 
+        priceBs: product.priceUsd * exchangeRate, 
         priceUsd: product.priceUsd, 
         qty: 1, 
         category: product.category,
@@ -217,139 +148,86 @@ export function usePOSState() {
         const newQty = item.qty + delta;
         if (newQty <= 0) return null as any;
         if (product && newQty > product.stock) return item;
-        const updatedPriceBs = product ? product.priceUsd * exchangeRate : item.priceBs;
-        return { ...item, qty: newQty, priceBs: updatedPriceBs };
+        return { ...item, qty: newQty, priceBs: product ? product.priceUsd * exchangeRate : item.priceBs };
       }
       return item;
     }).filter(Boolean));
   }, [products, exchangeRate]);
 
-  // ✅ CORREGIDO: openCashRegister guarda BS y USD por separado
   const openCashRegister = useCallback(async (bsAmount: number, usdAmount: number, rate: number) => {
-    const totalOpenAmount = bsAmount + (usdAmount * rate);
-    const registerData = {
+    const registerData: CashRegister = {
       isOpen: true,
       openTime: getVenezuelaISOString(),
-      openAmount: totalOpenAmount,
+      openAmount: bsAmount + (usdAmount * rate),
       openAmountBs: bsAmount,
       openAmountUsd: usdAmount,
       txs: [],
-      exchangeRate: rate || exchangeRate || 36.50
+      exchangeRate: rate
     };
     await syncService.saveRegister(registerData);
+    setRegister(registerData);
     saveRegisterToLocalStorage(registerData);
-  }, [exchangeRate, saveRegisterToLocalStorage]);
+  }, [saveRegisterToLocalStorage]);
 
   const closeCashRegister = useCallback(() => {
     syncService.clearRegister();
+    setRegister(null);
     saveRegisterToLocalStorage(null);
   }, [saveRegisterToLocalStorage]);
 
-  // ========== NUEVAS FUNCIONES ==========
-
-  // ✅ Actualizar el porcentaje de IVA global (solo si no hay caja abierta)
-  const updateGlobalIvaPercentage = useCallback(async (newPercentage: number) => {
-    if (register?.isOpen) {
-      throw new Error('No se puede cambiar el IVA global mientras la caja está abierta.');
-    }
-    await syncService.saveGlobalSettings({ defaultIvaPercentage: newPercentage });
-    setGlobalIvaPercentage(newPercentage);
-  }, [register]);
-
-  // ✅ Verificar código de autorización para ajustes de inventario
-  const verifyAdjustmentCode = useCallback(async (code: string): Promise<boolean> => {
-    const storedCode = await syncService.getAdminCode();
-    return storedCode?.code === code;
-  }, []);
-
-  // ✅ Actualizar el código de autorización (solo administrador)
-  const updateAdjustmentCode = useCallback(async (newCode: string) => {
-    await syncService.saveAdminCode({ code: newCode });
-    setAdminCode(newCode);
-  }, []);
-
-  // ✅ Aplicar cambio de IVA global a todos los productos marcados como "con_iva"
-  const applyGlobalIvaChange = useCallback(async (newPercentage: number) => {
-    if (register?.isOpen) {
-      throw new Error('No se puede aplicar el cambio de IVA mientras la caja está abierta.');
-    }
-    const updatedProducts = products.map(product => {
-      if (product.ivaType === 'con_iva') {
-        const basePrice = product.costUsd ? (product.costUsd / ((100 - (product.profitPercent || 30)) / 100)) : 0;
-        const newRetail = basePrice * (1 + newPercentage / 100);
-        return { ...product, ivaPercentage: newPercentage, priceRetail: newRetail, priceUsd: newRetail };
-      }
-      return product;
-    });
-    for (const p of updatedProducts) {
-      await syncService.saveProduct(p);
-    }
-    setProducts(updatedProducts);
-    await updateGlobalIvaPercentage(newPercentage);
-  }, [products, register, updateGlobalIvaPercentage]);
-
-  // ========== FUNCIÓN FINALIZAR VENTA CORREGIDA ==========
   const finalizeSale = useCallback(async (type: 'contado' | 'credito' | 'cobro_deuda', paymentData: any) => {
     if (!register?.isOpen) return;
 
     const subtotal = cart.reduce((acc, item) => acc + (item.priceBs * item.qty), 0);
-    // ✅ Calcular IVA solo para productos marcados como "con_iva"
     const iva = cart.reduce((total, item) => {
-      const hasIva = (item as any).ivaType === 'con_iva';
-      if (hasIva) {
-        const itemTotal = item.priceBs * item.qty;
-        return total + (itemTotal * 0.16);
+      if (item.ivaType === 'con_iva') {
+        return total + (item.priceBs * item.qty * 0.16);
       }
       return total;
     }, 0);
     const total = subtotal + iva;
-
-    const finalTotal = type === 'cobro_deuda' ? paymentData.totalPaid : total;
+    const finalTotal = type === 'cobro_deuda' ? (paymentData.totalPaid || paymentData.amount) : total;
 
     let targetClientId = paymentData.clientId;
     if (type === 'credito' && paymentData.isNewClient) {
       const nextClientId = getVenezuelaTimestamp();
-      const newCli: Client = { id: nextClientId, name: paymentData.clientName, cedula: paymentData.clientCedula, phone: paymentData.clientPhone || '', address: paymentData.clientAddress || '', debt: 0 };
-      await syncService.saveClient(newCli);
+      await syncService.saveClient({ 
+        id: nextClientId, 
+        name: paymentData.clientName, 
+        cedula: paymentData.clientCedula, 
+        phone: paymentData.clientPhone || '', 
+        address: paymentData.clientAddress || '', 
+        debt: 0 
+      });
       targetClientId = nextClientId;
     }
 
-    const venezuelaDate = getVenezuelaISOString();
-    const venezuelaTimestamp = getVenezuelaTimestamp();
-    const currentExchangeRate = exchangeRate;
-    const totalUsd = cart.reduce((acc, item) => acc + (item.priceUsd * item.qty), 0);
-
     const tx: Transaction = {
-      id: venezuelaTimestamp,
-      date: venezuelaDate,
-      type: type,
+      id: getVenezuelaTimestamp(),
+      date: getVenezuelaISOString(),
+      type,
       items: type === 'cobro_deuda' ? [] : [...cart],
-      subtotal: type === 'cobro_deuda' ? paymentData.totalPaid : subtotal,
-      iva: iva,
+      subtotal: type === 'cobro_deuda' ? finalTotal : subtotal,
+      iva,
       total: finalTotal,
-      totalUsd: totalUsd,
+      totalUsd: finalTotal / exchangeRate,
       payMethod: paymentData.method || 'efectivo_bs',
       paidBs: paymentData.totalPaid || paymentData.amount || finalTotal,
       change: paymentData.change || 0,
       clientId: targetClientId,
       clientName: paymentData.clientName,
-      exchangeRate: currentExchangeRate
+      exchangeRate
     };
 
-    // ✅ Guardar transacción en Firestore
     await syncService.saveTransaction(tx);
 
-    // ✅ GUARDAR TODAS LAS TRANSACCIONES (CONTADO, CRÉDITO Y COBROS) EN EL REGISTER
-    if (register) {
-      const updatedRegister = {
-        ...register,
-        txs: [...(register.txs || []), tx],
-        exchangeRate: (register as any).exchangeRate || currentExchangeRate || 36.50
-      };
-      await syncService.saveRegister(updatedRegister);
-      saveRegisterToLocalStorage(updatedRegister);
-      setRegister(updatedRegister);
-    }
+    const updatedRegister = {
+      ...register,
+      txs: [...(register.txs || []), tx],
+    };
+    await syncService.saveRegister(updatedRegister);
+    setRegister(updatedRegister);
+    saveRegisterToLocalStorage(updatedRegister);
 
     if (type !== 'cobro_deuda') {
       const updates = cart.map(item => {
@@ -360,21 +238,20 @@ export function usePOSState() {
     }
 
     if (type === 'credito') {
-      const acc: Account = { 
+      await syncService.saveAccount({ 
         id: getVenezuelaTimestamp(), 
         txId: tx.id, 
-        date: venezuelaDate, 
-        clientId: targetClientId, 
+        date: tx.date, 
+        clientId: targetClientId!, 
         clientName: paymentData.clientName, 
         clientCedula: paymentData.clientCedula || '', 
         products: cart.map(i => `${i.name} x${i.qty}`).join(', '), 
         amountBs: total, 
-        amountUsd: totalUsd,
+        amountUsd: total / exchangeRate,
         paidAmount: 0, 
         status: 'pendiente',
-        exchangeRate: currentExchangeRate
-      };
-      await syncService.saveAccount(acc);
+        exchangeRate
+      });
       const client = clients.find(c => c.id === targetClientId);
       if (client) await syncService.saveClient({ ...client, debt: (client.debt || 0) + total });
       await registerCreditEntry(tx, client || { name: paymentData.clientName } as any);
@@ -395,68 +272,67 @@ export function usePOSState() {
     if (!client) return;
 
     let remaining = amount;
-    const clientAccounts = accounts.filter(a => a.clientId === clientId && a.status !== 'pagada').sort((a,b) => new Date(a.date).getTime() - new Date(a.date).getTime());
+    const clientAccounts = accounts.filter(a => a.clientId === clientId && a.status !== 'pagada')
+      .sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
     for (const acc of clientAccounts) {
       if (remaining <= 0) break;
       const owed = acc.amountBs - (acc.paidAmount || 0);
       const pay = Math.min(remaining, owed);
-      const updatedAcc = { ...acc, paidAmount: (acc.paidAmount || 0) + pay, status: (acc.paidAmount || 0) + pay >= acc.amountBs ? 'pagada' : 'parcial' };
-      await syncService.saveAccount(updatedAcc);
+      await syncService.saveAccount({ 
+        ...acc, 
+        paidAmount: (acc.paidAmount || 0) + pay, 
+        status: (acc.paidAmount || 0) + pay >= acc.amountBs ? 'pagada' : 'parcial' 
+      });
       remaining -= pay;
     }
 
-    const venezuelaDate = getVenezuelaISOString();
-    const venezuelaTimestamp = getVenezuelaTimestamp();
-    const currentExchangeRate = exchangeRate;
-
     const tx: Transaction = { 
-      id: venezuelaTimestamp, 
-      date: venezuelaDate, 
+      id: getVenezuelaTimestamp(), 
+      date: getVenezuelaISOString(), 
       type: 'cobro_deuda', 
       items: [], 
       subtotal: amount, 
       iva: 0, 
       total: amount, 
-      totalUsd: amount / currentExchangeRate, 
+      totalUsd: amount / exchangeRate, 
       payMethod: 'efectivo_bs', 
       paidBs: amount, 
       change: 0, 
       clientId, 
       clientName: client.name,
-      exchangeRate: currentExchangeRate
+      exchangeRate
     };
     
     await syncService.saveTransaction(tx);
     
-    if (register) {
-      const updatedRegister = {
-        ...register,
-        txs: [...(register.txs || []), tx],
-        exchangeRate: (register as any).exchangeRate || currentExchangeRate || 36.50
-      };
-      await syncService.saveRegister(updatedRegister);
-      saveRegisterToLocalStorage(updatedRegister);
-      setRegister(updatedRegister);
-    }
+    const updatedRegister = {
+      ...register,
+      txs: [...(register.txs || []), tx],
+    };
+    await syncService.saveRegister(updatedRegister);
+    setRegister(updatedRegister);
+    saveRegisterToLocalStorage(updatedRegister);
     
     await syncService.saveClient({ ...client, debt: Math.max(0, (client.debt || 0) - amount) });
     await registerDebtPaymentEntry(tx, client);
   }, [register, clients, accounts, exchangeRate, saveRegisterToLocalStorage]);
 
+  const setExchangeRateProxy = useCallback(async (newRate: number) => {
+    setExchangeRate(newRate);
+    localStorage.setItem(STORAGE_KEYS.EXCHANGE_RATE, newRate.toString());
+    await syncService.saveGlobalSettings({ exchangeRate: newRate });
+  }, []);
+
   return {
     products, setProducts, addProduct, updateProduct, deleteProduct,
     clients, setClients, saveClient, deleteClient, transactions, setTransactions, accounts, setAccounts,
     register, setRegister, openCashRegister, closeCashRegister,
-    exchangeRate, setExchangeRate: updateExchangeRate,
+    exchangeRate, setExchangeRate: setExchangeRateProxy,
     cart, addToCart, removeFromCart, updateCartQty,
     isIvaEnabled, setIsIvaEnabled, currentPage, setCurrentPage,
     finalizeSale, applyAbono, isHydrated,
-    // ✅ Nuevos valores y funciones expuestos
     globalIvaPercentage,
-    updateGlobalIvaPercentage,
-    verifyAdjustmentCode,
-    updateAdjustmentCode,
-    applyGlobalIvaChange
+    adminCode
   };
 }

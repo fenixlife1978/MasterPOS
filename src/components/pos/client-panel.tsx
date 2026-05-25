@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { Client, CartItem } from '@/lib/types';
-import { UserCircle, X, CheckCircle, HandCoins, Eye, History } from 'lucide-react';
+import { UserCircle, X, CheckCircle, HandCoins, Eye, History, DollarSign } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { usePOSState } from '@/hooks/use-pos-state';
 import PaymentModal from './payment-modal';
@@ -43,6 +43,17 @@ export default function ClientPanel({ client, state, onClose }: ClientPanelProps
     return state.transactions
       .filter(t => t.type === 'cobro_deuda' && t.clientId === client.id)
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  };
+
+  // ✅ Obtener la tasa BCV HISTÓRICA guardada en la transacción
+  const getHistoricalExchangeRate = () => {
+    if (selectedTransaction?.accountInfo?.exchangeRate) {
+      return selectedTransaction.accountInfo.exchangeRate;
+    }
+    if (selectedTransaction?.exchangeRate) {
+      return selectedTransaction.exchangeRate;
+    }
+    return null;
   };
 
   const handleFullPay = () => {
@@ -139,6 +150,8 @@ export default function ClientPanel({ client, state, onClose }: ClientPanelProps
     }
     return [];
   };
+
+  const historicalRate = getHistoricalExchangeRate();
 
   return (
     <>
@@ -281,7 +294,7 @@ export default function ClientPanel({ client, state, onClose }: ClientPanelProps
         />
       )}
 
-      {/* Modal de detalle de transacción */}
+      {/* Modal de detalle de transacción con Tasa BCV HISTÓRICA */}
       <Dialog open={showDetailModal} onOpenChange={setShowDetailModal}>
         <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-2xl p-0 overflow-hidden rounded-2xl shadow-xl max-h-[85vh] overflow-y-auto">
           <DialogHeader className="sr-only">
@@ -320,7 +333,9 @@ export default function ClientPanel({ client, state, onClose }: ClientPanelProps
                   <div>
                     <label className="text-[10px] font-black text-black/60 uppercase tracking-widest">Monto Total</label>
                     <p className="text-lg font-black text-black">BS {selectedTransaction.accountInfo.amountBs.toFixed(2)}</p>
-                    <p className="text-xs text-black/50">≈ USD {(selectedTransaction.accountInfo.amountBs / state.exchangeRate).toFixed(2)}</p>
+                    {historicalRate && (
+                      <p className="text-xs text-black/50">≈ USD {(selectedTransaction.accountInfo.amountBs / historicalRate).toFixed(2)} <span className="text-amber-600">(al momento del crédito)</span></p>
+                    )}
                   </div>
                   <div>
                     <label className="text-[10px] font-black text-black/60 uppercase tracking-widest">Estado</label>
@@ -333,6 +348,26 @@ export default function ClientPanel({ client, state, onClose }: ClientPanelProps
                       {selectedTransaction.accountInfo.status === 'pagada' ? 'PAGADA' :
                        selectedTransaction.accountInfo.status === 'parcial' ? 'PARCIAL' : 'PENDIENTE'}
                     </p>
+                  </div>
+                </div>
+
+                {/* ✅ Tasa BCV HISTÓRICA - Valor FIJO e INMUTABLE */}
+                <div className="bg-amber-50 rounded-lg p-4 border border-amber-200">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <DollarSign size={16} className="text-amber-700" />
+                      <label className="text-[10px] font-black text-amber-800 uppercase tracking-widest">Tasa BCV al Momento del Crédito</label>
+                    </div>
+                    <div className="text-right">
+                      {historicalRate ? (
+                        <>
+                          <p className="text-lg font-black text-amber-800">1 USD = Bs {historicalRate.toFixed(2)}</p>
+                          <p className="text-[8px] text-amber-600">Valor fijo aplicado el {new Date(selectedTransaction.accountInfo.date).toLocaleDateString('es-VE')}</p>
+                        </>
+                      ) : (
+                        <p className="text-sm font-bold text-red-600">No registrada</p>
+                      )}
+                    </div>
                   </div>
                 </div>
 
@@ -360,10 +395,12 @@ export default function ClientPanel({ client, state, onClose }: ClientPanelProps
                                 <td className="p-3 text-xs text-black/80">{item.qty}</td>
                                 <td className="p-3 text-xs text-black font-medium">{item.name}</td>
                                 <td className="p-3 text-right text-xs text-black/80">
-                                  {item.priceBs > 0 ? `BS ${item.priceBs.toFixed(2)}` : '—'}
+                                  {item.priceBs > 0 ? `BS ${item.priceBs.toFixed(2)}` : 
+                                   item.priceUsd > 0 ? `$${item.priceUsd.toFixed(2)}` : '—'}
                                 </td>
                                 <td className="p-3 text-right text-xs font-bold text-black">
-                                  {item.priceBs > 0 ? `BS ${(item.priceBs * item.qty).toFixed(2)}` : '—'}
+                                  {item.priceBs > 0 ? `BS ${(item.priceBs * item.qty).toFixed(2)}` : 
+                                   item.priceUsd > 0 ? `$${(item.priceUsd * item.qty).toFixed(2)}` : '—'}
                                 </td>
                               </tr>
                             ));
@@ -381,19 +418,37 @@ export default function ClientPanel({ client, state, onClose }: ClientPanelProps
                   </div>
                 </div>
 
-                {/* Totales */}
+                {/* Totales con tasa histórica */}
                 <div className="bg-[#F5F5F5] rounded-lg p-4 space-y-2">
                   <div className="flex justify-between text-sm">
-                    <span className="text-black/60">Monto Total:</span>
-                    <span className="font-bold text-black">BS {selectedTransaction.accountInfo.amountBs.toFixed(2)}</span>
+                    <span className="text-black/60">Monto Total (Bs):</span>
+                    <div className="text-right">
+                      <span className="font-bold text-black">BS {selectedTransaction.accountInfo.amountBs.toFixed(2)}</span>
+                      {historicalRate && (
+                        <span className="text-xs text-black/50 ml-2">(USD {(selectedTransaction.accountInfo.amountBs / historicalRate).toFixed(2)})</span>
+                      )}
+                    </div>
                   </div>
                   <div className="flex justify-between text-sm">
-                    <span className="text-black/60">Monto Pagado:</span>
-                    <span className="font-bold text-green-600">BS {(selectedTransaction.accountInfo.paidAmount || 0).toFixed(2)}</span>
+                    <span className="text-black/60">Monto Pagado (Bs):</span>
+                    <div className="text-right">
+                      <span className="font-bold text-green-600">BS {(selectedTransaction.accountInfo.paidAmount || 0).toFixed(2)}</span>
+                      {historicalRate && (
+                        <span className="text-xs text-black/50 ml-2">(USD {((selectedTransaction.accountInfo.paidAmount || 0) / historicalRate).toFixed(2)})</span>
+                      )}
+                    </div>
                   </div>
                   <div className="flex justify-between text-sm pt-1 border-t border-dashed border-[#9E9E9E]">
-                    <span className="text-black/60">Saldo Pendiente:</span>
-                    <span className="font-bold text-red-600">BS {(selectedTransaction.accountInfo.amountBs - (selectedTransaction.accountInfo.paidAmount || 0)).toFixed(2)}</span>
+                    <span className="text-black/60">Saldo Pendiente (Bs):</span>
+                    <div className="text-right">
+                      <span className="font-bold text-red-600">BS {(selectedTransaction.accountInfo.amountBs - (selectedTransaction.accountInfo.paidAmount || 0)).toFixed(2)}</span>
+                      {historicalRate && (
+                        <span className="text-xs text-black/50 ml-2">(USD {((selectedTransaction.accountInfo.amountBs - (selectedTransaction.accountInfo.paidAmount || 0)) / historicalRate).toFixed(2)})</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="text-[8px] text-amber-600 text-center pt-2 border-t border-dashed border-[#9E9E9E]">
+                    ⚠️ Los valores en USD se calculan con la tasa fija aplicada al momento del crédito
                   </div>
                 </div>
 

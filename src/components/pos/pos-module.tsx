@@ -22,20 +22,39 @@ export default function POSModule({ state }: POSModuleProps) {
   const [showReceipt, setShowReceipt] = useState(false);
   const [lastTransaction, setLastTransaction] = useState<any>(null);
   const [user, setUser] = useState<{ name: string; role: string } | null>(null);
+  
+  // ✅ Obtener el próximo número de recibo (comienza en 1)
+  const [nextReceiptNumber, setNextReceiptNumber] = useState(1);
 
   useEffect(() => {
     const storedUser = localStorage.getItem('user');
     if (storedUser) {
       setUser(JSON.parse(storedUser));
     }
+    
+    // Cargar el último número de recibo usado
+    const lastReceipt = localStorage.getItem('last_receipt_number');
+    if (lastReceipt) {
+      setNextReceiptNumber(parseInt(lastReceipt) + 1);
+    } else {
+      // ✅ Si no hay, comenzar desde 1
+      setNextReceiptNumber(1);
+    }
   }, []);
 
-  const cartTotal = state.cart.reduce((s, i) => s + (i.priceBs * i.qty), 0);
-  // ✅ Calcular el total correcto según el estado del IVA
-  const totalWithIva = state.isIvaEnabled ? cartTotal * 1.16 : cartTotal;
-  const totalForCredit = state.isIvaEnabled ? cartTotal * 1.16 : cartTotal; // ✅ Mismo cálculo
+  // Actualizar cuando se complete una transacción
+  useEffect(() => {
+    if (lastTransaction) {
+      const newReceiptNumber = lastTransaction.id;
+      setNextReceiptNumber(newReceiptNumber + 1);
+      localStorage.setItem('last_receipt_number', newReceiptNumber.toString());
+    }
+  }, [lastTransaction]);
 
-  // ✅ CORREGIDO: Espera los datos reales de la venta al contado mediante async/await
+  const cartTotal = state.cart.reduce((s, i) => s + (i.priceBs * i.qty), 0);
+  const totalWithIva = state.isIvaEnabled ? cartTotal * 1.16 : cartTotal;
+  const totalForCredit = state.isIvaEnabled ? cartTotal * 1.16 : cartTotal;
+
   const handlePaymentConfirm = async (data: any) => {
     try {
       const tx = await state.finalizeSale('contado', data);
@@ -50,7 +69,6 @@ export default function POSModule({ state }: POSModuleProps) {
     }
   };
 
-  // ✅ CORREGIDO: Ventas a crédito con tasa histórica
   const handleCreditConfirm = async (data: any) => {
     try {
       const tx = await state.finalizeSale('credito', {
@@ -76,14 +94,15 @@ export default function POSModule({ state }: POSModuleProps) {
   };
 
   return (
+    // Layout: columna izquierda más angosta (1/3), columna derecha más ancha (2/3)
     <div className="grid grid-cols-1 md:grid-cols-3 h-full overflow-hidden">
-      {/* COLUMNA IZQUIERDA: Búsqueda */}
-      <div className="flex flex-col overflow-hidden bg-primary border-l border-r border-black">
+      {/* COLUMNA IZQUIERDA: Búsqueda - 1/3 del ancho */}
+      <div className="md:col-span-1 flex flex-col overflow-hidden bg-primary border-l border-r border-black">
         <ProductSearch state={state} onAdd={state.addToCart} />
       </div>
 
-      {/* COLUMNA CENTRAL: Carrito */}
-      <div className="flex flex-col overflow-hidden bg-white">
+      {/* COLUMNA DERECHA: Carrito - 2/3 del ancho */}
+      <div className="md:col-span-2 flex flex-col overflow-hidden bg-white">
         <CartPanel 
           cart={state.cart} 
           onUpdateQty={state.updateCartQty} 
@@ -93,37 +112,8 @@ export default function POSModule({ state }: POSModuleProps) {
           isRegisterOpen={!!state.register?.isOpen}
           isIvaEnabled={state.isIvaEnabled}
           onIvaToggle={state.setIsIvaEnabled}
+          nextReceiptNumber={nextReceiptNumber}
         />
-      </div>
-
-      {/* COLUMNA DERECHA: Logo + Nombre usuario arriba */}
-      <div className="hidden md:flex flex-col items-center justify-center relative overflow-hidden bg-[#F5F5DC]">
-        {/* Nombre del usuario arriba */}
-        {user && (
-          <div className="absolute top-6 left-0 right-0 flex justify-center z-10">
-            <div className="bg-white/80 backdrop-blur-sm rounded-full px-4 py-2 shadow-md border border-black/10 flex items-center gap-2">
-              <UserCircle size={16} className="text-primary" />
-              <span className="text-black text-sm font-medium">{user.name}</span>
-              <span className="text-black/40 text-[10px] uppercase">{user.role === 'admin' ? 'Admin' : 'Cajero'}</span>
-            </div>
-          </div>
-        )}
-
-        {/* Efectos decorativos */}
-        <div className="absolute w-[280px] h-[280px] bg-primary/5 rounded-full blur-[120px] animate-float-ambient top-[20%] left-[15%]" />
-        <div className="absolute w-[180px] h-[180px] bg-primary/2 rounded-full blur-[100px] animate-float-ambient bottom-[25%] right-[20%]" />
-        
-        {/* Logo centrado desde carpeta public */}
-        <div className="z-10 w-full px-12 flex items-center justify-center transition-all duration-500 hover:scale-105">
-          <Image 
-            src="/logo-master.png"
-            alt="MasterPOS Logo"
-            width={500}
-            height={500}
-            className="object-contain drop-shadow-2xl"
-            priority
-          />
-        </div>
       </div>
 
       {/* Modales */}
@@ -152,13 +142,12 @@ export default function POSModule({ state }: POSModuleProps) {
           cart={state.cart}
           clients={state.clients}
           exchangeRate={state.exchangeRate}
-          total={totalForCredit} // ✅ PASAR EL TOTAL CORRECTO (con o sin IVA según el estado)
+          total={totalForCredit}
           onClose={() => setShowCredito(false)}
           onConfirm={handleCreditConfirm}
         />
       )}
 
-      {/* RENDERIZADO DEL RECIBO CON LOS DATOS DE TRANSACCIÓN REALES */}
       {showReceipt && lastTransaction && (
         <ReceiptModal 
           transaction={lastTransaction}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from 'react';
-import { Calculator, X, CreditCard, DollarSign, Fingerprint, Smartphone, Plane, ChevronDown, ChevronUp, Wallet, Plus } from 'lucide-react';
+import { Calculator, X, CreditCard, DollarSign, Fingerprint, Smartphone, Plane, ChevronDown, ChevronUp, Wallet, Plus, Undo, Eraser } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface PaymentItem {
@@ -30,6 +30,7 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
   const [showPagoMovilModal, setShowPagoMovilModal] = useState(false);
   const [showChangeDialog, setShowChangeDialog] = useState(false);
   const [pendingChange, setPendingChange] = useState(0);
+  const [lastAction, setLastAction] = useState<{ type: string; data: any } | null>(null);
   
   // Refs para inputs del modal de Pago Móvil
   const pagoMovilInputRef = useRef<HTMLInputElement>(null);
@@ -47,23 +48,55 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
   const currentMethodInfo = methods.find(m => m.id === currentMethod);
   const isUsd = currentMethod === 'usd_efectivo' || currentMethod === 'zelle';
   
-  // En modo simple
+  // Modo simple
   const simpleAmount = currentAmount;
   const totalPaid = simpleAmount;
   const remaining = Math.max(0, total - totalPaid);
   const changeAmount = Math.max(0, totalPaid - total);
   const isFullyPaid = totalPaid >= total;
 
-  // En modo compuesto
+  // Modo compuesto
   const compoundTotalPaid = compoundPayments.reduce((sum, p) => sum + p.amount, 0);
   const compoundRemaining = Math.max(0, total - compoundTotalPaid);
   const compoundChange = Math.max(0, compoundTotalPaid - total);
 
+  // Función para borrar el último dígito
+  const handleDeleteDigit = () => {
+    setBuffer(prev => prev.slice(0, -1));
+  };
+
+  // Función para borrar todo
+  const handleClearAll = () => {
+    setBuffer('');
+  };
+
+  // Función para deshacer la última acción en modo compuesto
+  const handleUndoLastPayment = () => {
+    if (compoundPayments.length === 0) return;
+    const lastPayment = compoundPayments[compoundPayments.length - 1];
+    setLastAction({ type: 'remove', data: lastPayment });
+    setCompoundPayments(prev => prev.slice(0, -1));
+  };
+
+  // Función para deshacer en modo simple
+  const handleUndoSimple = () => {
+    setCurrentAmount(0);
+    setBuffer('');
+  };
+
   const handleInput = (val: string) => {
     if (val === 'del') {
-      setBuffer(prev => prev.slice(0, -1));
+      handleDeleteDigit();
+    } else if (val === 'clear') {
+      handleClearAll();
     } else if (val === '.') {
       if (!buffer.includes('.')) setBuffer(prev => prev + '.');
+    } else if (val === 'undo') {
+      if (showCompoundModal) {
+        handleUndoLastPayment();
+      } else {
+        handleUndoSimple();
+      }
     } else {
       setBuffer(prev => prev + val);
     }
@@ -92,7 +125,6 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
     const newTotalPaid = compoundTotalPaid + amountToAdd;
     
     if (newTotalPaid > total) {
-      // Hay vuelto
       setPendingChange(newTotalPaid - total);
       const existingIndex = compoundPayments.findIndex(p => p.method === currentMethod);
       let updatedPayments = [...compoundPayments];
@@ -116,18 +148,10 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
     setBuffer('');
   };
 
-  // Manejar teclado - SOLO si NO hay modales secundarios abiertos
+  // Manejar teclado
   const handleKeyDown = (e: KeyboardEvent) => {
-    // IMPORTANTE: Si el modal de Pago Móvil está abierto, NO procesar NADA
-    if (showPagoMovilModal) {
-      return;
-    }
+    if (showPagoMovilModal || showChangeDialog) return;
     
-    if (showChangeDialog) {
-      return;
-    }
-    
-    // Si el modal compuesto está abierto, procesar teclas para él
     if (showCompoundModal) {
       if (e.key >= '0' && e.key <= '9') {
         handleInput(e.key);
@@ -139,7 +163,13 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
         handleCompoundAddPayment();
       } else if (e.key === 'Backspace') {
         e.preventDefault();
-        handleInput('del');
+        handleDeleteDigit();
+      } else if (e.key === 'Delete') {
+        e.preventDefault();
+        handleClearAll();
+      } else if (e.key === 'u' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        handleUndoLastPayment();
       } else if (e.key === 'Escape') {
         setShowCompoundModal(false);
         setCompoundPayments([]);
@@ -159,7 +189,13 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
       handleSetAmount();
     } else if (e.key === 'Backspace') {
       e.preventDefault();
-      handleInput('del');
+      handleDeleteDigit();
+    } else if (e.key === 'Delete') {
+      e.preventDefault();
+      handleClearAll();
+    } else if (e.key === 'u' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      handleUndoSimple();
     } else if (e.key === 'Escape') {
       onClose();
     }
@@ -230,7 +266,7 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
     return <Icon size={14} />;
   };
 
-  // Modal Pago Móvil - CORREGIDO con refs y prevención de propagación
+  // Modal Pago Móvil
   const PagoMovilModal = () => {
     const [reference, setReference] = useState('');
     const [bank, setBank] = useState('');
@@ -272,7 +308,6 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
       setBank('');
     };
 
-    // Prevenir que los eventos de teclado lleguen al modal padre
     const handleKeyDownCapture = (e: React.KeyboardEvent) => {
       e.stopPropagation();
     };
@@ -520,9 +555,9 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
               {n}
             </button>
           ))}
-          <button onClick={() => handleInput('del')} 
+          <button onClick={() => handleDeleteDigit()} 
             className="h-8 bg-[#E8E8E8] border border-black/10 rounded-md text-[#E74C3C] flex items-center justify-center hover:bg-[#E74C3C] hover:text-white">
-            <Calculator size={14} />
+            <Eraser size={14} />
           </button>
           <button onClick={() => handleInput('0')} 
             className="h-8 bg-[#E8E8E8] border border-black/10 rounded-md font-black text-sm text-black hover:bg-[#D4A017]">
@@ -531,6 +566,28 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
           <button onClick={() => handleInput('.')} 
             className="h-8 bg-[#E8E8E8] border border-black/10 rounded-md font-black text-sm text-black hover:bg-[#D4A017]">
             .
+          </button>
+        </div>
+
+        {/* Fila adicional con botones de Deshacer y Limpiar */}
+        <div className="grid grid-cols-2 gap-2 mb-2">
+          <button 
+            onClick={handleUndoLastPayment}
+            disabled={compoundPayments.length === 0}
+            className={cn(
+              "py-1.5 rounded-md border border-black/20 text-[10px] font-bold flex items-center justify-center gap-1",
+              compoundPayments.length === 0 
+                ? "bg-gray-200 text-gray-400 cursor-not-allowed" 
+                : "bg-[#E8E8E8] text-black hover:bg-[#D4A017]"
+            )}
+          >
+            <Undo size={12} /> Deshacer
+          </button>
+          <button 
+            onClick={handleClearAll}
+            className="py-1.5 rounded-md border border-black/20 bg-[#E8E8E8] text-black text-[10px] font-bold hover:bg-[#D4A017] flex items-center justify-center gap-1"
+          >
+            <Eraser size={12} /> Limpiar
           </button>
         </div>
 
@@ -667,6 +724,7 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
             )}
           </div>
 
+          {/* Teclado numérico */}
           <div className="grid grid-cols-3 gap-1 mb-2">
             {[1,2,3,4,5,6,7,8,9].map(n => (
               <button key={n} onClick={() => handleInput(n.toString())} 
@@ -674,9 +732,9 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
                 {n}
               </button>
             ))}
-            <button onClick={() => handleInput('del')} 
+            <button onClick={() => handleDeleteDigit()} 
               className="h-9 bg-[#E8E8E8] border border-black/10 rounded-lg text-[#E74C3C] flex items-center justify-center hover:bg-[#E74C3C] hover:text-white">
-              <Calculator size={18} />
+              <Eraser size={18} />
             </button>
             <button onClick={() => handleInput('0')} 
               className="h-9 bg-[#E8E8E8] border border-black/10 rounded-lg font-black text-sm text-black hover:bg-[#D4A017]">
@@ -685,6 +743,28 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
             <button onClick={() => handleInput('.')} 
               className="h-9 bg-[#E8E8E8] border border-black/10 rounded-lg font-black text-sm text-black hover:bg-[#D4A017]">
               .
+            </button>
+          </div>
+
+          {/* Fila adicional con botones de Deshacer y Limpiar */}
+          <div className="grid grid-cols-2 gap-2 mb-2">
+            <button 
+              onClick={handleUndoSimple}
+              disabled={currentAmount === 0}
+              className={cn(
+                "py-2 rounded-lg border border-black/20 text-[10px] font-bold flex items-center justify-center gap-1",
+                currentAmount === 0 
+                  ? "bg-gray-200 text-gray-400 cursor-not-allowed" 
+                  : "bg-[#E8E8E8] text-black hover:bg-[#D4A017]"
+              )}
+            >
+              <Undo size={12} /> Deshacer
+            </button>
+            <button 
+              onClick={handleClearAll}
+              className="py-2 rounded-lg border border-black/20 bg-[#E8E8E8] text-black text-[10px] font-bold hover:bg-[#D4A017] flex items-center justify-center gap-1"
+            >
+              <Eraser size={12} /> Limpiar
             </button>
           </div>
 

@@ -13,6 +13,13 @@ export interface Product {
   costUsd?: number;
   profitPercent?: number;
   department?: string;
+  // Nuevos campos para los tres tipos de precio
+  priceRetail?: number;     // Precio al detal (calculado con fórmula + IVA)
+  priceWholesale?: number;  // Precio al mayor (fijo)
+  priceCost?: number;       // Precio de costo (fijo)
+  // Configuración de IVA por producto
+  ivaType?: 'con_iva' | 'sin_iva';
+  ivaPercentage?: number;
 }
 
 export interface Client {
@@ -71,6 +78,7 @@ export interface CashRegister {
   openAmount: number;
   txs: Transaction[];
   closeTime?: string;
+  exchangeRate?: number; // ✅ AGREGAR: Tasa BCV al momento de apertura
 }
 
 export type Page = 'dashboard' | 'pos' | 'inventario' | 'clientes' | 'cuentas' | 'caja' | 'proveedores' | 'contabilidad' | 'devoluciones' | 'registrar_compra';
@@ -80,11 +88,11 @@ export interface KardexEntry {
   productId: number;
   date: string;
   type: 'entrada_compra' | 'salida_venta' | 'ajuste_positivo' | 'ajuste_negativo' | 'devolucion';
-  reference: string; // Número de factura o ID de transacción
-  qty: number;       // Cantidad del movimiento
-  costUsd: number;   // Costo unitario de la operación
-  costBs: number;    // Costo unitario en Bs de la operación
-  stockAfter: number; // Stock resultante después del movimiento
+  reference: string;
+  qty: number;
+  costUsd: number;
+  costBs: number;
+  stockAfter: number;
 }
 
 export interface Terminal {
@@ -122,20 +130,20 @@ export interface SupplierInvoice {
   paidAmount: number;
   status: 'pendiente' | 'parcial' | 'pagada';
   notes: string;
-  exchangeRate: number; // Tasa BCV al momento de la compra
-  itemsCount: number;   // Cantidad de productos en la factura
+  exchangeRate: number;
+  itemsCount: number;
   createdAt: string;
 }
 
 export interface PurchaseInvoiceItem {
-  id: string;                    // ID compuesto: `${invoiceId}_${idx}`
-  invoiceId: number;             // ID de la factura padre
-  productId: number;             // ID del producto
-  productName: string;           // Nombre del producto
-  qty: number;                   // Cantidad comprada
-  costUsd: number;               // Costo unitario en USD
-  totalUsd: number;              // Subtotal por producto (qty * costUsd)
-  createdAt: string;             // Fecha de creación
+  id: string;
+  invoiceId: number;
+  productId: number;
+  productName: string;
+  qty: number;
+  costUsd: number;
+  totalUsd: number;
+  createdAt: string;
 }
 
 export interface SupplierPayment {
@@ -181,3 +189,17 @@ export const EXPENSE_CATEGORIES: ExpenseCategory[] = [
   { id: 'sueldos', name: 'Pago de Sueldos' },
   { id: 'otros', name: 'Otros Gastos' },
 ];
+
+// Interfaz para el código de autorización de ajustes de inventario
+export interface AdminCode {
+  id: string;        // Siempre 'adjustment_code'
+  code: string;
+  updatedAt: string;
+}
+
+// Interfaz para la configuración global del sistema (IVA, etc.)
+export interface GlobalSettings {
+  id: string;               // Siempre 'global'
+  defaultIvaPercentage: number;
+  updatedAt: string;
+}

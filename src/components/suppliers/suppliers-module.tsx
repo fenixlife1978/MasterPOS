@@ -1,13 +1,14 @@
 "use client";
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { usePOSState } from '@/hooks/use-pos-state';
 import { useSuppliers } from '@/hooks/use-suppliers';
 import { 
   Plus, Search, Pencil, Trash2, X, Truck, 
   Receipt, DollarSign, Calendar, FileText, 
   ChevronDown, ChevronRight, Eye, Package, 
-  Filter, Download, Printer, History
+  Filter, Download, Printer, History, HandCoins,
+  Wallet, Loader2
 } from 'lucide-react';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
@@ -15,12 +16,47 @@ import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
-import { Supplier, SupplierInvoice, PurchaseInvoiceItem } from '@/lib/types';
+import { Supplier, SupplierInvoice, PurchaseInvoiceItem, SupplierPayment } from '@/lib/types';
 import { syncService } from '@/services/syncService';
+import SupplierPaymentModal from './supplier-payment-modal';
 
 interface ExpandedInvoice {
   invoiceId: number;
   items: PurchaseInvoiceItem[];
+}
+
+// ✅ Función para obtener fecha y hora local de Venezuela (formato: DD/MM/YY HH:MM AM/PM)
+function getVenezuelaDateTime(): string {
+  const now = new Date();
+  
+  const formatter = new Intl.DateTimeFormat('es-VE', {
+    timeZone: 'America/Caracas',
+    year: '2-digit',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true
+  });
+  
+  return formatter.format(now);
+}
+
+// ✅ Función para obtener solo la fecha en formato YYYY-MM-DD (para Firestore)
+function getVenezuelaDateForFirestore(): string {
+  const now = new Date();
+  
+  const formatter = new Intl.DateTimeFormat('sv-SE', {
+    timeZone: 'America/Caracas',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  
+  const parts = formatter.formatToParts(now);
+  const partMap = Object.fromEntries(parts.map(p => [p.type, p.value]));
+  
+  return `${partMap.year}-${partMap.month}-${partMap.day}`;
 }
 
 export default function SuppliersModule() {
@@ -35,6 +71,16 @@ export default function SuppliersModule() {
   const [filterDateStart, setFilterDateStart] = useState('');
   const [filterDateEnd, setFilterDateEnd] = useState('');
   
+  // Estados para el pago de deudas
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [selectedSupplierForPayment, setSelectedSupplierForPayment] = useState<Supplier | null>(null);
+  const [selectedInvoiceForPayment, setSelectedInvoiceForPayment] = useState<SupplierInvoice | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
+  
+  // Estado para ver historial de pagos
+  const [viewingPayments, setViewingPayments] = useState<Supplier | null>(null);
+  const [supplierPayments, setSupplierPayments] = useState<SupplierPayment[]>([]);
+
   const [formData, setFormData] = useState({
     name: '',
     rif: '',
@@ -48,6 +94,17 @@ export default function SuppliersModule() {
   // Cargar facturas e items desde Firestore
   const [invoices, setInvoices] = useState<SupplierInvoice[]>([]);
   const [purchaseItems, setPurchaseItems] = useState<Record<number, PurchaseInvoiceItem[]>>({});
+
+  // Cargar pagos desde Firestore
+  useEffect(() => {
+    const unsubscribePayments = syncService.subscribeToSupplierPayments((data) => {
+      setSupplierPayments(data);
+    });
+    
+    return () => {
+      unsubscribePayments();
+    };
+  }, []);
 
   useEffect(() => {
     const unsubscribeInvoices = syncService.subscribeToPurchaseInvoices((data) => {
@@ -158,15 +215,287 @@ export default function SuppliersModule() {
   };
 
   const getTotalPaid = (supplierId: number) => {
-    return invoices
-      .filter(i => i.supplierId === supplierId)
-      .reduce((sum, i) => sum + i.paidAmount, 0);
+    const payments = supplierPayments.filter(p => p.supplierId === supplierId);
+    return payments.reduce((sum, p) => sum + p.amount, 0);
+  };
+
+  const getPendingInvoices = (supplierId: number) => {
+    return invoices.filter(i => i.supplierId === supplierId && i.status !== 'pagada');
+  };
+
+  // ==================== FUNCIONES DE PAGO ====================
+  const handleOpenPaymentModal = (supplier: Supplier, invoice?: SupplierInvoice) => {
+    setSelectedSupplierForPayment(supplier);
+    if (invoice) {
+      setSelectedInvoiceForPayment(invoice);
+    } else {
+      setSelectedInvoiceForPayment(null);
+    }
+    setShowPaymentModal(true);
+  };
+
+  const handlePaymentConfirm = async (paymentData: { amount: number; method: string; reference?: string; bank?: string; usdAmount?: number; exchangeRate?: number }) => {
+    if (!selectedSupplierForPayment) return;
+    
+    setIsProcessing(true);
+    
+    try {
+      let remainingAmount = paymentData.amount;
+      const updatedInvoices = [...invoices];
+      
+      // Obtener las facturas pendientes del proveedor
+      const pendingInvoicesList = selectedInvoiceForPayment 
+        ? [selectedInvoiceForPayment]
+        : invoices.filter(i => i.supplierId === selectedSupplierForPayment.id && i.status !== 'pagada')
+            .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      
+      for (const invoice of pendingInvoicesList) {
+        if (remainingAmount <= 0) break;
+        const owed = invoice.total - invoice.paidAmount;
+        const payAmount = Math.min(remainingAmount, owed);
+        
+        const updatedInvoice: SupplierInvoice = {
+          ...invoice,
+          paidAmount: invoice.paidAmount + payAmount,
+          status: (invoice.paidAmount + payAmount) >= invoice.total ? 'pagada' : 'parcial'
+        };
+        
+        await syncService.savePurchaseInvoice(updatedInvoice);
+        
+        // Actualizar el array local
+        const index = updatedInvoices.findIndex(i => i.id === invoice.id);
+        if (index !== -1) updatedInvoices[index] = updatedInvoice;
+        
+        remainingAmount -= payAmount;
+      }
+      
+      // Registrar el pago
+      const newPayment: SupplierPayment = {
+        id: Date.now(),
+        supplierId: selectedSupplierForPayment.id,
+        invoiceId: selectedInvoiceForPayment?.id || pendingInvoicesList[0]?.id || 0,
+        date: getVenezuelaDateForFirestore(),
+        amount: paymentData.amount,
+        method: paymentData.method,
+        reference: paymentData.reference || '',
+        bank: paymentData.bank,
+        notes: `Pago registrado. Tasa usada: ${paymentData.exchangeRate?.toFixed(2)} Bs/USD`
+      };
+      
+      await syncService.saveSupplierPayment(newPayment);
+      
+      // Registrar entrada contable con fecha local de Venezuela (formato para Firestore)
+      await syncService.saveAccountingEntry({
+        id: Date.now(),
+        date: getVenezuelaDateForFirestore(),
+        type: 'egreso',
+        category: 'pagos_proveedores',
+        subcategory: 'abono',
+        concept: `Pago a proveedor ${selectedSupplierForPayment.name}`,
+        description: `Pago de ${paymentData.amount.toFixed(2)} USD`,
+        amount: paymentData.amount,
+        referenceId: newPayment.id,
+        referenceType: 'supplier_payment',
+        createdAt: getVenezuelaDateTime()
+      });
+      
+      // Actualizar deuda total del proveedor
+      const totalDebt = updatedInvoices
+        .filter(i => i.supplierId === selectedSupplierForPayment.id)
+        .reduce((sum, i) => sum + (i.total - i.paidAmount), 0);
+      
+      await updateSupplier({ ...selectedSupplierForPayment, totalDebt });
+      
+      toast({ 
+        title: "Pago registrado", 
+        description: `Se ha registrado un pago de $${paymentData.amount.toFixed(2)} a ${selectedSupplierForPayment.name}` 
+      });
+      
+      setShowPaymentModal(false);
+      setSelectedSupplierForPayment(null);
+      setSelectedInvoiceForPayment(null);
+      
+    } catch (error) {
+      console.error('Error al procesar el pago:', error);
+      toast({ title: "Error", description: "No se pudo procesar el pago", variant: "destructive" });
+    }
+    
+    setIsProcessing(false);
+  };
+
+  // ==================== FUNCIÓN PARA REVERTIR PAGO ====================
+  const handleReversePayment = useCallback(async (payment: SupplierPayment) => {
+    if (!confirm(`¿Está seguro de ANULAR este pago de $${payment.amount.toFixed(2)}? Esta acción revertirá el saldo de las facturas afectadas y no se puede deshacer.`)) {
+      return;
+    }
+
+    setIsProcessing(true);
+    
+    try {
+      // 1. Encontrar las facturas afectadas por este pago
+      const affectedInvoices = invoices.filter(inv => inv.supplierId === payment.supplierId);
+      let remainingAmount = payment.amount;
+      
+      // 2. Ordenar facturas por fecha (las más recientes primero para revertir en orden inverso)
+      const sortedInvoices = [...affectedInvoices]
+        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      
+      const updatedInvoices = [...invoices];
+      
+      for (const invoice of sortedInvoices) {
+        if (remainingAmount <= 0) break;
+        
+        // Calcular cuánto se pagó de esta factura
+        const paidOnInvoice = Math.min(invoice.paidAmount, remainingAmount);
+        if (paidOnInvoice <= 0) continue;
+        
+        const updatedInvoice: SupplierInvoice = {
+          ...invoice,
+          paidAmount: Math.max(0, invoice.paidAmount - paidOnInvoice),
+          status: (invoice.paidAmount - paidOnInvoice) <= 0 ? 'pendiente' : 'parcial'
+        };
+        
+        await syncService.savePurchaseInvoice(updatedInvoice);
+        
+        const index = updatedInvoices.findIndex(i => i.id === invoice.id);
+        if (index !== -1) updatedInvoices[index] = updatedInvoice;
+        
+        remainingAmount -= paidOnInvoice;
+      }
+      
+      // 3. Registrar entrada contable de reversión
+      await syncService.saveAccountingEntry({
+        id: Date.now(),
+        date: getVenezuelaDateForFirestore(),
+        type: 'ingreso',
+        category: 'reversiones_pagos',
+        subcategory: 'anulacion_pago',
+        concept: `ANULACIÓN de pago a proveedor`,
+        description: `Reversión de pago de $${payment.amount.toFixed(2)}`,
+        amount: payment.amount,
+        referenceId: payment.id,
+        referenceType: 'payment_reversal',
+        createdAt: getVenezuelaDateTime()
+      });
+      
+      // 4. Eliminar el pago
+      await syncService.deleteSupplierPayment(payment.id);
+      
+      // 5. Actualizar deuda total del proveedor
+      const supplier = suppliers.find(s => s.id === payment.supplierId);
+      if (supplier) {
+        const totalDebt = updatedInvoices
+          .filter(i => i.supplierId === payment.supplierId)
+          .reduce((sum, i) => sum + (i.total - i.paidAmount), 0);
+        
+        await updateSupplier({ ...supplier, totalDebt });
+      }
+      
+      // 6. Actualizar estado local
+      setInvoices(updatedInvoices);
+      setSupplierPayments(prev => prev.filter(p => p.id !== payment.id));
+      
+      toast({ 
+        title: "Pago anulado", 
+        description: `Se ha anulado el pago de $${payment.amount.toFixed(2)}. El saldo ha sido restaurado.`,
+      });
+      
+    } catch (error) {
+      console.error('Error al anular el pago:', error);
+      toast({ title: "Error", description: "No se pudo anular el pago", variant: "destructive" });
+    }
+    
+    setIsProcessing(false);
+  }, [invoices, suppliers, updateSupplier]);
+
+  // Modal de historial de pagos
+  const PaymentHistoryModal = ({ supplier, onClose }: { supplier: Supplier; onClose: () => void }) => {
+    const payments = useMemo(() => {
+      return supplierPayments
+        .filter(p => p.supplierId === supplier.id)
+        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    }, [supplierPayments, supplier.id]);
+    
+    const totalPaid = useMemo(() => {
+      return payments.reduce((sum, p) => sum + p.amount, 0);
+    }, [payments]);
+
+    return (
+      <Dialog open={true} onOpenChange={onClose}>
+        <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-2xl p-0 overflow-hidden rounded-xl shadow-xl max-h-[85vh]">
+          <DialogHeader className="bg-[#1A2C4E] p-4 text-white sticky top-0">
+            <div className="flex justify-between items-center">
+              <DialogTitle className="text-base font-black flex items-center gap-2">
+                <Wallet size={16} /> Historial de Pagos
+              </DialogTitle>
+              <button onClick={onClose} className="text-white/60 hover:text-white"><X size={18} /></button>
+            </div>
+            <p className="text-xs opacity-70 mt-1">{supplier.name}</p>
+          </DialogHeader>
+          <div className="p-4">
+            <div className="bg-green-50 rounded-lg p-3 mb-4 text-center border border-green-200 transition-all duration-200">
+              <p className="text-[9px] font-black uppercase text-green-700">Total Pagado</p>
+              <p className="text-2xl font-black text-green-700">${totalPaid.toFixed(2)}</p>
+            </div>
+            
+            {payments.length === 0 ? (
+              <div className="text-center py-8 text-black/40">
+                <Wallet size={32} className="mx-auto mb-2 opacity-30" />
+                <p className="text-xs">No hay pagos registrados para este proveedor</p>
+              </div>
+            ) : (
+              <div className="space-y-2 max-h-[400px] overflow-y-auto">
+                {payments.map(payment => {
+                  const relatedInvoice = invoices.find(i => i.id === payment.invoiceId);
+                  const displayDate = new Date(payment.date).toLocaleDateString('es-VE', {
+                    day: '2-digit',
+                    month: '2-digit',
+                    year: 'numeric'
+                  });
+                  return (
+                    <div key={payment.id} className="border border-gray-200 rounded-lg p-3 hover:bg-slate-50 transition-all duration-150">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <p className="text-[10px] font-bold uppercase">{payment.method.replace('_', ' ')}</p>
+                          <p className="text-[9px] text-black/50 mt-1">{displayDate}</p>
+                          {relatedInvoice && (
+                            <p className="text-[8px] text-black/40">Factura #{relatedInvoice.invoiceNumber}</p>
+                          )}
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm font-black text-secondary">${payment.amount.toFixed(2)}</p>
+                        </div>
+                      </div>
+                      {payment.reference && (
+                        <p className="text-[8px] text-black/40 mt-1">Ref: {payment.reference}</p>
+                      )}
+                      <div className="mt-2 flex justify-end">
+                        <button
+                          onClick={() => handleReversePayment(payment)}
+                          className="text-[8px] font-bold text-red-500 hover:text-red-700 transition-colors flex items-center gap-1"
+                          disabled={isProcessing}
+                        >
+                          <Trash2 size={10} /> ANULAR PAGO
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+          <div className="bg-slate-50 p-3 border-t flex justify-end">
+            <Button onClick={onClose} variant="ghost" size="sm" className="h-7 text-xs">CERRAR</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
   };
 
   const PurchaseHistoryModal = ({ supplier, onClose }: { supplier: Supplier; onClose: () => void }) => {
     const supplierInvoices = filteredInvoices.filter(i => i.supplierId === supplier.id);
     const totalPurchases = supplierInvoices.reduce((sum, i) => sum + i.total, 0);
-    const totalPaid = supplierInvoices.reduce((sum, i) => sum + i.paidAmount, 0);
+    const totalPaid = getTotalPaid(supplier.id);
     const totalDebt = totalPurchases - totalPaid;
 
     const toggleInvoiceExpand = (invoiceId: number) => {
@@ -220,6 +549,15 @@ export default function SuppliersModule() {
                 </div>
               </div>
 
+              {/* Botón para pagar */}
+              {totalDebt > 0 && (
+                <div className="mb-4 flex justify-end">
+                  <Button onClick={() => handleOpenPaymentModal(supplier)} className="bg-green-600 hover:bg-green-700 text-white font-black h-8 text-xs">
+                    <HandCoins size={14} className="mr-1" /> PAGAR DEUDA (${totalDebt.toFixed(2)})
+                  </Button>
+                </div>
+              )}
+
               <div className="space-y-2">
                 {supplierInvoices.length === 0 ? (
                   <div className="text-center py-12 text-black/30 italic">
@@ -229,6 +567,7 @@ export default function SuppliersModule() {
                   supplierInvoices.map(inv => {
                     const isExpanded = expandedInvoice?.invoiceId === inv.id;
                     const items = purchaseItems[inv.id] || [];
+                    const owed = inv.total - inv.paidAmount;
                     
                     return (
                       <div key={inv.id} className="border border-[#9E9E9E] rounded-lg overflow-hidden">
@@ -250,12 +589,17 @@ export default function SuppliersModule() {
                           </div>
                           <div className="text-right">
                             <p className="text-sm font-black text-primary">${inv.total.toFixed(2)}</p>
-                            <span className={cn(
-                              "text-[8px] font-bold px-1.5 py-0.5 rounded-full",
-                              inv.status === 'pagada' ? "bg-green-500/20 text-green-400" : "bg-red-500/20 text-red-400"
-                            )}>
-                              {inv.status.toUpperCase()}
-                            </span>
+                            {owed > 0 && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); handleOpenPaymentModal(supplier, inv); }}
+                                className="text-[9px] font-bold text-green-600 hover:underline mt-0.5"
+                              >
+                                Pagar saldo (${owed.toFixed(2)})
+                              </button>
+                            )}
+                            {owed === 0 && (
+                              <span className="text-[8px] font-bold text-green-500">PAGADA</span>
+                            )}
                           </div>
                         </div>
                         
@@ -276,7 +620,9 @@ export default function SuppliersModule() {
                                 </thead>
                                 <tbody className="divide-y divide-gray-100">
                                   {items.length === 0 ? (
-                                    <tr><td colSpan={4} className="p-3 text-center text-black/40 italic">Cargando detalles...</td></tr>
+                                    <tr>
+                                      <td colSpan={4} className="p-3 text-center text-black/40 italic">Cargando detalles...</td>
+                                    </tr>
                                   ) : (
                                     items.map((item, idx) => (
                                       <tr key={idx} className="hover:bg-white">
@@ -305,7 +651,15 @@ export default function SuppliersModule() {
               </div>
             </div>
             
-            <div className="bg-slate-50 p-3 border-t flex justify-end">
+            <div className="bg-slate-50 p-3 border-t flex justify-between items-center">
+              <Button 
+                onClick={() => setViewingPayments(supplier)} 
+                variant="outline" 
+                size="sm" 
+                className="h-7 text-xs border-[#9E9E9E]"
+              >
+                <Wallet size={12} className="mr-1" /> VER HISTORIAL DE PAGOS
+              </Button>
               <Button onClick={onClose} variant="ghost" size="sm" className="h-7 text-xs">CERRAR HISTORIAL</Button>
             </div>
           </div>
@@ -349,7 +703,9 @@ export default function SuppliersModule() {
               </TableHeader>
               <TableBody>
                 {filteredSuppliers.length === 0 ? (
-                  <TableRow><TableCell colSpan={6} className="text-center py-10 text-black/40 italic">No hay proveedores en el directorio</TableCell></TableRow>
+                  <TableRow>
+                    <TableCell colSpan={6} className="text-center py-10 text-black/40 italic">No hay proveedores en el directorio</TableCell>
+                  </TableRow>
                 ) : (
                   filteredSuppliers.map(s => {
                     const totalPurchases = getTotalPurchases(s.id);
@@ -374,7 +730,10 @@ export default function SuppliersModule() {
                         </TableCell>
                         <TableCell className="text-center">
                           <div className="flex justify-center gap-1">
-                            <button onClick={() => setViewingHistory(s)} className="h-6 w-6 rounded hover:bg-blue-100 text-blue-600" title="Ver Historial"><History size={11} /></button>
+                            <button onClick={() => setViewingHistory(s)} className="h-6 w-6 rounded hover:bg-blue-100 text-blue-600" title="Ver Historial de Compras"><History size={11} /></button>
+                            {debt > 0 && (
+                              <button onClick={() => handleOpenPaymentModal(s)} className="h-6 w-6 rounded hover:bg-green-100 text-green-600" title="Pagar Deuda"><HandCoins size={11} /></button>
+                            )}
                             <button onClick={() => handleEdit(s)} className="h-6 w-6 rounded hover:bg-gray-100 text-blue-600"><Pencil size={11} /></button>
                             <button onClick={() => { if(confirm('¿Eliminar proveedor?')) deleteSupplier(s.id) }} className="h-6 w-6 rounded hover:bg-red-100 text-red-600"><Trash2 size={11} /></button>
                           </div>
@@ -389,6 +748,7 @@ export default function SuppliersModule() {
         </div>
       </div>
 
+      {/* Modales */}
       <Dialog open={isAdding} onOpenChange={(val) => { if(!val) { setIsAdding(false); setEditingSupplier(null); } }}>
         <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-md p-0 overflow-hidden rounded-2xl shadow-xl">
           <DialogHeader className="sr-only"><DialogTitle>{editingSupplier ? 'Editar Proveedor' : 'Nuevo Proveedor'}</DialogTitle></DialogHeader>
@@ -421,6 +781,21 @@ export default function SuppliersModule() {
       </Dialog>
 
       {viewingHistory && <PurchaseHistoryModal supplier={viewingHistory} onClose={() => setViewingHistory(null)} />}
+      {viewingPayments && <PaymentHistoryModal supplier={viewingPayments} onClose={() => setViewingPayments(null)} />}
+      
+      {/* Modal de pago */}
+      {showPaymentModal && selectedSupplierForPayment && (
+        <SupplierPaymentModal
+          open={showPaymentModal}
+          onClose={() => setShowPaymentModal(false)}
+          onConfirm={handlePaymentConfirm}
+          total={selectedInvoiceForPayment ? selectedInvoiceForPayment.total : getTotalPurchases(selectedSupplierForPayment.id)}
+          currentPaid={selectedInvoiceForPayment ? selectedInvoiceForPayment.paidAmount : getTotalPaid(selectedSupplierForPayment.id)}
+          supplierName={selectedSupplierForPayment.name}
+          invoiceNumber={selectedInvoiceForPayment?.invoiceNumber || 'MÚLTIPLES FACTURAS'}
+          exchangeRate={state.exchangeRate}
+        />
+      )}
     </div>
   );
 }

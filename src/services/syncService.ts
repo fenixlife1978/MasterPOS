@@ -1,3 +1,4 @@
+
 "use client";
 
 import { db } from '@/lib/firebase';
@@ -93,6 +94,9 @@ const processQueue = async () => {
         case 'saveKardexEntry':
           await setDoc(doc(db, 'kardex_entries', data.id), { ...data, createdAt: Date.now() });
           break;
+        case 'saveTerminal':
+          await setDoc(doc(db, 'terminals', data.id.toString()), { ...data, updatedAt: Date.now() });
+          break;
       }
     } catch (error) {
       op.retries++;
@@ -111,6 +115,7 @@ const addToQueue = (type: string, data: any) => {
 };
 
 export const syncService = {
+  // PRODUCTOS
   async saveProduct(product: any) {
     if (!db) return;
     if (!isOnline) return addToQueue('saveProducts', [product]);
@@ -133,6 +138,8 @@ export const syncService = {
       callback(snap.docs.map(d => ({ id: parseInt(d.id), ...d.data() })));
     });
   },
+
+  // CLIENTES
   async saveClient(client: any) {
     if (!db) return;
     if (!isOnline) return addToQueue('saveClient', client);
@@ -148,10 +155,16 @@ export const syncService = {
       callback(snap.docs.map(d => ({ id: parseInt(d.id), ...d.data() })));
     });
   },
+
+  // TRANSACCIONES
   async saveTransaction(tx: any) {
     if (!db) return;
     if (!isOnline) return addToQueue('saveTransaction', tx);
     await setDoc(doc(db, 'transactions', tx.id.toString()), { ...sanitizeForFirestore(tx), createdAt: Date.now() });
+  },
+  async deleteTransaction(id: number) {
+    if (!db) return;
+    await deleteDoc(doc(db, 'transactions', id.toString()));
   },
   subscribeToTransactions(callback: (data: any[]) => void) {
     if (!db) return () => {};
@@ -159,6 +172,8 @@ export const syncService = {
       callback(snap.docs.map(d => d.data()));
     });
   },
+
+  // CUENTAS POR COBRAR
   async saveAccount(acc: any) {
     if (!db) return;
     if (!isOnline) return addToQueue('saveAccount', acc);
@@ -170,6 +185,8 @@ export const syncService = {
       callback(snap.docs.map(d => d.data()));
     });
   },
+
+  // CONTABILIDAD
   async saveAccountingEntry(entry: any) {
     if (!db) return;
     if (!isOnline) return addToQueue('saveAccountingEntry', entry);
@@ -181,6 +198,8 @@ export const syncService = {
       callback(snap.docs.map(d => d.data()));
     });
   },
+
+  // CAJA
   async saveRegister(reg: any) {
     if (!db) return;
     if (!isOnline) return addToQueue('saveRegister', reg);
@@ -206,6 +225,101 @@ export const syncService = {
       callback(snap.exists() ? snap.data() : null);
     });
   },
+
+  // PROVEEDORES
+  async saveSupplier(supplier: any) {
+    if (!db) return;
+    if (!isOnline) return addToQueue('saveSupplier', supplier);
+    await setDoc(doc(db, 'suppliers', supplier.id.toString()), { ...sanitizeForFirestore(supplier), updatedAt: Date.now() });
+  },
+  async deleteSupplier(id: number) {
+    if (!db) return;
+    await deleteDoc(doc(db, 'suppliers', id.toString()));
+  },
+  subscribeToSuppliers(callback: (data: any[]) => void) {
+    if (!db) return () => {};
+    return onSnapshot(collection(db, 'suppliers'), (snap) => {
+      callback(snap.docs.map(d => ({ id: parseInt(d.id), ...d.data() })));
+    });
+  },
+
+  // FACTURAS DE COMPRA
+  async savePurchaseInvoice(invoice: any) {
+    if (!db) return;
+    if (!isOnline) return addToQueue('savePurchaseInvoice', invoice);
+    await setDoc(doc(db, 'purchase_invoices', invoice.id.toString()), sanitizeForFirestore(invoice));
+  },
+  subscribeToPurchaseInvoices(callback: (data: any[]) => void) {
+    if (!db) return () => {};
+    return onSnapshot(query(collection(db, 'purchase_invoices'), orderBy('date', 'desc'), limit(500)), (snap) => {
+      callback(snap.docs.map(d => d.data()));
+    });
+  },
+
+  // ITEMS DE COMPRA
+  async savePurchaseInvoiceItems(invoiceId: number, items: any[]) {
+    if (!db) return;
+    const batch = writeBatch(db);
+    items.forEach(item => {
+      batch.set(doc(db, 'purchase_items', item.id), sanitizeForFirestore(item));
+    });
+    await batch.commit();
+  },
+  subscribeToPurchaseItems(callback: (data: any[]) => void) {
+    if (!db) return () => {};
+    return onSnapshot(collection(db, 'purchase_items'), (snap) => {
+      callback(snap.docs.map(d => d.data()));
+    });
+  },
+
+  // PAGOS A PROVEEDORES
+  async saveSupplierPayment(payment: any) {
+    if (!db) return;
+    if (!isOnline) return addToQueue('saveSupplierPayment', payment);
+    await setDoc(doc(db, 'supplier_payments', payment.id.toString()), { ...sanitizeForFirestore(payment), createdAt: Date.now() });
+  },
+  async deleteSupplierPayment(id: number) {
+    if (!db) return;
+    await deleteDoc(doc(db, 'supplier_payments', id.toString()));
+  },
+  subscribeToSupplierPayments(callback: (data: any[]) => void) {
+    if (!db) return () => {};
+    return onSnapshot(query(collection(db, 'supplier_payments'), orderBy('date', 'desc'), limit(500)), (snap) => {
+      callback(snap.docs.map(d => d.data()));
+    });
+  },
+
+  // KARDEX
+  async saveKardexEntry(entry: any) {
+    if (!db) return;
+    if (!isOnline) return addToQueue('saveKardexEntry', entry);
+    await setDoc(doc(db, 'kardex_entries', entry.id), { ...sanitizeForFirestore(entry), createdAt: Date.now() });
+  },
+  subscribeToKardex(callback: (data: any[]) => void) {
+    if (!db) return () => {};
+    return onSnapshot(query(collection(db, 'kardex_entries'), orderBy('createdAt', 'desc'), limit(1000)), (snap) => {
+      callback(snap.docs.map(d => d.data()));
+    });
+  },
+
+  // TERMINALES
+  async saveTerminal(terminal: any) {
+    if (!db) return;
+    if (!isOnline) return addToQueue('saveTerminal', terminal);
+    await setDoc(doc(db, 'terminals', terminal.id.toString()), { ...sanitizeForFirestore(terminal), updatedAt: Date.now() });
+  },
+  async deleteTerminal(id: number) {
+    if (!db) return;
+    await deleteDoc(doc(db, 'terminals', id.toString()));
+  },
+  subscribeToTerminals(callback: (data: any[]) => void) {
+    if (!db) return () => {};
+    return onSnapshot(collection(db, 'terminals'), (snap) => {
+      callback(snap.docs.map(d => d.data()));
+    });
+  },
+
+  // CONFIGURACIÓN GLOBAL
   async saveGlobalSettings(settings: any) {
     if (!db) return;
     const docRef = doc(db, 'global_settings', 'global');
@@ -218,9 +332,20 @@ export const syncService = {
     const snap = await getDoc(doc(db, 'global_settings', 'global'));
     return snap.exists() ? snap.data() : null;
   },
+  subscribeToGlobalSettings(callback: (data: any) => void) {
+    if (!db) return () => {};
+    return onSnapshot(doc(db, 'global_settings', 'global'), (snap) => {
+      callback(snap.exists() ? snap.data() : null);
+    });
+  },
   async getAdminCode() {
     if (!db) return null;
     const snap = await getDoc(doc(db, 'admin_codes', 'adjustment_code'));
     return snap.exists() ? snap.data() : null;
+  },
+
+  // UTILIDADES
+  getPendingQueueLength() {
+    return pendingQueue.length;
   }
 };

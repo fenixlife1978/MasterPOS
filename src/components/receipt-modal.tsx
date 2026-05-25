@@ -7,7 +7,7 @@ import { Transaction } from '@/lib/types';
 interface ReceiptModalProps {
   transaction: Transaction;
   exchangeRate: number;
-  receiptNumber?: number; // ✅ NUEVO: número correlativo de recibo
+  receiptNumber?: number; // ✅ RECIBE EL NÚMERO CORRELATIVO DESDE EL POS
   onClose: () => void;
 }
 
@@ -37,12 +37,11 @@ function formatToVenezuelaTime(dateStr: string): string {
 export default function ReceiptModal({ transaction, exchangeRate, receiptNumber, onClose }: ReceiptModalProps) {
   const printRef = useRef<HTMLDivElement>(null);
 
-  // ✅ Número de recibo formateado (prioriza el correlativo, fallback al ID)
+  // ✅ PRIORIZA EL NÚMERO CORRELATIVO FORMATEADO (00000001)
   const formattedReceiptNumber = receiptNumber 
     ? receiptNumber.toString().padStart(8, '0')
     : transaction?.id?.toString().slice(-8) || '00000000';
 
-  // Funciones de impresión, exportación y compartir (iguales, solo cambia el título)
   const handlePrint = () => {
     const printContent = printRef.current?.innerHTML;
     if (!printContent) return;
@@ -52,7 +51,7 @@ export default function ReceiptModal({ transaction, exchangeRate, receiptNumber,
       <html>
         <head>
           <meta charset="UTF-8">
-          <title>Recibo de Venta - LICOPOS</title>
+          <title>Recibo_Venta_${formattedReceiptNumber}</title>
           <style>
             @page {
               size: 80mm auto;
@@ -138,24 +137,6 @@ export default function ReceiptModal({ transaction, exchangeRate, receiptNumber,
               padding-top: 6px;
               border-top: 1px dashed #000;
               font-size: 9px;
-            }
-            .credit-badge {
-              background: #e74c3c;
-              color: white;
-              padding: 3px 6px;
-              text-align: center;
-              font-weight: bold;
-              font-size: 9px;
-              margin: 5px 0;
-              border-radius: 2px;
-            }
-            .credit-note {
-              border: 1px dashed #e74c3c;
-              padding: 6px;
-              margin: 8px 0;
-              text-align: center;
-              font-size: 9px;
-              background: #fff5f5;
             }
           </style>
         </head>
@@ -174,272 +155,22 @@ export default function ReceiptModal({ transaction, exchangeRate, receiptNumber,
   };
 
   const handleExportPDF = () => {
-    const printContent = printRef.current?.innerHTML;
-    if (!printContent) return;
-
-    const printWindow = window.open('', '_blank');
-    printWindow?.document.write(`
-      <html>
-        <head>
-          <meta charset="UTF-8">
-          <title>Recibo_Venta_${formattedReceiptNumber}</title>
-          <style>
-            @page {
-              size: 80mm auto;
-              margin: 0;
-            }
-            body {
-              font-family: 'Courier New', Courier, monospace;
-              width: 72mm;
-              margin: 0;
-              padding: 4mm;
-              font-size: 11px;
-              color: #000;
-              background: #fff;
-              line-height: 1.2;
-            }
-            .text-center { text-align: center; }
-            .text-right { text-align: right; }
-            .bold { font-weight: bold; }
-            .header {
-              margin-bottom: 6px;
-              padding-bottom: 6px;
-              border-bottom: 1px dashed #000;
-            }
-            .title {
-              font-size: 16px;
-              font-weight: bold;
-              margin: 0 0 4px 0;
-              letter-spacing: 1px;
-            }
-            .subtitle {
-              font-size: 10px;
-              margin: 2px 0;
-            }
-            .info-block {
-              margin: 6px 0;
-              font-size: 10px;
-            }
-            .info-row {
-              display: flex;
-              justify-content: space-between;
-              margin: 2px 0;
-            }
-            table {
-              width: 100%;
-              border-collapse: collapse;
-              margin: 8px 0;
-            }
-            th {
-              border-bottom: 1px dashed #000;
-              border-top: 1px dashed #000;
-              font-weight: bold;
-              padding: 4px 0;
-              font-size: 10px;
-            }
-            td {
-              padding: 4px 0;
-              vertical-align: top;
-              font-size: 10px;
-            }
-            .totals {
-              border-top: 1px dashed #000;
-              padding-top: 4px;
-              margin-top: 4px;
-            }
-            .total-grand {
-              font-size: 13px;
-              font-weight: bold;
-              margin: 6px 0;
-              padding: 4px 0;
-              border-top: 1px solid #000;
-              border-bottom: 1px solid #000;
-            }
-            .payment-method {
-              border: 1px solid #000;
-              padding: 4px;
-              margin: 8px 0;
-              text-align: center;
-              font-weight: bold;
-              font-size: 11px;
-            }
-            .footer {
-              margin-top: 12px;
-              padding-top: 6px;
-              border-top: 1px dashed #000;
-              font-size: 9px;
-            }
-            .credit-badge {
-              background: #e74c3c;
-              color: white;
-              padding: 3px 6px;
-              text-align: center;
-              font-weight: bold;
-              font-size: 9px;
-              margin: 5px 0;
-              border-radius: 2px;
-            }
-            .credit-note {
-              border: 1px dashed #e74c3c;
-              padding: 6px;
-              margin: 8px 0;
-              text-align: center;
-              font-size: 9px;
-              background: #fff5f5;
-            }
-          </style>
-        </head>
-        <body>
-          ${printContent}
-          <script>
-            window.onload = function() {
-              window.print();
-              setTimeout(function() { window.close(); }, 500);
-            };
-          <\/script>
-        </body>
-      </html>
-    `);
-    printWindow?.document.close();
+    handlePrint();
   };
 
   const handleSharePDF = async () => {
-    const printContent = printRef.current?.innerHTML;
-    if (!printContent) return;
-
-    const shareWindow = window.open('', '_blank');
-    if (!shareWindow) {
-      alert('No se pudo abrir la ventana para compartir. Permita las ventanas emergentes.');
-      return;
-    }
-
-    shareWindow.document.write(`
-      <html>
-        <head>
-          <meta charset="UTF-8">
-          <title>Recibo_Venta_${formattedReceiptNumber}</title>
-          <style>
-            @page {
-              size: 80mm auto;
-              margin: 0;
-            }
-            body {
-              font-family: 'Courier New', Courier, monospace;
-              width: 72mm;
-              margin: 0;
-              padding: 4mm;
-              font-size: 11px;
-              color: #000;
-              background: #fff;
-              line-height: 1.2;
-            }
-            .text-center { text-align: center; }
-            .text-right { text-align: right; }
-            .bold { font-weight: bold; }
-            .header {
-              margin-bottom: 6px;
-              padding-bottom: 6px;
-              border-bottom: 1px dashed #000;
-            }
-            .title {
-              font-size: 16px;
-              font-weight: bold;
-              margin: 0 0 4px 0;
-              letter-spacing: 1px;
-            }
-            .subtitle {
-              font-size: 10px;
-              margin: 2px 0;
-            }
-            .info-block {
-              margin: 6px 0;
-              font-size: 10px;
-            }
-            .info-row {
-              display: flex;
-              justify-content: space-between;
-              margin: 2px 0;
-            }
-            table {
-              width: 100%;
-              border-collapse: collapse;
-              margin: 8px 0;
-            }
-            th {
-              border-bottom: 1px dashed #000;
-              border-top: 1px dashed #000;
-              font-weight: bold;
-              padding: 4px 0;
-              font-size: 10px;
-            }
-            td {
-              padding: 4px 0;
-              vertical-align: top;
-              font-size: 10px;
-            }
-            .totals {
-              border-top: 1px dashed #000;
-              padding-top: 4px;
-              margin-top: 4px;
-            }
-            .total-grand {
-              font-size: 13px;
-              font-weight: bold;
-              margin: 6px 0;
-              padding: 4px 0;
-              border-top: 1px solid #000;
-              border-bottom: 1px solid #000;
-            }
-            .payment-method {
-              border: 1px solid #000;
-              padding: 4px;
-              margin: 8px 0;
-              text-align: center;
-              font-weight: bold;
-              font-size: 11px;
-            }
-            .footer {
-              margin-top: 12px;
-              padding-top: 6px;
-              border-top: 1px dashed #000;
-              font-size: 9px;
-            }
-            .credit-badge {
-              background: #e74c3c;
-              color: white;
-              padding: 3px 6px;
-              text-align: center;
-              font-weight: bold;
-              font-size: 9px;
-              margin: 5px 0;
-              border-radius: 2px;
-            }
-            .credit-note {
-              border: 1px dashed #e74c3c;
-              padding: 6px;
-              margin: 8px 0;
-              text-align: center;
-              font-size: 9px;
-              background: #fff5f5;
-            }
-          </style>
-        </head>
-        <body>
-          ${printContent}
-        </body>
-      </html>
-    `);
-    shareWindow.document.close();
-
-    setTimeout(() => {
-      shareWindow.print();
-      if (navigator.share) {
-        navigator.share({
+    if (navigator.share) {
+      try {
+        await navigator.share({
           title: `Recibo ${formattedReceiptNumber}`,
-          text: `Recibo de venta por Bs ${transaction.total.toFixed(2)}`,
-        }).catch(() => {});
+          text: `Resumen de recibo correlativo nro ${formattedReceiptNumber} por un total de Bs ${transaction.total.toFixed(2)}`,
+        });
+      } catch (err) {
+        handlePrint();
       }
-    }, 500);
+    } else {
+      handlePrint();
+    }
   };
 
   const paymentMethodLabels: Record<string, string> = {
@@ -577,7 +308,7 @@ export default function ReceiptModal({ transaction, exchangeRate, receiptNumber,
                 </div>
               </div>
 
-              {isCredito && transactionExchangeRate && (
+              {isCredito && (
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '8px', margin: '2px 0', color: '#e67e22' }}>
                   <span>TASA BCV APLICADA:</span>
                   <span>1 USD = Bs {transactionExchangeRate.toFixed(2)}</span>

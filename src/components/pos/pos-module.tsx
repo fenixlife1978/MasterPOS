@@ -23,13 +23,15 @@ export default function POSModule({ state }: POSModuleProps) {
   const [lastTransaction, setLastTransaction] = useState<any>(null);
   const [user, setUser] = useState<{ name: string; role: string } | null>(null);
   const [nextReceiptNumber, setNextReceiptNumber] = useState(1);
-  const lastReceiptNumberRef = useRef<number>(1); // ✅ REF para pasar al modal
+  const lastReceiptNumberRef = useRef<number>(1); // ✅ REF para pasar al modal de forma precisa
 
   useEffect(() => {
     const storedUser = localStorage.getItem('user');
     if (storedUser) {
       setUser(JSON.parse(storedUser));
     }
+    
+    // Cargar el último número de recibo usado
     const lastReceipt = localStorage.getItem('last_receipt_number');
     if (lastReceipt) {
       const lastNum = parseInt(lastReceipt);
@@ -56,14 +58,16 @@ export default function POSModule({ state }: POSModuleProps) {
 
   const handlePaymentConfirm = async (data: any) => {
     try {
-      const receiptNum = nextReceiptNumber; // Número actual antes de incrementar
+      const receiptNum = nextReceiptNumber; // Número actual para esta venta
       const tx = await state.finalizeSale('contado', data);
       if (tx) {
-        lastReceiptNumberRef.current = receiptNum; // Guardar en ref
+        lastReceiptNumberRef.current = receiptNum; // Fijar el número usado en la ref para el modal
         setLastTransaction(tx);
-        // Incrementar para la próxima venta
-        setNextReceiptNumber(prev => prev + 1);
+        
+        // Persistir el número usado e incrementar para la próxima venta
         localStorage.setItem('last_receipt_number', receiptNum.toString());
+        setNextReceiptNumber(receiptNum + 1);
+        
         setShowReceipt(true);
       }
     } catch (error) {
@@ -75,7 +79,7 @@ export default function POSModule({ state }: POSModuleProps) {
 
   const handleCreditConfirm = async (data: any) => {
     try {
-      const receiptNum = nextReceiptNumber;
+      const receiptNum = nextReceiptNumber; // Número actual para esta venta
       const tx = await state.finalizeSale('credito', {
         clientId: data.clientId,
         clientName: data.clientName,
@@ -88,10 +92,13 @@ export default function POSModule({ state }: POSModuleProps) {
         totalUsd: data.totalUsd
       });
       if (tx) {
-        lastReceiptNumberRef.current = receiptNum;
+        lastReceiptNumberRef.current = receiptNum; // Fijar el número usado
         setLastTransaction(tx);
-        setNextReceiptNumber(prev => prev + 1);
+        
+        // Persistir e incrementar
         localStorage.setItem('last_receipt_number', receiptNum.toString());
+        setNextReceiptNumber(receiptNum + 1);
+        
         setShowReceipt(true);
       }
     } catch (error) {
@@ -158,7 +165,7 @@ export default function POSModule({ state }: POSModuleProps) {
         <ReceiptModal 
           transaction={lastTransaction}
           exchangeRate={state.exchangeRate}
-          receiptNumber={lastReceiptNumberRef.current} // ✅ Usar el valor de la ref (síncrono)
+          receiptNumber={lastReceiptNumberRef.current} // ✅ Usar el valor exacto de la venta finalizada
           onClose={() => {
             setShowReceipt(false);
             setLastTransaction(null);

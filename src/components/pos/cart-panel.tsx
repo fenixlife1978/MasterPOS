@@ -65,7 +65,10 @@ export default function CartPanel({
   const total = subtotal + iva;
   const totalUsd = total / exchangeRate;
   const hasAnyIvaProduct = cart.some(item => (item as any).ivaType === 'con_iva');
+  
+  // ✅ Formateo correlativo de recibo (8 dígitos)
   const formattedReceiptNumber = nextReceiptNumber.toString().padStart(8, '0');
+  
   const getRowClassName = (index: number) => index % 2 === 0 ? "bg-white" : "bg-gray-50";
 
   return (
@@ -80,7 +83,7 @@ export default function CartPanel({
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-1.5 bg-gray-100 px-3 py-1 rounded-full">
               <Receipt size={12} className="text-black/60" />
-              <span className="text-[10px] font-black text-black">RECIBO #{formattedReceiptNumber}</span>
+              <span className="text-[10px] font-black text-black uppercase">Recibo #{formattedReceiptNumber}</span>
             </div>
             <span className="bg-secondary text-white px-2.5 py-0.5 rounded-full text-[11px] font-black">
               {cart.length} items
@@ -90,7 +93,7 @@ export default function CartPanel({
 
         {/* Tabla */}
         <div className="flex-1 flex flex-col overflow-hidden">
-          {/* Cabecera con distribución mejorada */}
+          {/* Cabecera */}
           <div className="grid grid-cols-12 gap-2 px-4 py-3 bg-gray-100 border-b border-black text-[10px] font-black uppercase tracking-wider text-black/70 shrink-0">
             <div className="col-span-4 text-left">Descripción</div>
             <div className="col-span-2 text-center">Cantidad</div>
@@ -115,7 +118,7 @@ export default function CartPanel({
               </div>
             ) : (
               cart.map((item, idx) => {
-                const priceUsd = item.priceBs / exchangeRate;
+                const priceUsd = item.priceUsd;
                 const hasIva = (item as any).ivaType === 'con_iva';
                 const isKit = (item as any).isKit === true;
                 const fullProduct = getFullProduct(item.productId);
@@ -168,7 +171,7 @@ export default function CartPanel({
                       )}
                     </div>
                     
-                    {/* Cantidad con controles +/ - */}
+                    {/* Cantidad */}
                     <div className="col-span-2 flex items-center justify-center">
                       <div className="flex items-center gap-1 bg-gray-100 rounded-lg px-2 py-1">
                         <button 
@@ -189,7 +192,7 @@ export default function CartPanel({
                       </div>
                     </div>
                     
-                    {/* Precio USD centrado */}
+                    {/* Precio USD */}
                     <div className="col-span-2 text-center">
                       <div className="font-mono text-xs font-bold text-black/70">
                         ${priceUsd.toFixed(2)}
@@ -197,7 +200,7 @@ export default function CartPanel({
                       <div className="text-[8px] text-black/40">USD</div>
                     </div>
                     
-                    {/* Precio Bs centrado */}
+                    {/* Precio Bs */}
                     <div className="col-span-2 text-center">
                       <div className="font-mono text-xs font-bold text-black/60">
                         Bs {item.priceBs.toFixed(2)}
@@ -205,7 +208,7 @@ export default function CartPanel({
                       <div className="text-[8px] text-black/40">Bs</div>
                     </div>
                     
-                    {/* Subtotal del producto */}
+                    {/* Subtotal */}
                     <div className="col-span-1 text-right font-mono text-xs font-bold text-black">
                       Bs {itemSubtotal.toFixed(2)}
                     </div>

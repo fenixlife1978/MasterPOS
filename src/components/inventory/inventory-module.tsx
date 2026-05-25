@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
@@ -131,11 +132,14 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
 
   const handlePriceBsChange = (newPriceBs: number) => {
     const rate = state.exchangeRate || 1;
-    const priceUsd = Math.round((newPriceBs / rate) * 100) / 100;
+    const priceUsd = newPriceBs / rate;
     const iva = ivaType === 'con_iva' ? ivaPercentage : 0;
     const basePriceUsd = iva > 0 ? priceUsd / (1 + iva / 100) : priceUsd;
     const cost = formData.costUsd || 0;
+    
     if (cost > 0 && basePriceUsd > 0) {
+      // Re-calcular el margen basado en el precio final ingresado
+      // profit = 1 - (cost/basePrice)
       const profit = Math.round((1 - (cost / basePriceUsd)) * 10000) / 100;
       setFormData(prev => ({ ...prev, profitPercent: profit }));
     }
@@ -149,6 +153,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
     const profit = Number(formData.profitPercent);
     const iva = ivaType === 'con_iva' ? ivaPercentage : 0;
     const retailPrice = calculateRetailPrice(cost, profit, iva, ivaType === 'con_iva');
+    
     const productData: Product = {
       id: editingProduct?.id || Date.now(),
       barcode: formData.barcode,
@@ -494,7 +499,17 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                 </div>
               </div>
               <div className="bg-white rounded p-1.5 border mt-2">
-                <div className="flex justify-between text-[10px] font-bold border-b pb-1 mb-1"><span>PRECIO DETAL FINAL (BS)</span><Input type="number" step="0.01" value={currentCalculatedPriceBs} onChange={e => handlePriceBsChange(Number(e.target.value))} className="h-6 w-24 text-right font-black border-primary" /></div>
+                <div className="flex justify-between text-[10px] font-bold border-b pb-1 mb-1 items-center">
+                  <span className="whitespace-nowrap">PRECIO DETAL FINAL (BS)</span>
+                  <Input 
+                    type="number" 
+                    step="0.01" 
+                    value={currentCalculatedPriceBs || ''} 
+                    onChange={e => handlePriceBsChange(Number(e.target.value))} 
+                    className="h-7 w-28 text-right font-black border-primary bg-white focus:ring-1 focus:ring-primary" 
+                    placeholder="0.00"
+                  />
+                </div>
                 <div className="flex justify-between text-[9px] text-black/50"><span>Precio Detal USD:</span><span>${currentCalculatedPriceUsd.toFixed(2)}</span></div>
               </div>
               <div className="flex justify-end pt-2"><Button type="submit" className="bg-primary text-black font-black px-6 h-7 text-xs">GUARDAR PRODUCTO</Button></div>

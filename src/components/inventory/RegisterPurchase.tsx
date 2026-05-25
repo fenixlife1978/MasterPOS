@@ -1,7 +1,7 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import { usePOSState } from '@/hooks/use-pos-state';
 import { useSuppliers } from '@/hooks/use-suppliers';
-import { Search, Plus, Trash2, Package, Truck, Receipt, DollarSign, Loader2, Save, CalendarDays, HandCoins } from 'lucide-react';
+import { Search, Plus, Trash2, Package, Truck, Receipt, DollarSign, Loader2, Save, CalendarDays, HandCoins, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
@@ -41,14 +41,43 @@ export default function RegisterPurchase() {
   const [creditTermDays, setCreditTermDays] = useState<number>(30);
   const [isProcessing, setIsProcessing] = useState(false);
 
+  const searchRef = useRef<HTMLDivElement>(null);
+
+  // Cerrar dropdown al hacer clic fuera
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
+        // Si el usuario hace clic fuera y no hay producto seleccionado, podemos limpiar resultados
+        // pero no forzamos el cierre para no interferir con la selección.
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   const productResults = useMemo(() => {
     if (!productQuery.trim()) return [];
+    if (selectedProduct) return []; // ✅ No mostrar resultados si ya hay un producto seleccionado
     const q = productQuery.toLowerCase();
     return state.products.filter(p => 
       p.name.toLowerCase().includes(q) || 
       p.barcode.includes(q)
     ).slice(0, 5);
-  }, [productQuery, state.products]);
+  }, [productQuery, state.products, selectedProduct]);
+
+  const handleSelectProduct = (product: Product) => {
+    setSelectedProduct(product);
+    setProductQuery(product.name);   // Mostrar el nombre en el input
+    setItemCostUsd(product.costUsd?.toFixed(2) || '');
+    // Forzar cierre del dropdown: ya que productResults está vacío por selectedProduct
+  };
+
+  const handleClearSelection = () => {
+    setSelectedProduct(null);
+    setProductQuery('');
+    setItemCostUsd('');
+    setItemQty('1');
+  };
 
   const handleAddTempItem = () => {
     if (!selectedProduct) return;
@@ -68,22 +97,19 @@ export default function RegisterPurchase() {
       }
     ]);
 
-    setSelectedProduct(null);
-    setProductQuery('');
-    setItemQty('1');
-    setItemCostUsd('');
+    // Limpiar selección después de agregar
+    handleClearSelection();
   };
 
   const handleRemoveTempItem = (index: number) => {
     setTempItems(prev => prev.filter((_, i) => i !== index));
   };
 
-  // Totales con 2 decimales
+  // Totales
   const totalInvoiceUsd = parseFloat(tempItems.reduce((sum, item) => sum + (item.qty * item.costUsd), 0).toFixed(2));
   const rateNum = parseFloat(parseFloat(exchangeRate).toFixed(2)) || state.exchangeRate;
   const totalInvoiceBs = parseFloat((totalInvoiceUsd * rateNum).toFixed(2));
 
-  // Manejo de la conversión automática con 2 decimales
   const handlePaidUsdChange = (value: number) => {
     const roundedUsd = parseFloat(value.toFixed(2));
     setPaidUsd(roundedUsd);
@@ -102,7 +128,6 @@ export default function RegisterPurchase() {
     }
   };
 
-  // Calcular montos pagados y saldo
   const totalPaidUsd = paymentType === 'contado' ? totalInvoiceUsd : (paymentType === 'credito' ? 0 : paidUsd);
   const totalPaidBs = parseFloat((totalPaidUsd * rateNum).toFixed(2));
   const remainingUsd = parseFloat(Math.max(0, totalInvoiceUsd - totalPaidUsd).toFixed(2));
@@ -129,7 +154,6 @@ export default function RegisterPurchase() {
       const timestamp = new Date().toISOString();
       const invoiceId = Date.now();
       
-      // Construir notas con la información del pago (para no modificar la interfaz)
       const paymentNotes = `Tipo de pago: ${paymentType === 'contado' ? 'Contado' : paymentType === 'credito' ? `Crédito a ${creditTermDays} días` : `Mixto (USD: ${paidUsd.toFixed(2)} / Bs: ${paidBs.toFixed(2)})`}. Saldo pendiente: $${remainingUsd.toFixed(2)}`;
       
       const newInvoice: SupplierInvoice = {
@@ -166,7 +190,6 @@ export default function RegisterPurchase() {
       
       await syncService.savePurchaseInvoiceItems(invoiceId, items);
       
-      // Actualizar stock y costos promedio
       for (const item of tempItems) {
         const product = state.products.find(p => p.id === item.productId);
         if (product) {
@@ -174,7 +197,6 @@ export default function RegisterPurchase() {
           const currentCost = product.costUsd || 0;
           const newStock = currentStock + item.qty;
           
-          // ✅ CORREGIDO: Calcular y redondear correctamente sin usar toFixed directamente en números
           const newAverageCostRaw = ((currentStock * currentCost) + (item.qty * item.costUsd)) / newStock;
           const newAverageCost = parseFloat(newAverageCostRaw.toFixed(4));
           
@@ -194,7 +216,6 @@ export default function RegisterPurchase() {
         }
       }
       
-      // Actualizar deuda del proveedor (solo si hay saldo pendiente)
       const supplier = suppliers.find(s => s.id === parseInt(selectedSupplierId));
       if (supplier && remainingUsd > 0) {
         await syncService.saveSupplier({
@@ -370,7 +391,6 @@ export default function RegisterPurchase() {
                     </div>
                   )}
 
-                  {/* Resumen de pagos con 2 decimales */}
                   <div className="bg-gray-50 p-2 rounded-md mt-2">
                     <div className="flex justify-between text-[9px]">
                       <span>Total factura USD:</span>
@@ -399,7 +419,7 @@ export default function RegisterPurchase() {
                   <Package size={13} /> Añadir Productos al Lote
                 </h3>
                 <div className="space-y-3">
-                  <div className="relative">
+                  <div className="relative" ref={searchRef}>
                     <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-black/30" />
                     <Input 
                       placeholder="Buscar producto..."
@@ -407,16 +427,13 @@ export default function RegisterPurchase() {
                       onChange={(e) => setProductQuery(e.target.value)}
                       className="pl-7 h-8 text-sm"
                     />
-                    {productResults.length > 0 && (
+                    {/* Mostrar dropdown solo si hay resultados y no hay producto seleccionado */}
+                    {productResults.length > 0 && !selectedProduct && (
                       <div className="absolute top-full left-0 right-0 bg-white border border-[#9E9E9E] rounded-lg shadow-lg z-20 mt-1 overflow-hidden">
                         {productResults.map(p => (
                           <button
                             key={p.id}
-                            onClick={() => {
-                              setSelectedProduct(p);
-                              setProductQuery(p.name);
-                              setItemCostUsd(p.costUsd?.toFixed(2) || '');
-                            }}
+                            onClick={() => handleSelectProduct(p)}
                             className="w-full text-left p-2 hover:bg-primary/10 transition-colors border-b border-gray-100 last:border-0 text-xs"
                           >
                             <p className="font-bold">{p.name}</p>
@@ -428,7 +445,14 @@ export default function RegisterPurchase() {
                   </div>
 
                   {selectedProduct && (
-                    <div className="bg-primary/5 border border-primary/20 rounded-lg p-3">
+                    <div className="bg-primary/5 border border-primary/20 rounded-lg p-3 relative">
+                      <button
+                        onClick={handleClearSelection}
+                        className="absolute top-2 right-2 text-black/40 hover:text-red-500"
+                        title="Limpiar selección"
+                      >
+                        <X size={14} />
+                      </button>
                       <p className="text-[9px] font-black text-primary uppercase mb-1">Producto: {selectedProduct.name}</p>
                       <div className="grid grid-cols-2 gap-2">
                         <div>

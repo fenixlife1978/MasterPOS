@@ -1,11 +1,10 @@
-
 "use client";
 
 import { db } from '@/lib/firebase';
 import { 
   doc, setDoc, deleteDoc, 
   collection, query, onSnapshot, limit,
-  orderBy, writeBatch, getDoc
+  orderBy, writeBatch, getDoc, runTransaction
 } from 'firebase/firestore';
 
 interface PendingOperation {
@@ -80,7 +79,12 @@ const processQueue = async () => {
           await setDoc(doc(db, 'supplier_payments', data.id.toString()), { ...data, createdAt: Date.now() });
           break;
         case 'saveRegister':
-          await setDoc(doc(db, 'register', 'current'), { ...data, updatedAt: Date.now() });
+          // Para compatibilidad con caja global
+          if (data.terminalId) {
+            await setDoc(doc(db, 'registers', data.terminalId), { ...data.reg, updatedAt: Date.now() });
+          } else {
+            await setDoc(doc(db, 'register', 'current'), { ...data, updatedAt: Date.now() });
+          }
           break;
         case 'saveClient':
           await setDoc(doc(db, 'clients', data.id.toString()), { ...data, updatedAt: Date.now() });
@@ -115,7 +119,7 @@ const addToQueue = (type: string, data: any) => {
 };
 
 export const syncService = {
-  // PRODUCTOS
+  // PRODUCTOS (sin cambios)
   async saveProduct(product: any) {
     if (!db) return;
     if (!isOnline) return addToQueue('saveProducts', [product]);
@@ -139,7 +143,7 @@ export const syncService = {
     });
   },
 
-  // CLIENTES
+  // CLIENTES (sin cambios)
   async saveClient(client: any) {
     if (!db) return;
     if (!isOnline) return addToQueue('saveClient', client);
@@ -156,7 +160,7 @@ export const syncService = {
     });
   },
 
-  // TRANSACCIONES
+  // TRANSACCIONES (sin cambios)
   async saveTransaction(tx: any) {
     if (!db) return;
     if (!isOnline) return addToQueue('saveTransaction', tx);
@@ -173,7 +177,7 @@ export const syncService = {
     });
   },
 
-  // CUENTAS POR COBRAR
+  // CUENTAS POR COBRAR (sin cambios)
   async saveAccount(acc: any) {
     if (!db) return;
     if (!isOnline) return addToQueue('saveAccount', acc);
@@ -186,7 +190,7 @@ export const syncService = {
     });
   },
 
-  // CONTABILIDAD
+  // CONTABILIDAD (sin cambios)
   async saveAccountingEntry(entry: any) {
     if (!db) return;
     if (!isOnline) return addToQueue('saveAccountingEntry', entry);
@@ -199,7 +203,7 @@ export const syncService = {
     });
   },
 
-  // CAJA
+  // CAJA (métodos antiguos para compatibilidad global)
   async saveRegister(reg: any) {
     if (!db) return;
     if (!isOnline) return addToQueue('saveRegister', reg);
@@ -226,7 +230,86 @@ export const syncService = {
     });
   },
 
-  // PROVEEDORES
+  // === NUEVOS MÉTODOS PARA CAJA POR TERMINAL ===
+  async saveRegisterByTerminal(terminalId: string, reg: any) {
+    if (!db) return;
+    if (!isOnline) return addToQueue('saveRegister', { terminalId, reg });
+    const cleaned = sanitizeForFirestore({
+      isOpen: reg.isOpen === true,
+      openTime: reg.openTime || new Date().toISOString(),
+      openAmount: typeof reg.openAmount === 'number' ? reg.openAmount : 0,
+      openAmountBs: typeof reg.openAmountBs === 'number' ? reg.openAmountBs : 0,
+      openAmountUsd: typeof reg.openAmountUsd === 'number' ? reg.openAmountUsd : 0,
+      exchangeRate: typeof reg.exchangeRate === 'number' ? reg.exchangeRate : 36.50,
+      txs: reg.txs || [],
+      updatedAt: Date.now()
+    });
+    await setDoc(doc(db, 'registers', terminalId), cleaned);
+  },
+  async clearRegisterByTerminal(terminalId: string) {
+    if (!db) return;
+    await deleteDoc(doc(db, 'registers', terminalId));
+  },
+  subscribeToRegisterByTerminal(terminalId: string, callback: (data: any) => void) {
+    if (!db) return () => {};
+    return onSnapshot(doc(db, 'registers', terminalId), (snap) => {
+      callback(snap.exists() ? snap.data() : null);
+    });
+  },
+
+  // === NUEVA TRANSACCIÓN ATÓMICA PARA VENTA ===
+  async runAtomicSale(terminalId: string, txData: any, updates: {
+    products: Map<number, { newStock: number }>;
+    kardexEntries: any[];
+    accountingEntry?: any;
+    registerUpdate: { txs: any[] };
+  }) {
+    if (!db) throw new Error('Firebase no disponible');
+    
+    return runTransaction(db, async (transaction) => {
+      // 1. Verificar stock de los productos
+      for (const [prodId, update] of updates.products.entries()) {
+        const prodRef = doc(db, 'products', prodId.toString());
+        const prodSnap = await transaction.get(prodRef);
+        if (!prodSnap.exists()) throw new Error(`Producto ${prodId} no existe`);
+        const currentStock = prodSnap.data().stock;
+        if (currentStock < (currentStock - update.newStock)) {
+          throw new Error(`Stock insuficiente para producto ${prodId}`);
+        }
+      }
+      
+      // 2. Actualizar productos (stock)
+      for (const [prodId, update] of updates.products.entries()) {
+        const prodRef = doc(db, 'products', prodId.toString());
+        transaction.update(prodRef, { stock: update.newStock, updatedAt: Date.now() });
+      }
+      
+      // 3. Guardar transacción
+      const txRef = doc(db, 'transactions', txData.id.toString());
+      transaction.set(txRef, { ...txData, createdAt: Date.now() });
+      
+      // 4. Guardar entradas de kardex
+      for (const entry of updates.kardexEntries) {
+        const kardexRef = doc(db, 'kardex_entries', entry.id);
+        transaction.set(kardexRef, { ...entry, createdAt: Date.now() });
+      }
+      
+      // 5. Guardar asiento contable (si existe)
+      if (updates.accountingEntry) {
+        const accRef = doc(db, 'accounting_entries', updates.accountingEntry.id.toString());
+        transaction.set(accRef, { ...updates.accountingEntry, createdAt: Date.now() });
+      }
+      
+      // 6. Actualizar caja de la terminal (solo agregar transacción)
+      const registerRef = doc(db, 'registers', terminalId);
+      transaction.update(registerRef, {
+        txs: updates.registerUpdate.txs,
+        updatedAt: Date.now()
+      });
+    });
+  },
+
+  // PROVEEDORES, FACTURAS, ETC. (sin cambios)
   async saveSupplier(supplier: any) {
     if (!db) return;
     if (!isOnline) return addToQueue('saveSupplier', supplier);
@@ -243,7 +326,6 @@ export const syncService = {
     });
   },
 
-  // FACTURAS DE COMPRA
   async savePurchaseInvoice(invoice: any) {
     if (!db) return;
     if (!isOnline) return addToQueue('savePurchaseInvoice', invoice);
@@ -256,7 +338,6 @@ export const syncService = {
     });
   },
 
-  // ITEMS DE COMPRA
   async savePurchaseInvoiceItems(invoiceId: number, items: any[]) {
     if (!db) return;
     const batch = writeBatch(db);
@@ -272,7 +353,6 @@ export const syncService = {
     });
   },
 
-  // PAGOS A PROVEEDORES
   async saveSupplierPayment(payment: any) {
     if (!db) return;
     if (!isOnline) return addToQueue('saveSupplierPayment', payment);
@@ -289,7 +369,6 @@ export const syncService = {
     });
   },
 
-  // KARDEX
   async saveKardexEntry(entry: any) {
     if (!db) return;
     if (!isOnline) return addToQueue('saveKardexEntry', entry);
@@ -302,7 +381,6 @@ export const syncService = {
     });
   },
 
-  // TERMINALES
   async saveTerminal(terminal: any) {
     if (!db) return;
     if (!isOnline) return addToQueue('saveTerminal', terminal);
@@ -319,7 +397,6 @@ export const syncService = {
     });
   },
 
-  // CONFIGURACIÓN GLOBAL
   async saveGlobalSettings(settings: any) {
     if (!db) return;
     const docRef = doc(db, 'global_settings', 'global');
@@ -344,7 +421,6 @@ export const syncService = {
     return snap.exists() ? snap.data() : null;
   },
 
-  // UTILIDADES
   getPendingQueueLength() {
     return pendingQueue.length;
   }

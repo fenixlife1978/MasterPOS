@@ -4,12 +4,15 @@ import { createContext, useContext, useState, useEffect, ReactNode } from 'react
 import { useRouter, usePathname } from 'next/navigation';
 import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 
 interface AppUser {
   uid: string;
   email: string | null;
   name: string;
   role: 'admin' | 'cashier';
+  terminalId?: string; // ✅ Terminal asignada al usuario
 }
 
 interface AuthContextType {
@@ -36,8 +39,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    const unsubscribe = onAuthStateChanged(auth, (firebaseUser: FirebaseUser | null) => {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser: FirebaseUser | null) => {
       if (firebaseUser) {
+        // Obtener terminalId desde Firestore (colección 'users')
+        let terminalId: string | undefined;
+        try {
+          const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+          if (userDoc.exists()) {
+            terminalId = userDoc.data().terminalId;
+          }
+        } catch (error) {
+          console.error('Error al cargar terminalId del usuario:', error);
+        }
+
         const stored = localStorage.getItem('user');
         if (stored) {
           const parsed = JSON.parse(stored);
@@ -46,15 +60,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             email: firebaseUser.email,
             name: parsed.name || firebaseUser.displayName || 'Usuario',
             role: parsed.role || 'cashier',
+            terminalId: terminalId || parsed.terminalId,
           });
         } else {
-          // CORRECCIÓN 1: Si Firebase ya dio luz verde pero el localStorage está tardando en responder,
-          // creamos un estado temporal seguro para evitar que el usuario quede en 'null' y rompa el flujo.
           setUser({
             uid: firebaseUser.uid,
             email: firebaseUser.email,
             name: firebaseUser.displayName || 'Usuario',
-            role: 'cashier', 
+            role: 'cashier',
+            terminalId: terminalId,
           });
         }
       } else {
@@ -68,10 +82,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    // CORRECCIÓN 2: En entornos estáticos de Electron, evaluamos si la ruta contiene 'login' 
-    // en lugar de una igualdad estricta, protegiéndonos de extensiones '.html' o barras diagonales extras.
     const isLoginPage = pathname?.includes('/login');
-
     if (!loading && !user && !isLoginPage) {
       router.replace('/login');
     }

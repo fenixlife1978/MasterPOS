@@ -6,6 +6,7 @@ import { RefreshCw, Clock, Wifi, WifiOff } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { syncService } from '@/services/syncService';
 import InvoiceNotifications from '@/components/ui/InvoiceNotifications';
+import { useAuth } from '@/context/AuthContext';
 
 interface TopbarProps {
   register: CashRegister | null;
@@ -14,9 +15,11 @@ interface TopbarProps {
 }
 
 export default function Topbar({ register, rate, onRateChange }: TopbarProps) {
+  const { user } = useAuth();
   const [time, setTime] = useState(new Date());
   const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
   const [pendingSync, setPendingSync] = useState(0);
+  const isAdmin = user?.role === 'admin';
 
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 1000);
@@ -65,18 +68,21 @@ export default function Topbar({ register, rate, onRateChange }: TopbarProps) {
         <span className="text-white">POS</span>
       </div>
       
-      <div className={cn(
-        "px-4 py-1 rounded-full text-[12px] font-bold tracking-tight transition-all duration-200 shadow-md flex items-center gap-2",
-        isOpen 
-          ? "bg-[#2ECC71] text-white border border-[#27AE60]" 
-          : "bg-[#E74C3C] text-white border border-[#C0392B]"
-      )}>
-        <span className={cn(
-          "w-2 h-2 rounded-full",
-          isOpen ? "bg-white animate-pulse" : "bg-white/50"
-        )} />
-        {isOpen ? 'CAJA ABIERTA' : 'CAJA CERRADA'}
-      </div>
+      {/* Ocultar el badge de caja para administradores */}
+      {!isAdmin && (
+        <div className={cn(
+          "px-4 py-1 rounded-full text-[12px] font-bold tracking-tight transition-all duration-200 shadow-md flex items-center gap-2",
+          isOpen 
+            ? "bg-[#2ECC71] text-white border border-[#27AE60]" 
+            : "bg-[#E74C3C] text-white border border-[#C0392B]"
+        )}>
+          <span className={cn(
+            "w-2 h-2 rounded-full",
+            isOpen ? "bg-white animate-pulse" : "bg-white/50"
+          )} />
+          {isOpen ? 'CAJA ABIERTA' : 'CAJA CERRADA'}
+        </div>
+      )}
 
       <div className="ml-auto flex items-center gap-6">
         {/* Indicador de conexión */}

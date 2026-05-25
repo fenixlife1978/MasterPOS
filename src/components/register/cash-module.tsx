@@ -43,6 +43,9 @@ function isTodayVenezuela(date: Date | string | number): boolean {
 
 export default function CashModule({ state }: CashModuleProps) {
   const { user } = useAuth();
+  const terminalId = user?.terminalId || 'default';
+  const terminalName = user?.terminalId ? `Terminal ${user.terminalId}` : 'Terminal Principal';
+
   const [openAmountBs, setOpenAmountBs] = useState('0.00');
   const [openAmountUsd, setOpenAmountUsd] = useState('0.00');
   const [openRate, setOpenRate] = useState(state.exchangeRate.toString());
@@ -168,7 +171,7 @@ export default function CashModule({ state }: CashModuleProps) {
         
         <header className="bg-[#1E3A8A] text-white p-4 rounded-t-xl shadow-md text-center relative border-b-4 border-[#0284C7]">
           <div className="absolute left-4 top-4 bg-amber-500 text-[10px] font-bold px-2 py-1 rounded text-slate-900">
-            GESTIÓN DE BÓVEDA
+            {terminalName}
           </div>
           <div className="absolute right-4 top-4">
             <Button 
@@ -332,20 +335,20 @@ export default function CashModule({ state }: CashModuleProps) {
                          </td>
                         <td className="p-2 text-right font-mono font-bold">
                           Bs {monto.toFixed(2)}
-                          </td>
-                       </tr>
+                        </td>
+                        </tr>
                     );
                   })}
                   <tr className="bg-[#F0F0F0] font-black">
                     <td className="p-2">TOTAL VENTAS CONTADO / INGRESOS</td>
                     <td className="p-2 text-right font-mono">Bs {totalContado.toFixed(2)}</td>
-                   </tr>
+                  </tr>
                   <tr className="bg-[#E8E8E8]">
                     <td className="p-2">VENTAS CRÉDITO (Cuentas por Cobrar)</td>
                     <td className="p-2 text-right font-mono">Bs {totalCredito.toFixed(2)}</td>
-                   </tr>
+                  </tr>
                 </tbody>
-               </table>
+              </table>
             </div>
           </div>
         )}
@@ -378,7 +381,7 @@ export default function CashModule({ state }: CashModuleProps) {
                       <th className="p-1.5">MÉTODO</th>
                       <th className="p-1.5">CLIENTE</th>
                       <th className="p-1.5 text-right">MONTO</th>
-                     </tr>
+                    </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200 text-[9px]">
                     {dailyTransactions.map((tx, idx) => {
@@ -422,11 +425,11 @@ export default function CashModule({ state }: CashModuleProps) {
                           <td className="p-1.5 text-black/50 uppercase text-[8px]">{methodLabels[tx.payMethod] || tx.payMethod || 'N/A'}</td>
                           <td className="p-1.5 text-black/60 max-w-[100px] truncate">{tx.clientName || 'CLIENTE FINAL'}</td>
                           <td className="p-1.5 text-right font-bold font-mono">Bs {displayAmount.toFixed(2)}</td>
-                         </tr>
+                        </tr>
                       );
                     })}
                   </tbody>
-                 </table>
+                </table>
               )}
             </div>
           )}

@@ -33,6 +33,8 @@ const STORAGE_KEYS = {
 
 export function usePOSState() {
   const { user } = useAuth();
+  const terminalId = user?.terminalId || 'default'; // ✅ Usar terminalId del usuario o 'default'
+  
   const [products, setProducts] = useState<Product[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -49,15 +51,15 @@ export function usePOSState() {
   const saveRegisterToLocalStorage = useCallback((registerData: CashRegister | null) => {
     if (typeof window !== 'undefined') {
       if (registerData) {
-        localStorage.setItem(STORAGE_KEYS.POS_REGISTER, JSON.stringify(registerData));
+        localStorage.setItem(`${STORAGE_KEYS.POS_REGISTER}_${terminalId}`, JSON.stringify(registerData));
       } else {
-        localStorage.removeItem(STORAGE_KEYS.POS_REGISTER);
+        localStorage.removeItem(`${STORAGE_KEYS.POS_REGISTER}_${terminalId}`);
       }
     }
-  }, []);
+  }, [terminalId]);
 
   useEffect(() => {
-    const cachedRegister = localStorage.getItem(STORAGE_KEYS.POS_REGISTER);
+    const cachedRegister = localStorage.getItem(`${STORAGE_KEYS.POS_REGISTER}_${terminalId}`);
     if (cachedRegister) {
       try {
         setRegister(JSON.parse(cachedRegister));
@@ -69,7 +71,7 @@ export function usePOSState() {
       const rate = parseFloat(cachedRate);
       if (!isNaN(rate)) setExchangeRate(rate);
     }
-  }, []);
+  }, [terminalId]);
 
   useEffect(() => {
     if (!user) return;
@@ -78,7 +80,7 @@ export function usePOSState() {
     const unsubClients = syncService.subscribeToClients(setClients);
     const unsubTransactions = syncService.subscribeToTransactions(setTransactions as any);
     const unsubAccounts = syncService.subscribeToAccounts(setAccounts as any);
-    const unsubRegister = syncService.subscribeToRegister((registerData) => {
+    const unsubRegister = syncService.subscribeToRegisterByTerminal(terminalId, (registerData) => {
       setRegister(registerData);
       saveRegisterToLocalStorage(registerData);
     });
@@ -106,7 +108,7 @@ export function usePOSState() {
       unsubAccounts();
       unsubRegister();
     };
-  }, [user, saveRegisterToLocalStorage]);
+  }, [user, terminalId, saveRegisterToLocalStorage]);
 
   const addProduct = useCallback((p: Product) => syncService.saveProduct(p), []);
   const updateProduct = useCallback((p: Product) => syncService.saveProduct(p), []);
@@ -175,16 +177,16 @@ export function usePOSState() {
       txs: [],
       exchangeRate: rate
     };
-    await syncService.saveRegister(registerData);
+    await syncService.saveRegisterByTerminal(terminalId, registerData);
     setRegister(registerData);
     saveRegisterToLocalStorage(registerData);
-  }, [saveRegisterToLocalStorage]);
+  }, [terminalId, saveRegisterToLocalStorage]);
 
   const closeCashRegister = useCallback(() => {
-    syncService.clearRegister();
+    syncService.clearRegisterByTerminal(terminalId);
     setRegister(null);
     saveRegisterToLocalStorage(null);
-  }, [saveRegisterToLocalStorage]);
+  }, [terminalId, saveRegisterToLocalStorage]);
 
   const getKitComponents = (product: Product, qty: number): { productId: number; quantity: number }[] => {
     if (!product.isKit || !product.kitComponents || product.kitComponents.length === 0) {
@@ -196,13 +198,11 @@ export function usePOSState() {
     }));
   };
 
-  // ✅ FINALIZAR VENTA (MODIFICADO PARA INCLUIR COLABORACIONES Y CONSUMO PROPIO)
+  // ✅ finalizeSale con transacción atómica
   const finalizeSale = useCallback(async (type: 'contado' | 'credito' | 'cobro_deuda' | 'colaboracion' | 'consumo_propio', paymentData: any) => {
-    if (!register?.isOpen) return;
+    if (!register?.isOpen) throw new Error('Caja no abierta');
 
     const isSpecial = type === 'colaboracion' || type === 'consumo_propio';
-    
-    // Para operaciones especiales, los valores financieros son cero
     let subtotal = 0, iva = 0, total = 0, finalTotal = 0;
     let costoTotalOperacion = 0;
     
@@ -215,7 +215,6 @@ export function usePOSState() {
       total = subtotal + iva;
       finalTotal = type === 'cobro_deuda' ? (paymentData.totalPaid || paymentData.amount) : total;
     } else {
-      // Calcular costo real de los productos (precio de costo en USD)
       for (const item of cart) {
         const product = products.find(p => p.id === item.productId);
         if (product && product.costUsd) {
@@ -223,7 +222,7 @@ export function usePOSState() {
         }
       }
       costoTotalOperacion = parseFloat(costoTotalOperacion.toFixed(2));
-      finalTotal = 0; // No hay ingreso
+      finalTotal = 0;
     }
 
     let targetClientId = paymentData.clientId;
@@ -240,8 +239,9 @@ export function usePOSState() {
       targetClientId = nextClientId;
     }
 
+    const txId = getVenezuelaTimestamp();
     const tx: Transaction = {
-      id: getVenezuelaTimestamp(),
+      id: txId,
       date: getVenezuelaISOString(),
       type: type as any,
       items: type === 'cobro_deuda' ? [] : [...cart],
@@ -261,108 +261,43 @@ export function usePOSState() {
       authorizedBy: isSpecial ? paymentData.authorizedBy : undefined,
     };
 
-    await syncService.saveTransaction(tx);
-
-    const updatedRegister = {
-      ...register,
-      txs: [...(register.txs || []), tx],
-    };
-    await syncService.saveRegister(updatedRegister);
-    setRegister(updatedRegister);
-    saveRegisterToLocalStorage(updatedRegister);
-
-    // Descuento de stock y registro en Kardex (si no es cobro deuda)
+    // Preparar actualizaciones para la transacción atómica
+    const stockUpdates: Map<number, { newStock: number }> = new Map();
+    const kardexEntries: any[] = [];
+    
     if (type !== 'cobro_deuda') {
-      const stockUpdates: Map<number, number> = new Map();
-      
       for (const item of cart) {
         const product = products.find(p => p.id === item.productId);
         if (!product) continue;
         
-        if (product.isKit && product.kitComponents && product.kitComponents.length > 0) {
-          const components = getKitComponents(product, item.qty);
-          for (const comp of components) {
-            const current = stockUpdates.get(comp.productId) || 0;
-            stockUpdates.set(comp.productId, current + comp.quantity);
-          }
-          if (product.stock !== undefined && product.stock > 0) {
-            const currentKit = stockUpdates.get(product.id) || 0;
-            stockUpdates.set(product.id, currentKit + item.qty);
-          }
-        } else {
-          const current = stockUpdates.get(product.id) || 0;
-          stockUpdates.set(product.id, current + item.qty);
-        }
+        const qtyToSubtract = item.qty;
+        const newStock = product.stock - qtyToSubtract;
+        stockUpdates.set(product.id, { newStock });
+        
+        const kardexType = isSpecial ? 'ajuste_negativo' : 'salida_venta';
+        const reference = isSpecial 
+          ? `[${type === 'colaboracion' ? 'Colaboración' : 'Consumo Propio'}] ${paymentData.notes || 'Sin motivo'}`
+          : `Venta #${tx.id}`;
+        
+        kardexEntries.push({
+          id: `${Date.now()}_${Math.random()}`,
+          productId: product.id,
+          date: tx.date,
+          type: kardexType,
+          quantity: qtyToSubtract,
+          previousStock: product.stock,
+          newStock,
+          reference,
+          note: isSpecial ? paymentData.notes : `Venta ID: ${tx.id}`,
+          costUsd: product.costUsd,
+          costBs: product.costBs,
+        });
       }
-      
-      for (const [prodId, qtyToSubtract] of stockUpdates.entries()) {
-        const prod = products.find(p => p.id === prodId);
-        if (prod) {
-          const newStock = prod.stock - qtyToSubtract;
-          await syncService.saveProduct({ ...prod, stock: Math.max(0, newStock) });
-          
-          // Registrar en Kardex (tipo 'ajuste_negativo' para colaboraciones/consumo)
-          const kardexType = isSpecial ? 'ajuste_negativo' : 'salida_venta';
-          const reference = isSpecial 
-            ? `[${type === 'colaboracion' ? 'Colaboración' : 'Consumo Propio'}] ${paymentData.notes || 'Sin motivo'}`
-            : `Venta #${tx.id}`;
-          
-          const kardexEntry: any = {
-            id: `${Date.now()}_${Math.random()}`,
-            productId: prod.id,
-            date: tx.date,
-            type: kardexType,
-            quantity: qtyToSubtract,
-            previousStock: prod.stock,
-            newStock,
-            reference,
-            note: isSpecial ? paymentData.notes : `Venta ID: ${tx.id}`,
-            costUsd: prod.costUsd,
-            costBs: prod.costBs,
-          };
-          await syncService.saveKardexEntry(kardexEntry);
-        }
-      }
-      
-      // Actualizar estado local de productos
-      const updatedProducts = [...products];
-      for (const [prodId, qtyToSubtract] of stockUpdates.entries()) {
-        const index = updatedProducts.findIndex(p => p.id === prodId);
-        if (index !== -1) {
-          updatedProducts[index] = { ...updatedProducts[index], stock: Math.max(0, updatedProducts[index].stock - qtyToSubtract) };
-        }
-      }
-      setProducts(updatedProducts);
     }
 
-    // Gestión de cuentas por cobrar (crédito)
-    if (type === 'credito') {
-      await syncService.saveAccount({ 
-        id: getVenezuelaTimestamp(), 
-        txId: tx.id, 
-        date: tx.date, 
-        clientId: targetClientId!, 
-        clientName: paymentData.clientName, 
-        clientCedula: paymentData.clientCedula || '', 
-        products: cart.map(i => `${i.name} x${i.qty}`).join(', '), 
-        amountBs: total, 
-        amountUsd: total / exchangeRate,
-        paidAmount: 0, 
-        status: 'pendiente',
-        exchangeRate,
-        receiptNumber: paymentData.receiptNumber
-      });
-      const client = clients.find(c => c.id === targetClientId);
-      if (client) await syncService.saveClient({ ...client, debt: (client.debt || 0) + total });
-      await registerCreditEntry(tx, client || { name: paymentData.clientName } as any);
-    } else if (type === 'contado') {
-      await registerSaleEntry(tx);
-    } else if (type === 'cobro_deuda') {
-      const client = clients.find(c => c.id === targetClientId);
-      if (client) await registerDebtPaymentEntry(tx, client);
-    } else if (isSpecial) {
-      // Registrar asiento contable para colaboraciones/consumo propio (egreso)
-      const accountingEntry = {
+    let accountingEntry: any = null;
+    if (isSpecial && costoTotalOperacion > 0) {
+      accountingEntry = {
         id: getVenezuelaTimestamp(),
         date: tx.date,
         type: 'egreso',
@@ -375,12 +310,66 @@ export function usePOSState() {
         referenceType: type === 'colaboracion' ? 'colaboracion' : 'consumo_propio',
         createdAt: tx.date,
       };
-      await syncService.saveAccountingEntry(accountingEntry);
+    }
+
+    const newTxs = [...(register.txs || []), tx];
+    const registerUpdate = { txs: newTxs };
+
+    // Ejecutar transacción atómica
+    await syncService.runAtomicSale(terminalId, tx, {
+      products: stockUpdates,
+      kardexEntries,
+      accountingEntry,
+      registerUpdate
+    });
+
+    // Actualizar estado local
+    setRegister({ ...register, txs: newTxs });
+    saveRegisterToLocalStorage({ ...register, txs: newTxs });
+    
+    // Actualizar productos localmente
+    const updatedProducts = [...products];
+    for (const [prodId, update] of stockUpdates.entries()) {
+      const idx = updatedProducts.findIndex(p => p.id === prodId);
+      if (idx !== -1) updatedProducts[idx] = { ...updatedProducts[idx], stock: update.newStock };
+    }
+    setProducts(updatedProducts);
+
+    // Gestión de cuentas (crédito, etc.) - solo actualizar estado local, ya que Firestore se actualizó en la transacción
+    if (type === 'credito') {
+      const newAccount: Account = {
+        id: getVenezuelaTimestamp(),
+        txId: tx.id,
+        date: tx.date,
+        clientId: targetClientId!,
+        clientName: paymentData.clientName,
+        clientCedula: paymentData.clientCedula || '',
+        products: cart.map(i => `${i.name} x${i.qty}`).join(', '),
+        amountBs: total,
+        amountUsd: total / exchangeRate,
+        paidAmount: 0,
+        status: 'pendiente',
+        exchangeRate,
+      };
+      setAccounts(prev => [...prev, newAccount]);
+      const client = clients.find(c => c.id === targetClientId);
+      if (client) {
+        const updatedClient = { ...client, debt: (client.debt || 0) + total };
+        setClients(prev => prev.map(c => c.id === targetClientId ? updatedClient : c));
+      }
+      await registerCreditEntry(tx, client || { name: paymentData.clientName } as any);
+    } else if (type === 'contado') {
+      await registerSaleEntry(tx);
+    } else if (type === 'cobro_deuda') {
+      const client = clients.find(c => c.id === targetClientId);
+      if (client) await registerDebtPaymentEntry(tx, client);
+    } else if (isSpecial) {
+      // No se necesita más, ya se guardó accountingEntry
     }
 
     if (type !== 'cobro_deuda') setCart([]);
     return tx;
-  }, [cart, register, exchangeRate, clients, products, saveRegisterToLocalStorage]);
+  }, [cart, register, exchangeRate, clients, products, terminalId, saveRegisterToLocalStorage]);
 
   const applyAbono = useCallback(async (clientId: number, amount: number) => {
     if (!register?.isOpen) return;
@@ -426,13 +415,13 @@ export function usePOSState() {
       ...register,
       txs: [...(register.txs || []), tx],
     };
-    await syncService.saveRegister(updatedRegister);
+    await syncService.saveRegisterByTerminal(terminalId, updatedRegister);
     setRegister(updatedRegister);
     saveRegisterToLocalStorage(updatedRegister);
     
     await syncService.saveClient({ ...client, debt: Math.max(0, (client.debt || 0) - amount) });
     await registerDebtPaymentEntry(tx, client);
-  }, [register, clients, accounts, exchangeRate, saveRegisterToLocalStorage]);
+  }, [register, clients, accounts, exchangeRate, terminalId, saveRegisterToLocalStorage]);
 
   const setExchangeRateProxy = useCallback(async (newRate: number) => {
     setExchangeRate(newRate);

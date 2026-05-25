@@ -185,28 +185,39 @@ export default function TerminalManager() {
               <TableRow key={terminal.id} className="border-b border-[#9E9E9E] hover:bg-[#F5F5F5]">
                 <TableCell className="font-bold text-black text-sm">{terminal.name}</TableCell>
                 <TableCell className="text-black/60 text-xs">{terminal.description || '—'}</TableCell>
-                <TableCell className="text-black/60 text-xs flex items-center gap-1"><MapPin size={10} /> {terminal.location || '—'}</TableCell>
-                <TableCell className="text-black/60 text-xs flex items-center gap-1">
-                  <Users size={10} /> 
-                  {isLoadingUsers ? '...' : getAssignedUserName(terminal.assignedTo)}
+                <TableCell className="text-black/60 text-xs">
+                  <div className="flex items-center gap-1">
+                    <MapPin size={10} className="flex-shrink-0" />
+                    {terminal.location || '—'}
+                  </div>
+                </TableCell>
+                <TableCell className="text-black/60 text-xs">
+                  <div className="flex items-center gap-1">
+                    <Users size={10} className="flex-shrink-0" />
+                    {isLoadingUsers ? '...' : getAssignedUserName(terminal.assignedTo)}
+                  </div>
                 </TableCell>
                 <TableCell>
                   <span className={cn(
-                    "flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold",
+                    "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold",
                     terminal.status === 'active' ? "text-green-600 bg-green-100" : "text-red-600 bg-red-100"
                   )}>
+                    <span className={cn(
+                      "w-1.5 h-1.5 rounded-full",
+                      terminal.status === 'active' ? "bg-green-600" : "bg-red-600"
+                    )} />
                     {terminal.status === 'active' ? 'ACTIVA' : 'INACTIVA'}
                   </span>
                 </TableCell>
                 <TableCell className="text-right">
                   <div className="flex justify-end gap-1">
-                    <button onClick={() => handleStatusToggle(terminal)} className="p-1.5 rounded-lg hover:bg-gray-100">
+                    <button onClick={() => handleStatusToggle(terminal)} className="p-1.5 rounded-lg hover:bg-gray-100" title={terminal.status === 'active' ? 'Desactivar' : 'Activar'}>
                       {terminal.status === 'active' ? <PowerOff size={14} className="text-red-500" /> : <Power size={14} className="text-green-500" />}
                     </button>
-                    <button onClick={() => handleEdit(terminal)} className="p-1.5 rounded-lg hover:bg-gray-100">
+                    <button onClick={() => handleEdit(terminal)} className="p-1.5 rounded-lg hover:bg-gray-100" title="Editar">
                       <Edit size={14} className="text-blue-500" />
                     </button>
-                    <button onClick={() => handleDelete(terminal.id)} className="p-1.5 rounded-lg hover:bg-gray-100">
+                    <button onClick={() => handleDelete(terminal.id)} className="p-1.5 rounded-lg hover:bg-gray-100" title="Eliminar">
                       <Trash2 size={14} className="text-red-500" />
                     </button>
                   </div>
@@ -217,7 +228,6 @@ export default function TerminalManager() {
         </Table>
       </div>
 
-      {/* Modal corregido */}
       <Dialog open={showModal} onOpenChange={(open) => {
         if (!open) {
           setShowModal(false);
@@ -238,6 +248,14 @@ export default function TerminalManager() {
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })} 
                 placeholder="Ej: Caja Principal" 
                 autoFocus
+              />
+            </div>
+            <div>
+              <label className="text-[10px] font-bold text-black/60 uppercase block mb-1">Descripción</label>
+              <Input 
+                value={formData.description} 
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })} 
+                placeholder="Ej: Terminal de entrada principal" 
               />
             </div>
             <div>

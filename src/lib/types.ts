@@ -76,9 +76,11 @@ export interface CashRegister {
   isOpen: boolean;
   openTime: string;
   openAmount: number;
+  openAmountBs?: number;   // ✅ NUEVO: Efectivo en BS al abrir (se guarda separado)
+  openAmountUsd?: number;  // ✅ NUEVO: Efectivo en USD al abrir
   txs: Transaction[];
   closeTime?: string;
-  exchangeRate?: number; // ✅ AGREGAR: Tasa BCV al momento de apertura
+  exchangeRate?: number;
 }
 
 export type Page = 'dashboard' | 'pos' | 'inventario' | 'clientes' | 'cuentas' | 'caja' | 'proveedores' | 'contabilidad' | 'devoluciones' | 'registrar_compra';

@@ -18,20 +18,18 @@ interface CashModuleProps {
   state: ReturnType<typeof usePOSState>;
 }
 
-// ✅ Optimizada la normalización de fechas nativas utilizando la API internacional del navegador
 function getVenezuelaDateString(date: Date | string | number): string {
   try {
     const d = new Date(date);
     if (isNaN(d.getTime())) return "";
     
-    // Extrae de manera inequívoca el año, mes y día en la zona horaria del país
     const formatter = new Intl.DateTimeFormat('fr-CA', {
       timeZone: 'America/Caracas',
       year: 'numeric',
       month: '2-digit',
       day: '2-digit'
     });
-    return formatter.format(d); // Retorna estrictamente "YYYY-MM-DD"
+    return formatter.format(d);
   } catch (e) {
     return "";
   }
@@ -58,14 +56,12 @@ export default function CashModule({ state }: CashModuleProps) {
   const reg = state.register;
   const isClosed = !reg || !reg.isOpen;
 
-  // Sincronizar campo de tasa cuando el estado global cambie de valor
   useEffect(() => {
     if (state.exchangeRate) {
       setOpenRate(state.exchangeRate.toString());
     }
   }, [state.exchangeRate]);
 
-  // Forzar refresco periódico para capturar actualizaciones en background
   useEffect(() => {
     const interval = setInterval(() => {
       setRefreshKey(prev => prev + 1);
@@ -85,46 +81,56 @@ export default function CashModule({ state }: CashModuleProps) {
   const methodLabels: Record<string, string> = {};
   paymentMethods.forEach(m => methodLabels[m.id] = m.label);
 
-  // Obtener todas las transacciones del registro
   const allTransactions = useMemo(() => {
     return reg?.txs || [];
   }, [reg?.txs, refreshKey]);
 
-  // Filtrar transacciones del día actual usando la hora de Venezuela corregida
   const dailyTransactions = useMemo(() => {
     return allTransactions
       .filter(t => {
         const isSameDay = isTodayVenezuela(t.date);
-        const isValidType = t.type === 'contado' || t.type === 'cobro_deuda';
+        const isValidType = t.type === 'contado' || t.type === 'cobro_deuda' || t.type === 'credito';
         return isValidType && isSameDay;
       })
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [allTransactions, refreshKey]);
 
-  // ✅ CORREGIDO: Mapeo y totalización financiera exacta según el tipo de flujo monetario
+  const cashTransactions = useMemo(() => {
+    return allTransactions
+      .filter(t => {
+        const isSameDay = isTodayVenezuela(t.date);
+        return (t.type === 'contado' || t.type === 'cobro_deuda') && isSameDay;
+      });
+  }, [allTransactions, refreshKey]);
+
+  const creditTransactions = useMemo(() => {
+    return allTransactions
+      .filter(t => {
+        const isSameDay = isTodayVenezuela(t.date);
+        return t.type === 'credito' && isSameDay;
+      });
+  }, [allTransactions, refreshKey]);
+
   const salesByMethod = useMemo(() => {
     const totals: Record<string, number> = {};
     paymentMethods.forEach(m => totals[m.id] = 0);
     
-    dailyTransactions.forEach(t => {
+    cashTransactions.forEach(t => {
       const method = t.payMethod || 'efectivo_bs';
-      // Si es un cobro de deuda, el ingreso real de dinero es lo que pagó ("paidBs"), no el total de la cuenta original
       const montoEfectivo = t.type === 'cobro_deuda' ? (t.paidBs || t.total || 0) : (t.total || 0);
       totals[method] = (totals[method] || 0) + montoEfectivo;
     });
     
     return totals;
-  }, [dailyTransactions]);
+  }, [cashTransactions]);
+
+  const totalCredito = useMemo(() => {
+    return creditTransactions.reduce((s, t) => s + (t.total || 0), 0);
+  }, [creditTransactions]);
 
   const totalContado = useMemo(() => {
     return Object.values(salesByMethod).reduce((s, v) => s + v, 0);
   }, [salesByMethod]);
-
-  const totalCredito = useMemo(() => {
-    return allTransactions
-      .filter(t => t.type === 'credito' && isTodayVenezuela(t.date))
-      .reduce((s, t) => s + (t.total || 0), 0);
-  }, [allTransactions, refreshKey]);
 
   const totalEnCaja = (reg?.openAmount || 0) + totalContado;
   const totalEnCajaUSD = totalEnCaja / (state.exchangeRate || 1);
@@ -133,9 +139,8 @@ export default function CashModule({ state }: CashModuleProps) {
     const bsAmount = parseFloat(openAmountBs) || 0;
     const usdAmount = parseFloat(openAmountUsd) || 0;
     const rate = parseFloat(openRate) || state.exchangeRate;
-    const totalOpenAmount = bsAmount + (usdAmount * rate);
     if (rate !== state.exchangeRate) state.setExchangeRate(rate);
-    state.openCashRegister(totalOpenAmount);
+    state.openCashRegister(bsAmount, usdAmount, rate);
   };
 
   const handleRefresh = () => {
@@ -161,7 +166,6 @@ export default function CashModule({ state }: CashModuleProps) {
     <div className="h-full w-full overflow-y-auto overflow-x-hidden bg-[#F9F4E1]">
       <div className="min-h-full p-4 pb-8">
         
-        {/* HEADER */}
         <header className="bg-[#1E3A8A] text-white p-4 rounded-t-xl shadow-md text-center relative border-b-4 border-[#0284C7]">
           <div className="absolute left-4 top-4 bg-amber-500 text-[10px] font-bold px-2 py-1 rounded text-slate-900">
             GESTIÓN DE BÓVEDA
@@ -184,7 +188,6 @@ export default function CashModule({ state }: CashModuleProps) {
           </p>
         </header>
 
-        {/* TASA BCV Y ESTADO */}
         <section className="bg-white p-4 grid grid-cols-1 md:grid-cols-3 gap-4 border-x border-slate-200 shadow-sm">
           <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
             <span className="text-slate-500 block text-[10px] font-bold uppercase">Tasa BCV Actual:</span>
@@ -199,15 +202,24 @@ export default function CashModule({ state }: CashModuleProps) {
             </span>
           </div>
           <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
-            <span className="text-slate-500 block text-[10px] font-bold uppercase">Total en Caja:</span>
+            <span className="text-slate-500 block text-[10px] font-bold uppercase">Total en Caja (Sistema):</span>
             <span className="text-base font-mono font-bold text-blue-700">
               {!isClosed ? `Bs ${totalEnCaja.toFixed(2)}` : '—'}
             </span>
-            {!isClosed && <span className="text-[10px] text-slate-500 block">≈ $ {totalEnCajaUSD.toFixed(2)}</span>}
+            {!isClosed && (
+              <>
+                <p className="text-[10px] text-slate-500">≈ $ {totalEnCajaUSD.toFixed(2)}</p>
+                <div className="mt-1.5 pt-1.5 border-t border-slate-200 flex flex-col gap-0.5">
+                   <p className="text-[8px] font-bold text-slate-400 uppercase">Fondo de Apertura:</p>
+                   <p className="text-[9px] font-bold text-slate-600">
+                     Bs {reg?.openAmountBs?.toFixed(2)} + $ {reg?.openAmountUsd?.toFixed(2)}
+                   </p>
+                </div>
+              </>
+            )}
           </div>
         </section>
 
-        {/* APERTURA DE CAJA */}
         {isClosed ? (
           <div className="bg-white border-x border-b border-slate-200 rounded-b-xl p-6 shadow-md">
             <h2 className="text-sm font-black uppercase mb-4 text-[#1E3A8A] flex items-center gap-2">
@@ -215,7 +227,7 @@ export default function CashModule({ state }: CashModuleProps) {
             </h2>
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div>
-                <label className="text-[9px] font-bold uppercase block mb-1 text-slate-500">Apertura BS</label>
+                <label className="text-[9px] font-bold uppercase block mb-1 text-slate-500">Apertura BS (Efectivo)</label>
                 <Input 
                   type="number" 
                   step="0.01" 
@@ -226,7 +238,7 @@ export default function CashModule({ state }: CashModuleProps) {
                 />
               </div>
               <div>
-                <label className="text-[9px] font-bold uppercase block mb-1 text-slate-500">Apertura USD</label>
+                <label className="text-[9px] font-bold uppercase block mb-1 text-slate-500">Apertura USD (Efectivo)</label>
                 <Input 
                   type="number" 
                   step="0.01" 
@@ -291,13 +303,12 @@ export default function CashModule({ state }: CashModuleProps) {
           </div>
         )}
 
-        {/* VENTAS POR MÉTODO */}
         {!isClosed && (
           <div className="mt-6">
             <h3 className="text-xs font-black uppercase mb-3 flex items-center gap-2 text-[#1E3A8A]">
               <Vault size={12} /> Ventas del Período Actual
               <span className="text-[9px] text-green-600 font-normal ml-2">
-                ({dailyTransactions.length} ventas hoy)
+                ({dailyTransactions.length} transacciones hoy)
               </span>
             </h3>
             <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-md">
@@ -305,7 +316,7 @@ export default function CashModule({ state }: CashModuleProps) {
                 <thead>
                   <tr className="bg-[#2c3e50] text-white text-[9px] uppercase font-bold tracking-wider">
                     <th className="p-2">MÉTODO DE PAGO</th>
-                    <th className="p-2 text-right">TOTAL {state.isIvaEnabled ? "Con IVA" : ""} Bs</th>
+                    <th className="p-2 text-right">TOTAL Bs</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 text-[10px]">
@@ -318,28 +329,27 @@ export default function CashModule({ state }: CashModuleProps) {
                             <Icon size={12} className="text-[#1E3A8A]" />
                             <span className="font-bold">{label}</span>
                           </div>
-                        </td>
+                         </td>
                         <td className="p-2 text-right font-mono font-bold">
                           Bs {monto.toFixed(2)}
-                        </td>
-                      </tr>
+                          </td>
+                       </tr>
                     );
                   })}
                   <tr className="bg-[#F0F0F0] font-black">
                     <td className="p-2">TOTAL VENTAS CONTADO / INGRESOS</td>
                     <td className="p-2 text-right font-mono">Bs {totalContado.toFixed(2)}</td>
-                  </tr>
+                   </tr>
                   <tr className="bg-[#E8E8E8]">
                     <td className="p-2">VENTAS CRÉDITO (Cuentas por Cobrar)</td>
                     <td className="p-2 text-right font-mono">Bs {totalCredito.toFixed(2)}</td>
-                  </tr>
+                   </tr>
                 </tbody>
-              </table>
+               </table>
             </div>
           </div>
         )}
 
-        {/* HISTORIAL DE TRANSACCIONES DEL DÍA */}
         <div className="mt-6 bg-white border border-slate-200 rounded-xl overflow-hidden shadow-md">
           <div 
             className="bg-[#1E3A8A] p-2 flex justify-between items-center cursor-pointer" 
@@ -368,7 +378,7 @@ export default function CashModule({ state }: CashModuleProps) {
                       <th className="p-1.5">MÉTODO</th>
                       <th className="p-1.5">CLIENTE</th>
                       <th className="p-1.5 text-right">MONTO</th>
-                    </tr>
+                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200 text-[9px]">
                     {dailyTransactions.map((tx, idx) => {
@@ -387,29 +397,41 @@ export default function CashModule({ state }: CashModuleProps) {
                       
                       const displayAmount = tx.type === 'cobro_deuda' ? (tx.paidBs || tx.total || 0) : (tx.total || 0);
 
+                      let tipoLabel = '';
+                      let tipoColor = '';
+                      if (tx.type === 'contado') {
+                        tipoLabel = 'VENTA CONTADO';
+                        tipoColor = 'bg-green-100 text-green-700';
+                      } else if (tx.type === 'credito') {
+                        tipoLabel = 'VENTA CRÉDITO';
+                        tipoColor = 'bg-blue-100 text-blue-700';
+                      } else if (tx.type === 'cobro_deuda') {
+                        tipoLabel = 'COBRO DEUDA';
+                        tipoColor = 'bg-purple-100 text-purple-700';
+                      }
+
                       return (
                         <tr key={tx.id || idx} className="hover:bg-slate-50">
                           <td className="p-1.5 text-black/40">{idx + 1}</td>
                           <td className="p-1.5 text-black/60 font-mono">{timeStr}</td>
                           <td className="p-1.5">
-                            <span className={cn("px-1 py-0.5 rounded text-[8px] font-bold", tx.type === 'contado' ? "bg-green-100 text-green-700" : "bg-blue-100 text-blue-700")}>
-                              {tx.type === 'contado' ? 'VENTA' : 'COBRO'}
+                            <span className={cn("px-1 py-0.5 rounded text-[8px] font-bold", tipoColor)}>
+                              {tipoLabel}
                             </span>
                           </td>
                           <td className="p-1.5 text-black/50 uppercase text-[8px]">{methodLabels[tx.payMethod] || tx.payMethod || 'N/A'}</td>
                           <td className="p-1.5 text-black/60 max-w-[100px] truncate">{tx.clientName || 'CLIENTE FINAL'}</td>
                           <td className="p-1.5 text-right font-bold font-mono">Bs {displayAmount.toFixed(2)}</td>
-                        </tr>
+                         </tr>
                       );
                     })}
                   </tbody>
-                </table>
+                 </table>
               )}
             </div>
           )}
         </div>
 
-        {/* MODAL DE HISTORIAL */}
         {showHistoryModal && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[80vh] overflow-hidden">

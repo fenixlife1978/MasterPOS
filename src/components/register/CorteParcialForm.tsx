@@ -34,7 +34,11 @@ interface RowData {
 export default function CorteParcialForm({ onClose, onCorteConfirmado, tasaActual, onTasaActualizada }: CorteParcialFormProps) {
   const state = usePOSState();
   const reg = state.register;
-  
+
+  // Obtener valores reales de apertura de forma segura
+  const finalOpenAmountBs = reg?.openAmountBs ?? 0;
+  const finalOpenAmountUSD = reg?.openAmountUsd ?? 0;
+
   const [nuevaTasa, setNuevaTasa] = useState<string>('');
   const [tasaValidada, setTasaValidada] = useState<boolean>(false);
   const [isConciliado, setIsConciliado] = useState<boolean>(false);
@@ -50,31 +54,38 @@ export default function CorteParcialForm({ onClose, onCorteConfirmado, tasaActua
     { id: 6, metodo: 'ZELLE', key: 'zelle', isUsd: true, hasInitialBalance: false },
   ];
 
+  // Ventas totales del día por método
   const salesByMethod = useMemo(() => {
     const totals: Record<string, number> = {};
     paymentMethods.forEach(m => totals[m.key] = 0);
     if (reg?.txs && Array.isArray(reg.txs)) {
       reg.txs.forEach(t => {
-        if (t.type === 'contado' || t.type === 'cobro_deuda') {
+        if (t.type === 'contado' || t.type === 'cobro_deuda' || t.type === 'credito') {
           const method = t.payMethod || 'efectivo_bs';
-          totals[method] = (totals[method] || 0) + (t.total || 0);
+          const monto = (t as any).paidBs || t.total || 0;
+          totals[method] = (totals[method] || 0) + monto;
         }
       });
     }
     return totals;
   }, [reg]);
 
-  const openAmount = reg?.openAmount || 0;
-  const openAmountUSD = openAmount / tasaActual;
+  // Ventas crédito
+  const creditSalesTotal = useMemo(() => {
+    if (!reg?.txs) return 0;
+    return reg.txs
+      .filter(t => t.type === 'credito')
+      .reduce((sum, t) => sum + (t.total || 0), 0);
+  }, [reg]);
 
   const rows: RowData[] = paymentMethods.map((pm) => {
-    const ventas = salesByMethod[pm.key] || 0;
-    const ventasEnMoneda = pm.isUsd ? ventas / tasaActual : ventas;
+    const ventasBs = salesByMethod[pm.key] || 0;
+    const ventasEnMoneda = pm.isUsd ? ventasBs / tasaActual : ventasBs;
     
     let saldoInicial = 0;
     if (pm.hasInitialBalance) {
-      if (pm.key === 'efectivo_bs') saldoInicial = openAmount;
-      if (pm.key === 'usd_efectivo') saldoInicial = openAmountUSD;
+      if (pm.key === 'efectivo_bs') saldoInicial = finalOpenAmountBs;
+      if (pm.key === 'usd_efectivo') saldoInicial = finalOpenAmountUSD;
     }
     
     const teoricoTotal = saldoInicial + ventasEnMoneda;
@@ -100,9 +111,17 @@ export default function CorteParcialForm({ onClose, onCorteConfirmado, tasaActua
     };
   });
 
-  const totalTeorico = rows.reduce((s, r) => s + r.teoricoTotal, 0);
-  const totalFisico = rows.reduce((s, r) => s + r.fisico, 0);
-  const totalDiferencia = totalFisico - totalTeorico;
+  const totalTeoricoBs = rows.reduce((s, r) => {
+    const pm = paymentMethods.find(p => p.id === r.id);
+    return s + (pm?.isUsd ? r.teoricoTotal * tasaActual : r.teoricoTotal);
+  }, 0);
+
+  const totalFisicoBs = rows.reduce((s, r) => {
+    const pm = paymentMethods.find(p => p.id === r.id);
+    return s + (pm?.isUsd ? r.fisico * tasaActual : r.fisico);
+  }, 0);
+
+  const totalDiferenciaBs = totalFisicoBs - totalTeoricoBs;
 
   const handleFisicoChange = (key: string, valor: number) => {
     setFisicos(prev => ({ ...prev, [key]: valor }));
@@ -113,8 +132,6 @@ export default function CorteParcialForm({ onClose, onCorteConfirmado, tasaActua
     setIsSubmitting(true);
 
     const nuevaTasaNum = parseFloat(nuevaTasa);
-    
-    // Calcular nuevo fondo para período 2
     const nuevoFondoBs = fisicos['efectivo_bs'] || 0;
     const nuevoFondoUsd = fisicos['usd_efectivo'] || 0;
     const nuevoFondoTotalBs = nuevoFondoBs + (nuevoFondoUsd * nuevaTasaNum);
@@ -126,24 +143,27 @@ export default function CorteParcialForm({ onClose, onCorteConfirmado, tasaActua
       tipoCorte: 'corte_tasa',
       tasaBCV: tasaActual,
       tasaNueva: nuevaTasaNum,
-      apertura: { montoBs: openAmount, montoUsd: openAmountUSD, tasa: tasaActual },
-      ventas: { totalContado: totalTeorico - (openAmount + openAmountUSD), porMetodo: salesByMethod },
+      apertura: { montoBs: finalOpenAmountBs, montoUsd: finalOpenAmountUSD, tasa: tasaActual },
+      ventas: { 
+        totalContado: totalTeoricoBs - (finalOpenAmountBs + (finalOpenAmountUSD * tasaActual)),
+        totalCredito: creditSalesTotal,
+        porMetodo: salesByMethod 
+      },
       cuadre: rows.map(r => ({ metodo: r.metodo, sistema: r.teoricoTotal, real: r.fisico, diferencia: r.diferencia })),
-      totales: { sistema: totalTeorico, real: totalFisico, diferencia: totalDiferencia, estado: Math.abs(totalDiferencia) < 0.01 ? "CONCILIADO" : (totalDiferencia > 0 ? "SOBRANTE" : "FALTANTE") },
+      totales: { sistema: totalTeoricoBs, real: totalFisicoBs, diferencia: totalDiferenciaBs, estado: Math.abs(totalDiferenciaBs) < 0.01 ? "CONCILIADO" : (totalDiferenciaBs > 0 ? "SOBRANTE" : "FALTANTE") },
       nuevoFondo: { bs: nuevoFondoBs, usd: nuevoFondoUsd, totalBs: nuevoFondoTotalBs }
     };
 
     await syncService.saveCashClosing(closeReport);
-    
-    // Guardar corte parcial en localStorage para el cierre final
     localStorage.setItem(`corte_parcial_${Date.now()}`, JSON.stringify(closeReport));
     
-    // Actualizar tasa y nuevo fondo de caja
     onTasaActualizada(nuevaTasaNum);
     await syncService.saveRegister({ 
       isOpen: true, 
       openTime: reg?.openTime || new Date().toISOString(), 
       openAmount: nuevoFondoTotalBs,
+      openAmountBs: nuevoFondoBs,
+      openAmountUsd: nuevoFondoUsd,
       txs: reg?.txs || [] 
     });
 
@@ -173,7 +193,7 @@ export default function CorteParcialForm({ onClose, onCorteConfirmado, tasaActua
         <p>Efectivo BS: Bs ${(fisicos['efectivo_bs'] || 0).toFixed(2)}</p>
         <p>Efectivo USD: $ ${(fisicos['usd_efectivo'] || 0).toFixed(2)}</p>
         <div class="line"></div>
-        <p class="center">¡Corte parcial registrado exitosamente!</p>
+        <p class="center">¡Corte parcial registrado!</p>
       </body></html>
     `;
     printWindow.document.write(html);
@@ -185,82 +205,60 @@ export default function CorteParcialForm({ onClose, onCorteConfirmado, tasaActua
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-2">
       <div className="bg-[#F9F4E1] w-full max-w-5xl rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[98vh]">
         
-        {/* HEADER - Sticky */}
         <div className="bg-[#1E3A8A] text-white p-3 relative border-b-4 border-[#0284C7] flex-shrink-0">
           <button onClick={onClose} className="absolute right-3 top-3 text-white/60 hover:text-white text-xl">&times;</button>
           <div className="absolute left-3 top-3 bg-amber-500 text-[9px] font-bold px-2 py-0.5 rounded text-slate-900">
-            MODALIDAD HÍBRIDA
+            AUDITORÍA DE TRANSICIÓN
           </div>
           <div className="text-center pt-5">
             <h1 className="text-base md:text-lg font-black tracking-wider uppercase">
-              INFORME DE CORTE PARCIAL Y TRANSICIÓN DE TASA (@ 6:00 PM)
+              CORTE PARCIAL Y CAMBIO DE TASA (@ 6:00 PM)
             </h1>
           </div>
         </div>
 
-        {/* METADATOS - Compacto */}
         <div className="bg-white p-3 grid grid-cols-3 gap-3 border-b border-slate-200 flex-shrink-0">
           <div className="bg-slate-50 p-2 rounded-lg border border-slate-200">
-            <span className="text-slate-500 block text-[8px] font-bold uppercase">Tasa Actual BCV:</span>
-            <span className="text-sm font-mono font-bold text-slate-900">Bs {tasaActual.toFixed(2)} / $</span>
+            <span className="text-slate-500 block text-[8px] font-bold uppercase">Tasa BCV Mañana:</span>
+            <span className="text-sm font-mono font-bold text-slate-900">Bs {tasaActual.toFixed(2)}</span>
           </div>
           <div className="bg-slate-50 p-2 rounded-lg border border-slate-200">
             <span className="text-slate-500 block text-[8px] font-bold uppercase">Fondo Apertura BS:</span>
-            <span className="text-sm font-mono font-bold text-blue-700">Bs {openAmount.toFixed(2)}</span>
+            <span className="text-sm font-mono font-bold text-blue-700">Bs {finalOpenAmountBs.toFixed(2)}</span>
           </div>
           <div className="bg-slate-50 p-2 rounded-lg border border-slate-200">
             <span className="text-slate-500 block text-[8px] font-bold uppercase">Fondo Apertura USD:</span>
-            <span className="text-sm font-mono font-bold text-emerald-700">$ {openAmountUSD.toFixed(2)}</span>
+            <span className="text-sm font-mono font-bold text-emerald-700">$ {finalOpenAmountUSD.toFixed(2)}</span>
           </div>
         </div>
 
-        {/* TABLA - Scrollable */}
         <div className="overflow-auto flex-1">
           <table className="w-full text-left border-collapse min-w-[900px] text-[11px]">
-            <thead className="sticky top-0 z-10">
-              <tr className="bg-[#2c3e50] text-white text-[9px] uppercase font-bold tracking-wider">
+            <thead className="sticky top-0 z-10 bg-[#2c3e50] text-white text-[9px] uppercase font-bold tracking-wider">
+              <tr>
                 <th className="p-2 text-center w-10">#</th>
-                <th className="p-2">MÉTODO DE PAGO</th>
+                <th className="p-2">MÉTODO</th>
                 <th className="p-2 text-center w-32">SALDO INICIAL</th>
-                <th className="p-2 text-center w-28">VENTAS PERÍODO</th>
+                <th className="p-2 text-center w-28">VENTAS</th>
                 <th className="p-2 text-center w-28">TEÓRICO TOTAL</th>
-                <th className="p-2 text-center w-28">FÍSICO CONTADO</th>
+                <th className="p-2 text-center w-28">FÍSICO REAL</th>
                 <th className="p-2 text-center w-28">DIFERENCIA</th>
                 <th className="p-2 text-center w-24">ESTADO</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
               {rows.map((row) => {
-                const isFaltante = row.estado === 'FALTANTE';
-                const isSobrante = row.estado === 'SOBRANTE';
-                
-                let statusIcon = null;
-                let statusClass = "";
-                
-                if (row.estado === 'CUADRA') {
-                  statusIcon = <CheckCircle2 size={10} className="text-green-600" />;
-                  statusClass = "bg-green-100 text-green-800";
-                } else if (isFaltante) {
-                  statusIcon = <XCircle size={10} className="text-red-600" />;
-                  statusClass = "bg-red-100 text-red-800";
-                } else {
-                  statusIcon = <AlertTriangle size={10} className="text-amber-600" />;
-                  statusClass = "bg-amber-100 text-amber-800";
-                }
+                const statusClass = row.estado === 'CUADRA' ? "bg-green-100 text-green-800" : (row.estado === 'FALTANTE' ? "bg-red-100 text-red-800" : "bg-amber-100 text-amber-800");
 
                 return (
-                  <tr key={row.id} className="hover:bg-slate-50 transition-colors">
+                  <tr key={row.id} className="hover:bg-slate-50">
                     <td className="p-2 text-center font-mono text-slate-400">{row.id}</td>
                     <td className="p-2 font-bold text-slate-700">{row.metodo}</td>
-                    <td className="p-2 text-center font-mono font-bold bg-slate-50 text-slate-800">
-                      {row.saldoInicialDisplay}
-                    </td>
+                    <td className="p-2 text-center font-mono font-bold bg-slate-50 text-slate-800">{row.saldoInicialDisplay}</td>
                     <td className="p-2 text-center font-mono text-slate-600">
-                      {row.metodo.includes('USD') ? `$ ${row.ventasPeriodo.toFixed(2)}` : `Bs ${row.ventasPeriodo.toFixed(2)}`}
+                       {row.metodo.includes('USD') ? `$ ${row.ventasPeriodo.toFixed(2)}` : `Bs ${row.ventasPeriodo.toFixed(2)}`}
                     </td>
-                    <td className="p-2 text-center font-mono font-bold text-blue-700">
-                      {row.teoricoDisplay}
-                    </td>
+                    <td className="p-2 text-center font-mono font-bold text-blue-700">{row.teoricoDisplay}</td>
                     <td className="p-2 text-center">
                       <Input 
                         type="number" 
@@ -268,107 +266,75 @@ export default function CorteParcialForm({ onClose, onCorteConfirmado, tasaActua
                         value={fisicos[paymentMethods.find(p => p.id === row.id)?.key || ''] || ''} 
                         onChange={(e) => handleFisicoChange(paymentMethods.find(p => p.id === row.id)?.key || '', parseFloat(e.target.value) || 0)}
                         className="w-24 text-center font-mono font-bold h-7 text-[10px] mx-auto"
-                        placeholder="0.00"
                       />
                     </td>
-                    <td className={cn("p-2 text-center font-mono font-bold", isFaltante ? "text-red-600" : isSobrante ? "text-amber-600" : "text-slate-600")}>
+                    <td className={cn("p-2 text-center font-mono font-bold", row.diferencia < 0 ? "text-red-600" : row.diferencia > 0 ? "text-amber-600" : "text-slate-600")}>
                       {row.diferencia !== 0 ? `${row.diferencia > 0 ? '+' : ''}${row.diferencia.toFixed(2)}` : '0.00'}
                     </td>
                     <td className="p-2 text-center">
-                      <span className={cn("inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-bold text-[9px]", statusClass)}>
-                        {statusIcon} {row.estado}
-                      </span>
+                      <span className={cn("px-2 py-0.5 rounded-full font-bold text-[9px]", statusClass)}>{row.estado}</span>
                     </td>
                   </tr>
                 );
               })}
-              {/* TOTAL ROW */}
               <tr className="bg-[#1E3A8A] text-white font-bold text-[10px] sticky bottom-0">
-                <td colSpan={4} className="p-2 text-right">TOTALES (en Bs):</td>
-                <td className="p-2 text-center font-mono">Bs {totalTeorico.toFixed(2)}</td>
-                <td className="p-2 text-center font-mono">Bs {totalFisico.toFixed(2)}</td>
-                <td className={cn("p-2 text-center font-mono", totalDiferencia < 0 ? "text-red-300" : totalDiferencia > 0 ? "text-yellow-300" : "text-green-300")}>
-                  {totalDiferencia !== 0 ? `${totalDiferencia > 0 ? '+' : ''}${totalDiferencia.toFixed(2)}` : '0.00'}
+                <td colSpan={4} className="p-2 text-right uppercase">Monto existente en caja global (Bs):</td>
+                <td className="p-2 text-center font-mono">Bs {totalTeoricoBs.toFixed(2)}</td>
+                <td className="p-2 text-center font-mono">Bs {totalFisicoBs.toFixed(2)}</td>
+                <td className={cn("p-2 text-center font-mono", totalDiferenciaBs < 0 ? "text-red-300" : "text-green-300")}>
+                  {totalDiferenciaBs !== 0 ? `${totalDiferenciaBs > 0 ? '+' : ''}${totalDiferenciaBs.toFixed(2)}` : '0.00'}
                 </td>
-                <td className="p-2 text-center text-[9px]">
-                  {Math.abs(totalDiferencia) < 0.01 ? 'CONCILIADO' : totalDiferencia > 0 ? 'SOBRANTE' : 'FALTANTE'}
-                </td>
+                <td className="p-2"></td>
               </tr>
             </tbody>
           </table>
         </div>
 
-        {/* FOOTER - TRANSICIÓN DE TASA */}
         <div className="bg-white p-3 border-t border-slate-200 flex-shrink-0">
           <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
-            
-            {/* DECLARAR NUEVA TASA */}
             <div className="md:col-span-5 bg-slate-50 p-3 rounded-xl border border-dashed border-slate-300">
               <div className="flex items-center gap-2 text-[#1E3A8A] font-bold text-[10px] mb-2">
                 <ArrowLeftRight size={12} />
-                <span>DECLARAR NUEVA TASA BCV (Período Tarde)</span>
+                <span>DECLARAR NUEVA TASA BCV (Tarde)</span>
               </div>
               <div className="flex gap-2 items-center">
                 <div className="relative flex-1">
                   <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 text-[10px] font-bold">Bs</span>
                   <input 
-                    type="number" 
-                    step="0.01"
-                    disabled={tasaValidada}
-                    placeholder="Nueva tasa..."
-                    value={nuevaTasa}
-                    onChange={(e) => setNuevaTasa(e.target.value)}
-                    className="w-full bg-white border border-slate-300 rounded-lg pl-7 pr-2 py-1 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-200"
+                    type="number" step="0.01" disabled={tasaValidada} placeholder="Nueva tasa..."
+                    value={nuevaTasa} onChange={(e) => setNuevaTasa(e.target.value)}
+                    className="w-full bg-white border border-slate-300 rounded-lg pl-7 pr-2 py-1 text-sm font-mono focus:outline-none disabled:bg-slate-200"
                   />
                 </div>
-                <span className="text-slate-400 text-xs">/$</span>
                 <Button 
                   onClick={() => nuevaTasa && setTasaValidada(!tasaValidada)}
-                  disabled={!nuevaTasa}
-                  size="sm"
-                  className={cn(tasaValidada ? 'bg-amber-500 hover:bg-amber-600' : 'bg-emerald-600 hover:bg-emerald-700', 'text-white font-bold text-[10px] px-3 h-7')}
+                  className={cn(tasaValidada ? 'bg-amber-500' : 'bg-emerald-600', 'text-white font-bold text-[10px] px-3 h-7')}
                 >
-                  {tasaValidada ? <><RefreshCw size={10} className="mr-1" /> Modificar</> : 'Validar'}
+                  {tasaValidada ? 'Modificar' : 'Validar'}
                 </Button>
               </div>
             </div>
 
-            {/* BOTONES ACCIÓN */}
-            <div className="md:col-span-7 flex gap-2 items-stretch">
-              <Button 
-                onClick={handlePrintTicket}
-                className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-[10px] py-1 px-3 flex-1 h-auto"
-              >
-                <Printer size={12} className="mr-1" /> Ticket Corte
-              </Button>
+            <div className="md:col-span-7 flex gap-2">
+              <Button onClick={handlePrintTicket} className="bg-blue-600 text-white font-bold text-[10px] flex-1 h-auto"><Printer size={12} className="mr-1" /> Ticket</Button>
               <Button 
                 disabled={!tasaValidada || !isConciliado || isSubmitting}
                 onClick={handleConfirmarCorte}
-                className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-bold text-[10px] py-1 px-3 flex-1 h-auto"
+                className="bg-emerald-600 text-white font-bold text-[10px] flex-1 h-auto"
               >
-                <RefreshCw size={12} className={cn("mr-1", isSubmitting && "animate-spin")} /> 
-                {isSubmitting ? 'PROCESANDO...' : 'Reaperturar Caja (Tarde)'}
+                <RefreshCw size={12} className={cn("mr-1", isSubmitting && "animate-spin")} /> Reaperturar (Tarde)
               </Button>
             </div>
           </div>
 
-          {/* CHECKBOX CONCILIACIÓN */}
           <div className="flex justify-between items-center mt-3 pt-2 border-t border-slate-200">
             <label className="flex items-center gap-2 cursor-pointer">
-              <input 
-                type="checkbox" 
-                checked={isConciliado}
-                onChange={(e) => setIsConciliado(e.target.checked)}
-                className="rounded text-blue-600 focus:ring-blue-500 w-3.5 h-3.5"
-              />
-              <span className="text-slate-700 uppercase tracking-wide text-[9px] font-bold">Declaro bajo firma el conteo físico parcial</span>
+              <input type="checkbox" checked={isConciliado} onChange={(e) => setIsConciliado(e.target.checked)} className="rounded text-blue-600 w-3.5 h-3.5" />
+              <span className="text-slate-700 uppercase text-[9px] font-bold">Declaro bajo firma el conteo físico parcial</span>
             </label>
-            <Button onClick={onClose} variant="ghost" size="sm" className="text-red-600 hover:text-red-700 hover:bg-red-50 h-7 text-[10px]">
-              <Ban size={10} className="mr-1" /> Cancelar
-            </Button>
+            <Button onClick={onClose} variant="ghost" size="sm" className="text-red-600 h-7 text-[10px]"><Ban size={10} className="mr-1" /> Cancelar</Button>
           </div>
         </div>
-
       </div>
     </div>
   );

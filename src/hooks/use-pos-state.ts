@@ -34,6 +34,7 @@ function getVenezuelaTimestamp(): number {
 // Clave para localStorage de la tasa BCV
 const STORAGE_KEYS = {
   EXCHANGE_RATE: 'bcv_exchange_rate',
+  POS_REGISTER: 'pos_register', // ✅ CLAVE PARA LOCALSTORAGE
 };
 
 export function usePOSState() {
@@ -52,6 +53,28 @@ export function usePOSState() {
   // ✅ Nuevos estados para gestión global
   const [globalIvaPercentage, setGlobalIvaPercentage] = useState(16);
   const [adminCode, setAdminCode] = useState<string>('');
+
+  // ✅ Función para guardar register en localStorage
+  const saveRegisterToLocalStorage = useCallback((registerData: CashRegister | null) => {
+    if (registerData) {
+      localStorage.setItem(STORAGE_KEYS.POS_REGISTER, JSON.stringify(registerData));
+    } else {
+      localStorage.removeItem(STORAGE_KEYS.POS_REGISTER);
+    }
+  }, []);
+
+  // ✅ Cargar register desde localStorage al iniciar
+  useEffect(() => {
+    const cachedRegister = localStorage.getItem(STORAGE_KEYS.POS_REGISTER);
+    if (cachedRegister) {
+      try {
+        const parsed = JSON.parse(cachedRegister);
+        setRegister(parsed);
+      } catch (e) {
+        console.error('Error al cargar register desde localStorage:', e);
+      }
+    }
+  }, []);
 
   // ✅ Cargar tasa BCV desde Firestore y localStorage al iniciar
   useEffect(() => {
@@ -116,7 +139,11 @@ export function usePOSState() {
     const unsubClients = syncService.subscribeToClients(setClients);
     const unsubTransactions = syncService.subscribeToTransactions(setTransactions as any);
     const unsubAccounts = syncService.subscribeToAccounts(setAccounts as any);
-    const unsubRegister = syncService.subscribeToRegister(setRegister);
+    const unsubRegister = syncService.subscribeToRegister((registerData) => {
+      setRegister(registerData);
+      // ✅ Guardar en localStorage cada vez que cambie el register
+      saveRegisterToLocalStorage(registerData);
+    });
     
     // ✅ Cargar configuración global y código de administrador desde Firestore
     const loadGlobalSettings = async () => {
@@ -145,7 +172,7 @@ export function usePOSState() {
       unsubAccounts();
       unsubRegister();
     };
-  }, [user]);
+  }, [user, saveRegisterToLocalStorage]);
 
   const addProduct = useCallback((p: Product) => syncService.saveProduct(p), []);
   const updateProduct = useCallback((p: Product) => syncService.saveProduct(p), []);
@@ -154,7 +181,7 @@ export function usePOSState() {
   const saveClient = useCallback((c: Client) => syncService.saveClient(c), []);
   const deleteClient = useCallback((id: number) => syncService.deleteClient(id), []);
 
-  // ✅ CORREGIDO: addToCart ahora conserva la información de IVA del producto
+  // ✅ addToCart conserva la información de IVA del producto
   const addToCart = useCallback((productId: number) => {
     const product = products.find(p => p.id === productId);
     if (!product || product.stock <= 0) return false;
@@ -172,7 +199,6 @@ export function usePOSState() {
         priceUsd: product.priceUsd, 
         qty: 1, 
         category: product.category,
-        // ✅ Propagar información de IVA al carrito
         ivaType: product.ivaType,
         ivaPercentage: product.ivaPercentage
       }];
@@ -198,19 +224,26 @@ export function usePOSState() {
     }).filter(Boolean));
   }, [products, exchangeRate]);
 
-  // ✅ CORREGIDO: openCashRegister simplificado
-  const openCashRegister = useCallback(async (amount: number) => {
+  // ✅ CORREGIDO: openCashRegister guarda BS y USD por separado
+  const openCashRegister = useCallback(async (bsAmount: number, usdAmount: number, rate: number) => {
+    const totalOpenAmount = bsAmount + (usdAmount * rate);
     const registerData = {
       isOpen: true,
       openTime: getVenezuelaISOString(),
-      openAmount: amount,
+      openAmount: totalOpenAmount,
+      openAmountBs: bsAmount,
+      openAmountUsd: usdAmount,
       txs: [],
-      exchangeRate: exchangeRate || 36.50
+      exchangeRate: rate || exchangeRate || 36.50
     };
     await syncService.saveRegister(registerData);
-  }, [exchangeRate]);
+    saveRegisterToLocalStorage(registerData);
+  }, [exchangeRate, saveRegisterToLocalStorage]);
 
-  const closeCashRegister = useCallback(() => syncService.clearRegister(), []);
+  const closeCashRegister = useCallback(() => {
+    syncService.clearRegister();
+    saveRegisterToLocalStorage(null);
+  }, [saveRegisterToLocalStorage]);
 
   // ========== NUEVAS FUNCIONES ==========
 
@@ -242,7 +275,6 @@ export function usePOSState() {
     }
     const updatedProducts = products.map(product => {
       if (product.ivaType === 'con_iva') {
-        // Recalcular priceRetail (si existe) con la nueva fórmula
         const basePrice = product.costUsd ? (product.costUsd / ((100 - (product.profitPercent || 30)) / 100)) : 0;
         const newRetail = basePrice * (1 + newPercentage / 100);
         return { ...product, ivaPercentage: newPercentage, priceRetail: newRetail, priceUsd: newRetail };
@@ -256,8 +288,7 @@ export function usePOSState() {
     await updateGlobalIvaPercentage(newPercentage);
   }, [products, register, updateGlobalIvaPercentage]);
 
-  // ========== FUNCIONES EXISTENTES (sin cambios) ==========
-
+  // ========== FUNCIÓN FINALIZAR VENTA CORREGIDA ==========
   const finalizeSale = useCallback(async (type: 'contado' | 'credito' | 'cobro_deuda', paymentData: any) => {
     if (!register?.isOpen) return;
 
@@ -305,15 +336,18 @@ export function usePOSState() {
       exchangeRate: currentExchangeRate
     };
 
+    // ✅ Guardar transacción en Firestore
     await syncService.saveTransaction(tx);
 
-    if (register && type !== 'credito') {
+    // ✅ GUARDAR TODAS LAS TRANSACCIONES (CONTADO, CRÉDITO Y COBROS) EN EL REGISTER
+    if (register) {
       const updatedRegister = {
         ...register,
         txs: [...(register.txs || []), tx],
         exchangeRate: (register as any).exchangeRate || currentExchangeRate || 36.50
       };
       await syncService.saveRegister(updatedRegister);
+      saveRegisterToLocalStorage(updatedRegister);
       setRegister(updatedRegister);
     }
 
@@ -353,7 +387,7 @@ export function usePOSState() {
 
     if (type !== 'cobro_deuda') setCart([]);
     return tx;
-  }, [cart, register, exchangeRate, clients, products]);
+  }, [cart, register, exchangeRate, clients, products, saveRegisterToLocalStorage]);
 
   const applyAbono = useCallback(async (clientId: number, amount: number) => {
     if (!register?.isOpen) return;
@@ -402,12 +436,13 @@ export function usePOSState() {
         exchangeRate: (register as any).exchangeRate || currentExchangeRate || 36.50
       };
       await syncService.saveRegister(updatedRegister);
+      saveRegisterToLocalStorage(updatedRegister);
       setRegister(updatedRegister);
     }
     
     await syncService.saveClient({ ...client, debt: Math.max(0, (client.debt || 0) - amount) });
     await registerDebtPaymentEntry(tx, client);
-  }, [register, clients, accounts, exchangeRate]);
+  }, [register, clients, accounts, exchangeRate, saveRegisterToLocalStorage]);
 
   return {
     products, setProducts, addProduct, updateProduct, deleteProduct,

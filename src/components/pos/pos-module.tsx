@@ -35,8 +35,14 @@ export default function POSModule({ state }: POSModuleProps) {
     const lastReceipt = localStorage.getItem('last_receipt_number');
     if (lastReceipt) {
       const lastNum = parseInt(lastReceipt);
-      setNextReceiptNumber(lastNum + 1);
-      lastReceiptNumberRef.current = lastNum + 1;
+      // Si el numero guardado es un ID gigante de firestore, resetear a 1
+      if (lastNum > 10000000) {
+        setNextReceiptNumber(1);
+        lastReceiptNumberRef.current = 1;
+      } else {
+        setNextReceiptNumber(lastNum + 1);
+        lastReceiptNumberRef.current = lastNum + 1;
+      }
     } else {
       setNextReceiptNumber(1);
       lastReceiptNumberRef.current = 1;
@@ -59,7 +65,8 @@ export default function POSModule({ state }: POSModuleProps) {
   const handlePaymentConfirm = async (data: any) => {
     try {
       const receiptNum = nextReceiptNumber; // Número actual para esta venta
-      const tx = await state.finalizeSale('contado', data);
+      // Se incluye el receiptNumber en la data para finalizeSale
+      const tx = await state.finalizeSale('contado', { ...data, receiptNumber: receiptNum });
       if (tx) {
         lastReceiptNumberRef.current = receiptNum; // Fijar el número usado en la ref para el modal
         setLastTransaction(tx);
@@ -89,7 +96,8 @@ export default function POSModule({ state }: POSModuleProps) {
         clientAddress: data.clientAddress,
         exchangeRate: data.exchangeRate,
         totalBs: data.totalBs,
-        totalUsd: data.totalUsd
+        totalUsd: data.totalUsd,
+        receiptNumber: receiptNum // ✅ Se pasa el numero correlativo
       });
       if (tx) {
         lastReceiptNumberRef.current = receiptNum; // Fijar el número usado

@@ -66,6 +66,7 @@ export interface Transaction {
   clientId?: number;
   clientName?: string;
   exchangeRate?: number;
+  receiptNumber?: number; // ✅ Numero correlativo para el recibo (00000001...)
 }
 
 export interface Account {

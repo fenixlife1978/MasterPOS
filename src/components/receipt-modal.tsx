@@ -37,10 +37,11 @@ function formatToVenezuelaTime(dateStr: string): string {
 export default function ReceiptModal({ transaction, exchangeRate, receiptNumber, onClose }: ReceiptModalProps) {
   const printRef = useRef<HTMLDivElement>(null);
 
-  // ✅ PRIORIZA EL NÚMERO CORRELATIVO FORMATEADO (00000001)
-  const formattedReceiptNumber = receiptNumber 
-    ? receiptNumber.toString().padStart(8, '0')
-    : transaction?.id?.toString().slice(-8) || '00000000';
+  // ✅ PRIORIZA EL NÚMERO CORRELATIVO GUARDADO EN LA TRANSACCIÓN O EL PASADO POR PROP
+  const rawNumber = transaction?.receiptNumber || receiptNumber;
+  const formattedReceiptNumber = rawNumber 
+    ? rawNumber.toString().padStart(8, '0')
+    : (transaction?.id?.toString().slice(-8) || '00000000');
 
   const handlePrint = () => {
     const printContent = printRef.current?.innerHTML;

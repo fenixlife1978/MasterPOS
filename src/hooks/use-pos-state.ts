@@ -155,7 +155,6 @@ export function usePOSState() {
     }).filter(Boolean));
   }, [products, exchangeRate]);
 
-  // ✅ NUEVA FUNCIÓN: Actualizar el precio de un producto en el carrito
   const updateCartItemPrice = useCallback((productId: number, newPriceUsd: number, newPriceBs: number) => {
     setCart(prevCart =>
       prevCart.map(item =>
@@ -187,7 +186,6 @@ export function usePOSState() {
     saveRegisterToLocalStorage(null);
   }, [saveRegisterToLocalStorage]);
 
-  // ✅ Función auxiliar para obtener los componentes de un kit (incluyendo anidamiento si se desea, por ahora simple)
   const getKitComponents = (product: Product, qty: number): { productId: number; quantity: number }[] => {
     if (!product.isKit || !product.kitComponents || product.kitComponents.length === 0) {
       return [];
@@ -239,7 +237,8 @@ export function usePOSState() {
       change: paymentData.change || 0,
       clientId: targetClientId,
       clientName: paymentData.clientName,
-      exchangeRate
+      exchangeRate,
+      receiptNumber: paymentData.receiptNumber // ✅ Se guarda el numero correlativo en la transaccion
     };
 
     await syncService.saveTransaction(tx);
@@ -252,9 +251,7 @@ export function usePOSState() {
     setRegister(updatedRegister);
     saveRegisterToLocalStorage(updatedRegister);
 
-    // ✅ Descuento de stock para productos normales y para kits (componentes)
     if (type !== 'cobro_deuda') {
-      // Usar un mapa para acumular los productos a descontar (pueden venir de múltiples kits)
       const stockUpdates: Map<number, number> = new Map();
       
       for (const item of cart) {
@@ -262,36 +259,29 @@ export function usePOSState() {
         if (!product) continue;
         
         if (product.isKit && product.kitComponents && product.kitComponents.length > 0) {
-          // Es un kit: descontar stock de sus componentes
           const components = getKitComponents(product, item.qty);
           for (const comp of components) {
             const current = stockUpdates.get(comp.productId) || 0;
             stockUpdates.set(comp.productId, current + comp.quantity);
           }
-          // Opcional: descontar stock del propio kit (caja) si se desea control de cajas físicas
-          // Si el kit tiene stock propio (número de cajas disponibles), descontar item.qty
           if (product.stock !== undefined && product.stock > 0) {
             const currentKit = stockUpdates.get(product.id) || 0;
             stockUpdates.set(product.id, currentKit + item.qty);
           }
         } else {
-          // Producto normal: descontar su stock directamente
           const current = stockUpdates.get(product.id) || 0;
           stockUpdates.set(product.id, current + item.qty);
         }
       }
       
-      // Aplicar todos los descuentos de stock
       for (const [prodId, qtyToSubtract] of stockUpdates.entries()) {
         const prod = products.find(p => p.id === prodId);
         if (prod) {
           const newStock = prod.stock - qtyToSubtract;
-          // Solo actualizar si hay cambio y si el producto existe
           await syncService.saveProduct({ ...prod, stock: Math.max(0, newStock) });
         }
       }
       
-      // También actualizar la lista local de productos (para mantener consistencia)
       const updatedProducts = [...products];
       for (const [prodId, qtyToSubtract] of stockUpdates.entries()) {
         const index = updatedProducts.findIndex(p => p.id === prodId);
@@ -315,7 +305,8 @@ export function usePOSState() {
         amountUsd: total / exchangeRate,
         paidAmount: 0, 
         status: 'pendiente',
-        exchangeRate
+        exchangeRate,
+        receiptNumber: paymentData.receiptNumber
       });
       const client = clients.find(c => c.id === targetClientId);
       if (client) await syncService.saveClient({ ...client, debt: (client.debt || 0) + total });

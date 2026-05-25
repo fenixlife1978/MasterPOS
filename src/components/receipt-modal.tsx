@@ -7,10 +7,11 @@ import { Transaction } from '@/lib/types';
 interface ReceiptModalProps {
   transaction: Transaction;
   exchangeRate: number;
+  receiptNumber?: number; // ✅ NUEVO: número correlativo de recibo
   onClose: () => void;
 }
 
-// Formatea la fecha de forma nativa para Venezuela sin romper el motor de JavaScript
+// Formatea la fecha de forma nativa para Venezuela
 function formatToVenezuelaTime(dateStr: string): string {
   try {
     const dateObj = new Date(dateStr);
@@ -33,10 +34,15 @@ function formatToVenezuelaTime(dateStr: string): string {
   }
 }
 
-export default function ReceiptModal({ transaction, exchangeRate, onClose }: ReceiptModalProps) {
+export default function ReceiptModal({ transaction, exchangeRate, receiptNumber, onClose }: ReceiptModalProps) {
   const printRef = useRef<HTMLDivElement>(null);
 
-  // ✅ Función para imprimir directamente
+  // ✅ Número de recibo formateado (prioriza el correlativo, fallback al ID)
+  const formattedReceiptNumber = receiptNumber 
+    ? receiptNumber.toString().padStart(8, '0')
+    : transaction?.id?.toString().slice(-8) || '00000000';
+
+  // Funciones de impresión, exportación y compartir (iguales, solo cambia el título)
   const handlePrint = () => {
     const printContent = printRef.current?.innerHTML;
     if (!printContent) return;
@@ -167,7 +173,6 @@ export default function ReceiptModal({ transaction, exchangeRate, onClose }: Rec
     printWindow?.document.close();
   };
 
-  // ✅ Función para exportar a PDF
   const handleExportPDF = () => {
     const printContent = printRef.current?.innerHTML;
     if (!printContent) return;
@@ -177,7 +182,7 @@ export default function ReceiptModal({ transaction, exchangeRate, onClose }: Rec
       <html>
         <head>
           <meta charset="UTF-8">
-          <title>Recibo_Venta_${transaction.id}</title>
+          <title>Recibo_Venta_${formattedReceiptNumber}</title>
           <style>
             @page {
               size: 80mm auto;
@@ -298,7 +303,6 @@ export default function ReceiptModal({ transaction, exchangeRate, onClose }: Rec
     printWindow?.document.close();
   };
 
-  // ✅ Función para compartir el PDF
   const handleSharePDF = async () => {
     const printContent = printRef.current?.innerHTML;
     if (!printContent) return;
@@ -313,7 +317,7 @@ export default function ReceiptModal({ transaction, exchangeRate, onClose }: Rec
       <html>
         <head>
           <meta charset="UTF-8">
-          <title>Recibo_Venta_${transaction.id}</title>
+          <title>Recibo_Venta_${formattedReceiptNumber}</title>
           <style>
             @page {
               size: 80mm auto;
@@ -431,7 +435,7 @@ export default function ReceiptModal({ transaction, exchangeRate, onClose }: Rec
       shareWindow.print();
       if (navigator.share) {
         navigator.share({
-          title: `Recibo ${transaction.id}`,
+          title: `Recibo ${formattedReceiptNumber}`,
           text: `Recibo de venta por Bs ${transaction.total.toFixed(2)}`,
         }).catch(() => {});
       }
@@ -447,12 +451,9 @@ export default function ReceiptModal({ transaction, exchangeRate, onClose }: Rec
     zelle: 'TRANSFERENCIA ZELLE',
   };
 
-  // ✅ Determinar tipo de transacción
   const isCredito = transaction?.type === 'credito';
   const isCobroDeuda = transaction?.type === 'cobro_deuda';
 
-  // Mapeo seguro de datos de la transacción
-  const transactionId = transaction?.id ? transaction.id.toString().slice(-8) : '00000000';
   const transactionDate = transaction?.date ? formatToVenezuelaTime(transaction.date) : '';
   const transactionClientName = transaction?.clientName || 'CONSUMIDOR FINAL';
   const transactionSubtotal = transaction?.subtotal || 0;
@@ -464,7 +465,6 @@ export default function ReceiptModal({ transaction, exchangeRate, onClose }: Rec
   const transactionItems = transaction?.items || [];
   const transactionExchangeRate = transaction?.exchangeRate || exchangeRate;
 
-  // ✅ Título del documento según el tipo
   const getDocumentTitle = () => {
     if (isCredito) return 'DOCUMENTO DE CRÉDITO';
     if (isCobroDeuda) return 'RECIBO DE PAGO';
@@ -475,7 +475,6 @@ export default function ReceiptModal({ transaction, exchangeRate, onClose }: Rec
     <div className="fixed inset-0 z-[300] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
       <div className="bg-white rounded-xl max-w-sm w-full shadow-2xl overflow-hidden flex flex-col border border-gray-200">
         
-        {/* BARRA SUPERIOR DE CONTROL */}
         <div className="bg-[#1A2C4E] p-3.5 flex justify-between items-center border-b border-gray-700">
           <h3 className="text-white font-bold text-sm flex items-center gap-2 tracking-wide">
             <Printer size={16} className="text-amber-400" /> VISTA PREVIA DEL RECIBO
@@ -485,14 +484,13 @@ export default function ReceiptModal({ transaction, exchangeRate, onClose }: Rec
           </button>
         </div>
 
-        {/* CONTENEDOR EN PANTALLA DEL TICKET TÉRMICO */}
         <div className="p-4 max-h-[65vh] overflow-y-auto bg-gray-100 flex justify-center">
           <div 
             ref={printRef} 
             className="bg-white p-5 shadow-sm text-black font-mono select-none"
             style={{ width: '72mm', boxSizing: 'border-box', color: '#000' }}
           >
-            {/* ENCABEZADO COMERCIAL */}
+            {/* ENCABEZADO */}
             <div className="text-center" style={{ marginBottom: '6px', paddingBottom: '6px', borderBottom: '1px dashed #000' }}>
               <h1 style={{ fontSize: '16px', fontWeight: 'bold', margin: '0 0 2px 0', letterSpacing: '1px' }}>LICOPOS ELITE</h1>
               <p style={{ fontSize: '10px', margin: '2px 0', fontWeight: 'bold' }}>LICORERÍA & BODEGÓN</p>
@@ -501,7 +499,6 @@ export default function ReceiptModal({ transaction, exchangeRate, onClose }: Rec
               <p style={{ fontSize: '9px', margin: '2px 0' }}>SAN FELIPE - YARACUY</p>
             </div>
 
-            {/* BADGE DEL TIPO DE DOCUMENTO */}
             <div style={{ textAlign: 'center', marginBottom: '6px' }}>
               <span style={{ 
                 background: isCredito ? '#e74c3c' : (isCobroDeuda ? '#27ae60' : '#2c3e50'),
@@ -515,10 +512,9 @@ export default function ReceiptModal({ transaction, exchangeRate, onClose }: Rec
               </span>
             </div>
 
-            {/* METADATOS DE CONTROL */}
             <div style={{ margin: '6px 0', fontSize: '9px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span>{isCredito ? 'CRÉDITO N°:' : 'FACTURA N°:'} <span style={{ fontWeight: 'bold' }}>{transactionId}</span></span>
+                <span>{isCredito ? 'CRÉDITO N°:' : 'FACTURA N°:'} <span style={{ fontWeight: 'bold' }}>{formattedReceiptNumber}</span></span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', margin: '2px 0' }}>
                 <span>FECHA: {transactionDate}</span>
@@ -528,7 +524,6 @@ export default function ReceiptModal({ transaction, exchangeRate, onClose }: Rec
               </div>
             </div>
 
-            {/* TABLA DE ARTÍCULOS VENDIDOS */}
             <table style={{ width: '100%', borderCollapse: 'collapse', margin: '6px 0' }}>
               <thead>
                 <tr style={{ borderBottom: '1px dashed #000', borderTop: '1px dashed #000' }}>
@@ -561,7 +556,6 @@ export default function ReceiptModal({ transaction, exchangeRate, onClose }: Rec
               </tbody>
             </table>
 
-            {/* TOTALIZACIÓN FINANCIERA */}
             <div style={{ borderTop: '1px dashed #000', paddingTop: '4px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', margin: '2px 0' }}>
                 <span>SUBTOTAL:</span>
@@ -643,32 +637,11 @@ export default function ReceiptModal({ transaction, exchangeRate, onClose }: Rec
           </div>
         </div>
 
-        {/* ACCIONES DEL PANEL INFERIOR */}
         <div className="p-3 bg-gray-50 border-t border-gray-200 flex gap-2">
-          <button
-            onClick={onClose}
-            className="flex-1 py-2 bg-gray-200 text-slate-800 font-bold text-xs rounded-lg hover:bg-gray-300 transition-colors uppercase tracking-wider"
-          >
-            Cerrar
-          </button>
-          <button
-            onClick={handleExportPDF}
-            className="flex-1 py-2 bg-red-600 text-white font-bold text-xs rounded-lg hover:bg-red-700 transition-colors flex items-center justify-center gap-2 uppercase tracking-wider shadow-sm"
-          >
-            <FileText size={14} /> PDF
-          </button>
-          <button
-            onClick={handleSharePDF}
-            className="flex-1 py-2 bg-green-600 text-white font-bold text-xs rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center gap-2 uppercase tracking-wider shadow-sm"
-          >
-            <Share2 size={14} /> Compartir
-          </button>
-          <button
-            onClick={handlePrint}
-            className="flex-1 py-2 bg-[#D4A017] text-slate-950 font-black text-xs rounded-lg hover:bg-[#C4940F] transition-colors flex items-center justify-center gap-2 uppercase tracking-wider shadow-sm"
-          >
-            <Printer size={14} /> Imprimir
-          </button>
+          <button onClick={onClose} className="flex-1 py-2 bg-gray-200 text-slate-800 font-bold text-xs rounded-lg hover:bg-gray-300 transition-colors uppercase tracking-wider">Cerrar</button>
+          <button onClick={handleExportPDF} className="flex-1 py-2 bg-red-600 text-white font-bold text-xs rounded-lg hover:bg-red-700 transition-colors flex items-center justify-center gap-2 uppercase tracking-wider shadow-sm"><FileText size={14} /> PDF</button>
+          <button onClick={handleSharePDF} className="flex-1 py-2 bg-green-600 text-white font-bold text-xs rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center gap-2 uppercase tracking-wider shadow-sm"><Share2 size={14} /> Compartir</button>
+          <button onClick={handlePrint} className="flex-1 py-2 bg-[#D4A017] text-slate-950 font-black text-xs rounded-lg hover:bg-[#C4940F] transition-colors flex items-center justify-center gap-2 uppercase tracking-wider shadow-sm"><Printer size={14} /> Imprimir</button>
         </div>
 
       </div>

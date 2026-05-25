@@ -1,5 +1,11 @@
 export type Category = 'Whisky' | 'Ron' | 'Cerveza' | 'Vino' | 'Vodka' | 'Tequila' | 'Licor' | 'Gin' | 'Otro';
 
+// ✅ Nueva interfaz para componentes de kit
+export interface KitComponent {
+  productId: number;
+  quantity: number;
+}
+
 export interface Product {
   id: number;
   barcode: string;
@@ -18,6 +24,9 @@ export interface Product {
   priceCost?: number;
   ivaType?: 'con_iva' | 'sin_iva';
   ivaPercentage?: number;
+  // ✅ Nuevos campos para kits/combos
+  isKit?: boolean;
+  kitComponents?: KitComponent[];
 }
 
 export interface Client {
@@ -38,6 +47,8 @@ export interface CartItem {
   category: Category;
   ivaType?: 'con_iva' | 'sin_iva';
   ivaPercentage?: number;
+  // ✅ Opcional: para poder expandir el kit en el ticket si se desea, pero no necesario
+  isKit?: boolean;
 }
 
 export interface Transaction {

@@ -34,6 +34,8 @@ export default function CorteParcialForm({ onClose, onCorteConfirmado, tasaActua
 
   const openAmountBs = register?.openAmountBs ?? 0;
   const openAmountUsd = register?.openAmountUsd ?? 0;
+  // Convertir apertura USD a Bs
+  const openAmountUsdBs = openAmountUsd * tasaActual;
 
   const paymentMethods = [
     { id: 1, metodo: 'EFECTIVO BS', key: 'efectivo_bs', isUsd: false },
@@ -44,52 +46,77 @@ export default function CorteParcialForm({ onClose, onCorteConfirmado, tasaActua
     { id: 6, metodo: 'ZELLE', key: 'zelle', isUsd: true },
   ];
 
+  // Cálculo exacto de ventas en Bs
   const salesByMethod = useMemo(() => {
     const totals: Record<string, number> = {};
     paymentMethods.forEach(m => totals[m.key] = 0);
     if (register?.txs) {
       register.txs.forEach((t: any) => {
-        if (t.type === 'contado' || t.type === 'cobro_deuda') {
+        if (t.type === 'contado' || t.type === 'credito') {
           const method = t.payMethod || 'efectivo_bs';
-          totals[method] += (t.paidBs || t.total || 0);
+          let monto = t.total ?? 0;
+          monto = Math.round(monto * 100) / 100;
+          totals[method] = Math.round((totals[method] + monto) * 100) / 100;
+        } else if (t.type === 'cobro_deuda') {
+          const method = t.payMethod || 'efectivo_bs';
+          let monto = t.paidBs ?? 0;
+          monto = Math.round(monto * 100) / 100;
+          totals[method] = Math.round((totals[method] + monto) * 100) / 100;
         }
       });
     }
     return totals;
   }, [register]);
 
+  // Construir filas con todos los valores en bolívares
   const rows = paymentMethods.map(pm => {
-    const ventasBs = salesByMethod[pm.key] || 0;
-    const ventasEnMoneda = pm.isUsd ? ventasBs / tasaActual : ventasBs;
-    let saldoInicial = 0;
-    if (pm.key === 'efectivo_bs') saldoInicial = openAmountBs;
-    if (pm.key === 'usd_efectivo') saldoInicial = openAmountUsd;
+    // Ventas en Bs (ya vienen en Bs de la transacción)
+    let ventasBs = salesByMethod[pm.key] || 0;
+    ventasBs = Math.round(ventasBs * 100) / 100;
     
-    const teorico = saldoInicial + ventasEnMoneda;
-    const fisico = fisicos[pm.key] || 0;
-    const diff = fisico - teorico;
+    let saldoInicialBs = 0;
+    if (pm.key === 'efectivo_bs') saldoInicialBs = openAmountBs;
+    if (pm.key === 'usd_efectivo') saldoInicialBs = openAmountUsdBs;
+    
+    const teoricoBs = saldoInicialBs + ventasBs;
+    
+    // El físico ingresado está en la moneda del método (Bs o USD)
+    const fisicoIngresado = fisicos[pm.key] ?? 0;
+    // Para mostrar en la tabla, convertimos a Bs si es USD
+    let fisicoBs = fisicoIngresado;
+    if (pm.isUsd) fisicoBs = fisicoIngresado * tasaActual;
+    fisicoBs = Math.round(fisicoBs * 100) / 100;
+    
+    const diffBs = fisicoBs - teoricoBs;
     
     return {
       ...pm,
-      saldoInicial,
-      ventas: ventasEnMoneda,
-      teorico,
-      fisico,
-      diff,
-      estado: Math.abs(diff) < 0.01 ? 'CUADRA' : (diff < 0 ? 'FALTANTE' : 'SOBRANTE')
+      saldoInicialBs,
+      ventasBs,
+      teoricoBs,
+      fisicoBs,
+      fisicoIngresado, // valor original en la moneda del método (para el input)
+      diffBs,
+      estado: Math.abs(diffBs) < 0.01 ? 'CUADRA' : (diffBs < 0 ? 'FALTANTE' : 'SOBRANTE')
     };
   });
 
-  const totalTeoricoBs = rows.reduce((s, r) => s + (r.isUsd ? r.teorico * tasaActual : r.teorico), 0);
-  const totalFisicoBs = rows.reduce((s, r) => s + (r.isUsd ? r.fisico * tasaActual : r.fisico), 0);
-  const diffNeta = totalFisicoBs - totalTeoricoBs;
+  // Totales en Bs
+  const totalTeoricoBs = rows.reduce((s, r) => s + r.teoricoBs, 0);
+  const totalFisicoBs = rows.reduce((s, r) => s + r.fisicoBs, 0);
+  const diffNeta = Math.round((totalFisicoBs - totalTeoricoBs) * 100) / 100;
+
+  const handleFisicoChange = (key: string, val: number) => {
+    setFisicos(prev => ({ ...prev, [key]: val }));
+  };
 
   const handleConfirmarCorte = async () => {
     if (!tasaValidada || !isConciliado) return;
     setIsSubmitting(true);
     const nTasa = parseFloat(nuevaTasa);
-    const fBs = fisicos['efectivo_bs'] || 0;
-    const fUsd = fisicos['usd_efectivo'] || 0;
+    // Guardamos los físicos en su moneda original (Bs y USD)
+    const fBs = fisicos['efectivo_bs'] ?? 0;
+    const fUsd = fisicos['usd_efectivo'] ?? 0;
     
     const report = {
       id: Date.now(),
@@ -98,7 +125,12 @@ export default function CorteParcialForm({ onClose, onCorteConfirmado, tasaActua
       tasaNueva: nTasa,
       apertura: { montoBs: openAmountBs, montoUsd: openAmountUsd },
       ventas: { porMetodo: salesByMethod },
-      cuadre: rows.map(r => ({ metodo: r.metodo, sistema: r.teorico, real: r.fisico, diff: r.diff })),
+      cuadre: rows.map(r => ({ 
+        metodo: r.metodo, 
+        sistema: r.teoricoBs,      // en Bs
+        real: r.fisicoBs,          // en Bs
+        diff: r.diffBs
+      })),
       nuevoFondo: { bs: fBs, usd: fUsd, totalBs: fBs + (fUsd * nTasa) }
     };
 
@@ -143,24 +175,34 @@ export default function CorteParcialForm({ onClose, onCorteConfirmado, tasaActua
             <thead className="bg-[#2c3e50] text-white sticky top-0">
               <tr>
                 <th className="p-2 text-left">MÉTODO</th>
-                <th className="p-2 text-center">SALDO INICIAL</th>
-                <th className="p-2 text-center">VENTAS</th>
-                <th className="p-2 text-center">SISTEMA</th>
-                <th className="p-2 text-center">FÍSICO</th>
-                <th className="p-2 text-center">DIF.</th>
+                <th className="p-2 text-center">SALDO INICIAL (Bs)</th>
+                <th className="p-2 text-center">VENTAS (Bs)</th>
+                <th className="p-2 text-center">SISTEMA (Bs)</th>
+                <th className="p-2 text-center">FÍSICO (Bs)</th>
+                <th className="p-2 text-center">DIF. (Bs)</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
               {rows.map(r => (
                 <tr key={r.id} className="hover:bg-slate-50">
                   <td className="p-2 font-bold">{r.metodo}</td>
-                  <td className="p-2 text-center font-mono">{r.isUsd ? `$ ${r.saldoInicial.toFixed(2)}` : `Bs ${r.saldoInicial.toFixed(2)}`}</td>
-                  <td className="p-2 text-center font-mono">{r.isUsd ? `$ ${r.ventas.toFixed(2)}` : `Bs ${r.ventas.toFixed(2)}`}</td>
-                  <td className="p-2 text-center font-mono font-bold">{r.isUsd ? `$ ${r.teorico.toFixed(2)}` : `Bs ${r.teorico.toFixed(2)}`}</td>
+                  <td className="p-2 text-center font-mono">Bs {r.saldoInicialBs.toFixed(2)}</td>
+                  <td className="p-2 text-center font-mono">Bs {r.ventasBs.toFixed(2)}</td>
+                  <td className="p-2 text-center font-mono font-bold">Bs {r.teoricoBs.toFixed(2)}</td>
                   <td className="p-2 text-center">
-                    <Input type="number" step="0.01" value={fisicos[r.key] || ''} onChange={e => setFisicos({...fisicos, [r.key]: parseFloat(e.target.value) || 0})} className="w-24 h-6 text-[10px] mx-auto text-center font-bold" />
+                    <Input 
+                      type="number" 
+                      step="0.01" 
+                      value={r.fisicoIngresado === 0 ? '' : r.fisicoIngresado} 
+                      onChange={e => handleFisicoChange(r.key, parseFloat(e.target.value) || 0)} 
+                      className="w-24 h-6 text-[10px] mx-auto text-center font-bold" 
+                      placeholder="0.00"
+                    />
+                    {r.isUsd && <span className="text-[8px] text-slate-400 ml-1">USD</span>}
                   </td>
-                  <td className={cn("p-2 text-center font-bold", r.diff < 0 ? "text-red-600" : "text-emerald-600")}>{r.diff.toFixed(2)}</td>
+                  <td className={cn("p-2 text-center font-bold", r.diffBs < 0 ? "text-red-600" : "text-emerald-600")}>
+                    {r.diffBs.toFixed(2)}
+                  </td>
                 </tr>
               ))}
             </tbody>

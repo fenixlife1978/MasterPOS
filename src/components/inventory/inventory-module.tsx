@@ -6,7 +6,7 @@ import {
   Plus, Search, Pencil, Trash2, X, 
   Tag, Settings, History, RefreshCw, Save,
   FileText, Share2, Printer, Percent, AlertTriangle,
-  DollarSign, Package, Layers
+  DollarSign, Package, Layers, Boxes, PlusCircle
 } from 'lucide-react';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
@@ -14,7 +14,7 @@ import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
-import { Product, Category, AdminCode } from '@/lib/types';
+import { Product, Category, AdminCode, KitComponent } from '@/lib/types';
 import { syncService } from '@/services/syncService';
 
 // Claves para caché en localStorage
@@ -93,6 +93,43 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
     priceWholesale: 0,
     priceCost: 0,
   });
+  
+  // ==================== NUEVO: KITS / COMBOS ====================
+  const [isKit, setIsKit] = useState(false);
+  const [kitComponents, setKitComponents] = useState<KitComponent[]>([]);
+  const [searchChildProduct, setSearchChildProduct] = useState('');
+  const [selectedChildProduct, setSelectedChildProduct] = useState<Product | null>(null);
+  const [childQuantity, setChildQuantity] = useState('1');
+  
+  const childProductResults = useMemo(() => {
+    if (!searchChildProduct.trim()) return [];
+    const q = searchChildProduct.toLowerCase();
+    return products.filter(p => 
+      p.id !== editingProduct?.id && 
+      (p.name.toLowerCase().includes(q) || p.barcode.includes(q))
+    ).slice(0, 5);
+  }, [searchChildProduct, products, editingProduct]);
+  
+  const addKitComponent = () => {
+    if (!selectedChildProduct) return;
+    const qty = parseInt(childQuantity);
+    if (isNaN(qty) || qty <= 0) {
+      toast({ title: "Error", description: "Cantidad no válida", variant: "destructive" });
+      return;
+    }
+    if (kitComponents.some(c => c.productId === selectedChildProduct.id)) {
+      toast({ title: "Error", description: "El producto ya está en la lista", variant: "destructive" });
+      return;
+    }
+    setKitComponents(prev => [...prev, { productId: selectedChildProduct.id, quantity: qty }]);
+    setSelectedChildProduct(null);
+    setSearchChildProduct('');
+    setChildQuantity('1');
+  };
+  
+  const removeKitComponent = (productId: number) => {
+    setKitComponents(prev => prev.filter(c => c.productId !== productId));
+  };
   
   // ==================== INICIALIZACIÓN: CARGAR DESDE CACHÉ Y FIRESTORE ====================
   useEffect(() => {
@@ -189,6 +226,9 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
       priceCost: Number(formData.priceCost),
       ivaType: ivaType,
       ivaPercentage: ivaType === 'con_iva' ? ivaPercentage : undefined,
+      // ✅ Nuevos campos para kits
+      isKit: isKit,
+      kitComponents: isKit && kitComponents.length > 0 ? kitComponents : undefined,
     };
     
     if (editingProduct) {
@@ -233,6 +273,9 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
     });
     setIvaType(p.ivaType || 'con_iva');
     setIvaPercentage(p.ivaPercentage || 16);
+    // ✅ Cargar datos del kit si existe
+    setIsKit(p.isKit || false);
+    setKitComponents(p.kitComponents || []);
     setIsAdding(true);
   };
   
@@ -243,6 +286,12 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
     });
     setIvaType('con_iva');
     setIvaPercentage(16);
+    // ✅ Limpiar estados de kit
+    setIsKit(false);
+    setKitComponents([]);
+    setSearchChildProduct('');
+    setSelectedChildProduct(null);
+    setChildQuantity('1');
   };
   
   // ==================== KARDEX ====================
@@ -922,7 +971,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
       </Dialog>
       
       {/* Modal para crear/editar producto (con tres precios y configuración de IVA) */}
-      <Dialog open={isAdding} onOpenChange={(val) => { if(!val) { setIsAdding(false); setEditingProduct(null); } }}>
+      <Dialog open={isAdding} onOpenChange={(val) => { if(!val) { setIsAdding(false); setEditingProduct(null); resetForm(); } }}>
         <DialogContent className="bg-white max-w-2xl p-0 rounded-xl">
           <DialogHeader className="bg-[#1A2C4E] p-3 text-white rounded-t-xl">
             <div className="flex justify-between items-center">
@@ -1019,9 +1068,80 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                     />
                   </div>
                 </div>
+                
+                {/* ✅ SECCIÓN DE KIT / COMPUESTO */}
+                <div className="border-t pt-2 mt-1">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      checked={isKit} 
+                      onChange={e => setIsKit(e.target.checked)} 
+                      className="rounded text-primary" 
+                    />
+                    <span className="text-[9px] font-black uppercase">Es kit / compuesto</span>
+                  </label>
+                  <p className="text-[7px] text-black/40 mt-1">Al vender este producto, se descontarán las cantidades de sus componentes.</p>
+                </div>
+                
+                {isKit && (
+                  <div className="border border-dashed border-blue-300 rounded-lg p-2 bg-blue-50/30">
+                    <p className="text-[8px] font-bold text-blue-800 mb-2 flex items-center gap-1"><Package size={10} /> Componentes del kit</p>
+                    <div className="space-y-2">
+                      {/* Lista actual de componentes */}
+                      {kitComponents.length > 0 && (
+                        <div className="max-h-32 overflow-y-auto space-y-1">
+                          {kitComponents.map(comp => {
+                            const childProd = products.find(p => p.id === comp.productId);
+                            return (
+                              <div key={comp.productId} className="flex justify-between items-center bg-white rounded px-2 py-1 text-[10px]">
+                                <span>{childProd?.name || 'Producto'} x{comp.quantity}</span>
+                                <button type="button" onClick={() => removeKitComponent(comp.productId)} className="text-red-500"><Trash2 size={10} /></button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                      {/* Agregar nuevo componente */}
+                      <div className="flex flex-col gap-1">
+                        <div className="relative">
+                          <Input 
+                            type="text"
+                            placeholder="Buscar producto componente..."
+                            value={searchChildProduct}
+                            onChange={(e) => setSearchChildProduct(e.target.value)}
+                            className="h-7 text-xs pr-7"
+                          />
+                          {childProductResults.length > 0 && (
+                            <div className="absolute top-full left-0 right-0 bg-white border rounded shadow z-20 mt-1 max-h-32 overflow-y-auto">
+                              {childProductResults.map(p => (
+                                <button
+                                  key={p.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedChildProduct(p);
+                                    setSearchChildProduct(p.name);
+                                  }}
+                                  className="w-full text-left px-2 py-1 text-[10px] hover:bg-primary/10"
+                                >
+                                  {p.name} (${p.priceUsd.toFixed(2)})
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        {selectedChildProduct && (
+                          <div className="flex gap-1 items-center">
+                            <Input type="number" value={childQuantity} onChange={e => setChildQuantity(e.target.value)} className="h-7 text-xs w-20 text-center" placeholder="Cant." />
+                            <Button type="button" onClick={addKitComponent} size="sm" className="h-7 text-[9px] bg-primary text-black">Agregar</Button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
               
-              {/* Columna derecha: costos, márgenes y configuración de IVA */}
+              {/* Columna derecha: costos, márgenes y configuración de IVA (sin cambios) */}
               <div className="bg-[#F5F5F5] rounded-lg p-3 space-y-2">
                 <div className="grid grid-cols-2 gap-2">
                   <div>

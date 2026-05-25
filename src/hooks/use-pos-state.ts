@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
-import { Product, Client, Transaction, Account, CashRegister, Page, CartItem } from '@/lib/types';
+import { Product, Client, Transaction, Account, CashRegister, Page, CartItem, KitComponent } from '@/lib/types';
 import { syncService } from '@/services/syncService';
 import { registerSaleEntry, registerCreditEntry, registerDebtPaymentEntry } from '@/services/accountingService';
 import { useAuth } from '@/context/AuthContext';
@@ -131,7 +131,8 @@ export function usePOSState() {
         qty: 1, 
         category: product.category,
         ivaType: product.ivaType,
-        ivaPercentage: product.ivaPercentage
+        ivaPercentage: product.ivaPercentage,
+        isKit: product.isKit || false
       }];
     });
     return true;
@@ -154,6 +155,17 @@ export function usePOSState() {
     }).filter(Boolean));
   }, [products, exchangeRate]);
 
+  // ✅ NUEVA FUNCIÓN: Actualizar el precio de un producto en el carrito
+  const updateCartItemPrice = useCallback((productId: number, newPriceUsd: number, newPriceBs: number) => {
+    setCart(prevCart =>
+      prevCart.map(item =>
+        item.productId === productId
+          ? { ...item, priceUsd: newPriceUsd, priceBs: newPriceBs }
+          : item
+      )
+    );
+  }, []);
+
   const openCashRegister = useCallback(async (bsAmount: number, usdAmount: number, rate: number) => {
     const registerData: CashRegister = {
       isOpen: true,
@@ -174,6 +186,17 @@ export function usePOSState() {
     setRegister(null);
     saveRegisterToLocalStorage(null);
   }, [saveRegisterToLocalStorage]);
+
+  // ✅ Función auxiliar para obtener los componentes de un kit (incluyendo anidamiento si se desea, por ahora simple)
+  const getKitComponents = (product: Product, qty: number): { productId: number; quantity: number }[] => {
+    if (!product.isKit || !product.kitComponents || product.kitComponents.length === 0) {
+      return [];
+    }
+    return product.kitComponents.map(comp => ({
+      productId: comp.productId,
+      quantity: comp.quantity * qty
+    }));
+  };
 
   const finalizeSale = useCallback(async (type: 'contado' | 'credito' | 'cobro_deuda', paymentData: any) => {
     if (!register?.isOpen) return;
@@ -229,12 +252,54 @@ export function usePOSState() {
     setRegister(updatedRegister);
     saveRegisterToLocalStorage(updatedRegister);
 
+    // ✅ Descuento de stock para productos normales y para kits (componentes)
     if (type !== 'cobro_deuda') {
-      const updates = cart.map(item => {
-        const p = products.find(prod => prod.id === item.productId);
-        return p ? { ...p, stock: p.stock - item.qty } : null;
-      }).filter(Boolean);
-      await syncService.saveProducts(updates as Product[]);
+      // Usar un mapa para acumular los productos a descontar (pueden venir de múltiples kits)
+      const stockUpdates: Map<number, number> = new Map();
+      
+      for (const item of cart) {
+        const product = products.find(p => p.id === item.productId);
+        if (!product) continue;
+        
+        if (product.isKit && product.kitComponents && product.kitComponents.length > 0) {
+          // Es un kit: descontar stock de sus componentes
+          const components = getKitComponents(product, item.qty);
+          for (const comp of components) {
+            const current = stockUpdates.get(comp.productId) || 0;
+            stockUpdates.set(comp.productId, current + comp.quantity);
+          }
+          // Opcional: descontar stock del propio kit (caja) si se desea control de cajas físicas
+          // Si el kit tiene stock propio (número de cajas disponibles), descontar item.qty
+          if (product.stock !== undefined && product.stock > 0) {
+            const currentKit = stockUpdates.get(product.id) || 0;
+            stockUpdates.set(product.id, currentKit + item.qty);
+          }
+        } else {
+          // Producto normal: descontar su stock directamente
+          const current = stockUpdates.get(product.id) || 0;
+          stockUpdates.set(product.id, current + item.qty);
+        }
+      }
+      
+      // Aplicar todos los descuentos de stock
+      for (const [prodId, qtyToSubtract] of stockUpdates.entries()) {
+        const prod = products.find(p => p.id === prodId);
+        if (prod) {
+          const newStock = prod.stock - qtyToSubtract;
+          // Solo actualizar si hay cambio y si el producto existe
+          await syncService.saveProduct({ ...prod, stock: Math.max(0, newStock) });
+        }
+      }
+      
+      // También actualizar la lista local de productos (para mantener consistencia)
+      const updatedProducts = [...products];
+      for (const [prodId, qtyToSubtract] of stockUpdates.entries()) {
+        const index = updatedProducts.findIndex(p => p.id === prodId);
+        if (index !== -1) {
+          updatedProducts[index] = { ...updatedProducts[index], stock: Math.max(0, updatedProducts[index].stock - qtyToSubtract) };
+        }
+      }
+      setProducts(updatedProducts);
     }
 
     if (type === 'credito') {
@@ -329,7 +394,7 @@ export function usePOSState() {
     clients, setClients, saveClient, deleteClient, transactions, setTransactions, accounts, setAccounts,
     register, setRegister, openCashRegister, closeCashRegister,
     exchangeRate, setExchangeRate: setExchangeRateProxy,
-    cart, addToCart, removeFromCart, updateCartQty,
+    cart, addToCart, removeFromCart, updateCartQty, updateCartItemPrice,
     isIvaEnabled, setIsIvaEnabled, currentPage, setCurrentPage,
     finalizeSale, applyAbono, isHydrated,
     globalIvaPercentage,

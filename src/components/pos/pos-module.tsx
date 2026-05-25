@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
 import { usePOSState } from '@/hooks/use-pos-state';
 import { UserCircle } from 'lucide-react';
@@ -22,44 +22,48 @@ export default function POSModule({ state }: POSModuleProps) {
   const [showReceipt, setShowReceipt] = useState(false);
   const [lastTransaction, setLastTransaction] = useState<any>(null);
   const [user, setUser] = useState<{ name: string; role: string } | null>(null);
-  
-  // ✅ Obtener el próximo número de recibo (comienza en 1)
   const [nextReceiptNumber, setNextReceiptNumber] = useState(1);
+  const lastReceiptNumberRef = useRef<number>(1); // ✅ REF para pasar al modal
 
   useEffect(() => {
     const storedUser = localStorage.getItem('user');
     if (storedUser) {
       setUser(JSON.parse(storedUser));
     }
-    
-    // Cargar el último número de recibo usado
     const lastReceipt = localStorage.getItem('last_receipt_number');
     if (lastReceipt) {
-      setNextReceiptNumber(parseInt(lastReceipt) + 1);
+      const lastNum = parseInt(lastReceipt);
+      setNextReceiptNumber(lastNum + 1);
+      lastReceiptNumberRef.current = lastNum + 1;
     } else {
-      // ✅ Si no hay, comenzar desde 1
       setNextReceiptNumber(1);
+      lastReceiptNumberRef.current = 1;
     }
   }, []);
 
-  // Actualizar cuando se complete una transacción
-  useEffect(() => {
-    if (lastTransaction) {
-      const newReceiptNumber = lastTransaction.id;
-      setNextReceiptNumber(newReceiptNumber + 1);
-      localStorage.setItem('last_receipt_number', newReceiptNumber.toString());
+  // Calcular total con IVA
+  const subtotal = state.cart.reduce((s, i) => s + (i.priceBs * i.qty), 0);
+  const iva = state.cart.reduce((total, item) => {
+    const hasIva = (item as any).ivaType === 'con_iva';
+    if (hasIva) {
+      const itemTotal = item.priceBs * item.qty;
+      return total + (itemTotal * 0.16);
     }
-  }, [lastTransaction]);
-
-  const cartTotal = state.cart.reduce((s, i) => s + (i.priceBs * i.qty), 0);
-  const totalWithIva = state.isIvaEnabled ? cartTotal * 1.16 : cartTotal;
-  const totalForCredit = state.isIvaEnabled ? cartTotal * 1.16 : cartTotal;
+    return total;
+  }, 0);
+  const totalWithIva = state.isIvaEnabled ? subtotal + iva : subtotal;
+  const totalForCredit = totalWithIva;
 
   const handlePaymentConfirm = async (data: any) => {
     try {
+      const receiptNum = nextReceiptNumber; // Número actual antes de incrementar
       const tx = await state.finalizeSale('contado', data);
       if (tx) {
+        lastReceiptNumberRef.current = receiptNum; // Guardar en ref
         setLastTransaction(tx);
+        // Incrementar para la próxima venta
+        setNextReceiptNumber(prev => prev + 1);
+        localStorage.setItem('last_receipt_number', receiptNum.toString());
         setShowReceipt(true);
       }
     } catch (error) {
@@ -71,6 +75,7 @@ export default function POSModule({ state }: POSModuleProps) {
 
   const handleCreditConfirm = async (data: any) => {
     try {
+      const receiptNum = nextReceiptNumber;
       const tx = await state.finalizeSale('credito', {
         clientId: data.clientId,
         clientName: data.clientName,
@@ -83,7 +88,10 @@ export default function POSModule({ state }: POSModuleProps) {
         totalUsd: data.totalUsd
       });
       if (tx) {
+        lastReceiptNumberRef.current = receiptNum;
         setLastTransaction(tx);
+        setNextReceiptNumber(prev => prev + 1);
+        localStorage.setItem('last_receipt_number', receiptNum.toString());
         setShowReceipt(true);
       }
     } catch (error) {
@@ -94,14 +102,11 @@ export default function POSModule({ state }: POSModuleProps) {
   };
 
   return (
-    // Layout: columna izquierda más angosta (1/3), columna derecha más ancha (2/3)
     <div className="grid grid-cols-1 md:grid-cols-3 h-full overflow-hidden">
-      {/* COLUMNA IZQUIERDA: Búsqueda - 1/3 del ancho */}
       <div className="md:col-span-1 flex flex-col overflow-hidden bg-primary border-l border-r border-black">
         <ProductSearch state={state} onAdd={state.addToCart} />
       </div>
 
-      {/* COLUMNA DERECHA: Carrito - 2/3 del ancho */}
       <div className="md:col-span-2 flex flex-col overflow-hidden bg-white">
         <CartPanel 
           cart={state.cart} 
@@ -113,10 +118,11 @@ export default function POSModule({ state }: POSModuleProps) {
           isIvaEnabled={state.isIvaEnabled}
           onIvaToggle={state.setIsIvaEnabled}
           nextReceiptNumber={nextReceiptNumber}
+          products={state.products}
+          onUpdatePrice={state.updateCartItemPrice}
         />
       </div>
 
-      {/* Modales */}
       {showSaleType && (
         <SaleTypeModal 
           onClose={() => setShowSaleType(false)}
@@ -152,6 +158,7 @@ export default function POSModule({ state }: POSModuleProps) {
         <ReceiptModal 
           transaction={lastTransaction}
           exchangeRate={state.exchangeRate}
+          receiptNumber={lastReceiptNumberRef.current} // ✅ Usar el valor de la ref (síncrono)
           onClose={() => {
             setShowReceipt(false);
             setLastTransaction(null);

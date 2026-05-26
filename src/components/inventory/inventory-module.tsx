@@ -6,7 +6,8 @@ import {
   Plus, Search, Pencil, Trash2, X, 
   Tag, Settings, History, RefreshCw, Save,
   FileText, Share2, Printer, Percent, AlertTriangle,
-  DollarSign, Package, Layers, Boxes, PlusCircle
+  DollarSign, Package, Layers, Boxes, PlusCircle,
+  FileSpreadsheet, TrendingUp, Calculator, Info
 } from 'lucide-react';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
@@ -16,6 +17,14 @@ import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { Product, Category, AdminCode, KitComponent } from '@/lib/types';
 import { syncService } from '@/services/syncService';
+
+// ✅ Redondeo a 2 decimales (comercial)
+const roundTo2 = (num: number): number => Math.round(num * 100) / 100;
+// ✅ Redondeo a 4 decimales (para costos)
+const roundTo4 = (num: number): number => Math.round(num * 10000) / 10000;
+
+// ✅ Margen de ganancia fijo interno (no visible para el usuario)
+const DEFAULT_PROFIT_PERCENT = 30; // 30% máximo legal en Venezuela
 
 // Claves para caché en localStorage
 const CACHE_KEYS = {
@@ -27,7 +36,7 @@ const CACHE_KEYS = {
   IVA_PERCENTAGE: 'product_iva_percentage',
 };
 
-// Tipos locales (coinciden con los de types.ts)
+// ✅ Tipos locales (coinciden con los de types.ts) - CORREGIDO con costUsd
 interface KardexEntry {
   id: string;
   productId: number;
@@ -38,25 +47,28 @@ interface KardexEntry {
   newStock: number;
   reference: string;
   note: string;
+  costUsd?: number;
 }
 
 // Valores por defecto (se sincronizarán con Firestore al iniciar)
 const DEFAULT_CATEGORIES: Category[] = ['Whisky', 'Ron', 'Cerveza', 'Vino', 'Vodka', 'Tequila', 'Licor', 'Gin', 'Otro'];
 const DEFAULT_DEPARTMENTS = ['Polar', 'Munchy', 'Otros'];
 
+type InventoryTab = 'catalogo' | 'reporte';
+
 export default function InventoryModule({ state }: { state: ReturnType<typeof usePOSState> }) {
   const { toast } = useToast();
   
   // ==================== ESTADOS LOCALES ====================
-  // UI y filtros
+  const [activeTab, setActiveTab] = useState<InventoryTab>('catalogo');
   const [search, setSearch] = useState('');
   const [filterCategory, setFilterCategory] = useState<Category | 'all'>('all');
   const [filterDepartment, setFilterDepartment] = useState<string>('all');
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [isAdding, setIsAdding] = useState(false);
   const [viewingKardex, setViewingKardex] = useState<Product | null>(null);
+  const [viewingCostDetail, setViewingCostDetail] = useState<Product | null>(null);
   
-  // Ajuste de stock con autorización
   const [adjustingStock, setAdjustingStock] = useState<Product | null>(null);
   const [adjustmentQuantity, setAdjustmentQuantity] = useState('');
   const [adjustmentReason, setAdjustmentReason] = useState('');
@@ -64,7 +76,6 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
   const [authCodeInput, setAuthCodeInput] = useState('');
   const [pendingAdjustment, setPendingAdjustment] = useState<{ product: Product; newQty: number; reason: string } | null>(null);
   
-  // Gestión de categorías y departamentos
   const [categories, setCategories] = useState<Category[]>(DEFAULT_CATEGORIES);
   const [departments, setDepartments] = useState<string[]>(DEFAULT_DEPARTMENTS);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
@@ -72,15 +83,14 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
   const [newCategory, setNewCategory] = useState('');
   const [newDepartment, setNewDepartment] = useState('');
   
-  // Configuración de IVA para el formulario de producto
   const [ivaType, setIvaType] = useState<'con_iva' | 'sin_iva'>('con_iva');
   const [ivaPercentage, setIvaPercentage] = useState(16);
   
-  // Datos principales (caché local sincronizada con Firestore)
-  const [products, setProducts] = useState<Product[]>([]);
+  // ✅ USAR DIRECTAMENTE state.products (sin estado local duplicado)
+  const products = state.products;
+  
   const [kardexEntries, setKardexEntries] = useState<Record<number, KardexEntry[]>>({});
   
-  // Formulario de producto (incluye los tres precios)
   const [formData, setFormData] = useState({
     barcode: '',
     name: '',
@@ -89,33 +99,44 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
     stock: 0,
     minStock: 5,
     costUsd: 0,
-    profitPercent: 30,
     priceWholesale: 0,
     priceCost: 0,
   });
   
-  // ✅ NUEVO: Precio detal Bs editable para bidireccionalidad
-  const [priceRetailBs, setPriceRetailBs] = useState('');
-  const [isUpdatingFromBs, setIsUpdatingFromBs] = useState(false);
+  // ✅ Estados string para inputs numéricos
+  const [costUsdInput, setCostUsdInput] = useState('');
+  const [priceWholesaleInput, setPriceWholesaleInput] = useState('');
+  const [priceCostInput, setPriceCostInput] = useState('');
+  const [stockInput, setStockInput] = useState('');
+  const [minStockInput, setMinStockInput] = useState('');
   
-  // ✅ NUEVO: Selector de modo de precio (flotante USD o fijo Bs)
-  const [priceMode, setPriceMode] = useState<'usd' | 'bs'>('usd');
+  // ✅ Precio detal Bs editable para bidireccionalidad
+  const [priceRetailBs, setPriceRetailBs] = useState('');
+  const [isPriceFixed, setIsPriceFixed] = useState(false);
   
   // ==================== NUEVO: KITS / COMBOS ====================
   const [isKit, setIsKit] = useState(false);
+  const [kitHasOwnStock, setKitHasOwnStock] = useState(false);
   const [kitComponents, setKitComponents] = useState<KitComponent[]>([]);
   const [searchChildProduct, setSearchChildProduct] = useState('');
   const [selectedChildProduct, setSelectedChildProduct] = useState<Product | null>(null);
   const [childQuantity, setChildQuantity] = useState('1');
+  const [hideChildResults, setHideChildResults] = useState(false);
+  
+  // ✅ Función para calcular Precio Detal USD basado en Costo Unitario USD (Costo × 1.30)
+  const calculatePriceUsdFromCost = (cost: number): number => {
+    if (cost <= 0) return 0;
+    return roundTo2(cost * (1 + DEFAULT_PROFIT_PERCENT / 100));
+  };
   
   const childProductResults = useMemo(() => {
-    if (!searchChildProduct.trim()) return [];
+    if (!searchChildProduct.trim() || hideChildResults) return [];
     const q = searchChildProduct.toLowerCase();
     return products.filter(p => 
       p.id !== editingProduct?.id && 
       (p.name.toLowerCase().includes(q) || p.barcode.includes(q))
     ).slice(0, 5);
-  }, [searchChildProduct, products, editingProduct]);
+  }, [searchChildProduct, products, editingProduct, hideChildResults]);
   
   const addKitComponent = () => {
     if (!selectedChildProduct) return;
@@ -132,19 +153,15 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
     setSelectedChildProduct(null);
     setSearchChildProduct('');
     setChildQuantity('1');
+    setHideChildResults(false);
   };
   
   const removeKitComponent = (productId: number) => {
     setKitComponents(prev => prev.filter(c => c.productId !== productId));
   };
   
-  // ==================== INICIALIZACIÓN: CARGAR DESDE CACHÉ Y FIRESTORE ====================
+  // ==================== INICIALIZACIÓN: CARGAR KARDEX DESDE FIRESTORE ====================
   useEffect(() => {
-    // 1. Carga inmediata desde localStorage (muestra datos antiguos mientras llegan los nuevos)
-    const cachedProducts = localStorage.getItem(CACHE_KEYS.PRODUCTS);
-    if (cachedProducts) {
-      try { setProducts(JSON.parse(cachedProducts)); } catch(e) {}
-    }
     const cachedCategories = localStorage.getItem(CACHE_KEYS.CATEGORIES);
     if (cachedCategories) {
       try { setCategories(JSON.parse(cachedCategories)); } catch(e) {}
@@ -158,26 +175,16 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
       try { setKardexEntries(JSON.parse(cachedKardex)); } catch(e) {}
     }
     
-    // 2. Suscripciones en tiempo real a Firestore (actualizan caché y estado)
-    // Productos
-    const unsubProducts = syncService.subscribeToProducts((data: Product[]) => {
-      setProducts(data);
-      localStorage.setItem(CACHE_KEYS.PRODUCTS, JSON.stringify(data));
-    });
-    
-    // Configuración global (categorías, departamentos, IVA global)
     const unsubSettings = syncService.subscribeToGlobalSettings?.((settings: any) => {
       if (settings) {
         if (settings.categories) setCategories(settings.categories);
         if (settings.departments) setDepartments(settings.departments);
         if (settings.defaultIvaPercentage) setIvaPercentage(settings.defaultIvaPercentage);
-        // Guardar en caché
         if (settings.categories) localStorage.setItem(CACHE_KEYS.CATEGORIES, JSON.stringify(settings.categories));
         if (settings.departments) localStorage.setItem(CACHE_KEYS.DEPARTMENTS, JSON.stringify(settings.departments));
       }
     }) || (() => {});
     
-    // Kardex (solo para los productos que se van viendo, se podría cargar bajo demanda)
     const unsubKardex = syncService.subscribeToKardex?.((entries: KardexEntry[]) => {
       const grouped: Record<number, KardexEntry[]> = {};
       entries.forEach(entry => {
@@ -189,59 +196,37 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
     }) || (() => {});
     
     return () => {
-      unsubProducts();
       if (typeof unsubSettings === 'function') unsubSettings();
       if (typeof unsubKardex === 'function') unsubKardex();
     };
   }, []);
   
   // ==================== FUNCIONES AUXILIARES ====================
-  // Calcula el precio al detal según la fórmula proporcionada
-  const calculateRetailPrice = (cost: number, profitPercent: number, ivaPercent: number, applyIva: boolean): number => {
-    if (profitPercent >= 100) return cost * 100;
-    const divisor = (100 - profitPercent) / 100;
-    const basePrice = cost / divisor;
-    return applyIva ? basePrice * (1 + ivaPercent / 100) : basePrice;
+  const calculateRetailPriceFromCost = (cost: number, profitPercent: number, ivaPercent: number, applyIva: boolean): number => {
+    const basePrice = cost * (1 + profitPercent / 100);
+    const result = applyIva ? basePrice * (1 + ivaPercent / 100) : basePrice;
+    return roundTo2(result);
   };
   
-  // ✅ NUEVO: Calcula el porcentaje de ganancia desde costo y precio detal
-  const calculateProfitFromRetailPrice = (cost: number, retailPriceUsd: number): number => {
-    if (cost <= 0) return 0;
-    const profit = ((retailPriceUsd - cost) / cost) * 100;
-    return Math.round(profit * 100) / 100;
-  };
-  
-  // ✅ NUEVO: Actualiza el porcentaje de ganancia basado en el precio detal Bs
-  const updateProfitFromRetailBs = (priceBs: number, costUsd: number, rate: number) => {
-    const priceUsd = priceBs / rate;
-    const newProfit = calculateProfitFromRetailPrice(costUsd, priceUsd);
-    setFormData(prev => ({ ...prev, profitPercent: newProfit }));
-    return priceUsd;
-  };
-  
-  // Obtiene el stock mínimo de un producto (para estilos)
   const getProductMinStock = (product: Product) => product.minStock || 5;
   
   // ==================== MANEJO DE PRODUCTOS (CRUD) ====================
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    const cost = Number(formData.costUsd);
-    const profit = Number(formData.profitPercent);
+    const cost = parseFloat(costUsdInput) || 0;
     const iva = ivaType === 'con_iva' ? ivaPercentage : 0;
-    let retailPrice = calculateRetailPrice(cost, profit, iva, ivaType === 'con_iva');
     
-    // Si el modo es fijo Bs, usamos el precio Bs ingresado
-    let finalPriceBs = 0;
-    let finalPriceUsd = retailPrice;
+    // ✅ Precio Detal USD = Costo × 1.30 (siempre)
+    let finalPriceUsd = calculatePriceUsdFromCost(cost);
+    let finalPriceBs = finalPriceUsd * state.exchangeRate;
     
-    if (priceMode === 'bs' && priceRetailBs !== '') {
-      finalPriceBs = parseFloat(priceRetailBs);
-      if (!isNaN(finalPriceBs) && finalPriceBs > 0) {
-        finalPriceUsd = finalPriceBs / state.exchangeRate;
+    // Si se editó el precio Bs manualmente, recalcular desde ahí
+    if (priceRetailBs !== '' && priceRetailBs !== 'NaN') {
+      const manualPriceBs = parseFloat(priceRetailBs);
+      if (!isNaN(manualPriceBs) && manualPriceBs > 0) {
+        finalPriceBs = manualPriceBs;
+        // ⚠️ No se recalcula finalPriceUsd desde Bs, se mantiene la fórmula
       }
-    } else {
-      finalPriceUsd = retailPrice;
-      finalPriceBs = finalPriceUsd * state.exchangeRate;
     }
     
     const productData: Product = {
@@ -250,20 +235,20 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
       name: formData.name,
       department: formData.department || 'Otros',
       category: formData.category,
-      stock: Number(formData.stock),
-      minStock: Number(formData.minStock),
-      costUsd: cost,
-      costBs: cost * state.exchangeRate,
-      profitPercent: profit,
+      stock: parseInt(stockInput) || 0,
+      minStock: parseInt(minStockInput) || 5,
+      costUsd: roundTo4(cost),
+      costBs: roundTo2(cost * state.exchangeRate),
+      profitPercent: DEFAULT_PROFIT_PERCENT,
       priceUsd: finalPriceUsd,
-      priceBs: finalPriceBs,
+      priceBs: roundTo2(finalPriceBs),
       priceRetail: finalPriceUsd,
-      priceWholesale: Number(formData.priceWholesale),
-      priceCost: Number(formData.priceCost),
+      priceWholesale: roundTo2(parseFloat(priceWholesaleInput) || 0),
+      priceCost: roundTo2(parseFloat(priceCostInput) || 0),
       ivaType: ivaType,
       ivaPercentage: ivaType === 'con_iva' ? ivaPercentage : undefined,
-      // ✅ Nuevos campos para kits
       isKit: isKit,
+      kitHasOwnStock: isKit ? kitHasOwnStock : undefined,
       kitComponents: isKit && kitComponents.length > 0 ? kitComponents : undefined,
     };
     
@@ -272,7 +257,6 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
       toast({ title: "Actualizado", description: "Producto modificado correctamente." });
     } else {
       await state.addProduct(productData);
-      // Registrar entrada inicial en Kardex - ID ÚNICO con timestamp + random
       const kardexEntry: KardexEntry = {
         id: `${Date.now()}_${Math.random()}`,
         productId: productData.id,
@@ -282,7 +266,8 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
         previousStock: 0,
         newStock: productData.stock,
         reference: 'Creación de producto',
-        note: 'Stock inicial'
+        note: 'Stock inicial',
+        costUsd: productData.costUsd,
       };
       await syncService.saveKardexEntry?.(kardexEntry);
       addKardexEntryLocal(productData.id, kardexEntry);
@@ -303,16 +288,19 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
       stock: p.stock,
       minStock: p.minStock || 5,
       costUsd: p.costUsd || 0,
-      profitPercent: p.profitPercent || 30,
       priceWholesale: p.priceWholesale || 0,
       priceCost: p.priceCost || 0,
     });
+    setCostUsdInput(p.costUsd?.toString() || '');
+    setPriceWholesaleInput(p.priceWholesale?.toString() || '');
+    setPriceCostInput(p.priceCost?.toString() || '');
+    setStockInput(p.stock.toString());
+    setMinStockInput((p.minStock || 5).toString());
     setIvaType(p.ivaType || 'con_iva');
     setIvaPercentage(p.ivaPercentage || 16);
-    // ✅ Cargar datos del kit si existe
     setIsKit(p.isKit || false);
+    setKitHasOwnStock(p.kitHasOwnStock || false);
     setKitComponents(p.kitComponents || []);
-    // ✅ Cargar el precio detal Bs actual
     setPriceRetailBs(p.priceBs.toString());
     setIsAdding(true);
   };
@@ -320,20 +308,24 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
   const resetForm = () => {
     setFormData({
       barcode: '', name: '', department: 'Otros', category: 'Otro', stock: 0, minStock: 5,
-      costUsd: 0, profitPercent: 30, priceWholesale: 0, priceCost: 0
+      costUsd: 0, priceWholesale: 0, priceCost: 0
     });
+    setCostUsdInput('');
+    setPriceWholesaleInput('');
+    setPriceCostInput('');
+    setStockInput('');
+    setMinStockInput('');
     setIvaType('con_iva');
     setIvaPercentage(16);
-    // ✅ Limpiar estados de kit
     setIsKit(false);
+    setKitHasOwnStock(false);
     setKitComponents([]);
     setSearchChildProduct('');
     setSelectedChildProduct(null);
     setChildQuantity('1');
-    // ✅ Limpiar precio detal Bs
+    setHideChildResults(false);
     setPriceRetailBs('');
-    // ✅ Resetear modo a USD
-    setPriceMode('usd');
+    setIsPriceFixed(false);
   };
   
   // ==================== KARDEX ====================
@@ -342,7 +334,6 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
       ...prev,
       [productId]: [entry, ...(prev[productId] || [])]
     }));
-    // Actualizar caché
     const updated = { ...kardexEntries, [productId]: [entry, ...(kardexEntries[productId] || [])] };
     localStorage.setItem(CACHE_KEYS.KARDEX, JSON.stringify(updated));
   };
@@ -386,7 +377,6 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
         const updatedProduct = { ...product, stock: newQty };
         await state.updateProduct(updatedProduct);
         
-        // ID ÚNICO con timestamp + random
         const kardexEntry: KardexEntry = {
           id: `${Date.now()}_${Math.random()}`,
           productId: product.id,
@@ -396,7 +386,8 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
           previousStock,
           newStock: newQty,
           reference: 'Ajuste manual',
-          note: reason
+          note: reason,
+          costUsd: product.costUsd,
         };
         await syncService.saveKardexEntry?.(kardexEntry);
         addKardexEntryLocal(product.id, kardexEntry);
@@ -422,16 +413,15 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
       toast({ title: "Operación no permitida", description: "Debe cerrar la caja antes de cambiar el IVA global", variant: "destructive" });
       return;
     }
-    // Actualizar todos los productos con ivaType === 'con_iva'
     const updatedProducts = products.map(p => {
       if (p.ivaType === 'con_iva') {
-        const newRetail = calculateRetailPrice(p.costUsd || 0, p.profitPercent || 30, newGlobalIva, true);
+        const newRetail = calculateRetailPriceFromCost(p.costUsd || 0, DEFAULT_PROFIT_PERCENT, newGlobalIva, true);
         return { 
           ...p, 
           ivaPercentage: newGlobalIva, 
           priceRetail: newRetail, 
           priceUsd: newRetail, 
-          priceBs: newRetail * state.exchangeRate 
+          priceBs: roundTo2(newRetail * state.exchangeRate)
         };
       }
       return p;
@@ -439,7 +429,6 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
     for (const prod of updatedProducts) {
       await state.updateProduct(prod);
     }
-    // Guardar nueva configuración global en Firestore
     await syncService.saveGlobalSettings({ defaultIvaPercentage: newGlobalIva });
     setIvaPercentage(newGlobalIva);
     toast({ title: "IVA actualizado", description: `Nuevo porcentaje global: ${newGlobalIva}%` });
@@ -456,7 +445,6 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
     const newCats = [...categories, newCategory.trim() as Category];
     setCategories(newCats);
     localStorage.setItem(CACHE_KEYS.CATEGORIES, JSON.stringify(newCats));
-    // Actualizar en Firestore (dentro de global_settings)
     syncService.saveGlobalSettings({ categories: newCats, departments }).catch(console.error);
     setNewCategory('');
     setShowCategoryModal(false);
@@ -511,7 +499,6 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
     const printWindow = window.open('', '_blank');
     if (!printWindow) return;
     
-    // Calcular filteredProducts para el PDF
     const pdfProducts = products.filter(p => {
       const matchSearch = p.name.toLowerCase().includes(search.toLowerCase()) || p.barcode.includes(search);
       const matchCat = filterCategory === 'all' || p.category === filterCategory;
@@ -551,7 +538,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
             <span class="bold">RESUMEN:</span> ${pdfProducts.length} productos listados | 
             Total ítems en stock: ${pdfProducts.reduce((s, p) => s + p.stock, 0)}
           </div>
-          </table>
+          <table>
             <thead>
               <tr>
                 <th>CÓDIGO</th>
@@ -605,10 +592,20 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
     });
   }, [products, search, filterCategory, filterDepartment]);
   
+  const reportProducts = useMemo(() => {
+    let filtered = [...products];
+    if (filterDepartment !== 'all') {
+      filtered = filtered.filter(p => p.department === filterDepartment);
+    }
+    if (filterCategory !== 'all') {
+      filtered = filtered.filter(p => p.category === filterCategory);
+    }
+    return filtered.sort((a, b) => a.name.localeCompare(b.name));
+  }, [products, filterDepartment, filterCategory]);
+  
   // ==================== RENDERIZADO ====================
   return (
     <div className="h-full flex flex-col bg-background overflow-hidden">
-      {/* Header con tasa y botón de ajuste global de IVA */}
       <div className="flex justify-between items-center pt-3 px-6 flex-shrink-0">
         <div>
           <h2 className="text-xl font-headline font-black text-black">Catálogo de Inventario</h2>
@@ -630,215 +627,483 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
         </div>
       </div>
       
-      {/* Barra de filtros y acciones */}
-      <div className="flex-1 flex flex-col overflow-hidden px-6 mt-4">
-        <div className="flex justify-between items-center mb-3 gap-2 flex-wrap flex-shrink-0">
-          <div className="relative flex-1 max-w-sm">
-            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-black/40" />
-            <Input 
-              placeholder="Buscar producto..." 
-              className="pl-9 h-8 border-[#9E9E9E] text-xs" 
-              value={search} 
-              onChange={(e) => setSearch(e.target.value)} 
-            />
-          </div>
-          
-          <div className="flex items-center gap-1">
-            <select 
-              value={filterDepartment} 
-              onChange={(e) => setFilterDepartment(e.target.value)} 
-              className="h-8 border rounded-lg px-2 text-xs font-bold bg-white"
-            >
-              <option value="all">📁 Todos los Deptos.</option>
-              {departments.map(d => <option key={d}>{d}</option>)}
-            </select>
-            <button 
-              onClick={() => setShowDepartmentModal(true)} 
-              className="h-8 w-8 border rounded-lg flex items-center justify-center hover:bg-gray-100"
-            >
-              <Settings size={13} />
-            </button>
-          </div>
-          
-          <div className="flex items-center gap-1">
-            <select 
-              value={filterCategory} 
-              onChange={(e) => setFilterCategory(e.target.value as any)} 
-              className="h-8 border rounded-lg px-2 text-xs font-bold bg-white"
-            >
-              <option value="all">🏷️ Todas las Cats.</option>
-              {categories.map(c => <option key={c}>{c}</option>)}
-            </select>
-            <button 
-              onClick={() => setShowCategoryModal(true)} 
-              className="h-8 w-8 border rounded-lg flex items-center justify-center hover:bg-gray-100"
-            >
-              <Settings size={13} />
-            </button>
-          </div>
-          
-          <div className="flex items-center gap-1 ml-auto">
-            <Button onClick={handleExportPDF} variant="outline" className="h-8 text-[10px] font-black border-[#9E9E9E] text-black">
-              <Printer size={13} className="mr-1" /> EXPORTAR PDF
-            </Button>
-            <Button onClick={handleSharePDF} variant="outline" className="h-8 text-[10px] font-black border-[#9E9E9E] text-black">
-              <Share2 size={13} className="mr-1" /> COMPARTIR
-            </Button>
-            <Button 
-              onClick={() => { resetForm(); setEditingProduct(null); setIsAdding(true); }} 
-              className="bg-primary text-black font-black h-8 text-[10px] px-3"
-            >
-              <Plus size={13} className="mr-1" /> NUEVO PRODUCTO
-            </Button>
-          </div>
-        </div>
-        
-        {/* Tabla de productos */}
-        <div className="bg-white border border-[#9E9E9E] rounded-xl overflow-hidden shadow-sm flex-1 flex flex-col min-h-0">
-          <div className="overflow-y-auto flex-1 scrollbar-thin">
-            <Table>
-              <TableHeader className="bg-[#E8E8E8] sticky top-0 z-10">
-                <TableRow>
-                  <TableHead className="text-[9px] font-black uppercase">Código</TableHead>
-                  <TableHead className="text-[9px] font-black uppercase">Producto</TableHead>
-                  <TableHead className="text-[9px] font-black uppercase text-center">Stock</TableHead>
-                  <TableHead className="text-[9px] font-black uppercase text-right">Precio $</TableHead>
-                  <TableHead className="text-[9px] font-black uppercase text-right">Precio Bs</TableHead>
-                  <TableHead className="text-[9px] font-black uppercase text-center">Acciones</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredProducts.map((p) => (
-                  <TableRow key={p.id} className="border-b border-[#9E9E9E]/40 hover:bg-[#F5F5F5]">
-                    <TableCell className="font-mono text-[10px] text-black/60">{p.barcode}</TableCell>
-                    <TableCell>
-                      <p className="font-bold text-xs text-black">{p.name}</p>
-                      <p className="text-[8px] font-bold text-primary uppercase">{p.category} | {p.department || 'Sin Dept.'}</p>
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <span className={cn(
-                        "px-2 py-0.5 rounded-full text-[8px] font-black border",
-                        p.stock <= getProductMinStock(p) ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"
-                      )}>
-                        {p.stock} UDS
-                      </span>
-                    </TableCell>
-                    <TableCell className="text-right font-black text-xs text-secondary">${p.priceUsd.toFixed(2)}</TableCell>
-                    <TableCell className="text-right font-black text-xs text-black">Bs {p.priceBs.toFixed(2)}</TableCell>
-                    <TableCell className="text-center">
-                      <div className="flex justify-center gap-1">
-                        <button 
-                          onClick={() => setViewingKardex(p)} 
-                          className="h-6 w-6 rounded hover:bg-blue-100 text-blue-600" 
-                          title="Ver Kardex"
-                        >
-                          <History size={11} />
-                        </button>
-                        <button 
-                          onClick={() => requestStockAdjust(p)} 
-                          className="h-6 w-6 rounded hover:bg-amber-100 text-amber-600" 
-                          title="Ajustar Stock"
-                        >
-                          <RefreshCw size={11} />
-                        </button>
-                        <button 
-                          onClick={() => handleEdit(p)} 
-                          className="h-6 w-6 rounded hover:bg-gray-100 text-blue-600"
-                        >
-                          <Pencil size={11} />
-                        </button>
-                        <button 
-                          onClick={() => { if(confirm('¿Eliminar este producto?')) state.deleteProduct(p.id) }} 
-                          className="h-6 w-6 rounded hover:bg-red-100 text-red-600"
-                        >
-                          <Trash2 size={11} />
-                        </button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-                {filteredProducts.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={6} className="text-center py-10 text-black/40 italic">
-                      No se encontraron productos
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </div>
+      <div className="flex gap-2 px-6 mt-2 border-b border-[#9E9E9E] flex-shrink-0">
+        <button
+          onClick={() => setActiveTab('catalogo')}
+          className={cn(
+            "flex items-center gap-2 px-4 py-2 rounded-t-lg font-bold text-sm transition-all",
+            activeTab === 'catalogo'
+              ? "bg-white text-black border border-b-0 border-[#9E9E9E]"
+              : "text-black/60 hover:bg-white/50"
+          )}
+        >
+          <Package size={14} />
+          Catálogo de Productos
+        </button>
+        <button
+          onClick={() => setActiveTab('reporte')}
+          className={cn(
+            "flex items-center gap-2 px-4 py-2 rounded-t-lg font-bold text-sm transition-all",
+            activeTab === 'reporte'
+              ? "bg-white text-black border border-b-0 border-[#9E9E9E]"
+              : "text-black/60 hover:bg-white/50"
+          )}
+        >
+          <FileSpreadsheet size={14} />
+          Reporte General de Inventario
+        </button>
       </div>
+      
+      {activeTab === 'catalogo' ? (
+        <div className="flex-1 flex flex-col overflow-hidden px-6 mt-4">
+          <div className="flex justify-between items-center mb-3 gap-2 flex-wrap flex-shrink-0">
+            <div className="relative flex-1 max-w-sm">
+              <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-black/40" />
+              <Input 
+                placeholder="Buscar producto..." 
+                className="pl-9 h-8 border-[#9E9E9E] text-xs" 
+                value={search} 
+                onChange={(e) => setSearch(e.target.value)} 
+              />
+            </div>
+            
+            <div className="flex items-center gap-1">
+              <select 
+                value={filterDepartment} 
+                onChange={(e) => setFilterDepartment(e.target.value)} 
+                className="h-8 border rounded-lg px-2 text-xs font-bold bg-white"
+              >
+                <option value="all">📁 Todos los Deptos.</option>
+                {departments.map(d => <option key={d}>{d}</option>)}
+              </select>
+              <button 
+                onClick={() => setShowDepartmentModal(true)} 
+                className="h-8 w-8 border rounded-lg flex items-center justify-center hover:bg-gray-100"
+              >
+                <Settings size={13} />
+              </button>
+            </div>
+            
+            <div className="flex items-center gap-1">
+              <select 
+                value={filterCategory} 
+                onChange={(e) => setFilterCategory(e.target.value as any)} 
+                className="h-8 border rounded-lg px-2 text-xs font-bold bg-white"
+              >
+                <option value="all">🏷️ Todas las Cats.</option>
+                {categories.map(c => <option key={c}>{c}</option>)}
+              </select>
+              <button 
+                onClick={() => setShowCategoryModal(true)} 
+                className="h-8 w-8 border rounded-lg flex items-center justify-center hover:bg-gray-100"
+              >
+                <Settings size={13} />
+              </button>
+            </div>
+            
+            <div className="flex items-center gap-1 ml-auto">
+              <Button onClick={handleExportPDF} variant="outline" className="h-8 text-[10px] font-black border-[#9E9E9E] text-black">
+                <Printer size={13} className="mr-1" /> EXPORTAR PDF
+              </Button>
+              <Button onClick={handleSharePDF} variant="outline" className="h-8 text-[10px] font-black border-[#9E9E9E] text-black">
+                <Share2 size={13} className="mr-1" /> COMPARTIR
+              </Button>
+              <Button 
+                onClick={() => { resetForm(); setEditingProduct(null); setIsAdding(true); }} 
+                className="bg-primary text-black font-black h-8 text-[10px] px-3"
+              >
+                <Plus size={13} className="mr-1" /> NUEVO PRODUCTO
+              </Button>
+            </div>
+          </div>
+          
+          <div className="bg-white border border-[#9E9E9E] rounded-xl overflow-hidden shadow-sm flex-1 flex flex-col min-h-0">
+            <div className="overflow-y-auto flex-1 scrollbar-thin">
+              <Table>
+                <TableHeader className="bg-[#E8E8E8] sticky top-0 z-10">
+                  <TableRow>
+                    <TableHead className="text-[9px] font-black uppercase">Código</TableHead>
+                    <TableHead className="text-[9px] font-black uppercase">Producto</TableHead>
+                    <TableHead className="text-[9px] font-black uppercase text-center">Stock</TableHead>
+                    <TableHead className="text-[9px] font-black uppercase text-right">Precio $</TableHead>
+                    <TableHead className="text-[9px] font-black uppercase text-right">Precio Bs</TableHead>
+                    <TableHead className="text-[9px] font-black uppercase text-center">Acciones</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredProducts.map((p) => (
+                    <TableRow key={p.id} className="border-b border-[#9E9E9E]/40 hover:bg-[#F5F5F5]">
+                      <TableCell className="font-mono text-[10px] text-black/60">{p.barcode}</TableCell>
+                      <TableCell>
+                        <p className="font-bold text-xs text-black">{p.name}</p>
+                        <p className="text-[8px] font-bold text-primary uppercase">{p.category} | {p.department || 'Sin Dept.'}</p>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <span className={cn(
+                          "px-2 py-0.5 rounded-full text-[8px] font-black border",
+                          p.stock <= getProductMinStock(p) ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"
+                        )}>
+                          {p.stock} UDS
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-right font-black text-xs text-secondary">${p.priceUsd.toFixed(2)}</TableCell>
+                      <TableCell className="text-right font-black text-xs text-black">Bs {p.priceBs.toFixed(2)}</TableCell>
+                      <TableCell className="text-center">
+                        <div className="flex justify-center gap-1">
+                          <button 
+                            onClick={() => setViewingKardex(p)} 
+                            className="h-6 w-6 rounded hover:bg-blue-100 text-blue-600" 
+                            title="Ver Kardex"
+                          >
+                            <History size={11} />
+                          </button>
+                          <button 
+                            onClick={() => requestStockAdjust(p)} 
+                            className="h-6 w-6 rounded hover:bg-amber-100 text-amber-600" 
+                            title="Ajustar Stock"
+                          >
+                            <RefreshCw size={11} />
+                          </button>
+                          <button 
+                            onClick={() => handleEdit(p)} 
+                            className="h-6 w-6 rounded hover:bg-gray-100 text-blue-600"
+                          >
+                            <Pencil size={11} />
+                          </button>
+                          <button 
+                            onClick={() => { if(confirm('¿Eliminar este producto?')) state.deleteProduct(p.id) }} 
+                            className="h-6 w-6 rounded hover:bg-red-100 text-red-600"
+                          >
+                            <Trash2 size={11} />
+                          </button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {filteredProducts.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={6} className="text-center py-10 text-black/40 italic">
+                        No se encontraron productos
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="flex-1 flex flex-col overflow-hidden px-6 mt-4">
+          <div className="flex justify-between items-center mb-3 gap-2 flex-wrap flex-shrink-0">
+            <div className="relative flex-1 max-w-sm">
+              <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-black/40" />
+              <Input 
+                placeholder="Buscar producto en el reporte..." 
+                className="pl-9 h-8 border-[#9E9E9E] text-xs" 
+                value={search} 
+                onChange={(e) => setSearch(e.target.value)} 
+              />
+            </div>
+            
+            <div className="flex items-center gap-1">
+              <select 
+                value={filterDepartment} 
+                onChange={(e) => setFilterDepartment(e.target.value)} 
+                className="h-8 border rounded-lg px-2 text-xs font-bold bg-white"
+              >
+                <option value="all">📁 Todos los Deptos.</option>
+                {departments.map(d => <option key={d}>{d}</option>)}
+              </select>
+            </div>
+            
+            <div className="flex items-center gap-1">
+              <select 
+                value={filterCategory} 
+                onChange={(e) => setFilterCategory(e.target.value as any)} 
+                className="h-8 border rounded-lg px-2 text-xs font-bold bg-white"
+              >
+                <option value="all">🏷️ Todas las Cats.</option>
+                {categories.map(c => <option key={c}>{c}</option>)}
+              </select>
+            </div>
+            
+            <div className="flex items-center gap-1 ml-auto">
+              <Button onClick={handleExportPDF} variant="outline" className="h-8 text-[10px] font-black border-[#9E9E9E] text-black">
+                <Printer size={13} className="mr-1" /> EXPORTAR PDF
+              </Button>
+            </div>
+          </div>
+          
+          <div className="bg-white border border-[#9E9E9E] rounded-xl overflow-hidden shadow-sm flex-1 flex flex-col min-h-0">
+            <div className="overflow-y-auto flex-1 scrollbar-thin">
+              <Table>
+                <TableHeader className="bg-[#1A2C4E] sticky top-0 z-10">
+                  <TableRow className="border-b border-white/20">
+                    <TableHead className="text-[9px] font-black uppercase text-white">Código</TableHead>
+                    <TableHead className="text-[9px] font-black uppercase text-white">Producto</TableHead>
+                    <TableHead className="text-[9px] font-black uppercase text-white text-right">Costo $</TableHead>
+                    <TableHead className="text-[9px] font-black uppercase text-white text-center">Stock</TableHead>
+                    <TableHead className="text-[9px] font-black uppercase text-white text-right">Valor Inventario $</TableHead>
+                    <TableHead className="text-[9px] font-black uppercase text-white text-center">Acciones</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {reportProducts
+                    .filter(p => {
+                      if (!search) return true;
+                      return p.name.toLowerCase().includes(search.toLowerCase()) || p.barcode.includes(search);
+                    })
+                    .map((p) => (
+                      <TableRow key={p.id} className="border-b border-[#9E9E9E]/30 hover:bg-[#F5F5F5] py-1">
+                        <TableCell className="font-mono text-[9px] text-black/60 py-1.5">{p.barcode}</TableCell>
+                        <TableCell className="py-1.5">
+                          <p className="font-bold text-xs text-black">{p.name}</p>
+                          <p className="text-[7px] font-bold text-primary/70 uppercase">{p.category} | {p.department || 'Sin Dept.'}</p>
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-[10px] font-bold text-black/80 py-1.5">
+                          ${(p.costUsd || 0).toFixed(4)}
+                        </TableCell>
+                        <TableCell className="text-center py-1.5">
+                          <span className={cn(
+                            "px-2 py-0.5 rounded-full text-[8px] font-black",
+                            p.stock <= getProductMinStock(p) ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"
+                          )}>
+                            {p.stock} UDS
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-[10px] font-black text-black/80 py-1.5">
+                          ${((p.costUsd || 0) * p.stock).toFixed(2)}
+                        </TableCell>
+                        <TableCell className="text-center py-1.5">
+                          <div className="flex justify-center gap-1.5">
+                            <button 
+                              onClick={() => setViewingCostDetail(p)} 
+                              className="h-7 w-7 rounded hover:bg-blue-100 text-blue-600 flex items-center justify-center" 
+                              title="Ver detalle de costo"
+                            >
+                              <Calculator size={14} />
+                            </button>
+                            <button 
+                              onClick={() => setViewingKardex(p)} 
+                              className="h-7 w-7 rounded hover:bg-blue-100 text-blue-600 flex items-center justify-center" 
+                              title="Ver Kardex"
+                            >
+                              <History size={14} />
+                            </button>
+                            <button 
+                              onClick={() => requestStockAdjust(p)} 
+                              className="h-7 w-7 rounded hover:bg-amber-100 text-amber-600 flex items-center justify-center" 
+                              title="Ajustar Stock"
+                            >
+                              <RefreshCw size={14} />
+                            </button>
+                            <button 
+                              onClick={() => handleEdit(p)} 
+                              className="h-7 w-7 rounded hover:bg-gray-100 text-blue-600 flex items-center justify-center"
+                            >
+                              <Pencil size={14} />
+                            </button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  {reportProducts.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={6} className="text-center py-10 text-black/40 italic">
+                        No hay productos para mostrar con los filtros seleccionados
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+          
+          <div className="mt-3 bg-gray-100 rounded-lg p-2 flex justify-between items-center flex-shrink-0">
+            <div className="text-[9px] text-black/60">
+              <span className="font-bold">{reportProducts.filter(p => !search || p.name.toLowerCase().includes(search.toLowerCase()) || p.barcode.includes(search)).length}</span> productos mostrados
+            </div>
+            <div className="text-[9px] text-black/60">
+              Valor total inventario: <span className="font-bold text-black">${reportProducts.reduce((sum, p) => sum + ((p.costUsd || 0) * p.stock), 0).toFixed(2)} USD</span>
+            </div>
+          </div>
+        </div>
+      )}
       
       {/* ==================== MODALES ==================== */}
       
-      {/* Modal de Kardex */}
-      {viewingKardex && (
-        <Dialog open={true} onOpenChange={() => setViewingKardex(null)}>
-          <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-3xl p-0 overflow-hidden rounded-xl shadow-xl max-h-[85vh]">
-            <DialogHeader className="bg-[#1A2C4E] p-4 text-white sticky top-0">
+      {/* Modal de detalle de costo - CORREGIDO con Costo Anterior y Nuevo Costo */}
+      {viewingCostDetail && (
+        <Dialog open={true} onOpenChange={() => setViewingCostDetail(null)}>
+          <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-lg p-0 rounded-xl shadow-xl">
+            <DialogHeader className="bg-[#1A2C4E] p-3 text-white rounded-t-xl">
               <div className="flex justify-between items-center">
-                <div>
-                  <DialogTitle className="text-base font-black flex items-center gap-2">
-                    <History size={16} /> Tarjeta Kardex
-                  </DialogTitle>
-                  <p className="text-xs opacity-70">{viewingKardex.name}</p>
-                </div>
-                <button onClick={() => setViewingKardex(null)}><X size={18} /></button>
+                <DialogTitle className="text-sm font-black flex items-center gap-2">
+                  <Calculator size={14} /> Detalle de Costo - CPP
+                </DialogTitle>
+                <button onClick={() => setViewingCostDetail(null)} className="text-white/60 hover:text-white"><X size={16} /></button>
               </div>
             </DialogHeader>
-            <div className="p-4 overflow-y-auto flex-1">
-              <div className="bg-slate-50 p-3 rounded-lg mb-4 grid grid-cols-3 gap-3">
+            <div className="p-4">
+              <div className="text-center mb-4">
+                <p className="font-bold text-base">{viewingCostDetail.name}</p>
+                <p className="text-[9px] text-black/50">{viewingCostDetail.barcode}</p>
+              </div>
+              
+              <div className="space-y-3">
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <div className="flex justify-between items-center">
+                    <span className="text-[10px] font-bold uppercase text-black/60">Costo Actual (Ponderado)</span>
+                    <span className="font-mono text-lg font-black text-blue-600">${(viewingCostDetail.costUsd || 0).toFixed(4)} USD</span>
+                  </div>
+                </div>
+                
+                <div className="border-t border-gray-200 pt-3">
+                  <p className="text-[9px] font-bold uppercase text-black/60 mb-2">Historial de Costos (últimas compras)</p>
+                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                    {(() => {
+                      const entries = kardexEntries[viewingCostDetail.id] || [];
+                      const purchaseEntries = entries.filter(e => e.type === 'compra').sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+                      
+                      if (purchaseEntries.length === 0) {
+                        return <p className="text-[9px] text-black/40 italic text-center">No hay registros de compras previas</p>;
+                      }
+                      
+                      return purchaseEntries.map((entry, idx) => {
+                        const previousEntry = purchaseEntries[idx + 1];
+                        const previousCost = previousEntry?.costUsd;
+                        const newCost = entry.costUsd;
+                        
+                        return (
+                          <div key={idx} className="border border-gray-200 rounded-lg p-2 bg-white">
+                            <div className="flex justify-between items-center text-[10px]">
+                              <span className="text-black/60">{new Date(entry.date).toLocaleDateString('es-VE')}</span>
+                              <span className="font-mono font-bold text-blue-600">${newCost?.toFixed(4) || '0.0000'} USD</span>
+                              <span className="text-[8px] text-black/40">x{entry.quantity} uds</span>
+                            </div>
+                            {previousCost !== undefined && (
+                              <div className="flex justify-between items-center text-[9px] mt-1 pt-1 border-t border-gray-100">
+                                <span className="text-black/40">Costo anterior:</span>
+                                <span className="font-mono text-black/60">${previousCost.toFixed(4)} USD</span>
+                                <span className="text-black/40">→</span>
+                                <span className="font-mono font-bold text-green-600">${newCost?.toFixed(4)} USD</span>
+                              </div>
+                            )}
+                            {idx === 0 && purchaseEntries.length > 1 && (
+                              <div className="flex justify-between items-center text-[9px] mt-1 pt-1 border-t border-blue-100">
+                                <span className="text-blue-600">📊 Variación:</span>
+                                {(() => {
+                                  const prev = purchaseEntries[1]?.costUsd;
+                                  if (prev && newCost) {
+                                    const variation = ((newCost - prev) / prev) * 100;
+                                    return (
+                                      <span className={cn("font-mono font-bold", variation >= 0 ? "text-red-600" : "text-green-600")}>
+                                        {variation >= 0 ? `+${variation.toFixed(2)}%` : `${variation.toFixed(2)}%`}
+                                      </span>
+                                    );
+                                  }
+                                  return null;
+                                })()}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      });
+                    })()}
+                  </div>
+                </div>
+                
+                <div className="bg-amber-50 rounded-lg p-2 mt-2 border border-amber-200">
+                  <p className="text-[7px] text-amber-700 text-center">
+                    El costo actual se calcula mediante <strong>Promedio Ponderado (CPP)</strong><br />
+                    Fórmula: ((Stock Ant × Costo Ant) + (Cantidad Nueva × Costo Nuevo)) / Stock Total
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="bg-gray-50 p-2 border-t flex justify-end">
+              <Button onClick={() => setViewingCostDetail(null)} variant="ghost" size="sm" className="h-7 text-xs">CERRAR</Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+      
+      {/* Modal de Kardex - CORREGIDO con scroll horizontal */}
+      {viewingKardex && (
+        <Dialog open={true} onOpenChange={() => setViewingKardex(null)}>
+          <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-4xl p-0 overflow-hidden rounded-xl shadow-xl max-h-[85vh]">
+            <DialogHeader className="bg-[#1A2C4E] p-3 text-white sticky top-0">
+              <div className="flex justify-between items-center">
                 <div>
-                  <p className="text-[8px] font-black uppercase text-slate-500">Stock Actual</p>
-                  <p className={cn("text-xl font-black", viewingKardex.stock === 0 ? "text-red-600" : "text-green-600")}>
+                  <DialogTitle className="text-sm font-black flex items-center gap-2">
+                    <History size={14} /> Tarjeta Kardex
+                  </DialogTitle>
+                  <p className="text-[10px] opacity-70">{viewingKardex.name}</p>
+                </div>
+                <button onClick={() => setViewingKardex(null)}><X size={16} /></button>
+              </div>
+            </DialogHeader>
+            <div className="p-3 overflow-y-auto flex-1">
+              <div className="bg-slate-50 p-2 rounded-lg mb-3 grid grid-cols-3 gap-2">
+                <div>
+                  <p className="text-[7px] font-black uppercase text-slate-500">Stock Actual</p>
+                  <p className={cn("text-lg font-black", viewingKardex.stock === 0 ? "text-red-600" : "text-green-600")}>
                     {viewingKardex.stock} UDS
                   </p>
                 </div>
                 <div>
-                  <p className="text-[8px] font-black uppercase text-slate-500">Precio USD</p>
-                  <p className="text-xl font-black text-secondary">${viewingKardex.priceUsd.toFixed(2)}</p>
+                  <p className="text-[7px] font-black uppercase text-slate-500">Costo Actual</p>
+                  <p className="text-lg font-black text-secondary">${(viewingKardex.costUsd || 0).toFixed(4)}</p>
                 </div>
                 <div>
-                  <p className="text-[8px] font-black uppercase text-slate-500">Valor Inventario</p>
-                  <p className="text-xl font-black text-blue-600">${(viewingKardex.priceUsd * viewingKardex.stock).toFixed(2)}</p>
+                  <p className="text-[7px] font-black uppercase text-slate-500">Valor Inventario</p>
+                  <p className="text-lg font-black text-blue-600">${((viewingKardex.costUsd || 0) * viewingKardex.stock).toFixed(2)}</p>
                 </div>
               </div>
-              <table className="w-full text-left text-[9px]">
-                <thead className="bg-slate-100 sticky top-0">
-                  <tr>
-                    <th className="p-1.5">FECHA</th>
-                    <th className="p-1.5">TIPO</th>
-                    <th className="p-1.5 text-right">CANTIDAD</th>
-                    <th className="p-1.5 text-right">STOCK PREVIO</th>
-                    <th className="p-1.5 text-right">STOCK NUEVO</th>
-                    <th className="p-1.5">MOTIVO</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {getKardexForProduct(viewingKardex.id).map((entry, idx) => (
-                    <tr key={`${entry.id}_${idx}`} className="hover:bg-slate-50">
-                      <td className="p-1.5 font-mono">{entry.date}</td>
-                      <td className="p-1.5">
-                        <span className={cn(
-                          "px-1.5 py-0.5 rounded-full text-[8px] font-bold",
-                          entry.type === 'venta' ? "bg-red-100 text-red-700" :
-                          entry.type === 'compra' ? "bg-green-100 text-green-700" :
-                          "bg-blue-100 text-blue-700"
-                        )}>
-                          {entry.type === 'venta' ? 'VENTA' : entry.type === 'compra' ? 'COMPRA' : 'AJUSTE'}
-                        </span>
-                      </td>
-                      <td className={cn("p-1.5 text-right font-mono font-bold", entry.quantity < 0 ? "text-red-600" : "text-green-600")}>
-                        {entry.quantity > 0 ? `+${entry.quantity}` : entry.quantity}
-                       </td>
-                      <td className="p-1.5 text-right font-mono">{entry.previousStock}</td>
-                      <td className="p-1.5 text-right font-mono font-bold">{entry.newStock}</td>
-                      <td className="p-1.5 text-slate-500 max-w-[150px] truncate">{entry.note || entry.reference}</td>
+              
+              {/* ✅ Scroll horizontal para la tabla */}
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-[8px] min-w-[700px]">
+                  <thead className="bg-slate-100">
+                    <tr>
+                      <th className="p-1.5 whitespace-nowrap">FECHA</th>
+                      <th className="p-1.5 whitespace-nowrap">TIPO</th>
+                      <th className="p-1.5 text-right whitespace-nowrap">CANTIDAD</th>
+                      <th className="p-1.5 text-right whitespace-nowrap">COSTO $</th>
+                      <th className="p-1.5 text-right whitespace-nowrap">STOCK PREVIO</th>
+                      <th className="p-1.5 text-right whitespace-nowrap">STOCK NUEVO</th>
+                      <th className="p-1.5 whitespace-nowrap">MOTIVO</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {getKardexForProduct(viewingKardex.id).map((entry, idx) => (
+                      <tr key={`${entry.id}_${idx}`} className="hover:bg-slate-50">
+                        <td className="p-1 font-mono whitespace-nowrap">{entry.date}</td>
+                        <td className="p-1 whitespace-nowrap">
+                          <span className={cn(
+                            "px-1 py-0.5 rounded-full text-[7px] font-bold whitespace-nowrap",
+                            entry.type === 'venta' ? "bg-red-100 text-red-700" :
+                            entry.type === 'compra' ? "bg-green-100 text-green-700" :
+                            "bg-blue-100 text-blue-700"
+                          )}>
+                            {entry.type === 'venta' ? 'VENTA' : entry.type === 'compra' ? 'COMPRA' : 'AJUSTE'}
+                          </span>
+                        </td>
+                        <td className={cn("p-1 text-right font-mono font-bold whitespace-nowrap", entry.quantity < 0 ? "text-red-600" : "text-green-600")}>
+                          {entry.quantity > 0 ? `+${entry.quantity}` : entry.quantity}
+                        </td>
+                        <td className="p-1 text-right font-mono whitespace-nowrap">${entry.costUsd?.toFixed(4) || '-'}</td>
+                        <td className="p-1 text-right font-mono whitespace-nowrap">{entry.previousStock}</td>
+                        <td className="p-1 text-right font-mono font-bold whitespace-nowrap">{entry.newStock}</td>
+                        <td className="p-1 text-slate-500 max-w-[200px] truncate whitespace-nowrap">{entry.note || entry.reference}</td>
+                      </tr>
+                    ))}
+                    {getKardexForProduct(viewingKardex.id).length === 0 && (
+                      <tr><td colSpan={7} className="text-center py-6 text-black/40 italic">No hay movimientos registrados</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
             <div className="bg-slate-50 p-2 border-t flex justify-end">
               <Button onClick={() => setViewingKardex(null)} variant="ghost" size="sm">CERRAR</Button>
@@ -847,7 +1112,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
         </Dialog>
       )}
       
-      {/* Modal de ajuste de stock (solicitud de nueva cantidad) */}
+      {/* Modal de ajuste de stock */}
       <Dialog open={!!adjustingStock} onOpenChange={() => setAdjustingStock(null)}>
         <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-md p-0 rounded-xl">
           <DialogHeader className="bg-amber-500 p-3 text-white rounded-t-xl">
@@ -887,7 +1152,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
         </DialogContent>
       </Dialog>
       
-      {/* Modal de autorización (código de administrador) */}
+      {/* Modal de autorización */}
       <Dialog open={showAuthCodeModal} onOpenChange={setShowAuthCodeModal}>
         <DialogContent className="bg-white max-w-md p-0 rounded-xl">
           <DialogHeader className="bg-red-600 p-3 text-white rounded-t-xl">
@@ -1012,461 +1277,352 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
         </DialogContent>
       </Dialog>
       
-      {/* Modal para crear/editar producto (con tres precios y configuración de IVA) */}
+      {/* Modal para crear/editar producto */}
       <Dialog open={isAdding} onOpenChange={(val) => { if(!val) { setIsAdding(false); setEditingProduct(null); resetForm(); } }}>
-        <DialogContent className="bg-white max-w-2xl p-0 rounded-xl">
-          <DialogHeader className="bg-[#1A2C4E] p-3 text-white rounded-t-xl">
+        <DialogContent className="bg-white max-w-3xl p-0 rounded-xl max-h-[90vh] flex flex-col">
+          <DialogHeader className="bg-[#1A2C4E] p-3 text-white rounded-t-xl flex-shrink-0">
             <div className="flex justify-between items-center">
               <DialogTitle className="text-sm font-black">{editingProduct ? 'Editar' : 'Nuevo'} Producto</DialogTitle>
               <button type="button" onClick={() => setIsAdding(false)}><X size={16} /></button>
             </div>
           </DialogHeader>
-          <form onSubmit={handleSave}>
-            <div className="p-4 grid grid-cols-2 gap-3">
-              {/* Columna izquierda: datos básicos */}
-              <div className="space-y-2">
-                <div>
-                  <label className="text-[8px] font-black uppercase">Código de Barras</label>
-                  <Input 
-                    value={formData.barcode} 
-                    onChange={e => setFormData({...formData, barcode: e.target.value})} 
-                    className="h-7 text-xs" 
-                    required 
-                  />
-                </div>
-                <div>
-                  <label className="text-[8px] font-black uppercase">Nombre del Producto</label>
-                  <Input 
-                    value={formData.name} 
-                    onChange={e => setFormData({...formData, name: e.target.value})} 
-                    className="h-7 text-xs" 
-                    required 
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-2">
+          <form onSubmit={handleSave} className="flex flex-col flex-1 overflow-hidden">
+            <div className="flex-1 overflow-y-auto p-4">
+              <div className="grid grid-cols-2 gap-3">
+                {/* Columna izquierda: datos básicos */}
+                <div className="space-y-2">
                   <div>
-                    <label className="text-[8px] font-black uppercase">Departamento</label>
-                    <select 
-                      value={formData.department} 
-                      onChange={e => setFormData({...formData, department: e.target.value})} 
-                      className="w-full h-7 border rounded px-2 text-xs bg-white"
-                    >
-                      {departments.map(d => <option key={d}>{d}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-[8px] font-black uppercase">Categoría</label>
-                    <select 
-                      value={formData.category} 
-                      onChange={e => setFormData({...formData, category: e.target.value as Category})} 
-                      className="w-full h-7 border rounded px-2 text-xs bg-white"
-                    >
-                      {categories.map(c => <option key={c}>{c}</option>)}
-                    </select>
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="text-[8px] font-black uppercase">Stock Inicial</label>
+                    <label className="text-[8px] font-black uppercase">Código de Barras</label>
                     <Input 
-                      type="text"
-                      inputMode="numeric"
-                      value={formData.stock} 
-                      onChange={e => setFormData({...formData, stock: e.target.value === '' ? 0 : Number(e.target.value)})} 
-                      className="h-7 text-xs [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" 
+                      value={formData.barcode} 
+                      onChange={e => setFormData({...formData, barcode: e.target.value})} 
+                      className="h-7 text-xs" 
+                      required 
                     />
                   </div>
                   <div>
-                    <label className="text-[8px] font-black uppercase">Stock Mínimo</label>
+                    <label className="text-[8px] font-black uppercase">Nombre del Producto</label>
                     <Input 
-                      type="text"
-                      inputMode="numeric"
-                      value={formData.minStock} 
-                      onChange={e => setFormData({...formData, minStock: e.target.value === '' ? 0 : Number(e.target.value)})} 
-                      className="h-7 text-xs [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" 
+                      value={formData.name} 
+                      onChange={e => setFormData({...formData, name: e.target.value})} 
+                      className="h-7 text-xs" 
+                      required 
                     />
                   </div>
-                </div>
-                {/* Nuevos campos para precios Mayor y Costo */}
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="text-[8px] font-black uppercase">Precio Mayor (USD)</label>
-                    <Input 
-                      type="text"
-                      inputMode="decimal"
-                      value={formData.priceWholesale} 
-                      onChange={e => setFormData({...formData, priceWholesale: e.target.value === '' ? 0 : Number(e.target.value)})} 
-                      className="h-7 text-xs [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" 
-                      placeholder="0.00"
-                    />
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[8px] font-black uppercase">Departamento</label>
+                      <select 
+                        value={formData.department} 
+                        onChange={e => setFormData({...formData, department: e.target.value})} 
+                        className="w-full h-7 border rounded px-2 text-xs bg-white"
+                      >
+                        {departments.map(d => <option key={d}>{d}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[8px] font-black uppercase">Categoría</label>
+                      <select 
+                        value={formData.category} 
+                        onChange={e => setFormData({...formData, category: e.target.value as Category})} 
+                        className="w-full h-7 border rounded px-2 text-xs bg-white"
+                      >
+                        {categories.map(c => <option key={c}>{c}</option>)}
+                      </select>
+                    </div>
                   </div>
-                  <div>
-                    <label className="text-[8px] font-black uppercase">Precio Costo (USD)</label>
-                    <Input 
-                      type="text"
-                      inputMode="decimal"
-                      value={formData.priceCost} 
-                      onChange={e => setFormData({...formData, priceCost: e.target.value === '' ? 0 : Number(e.target.value)})} 
-                      className="h-7 text-xs [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" 
-                      placeholder="0.00"
-                    />
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[8px] font-black uppercase">Stock Inicial</label>
+                      <Input 
+                        type="text"
+                        inputMode="numeric"
+                        value={stockInput}
+                        onChange={(e) => setStockInput(e.target.value)}
+                        className="h-7 text-xs" 
+                        placeholder="0"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[8px] font-black uppercase">Stock Mínimo</label>
+                      <Input 
+                        type="text"
+                        inputMode="numeric"
+                        value={minStockInput}
+                        onChange={(e) => setMinStockInput(e.target.value)}
+                        className="h-7 text-xs" 
+                        placeholder="5"
+                      />
+                    </div>
                   </div>
-                </div>
-                
-                {/* ✅ SECCIÓN DE KIT / COMPUESTO */}
-                <div className="border-t pt-2 mt-1">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input 
-                      type="checkbox" 
-                      checked={isKit} 
-                      onChange={e => setIsKit(e.target.checked)} 
-                      className="rounded text-primary" 
-                    />
-                    <span className="text-[9px] font-black uppercase">Es kit / compuesto</span>
-                  </label>
-                  <p className="text-[7px] text-black/40 mt-1">Al vender este producto, se descontarán las cantidades de sus componentes.</p>
-                </div>
-                
-                {isKit && (
-                  <div className="border border-dashed border-blue-300 rounded-lg p-2 bg-blue-50/30">
-                    <p className="text-[8px] font-bold text-blue-800 mb-2 flex items-center gap-1"><Package size={10} /> Componentes del kit</p>
-                    <div className="space-y-2">
-                      {/* Lista actual de componentes */}
-                      {kitComponents.length > 0 && (
-                        <div className="max-h-32 overflow-y-auto space-y-1">
-                          {kitComponents.map(comp => {
-                            const childProd = products.find(p => p.id === comp.productId);
-                            return (
-                              <div key={comp.productId} className="flex justify-between items-center bg-white rounded px-2 py-1 text-[10px]">
-                                <span>{childProd?.name || 'Producto'} x{comp.quantity}</span>
-                                <button type="button" onClick={() => removeKitComponent(comp.productId)} className="text-red-500"><Trash2 size={10} /></button>
-                              </div>
-                            );
-                          })}
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[8px] font-black uppercase">Precio Mayor (USD)</label>
+                      <Input 
+                        type="text"
+                        inputMode="decimal"
+                        value={priceWholesaleInput}
+                        onChange={(e) => setPriceWholesaleInput(e.target.value)}
+                        className="h-7 text-xs" 
+                        placeholder="0.00"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[8px] font-black uppercase">Precio Costo (USD)</label>
+                      <Input 
+                        type="text"
+                        inputMode="decimal"
+                        value={priceCostInput}
+                        onChange={(e) => setPriceCostInput(e.target.value)}
+                        className="h-7 text-xs" 
+                        placeholder="0.00"
+                      />
+                    </div>
+                  </div>
+                  
+                  <div className="border-t pt-2 mt-1">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input 
+                        type="checkbox" 
+                        checked={isKit} 
+                        onChange={e => setIsKit(e.target.checked)} 
+                        className="rounded text-primary" 
+                      />
+                      <span className="text-[9px] font-black uppercase">Es kit / compuesto</span>
+                    </label>
+                    <p className="text-[7px] text-black/40 mt-1">Al vender este producto, se descontarán las cantidades de sus componentes.</p>
+                  </div>
+                  
+                  {isKit && (
+                    <div className="border border-dashed border-blue-300 rounded-lg p-2 bg-blue-50/30 space-y-2">
+                      <div className="flex items-center justify-between bg-white/50 rounded p-1.5">
+                        <span className="text-[8px] font-bold uppercase">Stock del kit:</span>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setKitHasOwnStock(false)}
+                            className={cn(
+                              "px-2 py-0.5 rounded text-[9px] font-bold transition-all",
+                              !kitHasOwnStock ? "bg-primary text-black" : "bg-gray-200 text-gray-600"
+                            )}
+                          >
+                            Sin stock propio
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setKitHasOwnStock(true)}
+                            className={cn(
+                              "px-2 py-0.5 rounded text-[9px] font-bold transition-all",
+                              kitHasOwnStock ? "bg-primary text-black" : "bg-gray-200 text-gray-600"
+                            )}
+                          >
+                            Con stock propio
+                          </button>
                         </div>
-                      )}
-                      {/* Agregar nuevo componente - Mejorado: al seleccionar cierra la lista */}
-                      <div className="flex flex-col gap-1">
-                        <div className="relative">
-                          <Input 
-                            type="text"
-                            placeholder="Buscar producto componente..."
-                            value={searchChildProduct}
-                            onChange={(e) => setSearchChildProduct(e.target.value)}
-                            className="h-7 text-xs pr-7"
-                          />
-                          {searchChildProduct && childProductResults.length > 0 && (
-                            <div className="absolute top-full left-0 right-0 bg-white border rounded shadow z-20 mt-1 max-h-32 overflow-y-auto">
-                              {childProductResults.map(p => (
-                                <button
-                                  key={p.id}
-                                  type="button"
-                                  onClick={() => {
-                                    setSelectedChildProduct(p);
-                                    setSearchChildProduct(p.name);
-                                  }}
-                                  className="w-full text-left px-2 py-1 text-[10px] hover:bg-primary/10"
-                                >
-                                  {p.name} (${p.priceUsd.toFixed(2)})
-                                </button>
-                              ))}
+                      </div>
+                      <p className="text-[7px] text-blue-700 bg-blue-100 rounded px-2 py-1">
+                        {!kitHasOwnStock 
+                          ? "📦 Sin stock propio: El kit siempre se puede vender si hay suficiente stock de sus componentes. Al vender, SOLO se descuentan los componentes."
+                          : "⚠️ Con stock propio: El kit tiene su propio inventario. Al vender, se descuenta 1 del kit + las cantidades de sus componentes."
+                        }
+                      </p>
+                      <p className="text-[8px] font-bold text-blue-800 mb-1 flex items-center gap-1"><Package size={10} /> Componentes del kit</p>
+                      <div className="space-y-2">
+                        {kitComponents.length > 0 && (
+                          <div className="max-h-24 overflow-y-auto space-y-1">
+                            {kitComponents.map(comp => {
+                              const childProd = products.find(p => p.id === comp.productId);
+                              return <div key={comp.productId} className="flex justify-between items-center bg-white rounded px-2 py-1 text-[10px]"><span>{childProd?.name || 'Producto'} x{comp.quantity}</span><button type="button" onClick={() => removeKitComponent(comp.productId)} className="text-red-500"><Trash2 size={10} /></button></div>;
+                            })}
+                          </div>
+                        )}
+                        <div className="flex flex-col gap-1">
+                          <div className="relative">
+                            <Input 
+                              type="text"
+                              placeholder="Buscar producto componente..."
+                              value={searchChildProduct}
+                              onChange={(e) => {
+                                setSearchChildProduct(e.target.value);
+                                setHideChildResults(false);
+                                if (selectedChildProduct && e.target.value !== selectedChildProduct.name) {
+                                  setSelectedChildProduct(null);
+                                }
+                              }}
+                              className="h-7 text-xs pr-7"
+                            />
+                            {!hideChildResults && searchChildProduct && childProductResults.length > 0 && (
+                              <div className="absolute top-full left-0 right-0 bg-white border rounded shadow z-20 mt-1 max-h-24 overflow-y-auto">
+                                {childProductResults.map(p => (
+                                  <button
+                                    key={p.id}
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedChildProduct(p);
+                                      setSearchChildProduct(p.name);
+                                      setHideChildResults(true);
+                                    }}
+                                    className="w-full text-left px-2 py-1 text-[10px] hover:bg-primary/10"
+                                  >
+                                    {p.name} (${p.priceUsd.toFixed(2)})
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                          {selectedChildProduct && (
+                            <div className="flex gap-1 items-center">
+                              <Input type="text" inputMode="numeric" value={childQuantity} onChange={e => setChildQuantity(e.target.value)} className="h-7 text-xs w-20 text-center" placeholder="Cant." />
+                              <Button type="button" onClick={addKitComponent} size="sm" className="h-7 text-[9px] bg-primary text-black">Agregar</Button>
                             </div>
                           )}
                         </div>
-                        {selectedChildProduct && (
-                          <div className="flex gap-1 items-center">
-                            <Input type="text" inputMode="numeric" value={childQuantity} onChange={e => setChildQuantity(e.target.value)} className="h-7 text-xs w-20 text-center [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" placeholder="Cant." />
-                            <Button type="button" onClick={addKitComponent} size="sm" className="h-7 text-[9px] bg-primary text-black">Agregar</Button>
-                          </div>
-                        )}
                       </div>
                     </div>
-                  </div>
-                )}
-              </div>
-              
-                            {/* Columna derecha: costos, márgenes y configuración de IVA */}
-                            <div className="bg-[#F5F5F5] rounded-lg p-3 space-y-2">
-                {/* Selector de modo de precio */}
-                <div className="mb-3">
-                  <label className="text-[7px] font-bold uppercase text-black/60 block mb-1">Modo de Precio</label>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setPriceMode('usd');
-                        // Recalcular Bs desde USD
-                        const iva = ivaType === 'con_iva' ? ivaPercentage : 0;
-                        const costUsdVal = isNaN(formData.costUsd) ? 0 : formData.costUsd;
-                        const profitVal = isNaN(formData.profitPercent) ? 0 : formData.profitPercent;
-                        const priceUsd = calculateRetailPrice(costUsdVal, profitVal, iva, ivaType === 'con_iva');
-                        const newPriceBs = priceUsd * state.exchangeRate;
-                        setPriceRetailBs(isNaN(newPriceBs) ? '' : newPriceBs.toFixed(2));
-                      }}
-                      className={cn(
-                        "flex-1 py-1 text-[9px] font-bold rounded border transition-all",
-                        priceMode === 'usd' ? "bg-primary text-black border-primary" : "bg-white text-black/60 border-gray-300"
-                      )}
-                    >
-                      Precio flotante (USD)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setPriceMode('bs');
-                        // Si hay precio Bs, recalcular USD y % desde Bs
-                        if (priceRetailBs !== '' && priceRetailBs !== 'NaN') {
-                          const newPriceBs = parseFloat(priceRetailBs);
-                          if (!isNaN(newPriceBs) && newPriceBs > 0 && formData.costUsd > 0) {
-                            const newPriceUsd = newPriceBs / state.exchangeRate;
-                            const newProfit = calculateProfitFromRetailPrice(formData.costUsd, newPriceUsd);
-                            setFormData(prev => ({ ...prev, profitPercent: isNaN(newProfit) ? 0 : newProfit }));
-                          }
-                        }
-                      }}
-                      className={cn(
-                        "flex-1 py-1 text-[9px] font-bold rounded border transition-all",
-                        priceMode === 'bs' ? "bg-primary text-black border-primary" : "bg-white text-black/60 border-gray-300"
-                      )}
-                    >
-                      Precio fijo (Bs)
-                    </button>
-                  </div>
+                  )}
                 </div>
                 
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
+                {/* Columna derecha: costos y precios */}
+                <div className="bg-[#F5F5F5] rounded-lg p-3 space-y-2">
+                  <div className="w-3/4">
                     <label className="text-[7px] font-bold uppercase">Costo Unitario USD</label>
                     <Input 
                       type="text"
                       inputMode="decimal"
-                      value={isNaN(formData.costUsd) ? '' : formData.costUsd} 
-                      onChange={e => setFormData({...formData, costUsd: e.target.value === '' ? 0 : Number(e.target.value)})} 
-                      className="bg-white h-7 text-xs [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" 
+                      value={costUsdInput}
+                      onChange={(e) => setCostUsdInput(e.target.value)}
+                      className="bg-white h-7 text-xs font-mono"
+                      placeholder="0.0000"
                     />
                   </div>
                   
-                  {/* % Ganancia - editable solo en modo USD */}
-                  <div>
-                    <label className="text-[7px] font-bold uppercase">% Ganancia (Margen)</label>
-                    <Input 
-                      type="text"
-                      inputMode="decimal"
-                      value={isNaN(formData.profitPercent) ? '' : formData.profitPercent}
-                      onChange={(e) => {
-                        const newProfit = e.target.value === '' ? 0 : Number(e.target.value);
-                        setFormData(prev => ({ ...prev, profitPercent: isNaN(newProfit) ? 0 : newProfit }));
-                        
-                        if (priceMode === 'usd' && formData.costUsd > 0) {
-                          const iva = ivaType === 'con_iva' ? ivaPercentage : 0;
-                          const newPriceUsd = calculateRetailPrice(formData.costUsd, isNaN(newProfit) ? 0 : newProfit, iva, ivaType === 'con_iva');
-                          const newPriceBs = newPriceUsd * state.exchangeRate;
-                          setPriceRetailBs(isNaN(newPriceBs) ? '' : newPriceBs.toFixed(2));
-                        } else if (priceMode === 'bs' && priceRetailBs !== '' && priceRetailBs !== 'NaN') {
-                          const newPriceBs = parseFloat(priceRetailBs);
-                          if (!isNaN(newPriceBs) && newPriceBs > 0 && formData.costUsd > 0) {
-                            const newPriceUsd = newPriceBs / state.exchangeRate;
-                            const calculatedProfit = calculateProfitFromRetailPrice(formData.costUsd, newPriceUsd);
-                            setFormData(prev => ({ ...prev, profitPercent: isNaN(calculatedProfit) ? 0 : calculatedProfit }));
-                          }
-                        }
-                      }}
-                      onBlur={() => {
-                        if (priceMode === 'usd' && formData.costUsd > 0) {
-                          const iva = ivaType === 'con_iva' ? ivaPercentage : 0;
-                          const costUsdVal = isNaN(formData.costUsd) ? 0 : formData.costUsd;
-                          const profitVal = isNaN(formData.profitPercent) ? 0 : formData.profitPercent;
-                          const newPriceUsd = calculateRetailPrice(costUsdVal, profitVal, iva, ivaType === 'con_iva');
-                          const newPriceBs = newPriceUsd * state.exchangeRate;
-                          setPriceRetailBs(isNaN(newPriceBs) ? '' : newPriceBs.toFixed(2));
-                        }
-                      }}
-                      className="bg-white h-7 text-xs [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" 
-                      readOnly={priceMode === 'bs'}
-                    />
-                  </div>
-                </div>
-                
-                {/* Precios Detal */}
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="text-[7px] font-bold uppercase">Precio Detal USD</label>
-                    <Input 
-                      type="text"
-                      inputMode="decimal"
-                      value={(() => {
-                        if (priceMode === 'bs' && priceRetailBs !== '' && priceRetailBs !== 'NaN') {
-                          const bsVal = parseFloat(priceRetailBs);
-                          if (!isNaN(bsVal) && bsVal > 0) {
-                            return (bsVal / state.exchangeRate).toFixed(2);
-                          }
-                        }
-                        const iva = ivaType === 'con_iva' ? ivaPercentage : 0;
-                        const costUsdVal = isNaN(formData.costUsd) ? 0 : formData.costUsd;
-                        const profitVal = isNaN(formData.profitPercent) ? 0 : formData.profitPercent;
-                        const priceUsd = calculateRetailPrice(costUsdVal, profitVal, iva, ivaType === 'con_iva');
-                        return isNaN(priceUsd) ? '0.00' : priceUsd.toFixed(2);
-                      })()}
-                      onChange={(e) => {
-                        if (priceMode === 'usd') {
-                          const newPriceUsd = e.target.value === '' ? 0 : Number(e.target.value);
-                          if (!isNaN(newPriceUsd) && newPriceUsd > 0 && formData.costUsd > 0) {
-                            const newProfit = calculateProfitFromRetailPrice(formData.costUsd, newPriceUsd);
-                            setFormData(prev => ({ ...prev, profitPercent: isNaN(newProfit) ? 0 : newProfit }));
-                            const newPriceBs = newPriceUsd * state.exchangeRate;
-                            setPriceRetailBs(isNaN(newPriceBs) ? '' : newPriceBs.toFixed(2));
-                          }
-                        }
-                      }}
-                      onBlur={() => {
-                        if (priceMode === 'usd' && formData.costUsd > 0) {
-                          const iva = ivaType === 'con_iva' ? ivaPercentage : 0;
-                          const costUsdVal = isNaN(formData.costUsd) ? 0 : formData.costUsd;
-                          const profitVal = isNaN(formData.profitPercent) ? 0 : formData.profitPercent;
-                          const newPriceUsd = calculateRetailPrice(costUsdVal, profitVal, iva, ivaType === 'con_iva');
-                          const newPriceBs = newPriceUsd * state.exchangeRate;
-                          setPriceRetailBs(isNaN(newPriceBs) ? '' : newPriceBs.toFixed(2));
-                        }
-                      }}
-                      className="bg-white h-7 text-xs font-mono [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                      readOnly={priceMode === 'bs'}
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[7px] font-bold uppercase">Precio Detal Bs (final)</label>
-                    <Input 
-                      type="text"
-                      inputMode="decimal"
-                      value={priceRetailBs === 'NaN' || isNaN(parseFloat(priceRetailBs)) ? '' : priceRetailBs}
-                      onChange={(e) => {
-                        const newValue = e.target.value;
-                        setPriceRetailBs(newValue);
-                        
-                        if (priceMode === 'bs') {
-                          const newPriceBs = newValue === '' ? 0 : parseFloat(newValue);
-                          if (!isNaN(newPriceBs) && newPriceBs > 0 && formData.costUsd > 0) {
-                            const newPriceUsd = newPriceBs / state.exchangeRate;
-                            const newProfit = calculateProfitFromRetailPrice(formData.costUsd, newPriceUsd);
-                            setFormData(prev => ({ ...prev, profitPercent: isNaN(newProfit) ? 0 : newProfit }));
-                          } else if (newPriceBs === 0 || isNaN(newPriceBs)) {
-                            setFormData(prev => ({ ...prev, profitPercent: 0 }));
-                          }
-                        } else {
-                          // Modo USD: el Bs se calcula desde USD
-                          const iva = ivaType === 'con_iva' ? ivaPercentage : 0;
-                          const costUsdVal = isNaN(formData.costUsd) ? 0 : formData.costUsd;
-                          const profitVal = isNaN(formData.profitPercent) ? 0 : formData.profitPercent;
-                          const priceUsd = calculateRetailPrice(costUsdVal, profitVal, iva, ivaType === 'con_iva');
-                          const calculatedBs = priceUsd * state.exchangeRate;
-                          setPriceRetailBs(isNaN(calculatedBs) ? '' : calculatedBs.toFixed(2));
-                        }
-                      }}
-                      onBlur={() => {
-                        if (priceMode === 'bs') {
-                          const newPriceBs = priceRetailBs === '' ? 0 : parseFloat(priceRetailBs);
-                          if (!isNaN(newPriceBs) && newPriceBs > 0 && formData.costUsd > 0) {
-                            const newPriceUsd = newPriceBs / state.exchangeRate;
-                            const newProfit = calculateProfitFromRetailPrice(formData.costUsd, newPriceUsd);
-                            setFormData(prev => ({ ...prev, profitPercent: isNaN(newProfit) ? 0 : newProfit }));
-                          } else if (newPriceBs === 0 || isNaN(newPriceBs)) {
-                            setFormData(prev => ({ ...prev, profitPercent: 0 }));
-                          }
-                        } else {
-                          const iva = ivaType === 'con_iva' ? ivaPercentage : 0;
-                          const costUsdVal = isNaN(formData.costUsd) ? 0 : formData.costUsd;
-                          const profitVal = isNaN(formData.profitPercent) ? 0 : formData.profitPercent;
-                          const priceUsd = calculateRetailPrice(costUsdVal, profitVal, iva, ivaType === 'con_iva');
-                          const calculatedBs = priceUsd * state.exchangeRate;
-                          setPriceRetailBs(isNaN(calculatedBs) ? '' : calculatedBs.toFixed(2));
-                        }
-                      }}
-                      className="bg-white h-7 text-xs font-mono [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                    />
-                  </div>
-                </div>
-                
-                {/* Selector de IVA por producto */}
-                <div className="border-t pt-2 mt-1">
-                  <label className="text-[7px] font-bold uppercase text-black/60 block mb-1">Configuración de IVA</label>
-                  <div className="flex gap-2">
-                    <button 
-                      type="button"
-                      onClick={() => setIvaType('con_iva')}
-                      className={cn(
-                        "flex-1 py-1 text-[9px] font-bold rounded border transition-all",
-                        ivaType === 'con_iva' ? "bg-primary text-black border-primary" : "bg-white text-black/60 border-gray-300"
-                      )}
-                    >
-                      Con I.V.A.
-                    </button>
-                    <button 
-                      type="button"
-                      onClick={() => setIvaType('sin_iva')}
-                      className={cn(
-                        "flex-1 py-1 text-[9px] font-bold rounded border transition-all",
-                        ivaType === 'sin_iva' ? "bg-primary text-black border-primary" : "bg-white text-black/60 border-gray-300"
-                      )}
-                    >
-                      Sin I.V.A.
-                    </button>
-                  </div>
-                  {ivaType === 'con_iva' && (
-                    <div className="flex items-center gap-2 mt-2">
-                      <Percent size={10} className="text-black/40" />
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[7px] font-bold uppercase">Precio Detal USD</label>
                       <Input 
                         type="text"
                         inputMode="decimal"
-                        value={isNaN(ivaPercentage) ? '' : ivaPercentage}
-                        onChange={(e) => setIvaPercentage(e.target.value === '' ? 0 : Number(e.target.value))}
-                        className="h-6 text-[9px] w-20 text-center [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                        value={(() => {
+                          const costVal = parseFloat(costUsdInput) || 0;
+                          // ✅ Precio Detal USD = Costo Unitario × 1.30
+                          const priceUsd = calculatePriceUsdFromCost(costVal);
+                          return priceUsd.toFixed(2);
+                        })()}
+                        className="bg-white h-7 text-xs font-mono"
+                        readOnly
                       />
-                      <span className="text-[8px] text-black/60">% de I.V.A.</span>
                     </div>
-                  )}
-                </div>
-                
-                {/* Precios calculados adicionales */}
-                <div className="bg-white rounded p-1.5 border mt-2">
-                  <div className="flex justify-between text-[10px]">
-                    <span className="text-black/60">Precio Base USD (sin IVA):</span>
-                    <span className="font-black text-secondary">
-                      ${(() => {
-                        const costUsdVal = isNaN(formData.costUsd) ? 0 : formData.costUsd;
-                        const profitVal = isNaN(formData.profitPercent) ? 0 : formData.profitPercent;
-                        const iva = ivaType === 'con_iva' ? ivaPercentage : 0;
-                        const price = calculateRetailPrice(costUsdVal, profitVal, iva, false);
-                        return isNaN(price) ? '0.00' : price.toFixed(2);
-                      })()}
-                    </span>
+                    <div>
+                      <label className="text-[7px] font-bold uppercase">Precio Detal Bs (final)</label>
+                      <Input 
+                        type="text"
+                        inputMode="decimal"
+                        value={priceRetailBs === 'NaN' || isNaN(parseFloat(priceRetailBs)) ? '' : priceRetailBs}
+                        onChange={(e) => {
+                          const newValue = e.target.value;
+                          setPriceRetailBs(newValue);
+                          setIsPriceFixed(true);
+                        }}
+                        className="bg-white h-7 text-xs font-mono w-full"
+                      />
+                    </div>
                   </div>
-                  {ivaType === 'con_iva' && (
-                    <div className="flex justify-between text-[9px]">
-                      <span className="text-black/60">+ IVA ({isNaN(ivaPercentage) ? 0 : ivaPercentage}%):</span>
-                      <span className="text-black/70">
+                  
+                  <div className="flex justify-end">
+                    <Button
+                      type="button"
+                      onClick={() => {
+                        const costVal = parseFloat(costUsdInput) || 0;
+                        const priceUsd = calculatePriceUsdFromCost(costVal);
+                        const calculatedBs = priceUsd * state.exchangeRate;
+                        setPriceRetailBs(roundTo2(calculatedBs).toFixed(2));
+                        setIsPriceFixed(false);
+                      }}
+                      className="h-7 text-[9px] px-3 bg-primary text-black font-bold"
+                    >
+                      <RefreshCw size={12} className="mr-1" />
+                      Sincronizar
+                    </Button>
+                  </div>
+                  
+                  <div className="border-t pt-2 mt-1">
+                    <label className="text-[7px] font-bold uppercase text-black/60 block mb-1">Configuración de IVA</label>
+                    <div className="flex gap-2">
+                      <button 
+                        type="button"
+                        onClick={() => setIvaType('con_iva')}
+                        className={cn(
+                          "flex-1 py-1 text-[9px] font-bold rounded border transition-all",
+                          ivaType === 'con_iva' ? "bg-primary text-black border-primary" : "bg-white text-black/60 border-gray-300"
+                        )}
+                      >
+                        Con I.V.A.
+                      </button>
+                      <button 
+                        type="button"
+                        onClick={() => setIvaType('sin_iva')}
+                        className={cn(
+                          "flex-1 py-1 text-[9px] font-bold rounded border transition-all",
+                          ivaType === 'sin_iva' ? "bg-primary text-black border-primary" : "bg-white text-black/60 border-gray-300"
+                        )}
+                      >
+                        Sin I.V.A.
+                      </button>
+                    </div>
+                    {ivaType === 'con_iva' && (
+                      <div className="flex items-center gap-2 mt-2">
+                        <Percent size={10} className="text-black/40" />
+                        <Input 
+                          type="text"
+                          inputMode="decimal"
+                          value={isNaN(ivaPercentage) ? '' : ivaPercentage}
+                          onChange={(e) => setIvaPercentage(e.target.value === '' ? 0 : Number(e.target.value))}
+                          className="h-6 text-[9px] w-20 text-center"
+                        />
+                        <span className="text-[8px] text-black/60">% de I.V.A.</span>
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div className="bg-white rounded p-1.5 border mt-2">
+                    <div className="flex justify-between text-[10px]">
+                      <span className="text-black/60">Precio Base USD (sin IVA):</span>
+                      <span className="font-black text-secondary">
                         ${(() => {
-                          const costUsdVal = isNaN(formData.costUsd) ? 0 : formData.costUsd;
-                          const profitVal = isNaN(formData.profitPercent) ? 0 : formData.profitPercent;
-                          const basePrice = calculateRetailPrice(costUsdVal, profitVal, 0, false);
-                          const ivaAmount = basePrice * (isNaN(ivaPercentage) ? 0 : ivaPercentage) / 100;
-                          return isNaN(ivaAmount) ? '0.00' : ivaAmount.toFixed(2);
+                          const costVal = parseFloat(costUsdInput) || 0;
+                          const priceUsd = calculatePriceUsdFromCost(costVal);
+                          return priceUsd.toFixed(2);
                         })()}
                       </span>
                     </div>
-                  )}
-                  <div className="flex justify-between text-[10px] pt-1 border-t mt-1">
-                    <span className="text-black/60">Precio Mayor USD:</span>
-                    <span className="font-black text-secondary">${isNaN(formData.priceWholesale) ? '0.00' : formData.priceWholesale.toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between text-[10px]">
-                    <span className="text-black/60">Precio Costo USD:</span>
-                    <span className="font-black text-secondary">${isNaN(formData.priceCost) ? '0.00' : formData.priceCost.toFixed(2)}</span>
+                    {ivaType === 'con_iva' && (
+                      <div className="flex justify-between text-[9px]">
+                        <span className="text-black/60">+ IVA ({isNaN(ivaPercentage) ? 0 : ivaPercentage}%):</span>
+                        <span className="text-black/70">
+                          ${(() => {
+                            const costVal = parseFloat(costUsdInput) || 0;
+                            const priceUsd = calculatePriceUsdFromCost(costVal);
+                            const ivaAmount = priceUsd * (isNaN(ivaPercentage) ? 0 : ivaPercentage) / 100;
+                            return ivaAmount.toFixed(2);
+                          })()}
+                        </span>
+                      </div>
+                    )}
+                    <div className="flex justify-between text-[10px] pt-1 border-t mt-1">
+                      <span className="text-black/60">Precio Mayor USD:</span>
+                      <span className="font-black text-secondary">${parseFloat(priceWholesaleInput) || 0}</span>
+                    </div>
+                    <div className="flex justify-between text-[10px]">
+                      <span className="text-black/60">Precio Costo USD:</span>
+                      <span className="font-black text-secondary">${parseFloat(priceCostInput) || 0}</span>
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
             
-            <div className="bg-[#F5F5F5] p-2 border-t flex justify-end gap-2">
-              <Button type="submit" className="bg-primary text-black font-black px-6 h-7 text-xs">GUARDAR PRODUCTO</Button>
+            <div className="bg-[#F5F5F5] p-3 border-t flex justify-end gap-2 flex-shrink-0">
+              <Button type="submit" className="bg-primary text-black font-black px-6 h-8 text-xs">GUARDAR PRODUCTO</Button>
             </div>
           </form>
         </DialogContent>

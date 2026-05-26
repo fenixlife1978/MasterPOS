@@ -4,7 +4,7 @@ import { db } from '@/lib/firebase';
 import { 
   doc, setDoc, deleteDoc, 
   collection, query, onSnapshot, limit,
-  orderBy, writeBatch, getDoc, runTransaction
+  orderBy, writeBatch, getDoc, getDocs, runTransaction
 } from 'firebase/firestore';
 
 interface PendingOperation {
@@ -37,14 +37,17 @@ const deepClean = (obj: any): any => {
     const cleaned: any = {};
     Object.keys(obj).forEach(key => {
       const val = deepClean(obj[key]);
-      if (val !== null) cleaned[key] = val;
+      if (val !== null && val !== undefined) cleaned[key] = val;
     });
     return Object.keys(cleaned).length > 0 ? cleaned : null;
   }
+  // ✅ Evitar NaN e Infinity
+  if (typeof obj === 'number' && (isNaN(obj) || !isFinite(obj))) return 0;
   return obj;
 };
 
 const sanitizeForFirestore = (obj: any) => {
+  if (obj === null || obj === undefined) return {};
   const result = deepClean(obj);
   return result === null ? {} : result;
 };
@@ -79,7 +82,6 @@ const processQueue = async () => {
           await setDoc(doc(db, 'supplier_payments', data.id.toString()), { ...data, createdAt: Date.now() });
           break;
         case 'saveRegister':
-          // Para compatibilidad con caja global
           if (data.terminalId) {
             await setDoc(doc(db, 'registers', data.terminalId), { ...data.reg, updatedAt: Date.now() });
           } else {
@@ -117,6 +119,11 @@ const addToQueue = (type: string, data: any) => {
   if (typeof window !== 'undefined') localStorage.setItem('firebase_pending_queue', JSON.stringify(pendingQueue));
   if (isOnline) processQueue();
 };
+
+// ✅ Redondeo a 2 decimales (comercial)
+const roundTo2 = (num: number): number => Math.round(num * 100) / 100;
+// ✅ Redondeo a 4 decimales (para costos)
+const roundTo4 = (num: number): number => Math.round(num * 10000) / 10000;
 
 export const syncService = {
   // PRODUCTOS (sin cambios)
@@ -164,7 +171,8 @@ export const syncService = {
   async saveTransaction(tx: any) {
     if (!db) return;
     if (!isOnline) return addToQueue('saveTransaction', tx);
-    await setDoc(doc(db, 'transactions', tx.id.toString()), { ...sanitizeForFirestore(tx), createdAt: Date.now() });
+    const cleaned = sanitizeForFirestore(tx);
+    await setDoc(doc(db, 'transactions', cleaned.id.toString()), { ...cleaned, createdAt: Date.now() });
   },
   async deleteTransaction(id: number) {
     if (!db) return;
@@ -257,7 +265,7 @@ export const syncService = {
     });
   },
 
-  // === NUEVA TRANSACCIÓN ATÓMICA PARA VENTA ===
+  // === NUEVA TRANSACCIÓN ATÓMICA PARA VENTA (CORREGIDA) ===
   async runAtomicSale(terminalId: string, txData: any, updates: {
     products: Map<number, { newStock: number }>;
     kardexEntries: any[];
@@ -266,6 +274,14 @@ export const syncService = {
   }) {
     if (!db) throw new Error('Firebase no disponible');
     
+    // ✅ Sanitizar todos los datos antes de la transacción
+    const cleanTxData = sanitizeForFirestore(txData);
+    const cleanKardexEntries = updates.kardexEntries.map(entry => sanitizeForFirestore(entry));
+    const cleanAccountingEntry = updates.accountingEntry ? sanitizeForFirestore(updates.accountingEntry) : null;
+    const cleanRegisterUpdate = {
+      txs: updates.registerUpdate.txs.map(tx => sanitizeForFirestore(tx))
+    };
+    
     return runTransaction(db, async (transaction) => {
       // 1. Verificar stock de los productos
       for (const [prodId, update] of updates.products.entries()) {
@@ -273,7 +289,8 @@ export const syncService = {
         const prodSnap = await transaction.get(prodRef);
         if (!prodSnap.exists()) throw new Error(`Producto ${prodId} no existe`);
         const currentStock = prodSnap.data().stock;
-        if (currentStock < (currentStock - update.newStock)) {
+        const requiredStock = currentStock - update.newStock;
+        if (requiredStock < 0) {
           throw new Error(`Stock insuficiente para producto ${prodId}`);
         }
       }
@@ -284,32 +301,114 @@ export const syncService = {
         transaction.update(prodRef, { stock: update.newStock, updatedAt: Date.now() });
       }
       
-      // 3. Guardar transacción
-      const txRef = doc(db, 'transactions', txData.id.toString());
-      transaction.set(txRef, { ...txData, createdAt: Date.now() });
+      // 3. Guardar transacción (con datos sanitizados)
+      const txRef = doc(db, 'transactions', cleanTxData.id.toString());
+      transaction.set(txRef, { ...cleanTxData, createdAt: Date.now() });
       
-      // 4. Guardar entradas de kardex
-      for (const entry of updates.kardexEntries) {
+      // 4. Guardar entradas de kardex (con datos sanitizados)
+      for (const entry of cleanKardexEntries) {
         const kardexRef = doc(db, 'kardex_entries', entry.id);
         transaction.set(kardexRef, { ...entry, createdAt: Date.now() });
       }
       
-      // 5. Guardar asiento contable (si existe)
-      if (updates.accountingEntry) {
-        const accRef = doc(db, 'accounting_entries', updates.accountingEntry.id.toString());
-        transaction.set(accRef, { ...updates.accountingEntry, createdAt: Date.now() });
+      // 5. Guardar asiento contable (si existe y está sanitizado)
+      if (cleanAccountingEntry && cleanAccountingEntry.id) {
+        const accRef = doc(db, 'accounting_entries', cleanAccountingEntry.id.toString());
+        transaction.set(accRef, { ...cleanAccountingEntry, createdAt: Date.now() });
       }
       
-      // 6. Actualizar caja de la terminal (solo agregar transacción)
+      // 6. Actualizar caja de la terminal
       const registerRef = doc(db, 'registers', terminalId);
       transaction.update(registerRef, {
-        txs: updates.registerUpdate.txs,
+        txs: cleanRegisterUpdate.txs,
         updatedAt: Date.now()
       });
     });
   },
 
-  // PROVEEDORES, FACTURAS, ETC. (sin cambios)
+  // ✅ NUEVO MÉTODO: Actualizar producto con Costo Promedio Ponderado (CPP)
+  async updateProductWithWeightedAverageCost(productId: number, newQty: number, newCostUsd: number, exchangeRate: number) {
+    if (!db) throw new Error('Firebase no disponible');
+    
+    // Asegurar precisión de 4 decimales para costos
+    const newCostUsdRounded = roundTo4(newCostUsd);
+    const exchangeRateRounded = roundTo2(exchangeRate);
+    
+    return runTransaction(db, async (transaction) => {
+      // 1. Leer el producto actual
+      const prodRef = doc(db, 'products', productId.toString());
+      const prodSnap = await transaction.get(prodRef);
+      
+      if (!prodSnap.exists()) {
+        throw new Error(`Producto ${productId} no existe`);
+      }
+      
+      const productData = prodSnap.data();
+      const currentStock = productData.stock || 0;
+      const currentCostUsd = productData.costUsd || 0;
+      const profitPercent = productData.profitPercent || 30;
+      
+      // 2. Calcular nuevo costo promedio ponderado (CPP)
+      let newAverageCost: number;
+      
+      if (currentStock <= 0) {
+        // ✅ Caso especial: stock cero o negativo, el nuevo costo es directamente el costo de compra
+        newAverageCost = newCostUsdRounded;
+      } else {
+        // ✅ Fórmula del promedio ponderado
+        const totalCostBefore = currentStock * currentCostUsd;
+        const totalCostNew = newQty * newCostUsdRounded;
+        const newTotalStock = currentStock + newQty;
+        const rawAverage = (totalCostBefore + totalCostNew) / newTotalStock;
+        newAverageCost = roundTo4(rawAverage);
+      }
+      
+      // 3. Recalcular precios de venta basados en el nuevo costo
+      const priceUsdRaw = newAverageCost * (1 + profitPercent / 100);
+      const priceUsd = roundTo2(priceUsdRaw);
+      const priceBs = roundTo2(priceUsd * exchangeRateRounded);
+      
+      // 4. Calcular nuevo stock
+      const newStock = currentStock + newQty;
+      
+      // 5. Crear entrada de Kardex
+      const kardexEntry = {
+        id: `${Date.now()}_${productId}_${Math.random()}`,
+        productId: productId,
+        date: new Date().toISOString(),
+        type: 'entrada_compra',
+        quantity: newQty,
+        previousStock: currentStock,
+        newStock: newStock,
+        reference: `Compra - CPP aplicado`,
+        note: `Costo anterior: $${currentCostUsd.toFixed(4)} → Nuevo costo: $${newAverageCost.toFixed(4)} (ponderado)`,
+        costUsd: newCostUsdRounded,
+        costBs: roundTo2(newCostUsdRounded * exchangeRateRounded),
+      };
+      
+      // 6. Guardar todo en la transacción
+      transaction.update(prodRef, {
+        stock: newStock,
+        costUsd: newAverageCost,
+        costBs: roundTo2(newAverageCost * exchangeRateRounded),
+        priceUsd: priceUsd,
+        priceBs: priceBs,
+        updatedAt: Date.now()
+      });
+      
+      const kardexRef = doc(db, 'kardex_entries', kardexEntry.id);
+      transaction.set(kardexRef, { ...kardexEntry, createdAt: Date.now() });
+      
+      return {
+        newStock,
+        newAverageCost,
+        newPriceUsd: priceUsd,
+        newPriceBs: priceBs
+      };
+    });
+  },
+
+  // PROVEEDORES, FACTURAS, ETC. (con nuevos métodos)
   async saveSupplier(supplier: any) {
     if (!db) return;
     if (!isOnline) return addToQueue('saveSupplier', supplier);
@@ -331,6 +430,20 @@ export const syncService = {
     if (!isOnline) return addToQueue('savePurchaseInvoice', invoice);
     await setDoc(doc(db, 'purchase_invoices', invoice.id.toString()), sanitizeForFirestore(invoice));
   },
+  
+  // ✅ NUEVO MÉTODO: Obtener todas las facturas de compra
+  async getPurchaseInvoices(): Promise<any[]> {
+    if (!db) return [];
+    const snap = await getDocs(collection(db, 'purchase_invoices'));
+    return snap.docs.map(doc => ({ id: parseInt(doc.id), ...doc.data() }));
+  },
+  
+  // ✅ NUEVO MÉTODO: Eliminar una factura de compra
+  async deletePurchaseInvoice(id: number) {
+    if (!db) return;
+    await deleteDoc(doc(db, 'purchase_invoices', id.toString()));
+  },
+  
   subscribeToPurchaseInvoices(callback: (data: any[]) => void) {
     if (!db) return () => {};
     return onSnapshot(query(collection(db, 'purchase_invoices'), orderBy('date', 'desc'), limit(500)), (snap) => {
@@ -415,10 +528,18 @@ export const syncService = {
       callback(snap.exists() ? snap.data() : null);
     });
   },
+  
+  // ✅ CORREGIDO: El PIN se lee desde global_settings (no desde admin_codes)
   async getAdminCode() {
     if (!db) return null;
-    const snap = await getDoc(doc(db, 'admin_codes', 'adjustment_code'));
-    return snap.exists() ? snap.data() : null;
+    const snap = await getDoc(doc(db, 'global_settings', 'global'));
+    if (snap.exists()) {
+      const data = snap.data();
+      if (data.adminCode) {
+        return { code: data.adminCode };
+      }
+    }
+    return null;
   },
 
   getPendingQueueLength() {

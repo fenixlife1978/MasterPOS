@@ -18,8 +18,10 @@ interface PurchaseItemTemp {
 
 type PaymentType = 'contado' | 'credito' | 'mixto';
 
-// ✅ Función de redondeo a 3 decimales
-const roundTo3 = (num: number): number => Math.round(num * 1000) / 1000;
+// ✅ Redondeo a 2 decimales (comercial)
+const roundTo2 = (num: number): number => Math.round(num * 100) / 100;
+// ✅ Redondeo a 4 decimales (para costos)
+const roundTo4 = (num: number): number => Math.round(num * 10000) / 10000;
 
 export default function RegisterPurchase() {
   const state = usePOSState();
@@ -28,6 +30,7 @@ export default function RegisterPurchase() {
   // Datos de la factura
   const [selectedSupplierId, setSelectedSupplierId] = useState<string>('');
   const [invoiceNumber, setInvoiceNumber] = useState('');
+  // ✅ Usar la tasa actual del sistema en lugar de un valor fijo
   const [exchangeRate, setExchangeRate] = useState(state.exchangeRate.toFixed(2));
   
   // Items temporales
@@ -45,6 +48,11 @@ export default function RegisterPurchase() {
   const [isProcessing, setIsProcessing] = useState(false);
 
   const searchRef = useRef<HTMLDivElement>(null);
+
+  // ✅ Actualizar la tasa cuando cambie en el sistema
+  useEffect(() => {
+    setExchangeRate(state.exchangeRate.toFixed(2));
+  }, [state.exchangeRate]);
 
   // Cerrar dropdown al hacer clic fuera
   useEffect(() => {
@@ -71,8 +79,8 @@ export default function RegisterPurchase() {
   const handleSelectProduct = (product: Product) => {
     setSelectedProduct(product);
     setProductQuery(product.name);   // Mostrar el nombre en el input
-    // ✅ Cambiado a 3 decimales
-    setItemCostUsd(product.costUsd?.toFixed(3) || '');
+    // ✅ Cambiado a 4 decimales
+    setItemCostUsd(product.costUsd?.toFixed(4) || '');
     // Forzar cierre del dropdown: ya que productResults está vacío por selectedProduct
   };
 
@@ -97,8 +105,8 @@ export default function RegisterPurchase() {
         productId: selectedProduct.id,
         name: selectedProduct.name,
         qty,
-        // ✅ Redondear a 3 decimales
-        costUsd: roundTo3(cost)
+        // ✅ Redondear a 4 decimales
+        costUsd: roundTo4(cost)
       }
     ]);
 
@@ -110,34 +118,34 @@ export default function RegisterPurchase() {
     setTempItems(prev => prev.filter((_, i) => i !== index));
   };
 
-  // ✅ Totales con 3 decimales para USD
-  const totalInvoiceUsd = parseFloat(tempItems.reduce((sum, item) => sum + (item.qty * item.costUsd), 0).toFixed(3));
+  // ✅ Totales con 4 decimales para USD
+  const totalInvoiceUsd = parseFloat(tempItems.reduce((sum, item) => sum + (item.qty * item.costUsd), 0).toFixed(4));
   const rateNum = parseFloat(parseFloat(exchangeRate).toFixed(2)) || state.exchangeRate;
-  const totalInvoiceBs = parseFloat((totalInvoiceUsd * rateNum).toFixed(2));
+  const totalInvoiceBs = roundTo2(totalInvoiceUsd * rateNum);
 
   const handlePaidUsdChange = (value: number) => {
-    const roundedUsd = parseFloat(value.toFixed(2));
+    const roundedUsd = roundTo2(value);
     setPaidUsd(roundedUsd);
     if (paymentType === 'mixto') {
-      const roundedBs = parseFloat((roundedUsd * rateNum).toFixed(2));
+      const roundedBs = roundTo2(roundedUsd * rateNum);
       setPaidBs(roundedBs);
     }
   };
 
   const handlePaidBsChange = (value: number) => {
-    const roundedBs = parseFloat(value.toFixed(2));
+    const roundedBs = roundTo2(value);
     setPaidBs(roundedBs);
     if (paymentType === 'mixto') {
-      const roundedUsd = parseFloat((roundedBs / rateNum).toFixed(2));
+      const roundedUsd = roundTo2(roundedBs / rateNum);
       setPaidUsd(roundedUsd);
     }
   };
 
   const totalPaidUsd = paymentType === 'contado' ? totalInvoiceUsd : (paymentType === 'credito' ? 0 : paidUsd);
-  const totalPaidBs = parseFloat((totalPaidUsd * rateNum).toFixed(2));
-  // ✅ remainingUsd con 3 decimales
-  const remainingUsd = parseFloat(Math.max(0, totalInvoiceUsd - totalPaidUsd).toFixed(3));
-  const remainingBs = parseFloat((remainingUsd * rateNum).toFixed(2));
+  const totalPaidBs = roundTo2(totalPaidUsd * rateNum);
+  // ✅ remainingUsd con 4 decimales
+  const remainingUsd = parseFloat(Math.max(0, totalInvoiceUsd - totalPaidUsd).toFixed(4));
+  const remainingBs = roundTo2(remainingUsd * rateNum);
 
   const invoiceStatus = () => {
     if (paymentType === 'contado') return 'pagada';
@@ -160,8 +168,7 @@ export default function RegisterPurchase() {
       const timestamp = new Date().toISOString();
       const invoiceId = Date.now();
       
-      // ✅ Mostrar remainingUsd con 3 decimales
-      const paymentNotes = `Tipo de pago: ${paymentType === 'contado' ? 'Contado' : paymentType === 'credito' ? `Crédito a ${creditTermDays} días` : `Mixto (USD: ${paidUsd.toFixed(2)} / Bs: ${paidBs.toFixed(2)})`}. Saldo pendiente: $${remainingUsd.toFixed(3)}`;
+      const paymentNotes = `Tipo de pago: ${paymentType === 'contado' ? 'Contado' : paymentType === 'credito' ? `Crédito a ${creditTermDays} días` : `Mixto (USD: ${paidUsd.toFixed(2)} / Bs: ${paidBs.toFixed(2)})`}. Saldo pendiente: $${remainingUsd.toFixed(4)}`;
       
       const newInvoice: SupplierInvoice = {
         id: invoiceId,
@@ -191,39 +198,20 @@ export default function RegisterPurchase() {
         productName: item.name,
         qty: item.qty,
         costUsd: item.costUsd,
-        // ✅ totalUsd con 3 decimales
-        totalUsd: parseFloat((item.qty * item.costUsd).toFixed(3)),
+        totalUsd: parseFloat((item.qty * item.costUsd).toFixed(4)),
         createdAt: timestamp
       }));
       
       await syncService.savePurchaseInvoiceItems(invoiceId, items);
       
+      // ✅ Usar transacción atómica para actualizar cada producto con CPP
       for (const item of tempItems) {
-        const product = state.products.find(p => p.id === item.productId);
-        if (product) {
-          const currentStock = product.stock;
-          const currentCost = product.costUsd || 0;
-          const newStock = currentStock + item.qty;
-          
-          const newAverageCostRaw = ((currentStock * currentCost) + (item.qty * item.costUsd)) / newStock;
-          // ✅ Redondear a 3 decimales
-          const newAverageCost = roundTo3(newAverageCostRaw);
-          
-          const profitPercent = product.profitPercent || 30;
-          const newPriceUsdRaw = newAverageCost * (1 + profitPercent / 100);
-          // ✅ Redondear a 3 decimales
-          const newPriceUsd = roundTo3(newPriceUsdRaw);
-          
-          const updatedProduct = {
-            ...product,
-            stock: newStock,
-            costUsd: newAverageCost,
-            costBs: newAverageCost * rateNum,
-            priceUsd: newPriceUsd,
-            priceBs: newPriceUsd * rateNum
-          };
-          await state.updateProduct(updatedProduct);
-        }
+        await syncService.updateProductWithWeightedAverageCost(
+          item.productId,
+          item.qty,
+          item.costUsd,
+          rateNum
+        );
       }
       
       const supplier = suppliers.find(s => s.id === parseInt(selectedSupplierId));
@@ -234,8 +222,10 @@ export default function RegisterPurchase() {
         });
       }
       
-      // ✅ Alerta con 3 decimales en total y saldo
-      alert(`✅ Compra registrada exitosamente\nEstado: ${invoiceStatus()}\nTotal: $${totalInvoiceUsd.toFixed(3)}\nPagado: $${totalPaidUsd.toFixed(2)}\nSaldo: $${remainingUsd.toFixed(3)}`);
+      // ✅ Refrescar el estado local de productos
+      await state.refreshProducts?.();
+      
+      alert(`✅ Compra registrada exitosamente\nEstado: ${invoiceStatus()}\nTotal: $${totalInvoiceUsd.toFixed(4)}\nPagado: $${totalPaidUsd.toFixed(2)}\nSaldo: $${remainingUsd.toFixed(4)}`);
       setTempItems([]);
       setInvoiceNumber('');
       setSelectedSupplierId('');
@@ -304,9 +294,13 @@ export default function RegisterPurchase() {
                         step="0.01"
                         value={exchangeRate}
                         onChange={(e) => setExchangeRate(e.target.value)}
-                        className="pl-7 h-8 text-sm font-mono"
+                        className="pl-7 h-8 text-sm font-mono bg-gray-50"
+                        readOnly
                       />
                     </div>
+                    <p className="text-[8px] text-black/40 mt-1">
+                      Tasa actual del sistema: Bs {state.exchangeRate.toFixed(2)}
+                    </p>
                   </div>
                 </div>
               </div>
@@ -323,7 +317,7 @@ export default function RegisterPurchase() {
                       onClick={() => {
                         setPaymentType('contado');
                         setPaidUsd(totalInvoiceUsd);
-                        setPaidBs(parseFloat((totalInvoiceUsd * rateNum).toFixed(2)));
+                        setPaidBs(roundTo2(totalInvoiceUsd * rateNum));
                       }}
                       className={cn(
                         "flex-1 py-1.5 text-[10px] font-bold rounded border transition-all",
@@ -405,7 +399,7 @@ export default function RegisterPurchase() {
                   <div className="bg-gray-50 p-2 rounded-md mt-2">
                     <div className="flex justify-between text-[9px]">
                       <span>Total factura USD:</span>
-                      <span className="font-bold">${totalInvoiceUsd.toFixed(3)}</span>
+                      <span className="font-bold">${totalInvoiceUsd.toFixed(4)}</span>
                     </div>
                     <div className="flex justify-between text-[9px]">
                       <span>Total pagado USD:</span>
@@ -413,7 +407,7 @@ export default function RegisterPurchase() {
                     </div>
                     <div className="flex justify-between text-[9px] font-bold">
                       <span>Saldo pendiente USD:</span>
-                      <span className={remainingUsd > 0 ? "text-red-600" : "text-green-600"}>${remainingUsd.toFixed(3)}</span>
+                      <span className={remainingUsd > 0 ? "text-red-600" : "text-green-600"}>${remainingUsd.toFixed(4)}</span>
                     </div>
                     {paymentType === 'credito' && (
                       <div className="text-[8px] text-amber-600 mt-1 text-center">
@@ -448,7 +442,7 @@ export default function RegisterPurchase() {
                             className="w-full text-left p-2 hover:bg-primary/10 transition-colors border-b border-gray-100 last:border-0 text-xs"
                           >
                             <p className="font-bold">{p.name}</p>
-                            <p className="text-[9px] text-black/40">Stock: {p.stock} | Costo: ${p.costUsd?.toFixed(3)}</p>
+                            <p className="text-[9px] text-black/40">Stock: {p.stock} | Costo: ${p.costUsd?.toFixed(4)}</p>
                           </button>
                         ))}
                       </div>
@@ -472,7 +466,7 @@ export default function RegisterPurchase() {
                         </div>
                         <div>
                           <label className="text-[8px] font-bold text-black/50 uppercase">Costo USD (Unit)</label>
-                          <Input type="number" step="0.001" value={itemCostUsd} onChange={(e) => setItemCostUsd(e.target.value)} className="h-7 text-sm font-mono" placeholder="0.000" />
+                          <Input type="number" step="0.0001" value={itemCostUsd} onChange={(e) => setItemCostUsd(e.target.value)} className="h-7 text-sm font-mono" placeholder="0.0000" />
                         </div>
                       </div>
                       <Button onClick={handleAddTempItem} className="w-full mt-2 bg-primary text-black font-black h-7 text-xs">
@@ -491,7 +485,7 @@ export default function RegisterPurchase() {
                   <h3 className="text-xs font-black uppercase tracking-wider">Detalle del Ingreso ({tempItems.length} items)</h3>
                   <div className="text-right">
                     <p className="text-[9px] text-white/60">Total Factura USD</p>
-                    <p className="text-lg font-black text-primary">${totalInvoiceUsd.toFixed(3)}</p>
+                    <p className="text-lg font-black text-primary">${totalInvoiceUsd.toFixed(4)}</p>
                   </div>
                 </div>
                 
@@ -514,8 +508,8 @@ export default function RegisterPurchase() {
                           <TableRow key={idx}>
                             <TableCell className="font-bold text-xs">{item.name}</TableCell>
                             <TableCell className="text-center text-xs">{item.qty}</TableCell>
-                            <TableCell className="text-right font-mono text-xs">${item.costUsd.toFixed(3)}</TableCell>
-                            <TableCell className="text-right font-black text-xs">${(item.qty * item.costUsd).toFixed(3)}</TableCell>
+                            <TableCell className="text-right font-mono text-xs">${item.costUsd.toFixed(4)}</TableCell>
+                            <TableCell className="text-right font-black text-xs">${(item.qty * item.costUsd).toFixed(4)}</TableCell>
                             <TableCell><button onClick={() => handleRemoveTempItem(idx)} className="text-red-500 hover:text-red-700"><Trash2 size={14} /></button></TableCell>
                           </TableRow>
                         ))
@@ -533,7 +527,7 @@ export default function RegisterPurchase() {
                     {paymentType !== 'contado' && remainingUsd > 0 && (
                       <div className="bg-yellow-50 border border-yellow-200 rounded px-2 py-1">
                         <span className="text-[8px] block text-yellow-700 uppercase">Crédito pendiente</span>
-                        <span className="text-xs font-black text-yellow-800">${remainingUsd.toFixed(3)}</span>
+                        <span className="text-xs font-black text-yellow-800">${remainingUsd.toFixed(4)}</span>
                       </div>
                     )}
                   </div>

@@ -48,7 +48,6 @@ export default function CashModule({ state }: CashModuleProps) {
 
   const [openAmountBs, setOpenAmountBs] = useState('0.00');
   const [openAmountUsd, setOpenAmountUsd] = useState('0.00');
-  const [openRate, setOpenRate] = useState(state.exchangeRate.toString());
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [closeHistory, setCloseHistory] = useState<any[]>([]);
   const [showDailyTx, setShowDailyTx] = useState(true);
@@ -58,12 +57,6 @@ export default function CashModule({ state }: CashModuleProps) {
 
   const reg = state.register;
   const isClosed = !reg || !reg.isOpen;
-
-  useEffect(() => {
-    if (state.exchangeRate) {
-      setOpenRate(state.exchangeRate.toString());
-    }
-  }, [state.exchangeRate]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -141,9 +134,7 @@ export default function CashModule({ state }: CashModuleProps) {
   const handleOpenCash = () => {
     const bsAmount = parseFloat(openAmountBs) || 0;
     const usdAmount = parseFloat(openAmountUsd) || 0;
-    const rate = parseFloat(openRate) || state.exchangeRate;
-    if (rate !== state.exchangeRate) state.setExchangeRate(rate);
-    state.openCashRegister(bsAmount, usdAmount, rate);
+    state.openCashRegister(bsAmount, usdAmount, state.exchangeRate);
   };
 
   const handleRefresh = () => {
@@ -228,7 +219,7 @@ export default function CashModule({ state }: CashModuleProps) {
             <h2 className="text-sm font-black uppercase mb-4 text-[#1E3A8A] flex items-center gap-2">
               <Unlock size={14} /> APERTURA DE CAJA
             </h2>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
                 <label className="text-[9px] font-bold uppercase block mb-1 text-slate-500">Apertura BS (Efectivo)</label>
                 <Input 
@@ -247,17 +238,6 @@ export default function CashModule({ state }: CashModuleProps) {
                   step="0.01" 
                   value={openAmountUsd} 
                   onChange={(e) => setOpenAmountUsd(e.target.value)} 
-                  className="font-bold h-8 text-sm" 
-                  placeholder="0.00" 
-                />
-              </div>
-              <div>
-                <label className="text-[9px] font-bold uppercase block mb-1 text-slate-500">Tasa BCV</label>
-                <Input 
-                  type="number" 
-                  step="0.01" 
-                  value={openRate} 
-                  onChange={(e) => setOpenRate(e.target.value)} 
                   className="font-bold h-8 text-sm" 
                   placeholder="0.00" 
                 />
@@ -335,8 +315,8 @@ export default function CashModule({ state }: CashModuleProps) {
                          </td>
                         <td className="p-2 text-right font-mono font-bold">
                           Bs {monto.toFixed(2)}
-                        </td>
-                        </tr>
+                         </td>
+                       </tr>
                     );
                   })}
                   <tr className="bg-[#F0F0F0] font-black">
@@ -381,7 +361,7 @@ export default function CashModule({ state }: CashModuleProps) {
                       <th className="p-1.5">MÉTODO</th>
                       <th className="p-1.5">CLIENTE</th>
                       <th className="p-1.5 text-right">MONTO</th>
-                    </tr>
+                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200 text-[9px]">
                     {dailyTransactions.map((tx, idx) => {

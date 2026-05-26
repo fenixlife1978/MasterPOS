@@ -27,6 +27,8 @@ export interface Product {
   // ✅ Nuevos campos para kits/combos
   isKit?: boolean;
   kitComponents?: KitComponent[];
+  // ✅ Nueva propiedad: indica si el kit tiene su propio stock o solo descuenta componentes
+  kitHasOwnStock?: boolean;
 }
 
 export interface Client {

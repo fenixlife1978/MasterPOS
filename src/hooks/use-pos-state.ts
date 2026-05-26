@@ -6,6 +6,11 @@ import { syncService } from '@/services/syncService';
 import { registerSaleEntry, registerCreditEntry, registerDebtPaymentEntry } from '@/services/accountingService';
 import { useAuth } from '@/context/AuthContext';
 
+// ✅ Redondeo a 2 decimales (comercial)
+const roundTo2 = (num: number): number => Math.round(num * 100) / 100;
+// ✅ Redondeo a 4 decimales (para costos)
+const roundTo4 = (num: number): number => Math.round(num * 10000) / 10000;
+
 function getVenezuelaISOString(): string {
   const now = new Date();
   const formatter = new Intl.DateTimeFormat('sv-SE', {
@@ -33,7 +38,7 @@ const STORAGE_KEYS = {
 
 export function usePOSState() {
   const { user } = useAuth();
-  const terminalId = user?.terminalId || 'default'; // ✅ Usar terminalId del usuario o 'default'
+  const terminalId = user?.terminalId || 'default';
   
   const [products, setProducts] = useState<Product[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -58,6 +63,26 @@ export function usePOSState() {
     }
   }, [terminalId]);
 
+  // ✅ Función para recalcular precios en Bs de todos los productos cuando cambia la tasa
+  const recalcAllPricesWithNewRate = useCallback((newRate: number) => {
+    console.log(`🔄 Recalculando precios con nueva tasa: ${newRate}`);
+    setProducts(prevProducts => 
+      prevProducts.map(product => ({
+        ...product,
+        priceBs: roundTo2(product.priceUsd * newRate),
+        costBs: product.costUsd ? roundTo2(product.costUsd * newRate) : undefined,
+      }))
+    );
+    
+    // ✅ También actualizar los precios en el carrito
+    setCart(prevCart =>
+      prevCart.map(item => ({
+        ...item,
+        priceBs: roundTo2(item.priceUsd * newRate),
+      }))
+    );
+  }, []);
+
   useEffect(() => {
     const cachedRegister = localStorage.getItem(`${STORAGE_KEYS.POS_REGISTER}_${terminalId}`);
     if (cachedRegister) {
@@ -76,7 +101,16 @@ export function usePOSState() {
   useEffect(() => {
     if (!user) return;
 
-    const unsubProducts = syncService.subscribeToProducts(setProducts);
+    // ✅ Suscripción a productos - asegurar que priceBs esté calculado con la tasa actual
+    const unsubProducts = syncService.subscribeToProducts((data: Product[]) => {
+      const productsWithCorrectBs = data.map(product => ({
+        ...product,
+        priceBs: roundTo2(product.priceUsd * exchangeRate),
+        costBs: product.costUsd ? roundTo2(product.costUsd * exchangeRate) : undefined,
+      }));
+      setProducts(productsWithCorrectBs);
+    });
+    
     const unsubClients = syncService.subscribeToClients(setClients);
     const unsubTransactions = syncService.subscribeToTransactions(setTransactions as any);
     const unsubAccounts = syncService.subscribeToAccounts(setAccounts as any);
@@ -85,13 +119,33 @@ export function usePOSState() {
       saveRegisterToLocalStorage(registerData);
     });
     
+    // ✅ SUSCRIPCIÓN A CAMBIOS GLOBALES (TASA BCV) - ESTO ES LO QUE FALTABA
+    const unsubSettings = syncService.subscribeToGlobalSettings?.((settings: any) => {
+      console.log('📡 Cambios globales recibidos:', settings);
+      if (settings) {
+        if (typeof settings.defaultIvaPercentage === 'number') {
+          setGlobalIvaPercentage(settings.defaultIvaPercentage);
+        }
+        if (typeof settings.exchangeRate === 'number' && settings.exchangeRate !== exchangeRate) {
+          console.log(`💰 Tasa BCV actualizada en tiempo real: ${exchangeRate} → ${settings.exchangeRate}`);
+          setExchangeRate(settings.exchangeRate);
+          localStorage.setItem(STORAGE_KEYS.EXCHANGE_RATE, settings.exchangeRate.toString());
+          // ✅ Recalcular todos los precios en Bs automáticamente
+          recalcAllPricesWithNewRate(settings.exchangeRate);
+        }
+      }
+    }) || (() => {});
+    
     const loadGlobalSettings = async () => {
       const settings = await syncService.getGlobalSettings();
       if (settings) {
         if (typeof settings.defaultIvaPercentage === 'number') setGlobalIvaPercentage(settings.defaultIvaPercentage);
-        if (typeof settings.exchangeRate === 'number') {
+        if (typeof settings.exchangeRate === 'number' && settings.exchangeRate !== exchangeRate) {
+          console.log(`💰 Tasa BCV cargada inicial: ${exchangeRate} → ${settings.exchangeRate}`);
           setExchangeRate(settings.exchangeRate);
           localStorage.setItem(STORAGE_KEYS.EXCHANGE_RATE, settings.exchangeRate.toString());
+          // ✅ Recalcular precios con la nueva tasa
+          recalcAllPricesWithNewRate(settings.exchangeRate);
         }
       }
       const code = await syncService.getAdminCode();
@@ -107,8 +161,9 @@ export function usePOSState() {
       unsubTransactions();
       unsubAccounts();
       unsubRegister();
+      if (typeof unsubSettings === 'function') unsubSettings();
     };
-  }, [user, terminalId, saveRegisterToLocalStorage]);
+  }, [user, terminalId, saveRegisterToLocalStorage, exchangeRate, recalcAllPricesWithNewRate]);
 
   const addProduct = useCallback((p: Product) => syncService.saveProduct(p), []);
   const updateProduct = useCallback((p: Product) => syncService.saveProduct(p), []);
@@ -116,19 +171,48 @@ export function usePOSState() {
   const saveClient = useCallback((c: Client) => syncService.saveClient(c), []);
   const deleteClient = useCallback((id: number) => syncService.deleteClient(id), []);
 
+  // ✅ Método para refrescar productos desde Firestore
+  const refreshProducts = useCallback(async () => {
+    return products;
+  }, [products]);
+
+  // ✅ Verificar stock de un producto (incluyendo componentes de kits)
+  const checkProductStock = useCallback((productId: number, quantity: number): boolean => {
+    const product = products.find(p => p.id === productId);
+    if (!product) return false;
+    
+    if (product.isKit && product.kitComponents && product.kitComponents.length > 0) {
+      for (const component of product.kitComponents) {
+        const componentProduct = products.find(p => p.id === component.productId);
+        if (!componentProduct) return false;
+        const neededQuantity = component.quantity * quantity;
+        if (componentProduct.stock < neededQuantity) {
+          return false;
+        }
+      }
+      return true;
+    }
+    
+    return product.stock >= quantity;
+  }, [products]);
+
   const addToCart = useCallback((productId: number) => {
     const product = products.find(p => p.id === productId);
-    if (!product || product.stock <= 0) return false;
+    if (!product) return false;
+    
+    if (!checkProductStock(productId, 1)) return false;
+    
     setCart(prev => {
       const existing = prev.find(item => item.productId === productId);
       if (existing) {
-        if (existing.qty >= product.stock) return prev;
+        if (!checkProductStock(productId, existing.qty + 1)) return prev;
         return prev.map(item => item.productId === productId ? { ...item, qty: item.qty + 1 } : item);
       }
+      const priceBs = roundTo2(product.priceUsd * exchangeRate);
       return [...prev, { 
         productId: product.id, 
         name: product.name, 
-        priceBs: product.priceUsd * exchangeRate, 
+        priceBs: priceBs, 
         priceUsd: product.priceUsd, 
         qty: 1, 
         category: product.category,
@@ -138,7 +222,7 @@ export function usePOSState() {
       }];
     });
     return true;
-  }, [products, exchangeRate]);
+  }, [products, exchangeRate, checkProductStock]);
 
   const removeFromCart = useCallback((productId: number) => {
     setCart(prev => prev.filter(item => item.productId !== productId));
@@ -150,18 +234,19 @@ export function usePOSState() {
       if (item.productId === productId) {
         const newQty = item.qty + delta;
         if (newQty <= 0) return null as any;
-        if (product && newQty > product.stock) return item;
-        return { ...item, qty: newQty, priceBs: product ? product.priceUsd * exchangeRate : item.priceBs };
+        if (product && !checkProductStock(productId, newQty)) return item;
+        const newPriceBs = product ? roundTo2(product.priceUsd * exchangeRate) : item.priceBs;
+        return { ...item, qty: newQty, priceBs: newPriceBs };
       }
       return item;
     }).filter(Boolean));
-  }, [products, exchangeRate]);
+  }, [products, exchangeRate, checkProductStock]);
 
   const updateCartItemPrice = useCallback((productId: number, newPriceUsd: number, newPriceBs: number) => {
     setCart(prevCart =>
       prevCart.map(item =>
         item.productId === productId
-          ? { ...item, priceUsd: newPriceUsd, priceBs: newPriceBs }
+          ? { ...item, priceUsd: roundTo2(newPriceUsd), priceBs: roundTo2(newPriceBs) }
           : item
       )
     );
@@ -188,7 +273,7 @@ export function usePOSState() {
     saveRegisterToLocalStorage(null);
   }, [terminalId, saveRegisterToLocalStorage]);
 
-  const getKitComponents = (product: Product, qty: number): { productId: number; quantity: number }[] => {
+  const getKitComponents = useCallback((product: Product, qty: number): { productId: number; quantity: number }[] => {
     if (!product.isKit || !product.kitComponents || product.kitComponents.length === 0) {
       return [];
     }
@@ -196,9 +281,48 @@ export function usePOSState() {
       productId: comp.productId,
       quantity: comp.quantity * qty
     }));
-  };
+  }, []);
 
-  // ✅ finalizeSale con transacción atómica
+  const getItemsToDiscount = useCallback((cartItems: CartItem[]): { productId: number; quantity: number; product: Product }[] => {
+    const result: { productId: number; quantity: number; product: Product }[] = [];
+    
+    for (const item of cartItems) {
+      const product = products.find(p => p.id === item.productId);
+      if (!product) continue;
+      
+      if (product.isKit && product.kitComponents && product.kitComponents.length > 0) {
+        for (const component of product.kitComponents) {
+          const componentProduct = products.find(p => p.id === component.productId);
+          if (componentProduct) {
+            const existing = result.find(r => r.productId === component.productId);
+            if (existing) {
+              existing.quantity += component.quantity * item.qty;
+            } else {
+              result.push({
+                productId: component.productId,
+                quantity: component.quantity * item.qty,
+                product: componentProduct
+              });
+            }
+          }
+        }
+      } else {
+        const existing = result.find(r => r.productId === item.productId);
+        if (existing) {
+          existing.quantity += item.qty;
+        } else {
+          result.push({
+            productId: item.productId,
+            quantity: item.qty,
+            product: product
+          });
+        }
+      }
+    }
+    
+    return result;
+  }, [products]);
+
   const finalizeSale = useCallback(async (type: 'contado' | 'credito' | 'cobro_deuda' | 'colaboracion' | 'consumo_propio', paymentData: any) => {
     if (!register?.isOpen) throw new Error('Caja no abierta');
 
@@ -221,7 +345,7 @@ export function usePOSState() {
           costoTotalOperacion += (item.qty * product.costUsd);
         }
       }
-      costoTotalOperacion = parseFloat(costoTotalOperacion.toFixed(2));
+      costoTotalOperacion = roundTo2(costoTotalOperacion);
       finalTotal = 0;
     }
 
@@ -248,7 +372,7 @@ export function usePOSState() {
       subtotal: isSpecial ? 0 : (type === 'cobro_deuda' ? finalTotal : subtotal),
       iva: isSpecial ? 0 : iva,
       total: isSpecial ? 0 : finalTotal,
-      totalUsd: isSpecial ? 0 : (finalTotal / exchangeRate),
+      totalUsd: isSpecial ? 0 : roundTo2(finalTotal / exchangeRate),
       payMethod: paymentData.method || 'efectivo_bs',
       paidBs: isSpecial ? 0 : (paymentData.totalPaid || paymentData.amount || finalTotal),
       change: isSpecial ? 0 : (paymentData.change || 0),
@@ -261,16 +385,17 @@ export function usePOSState() {
       authorizedBy: isSpecial ? paymentData.authorizedBy : undefined,
     };
 
-    // Preparar actualizaciones para la transacción atómica
+    const itemsToDiscount = getItemsToDiscount(cart);
+    
     const stockUpdates: Map<number, { newStock: number }> = new Map();
     const kardexEntries: any[] = [];
     
     if (type !== 'cobro_deuda') {
-      for (const item of cart) {
-        const product = products.find(p => p.id === item.productId);
+      for (const discountItem of itemsToDiscount) {
+        const product = discountItem.product;
         if (!product) continue;
         
-        const qtyToSubtract = item.qty;
+        const qtyToSubtract = discountItem.quantity;
         const newStock = product.stock - qtyToSubtract;
         stockUpdates.set(product.id, { newStock });
         
@@ -315,7 +440,6 @@ export function usePOSState() {
     const newTxs = [...(register.txs || []), tx];
     const registerUpdate = { txs: newTxs };
 
-    // Ejecutar transacción atómica
     await syncService.runAtomicSale(terminalId, tx, {
       products: stockUpdates,
       kardexEntries,
@@ -323,11 +447,9 @@ export function usePOSState() {
       registerUpdate
     });
 
-    // Actualizar estado local
     setRegister({ ...register, txs: newTxs });
     saveRegisterToLocalStorage({ ...register, txs: newTxs });
     
-    // Actualizar productos localmente
     const updatedProducts = [...products];
     for (const [prodId, update] of stockUpdates.entries()) {
       const idx = updatedProducts.findIndex(p => p.id === prodId);
@@ -335,7 +457,6 @@ export function usePOSState() {
     }
     setProducts(updatedProducts);
 
-    // Gestión de cuentas (crédito, etc.) - solo actualizar estado local, ya que Firestore se actualizó en la transacción
     if (type === 'credito') {
       const newAccount: Account = {
         id: getVenezuelaTimestamp(),
@@ -346,7 +467,7 @@ export function usePOSState() {
         clientCedula: paymentData.clientCedula || '',
         products: cart.map(i => `${i.name} x${i.qty}`).join(', '),
         amountBs: total,
-        amountUsd: total / exchangeRate,
+        amountUsd: roundTo2(total / exchangeRate),
         paidAmount: 0,
         status: 'pendiente',
         exchangeRate,
@@ -363,13 +484,11 @@ export function usePOSState() {
     } else if (type === 'cobro_deuda') {
       const client = clients.find(c => c.id === targetClientId);
       if (client) await registerDebtPaymentEntry(tx, client);
-    } else if (isSpecial) {
-      // No se necesita más, ya se guardó accountingEntry
     }
 
     if (type !== 'cobro_deuda') setCart([]);
     return tx;
-  }, [cart, register, exchangeRate, clients, products, terminalId, saveRegisterToLocalStorage]);
+  }, [cart, register, exchangeRate, clients, products, terminalId, saveRegisterToLocalStorage, getItemsToDiscount]);
 
   const applyAbono = useCallback(async (clientId: number, amount: number) => {
     if (!register?.isOpen) return;
@@ -400,7 +519,7 @@ export function usePOSState() {
       subtotal: amount, 
       iva: 0, 
       total: amount, 
-      totalUsd: amount / exchangeRate, 
+      totalUsd: roundTo2(amount / exchangeRate), 
       payMethod: 'efectivo_bs', 
       paidBs: amount, 
       change: 0, 
@@ -424,10 +543,13 @@ export function usePOSState() {
   }, [register, clients, accounts, exchangeRate, terminalId, saveRegisterToLocalStorage]);
 
   const setExchangeRateProxy = useCallback(async (newRate: number) => {
+    console.log(`💰 Actualizando tasa BCV: ${exchangeRate} → ${newRate}`);
     setExchangeRate(newRate);
     localStorage.setItem(STORAGE_KEYS.EXCHANGE_RATE, newRate.toString());
     await syncService.saveGlobalSettings({ exchangeRate: newRate });
-  }, []);
+    // ✅ Recalcular precios con la nueva tasa
+    recalcAllPricesWithNewRate(newRate);
+  }, [exchangeRate, recalcAllPricesWithNewRate]);
 
   return {
     products, setProducts, addProduct, updateProduct, deleteProduct,
@@ -438,6 +560,8 @@ export function usePOSState() {
     isIvaEnabled, setIsIvaEnabled, currentPage, setCurrentPage,
     finalizeSale, applyAbono, isHydrated,
     globalIvaPercentage,
-    adminCode
+    adminCode,
+    checkProductStock,
+    refreshProducts
   };
 }

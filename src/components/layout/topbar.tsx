@@ -15,11 +15,16 @@ interface TopbarProps {
 }
 
 export default function Topbar({ register, rate, onRateChange }: TopbarProps) {
-  const { user, loading } = useAuth(); // ✅ Agregar loading
+  const { user, loading } = useAuth();
   const [time, setTime] = useState(new Date());
   const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
   const [pendingSync, setPendingSync] = useState(0);
-  const isAdmin = user?.role === 'admin';
+  
+  // ✅ Verificar si es admin (por rol o por email)
+  const isAdmin = user?.role === 'admin' || user?.email === 'admin@licopos.com';
+  
+  // ✅ Determinar si debe mostrar el badge de caja (solo si NO es admin Y la caja existe)
+  const showRegisterBadge = !loading && !isAdmin && register !== undefined;
 
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 1000);
@@ -68,8 +73,8 @@ export default function Topbar({ register, rate, onRateChange }: TopbarProps) {
         <span className="text-white">POS</span>
       </div>
       
-      {/* Ocultar el badge de caja para administradores (y mientras carga) */}
-      {!loading && !isAdmin && (
+      {/* ✅ El badge de caja SOLO se muestra para cajeros (NO administradores) */}
+      {showRegisterBadge && (
         <div className={cn(
           "px-4 py-1 rounded-full text-[12px] font-bold tracking-tight transition-all duration-200 shadow-md flex items-center gap-2",
           isOpen 

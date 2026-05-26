@@ -10,6 +10,23 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { cn } from '@/lib/utils';
 import ExpenseModal from './expense-modal';
 
+// ✅ Función para obtener timestamp único
+const getTimestamp = (): number => Date.now();
+
+// ✅ Función para obtener fecha Venezuela en formato YYYY-MM-DD
+const getVenezuelaDate = (): string => {
+  const now = new Date();
+  const formatter = new Intl.DateTimeFormat('sv-SE', {
+    timeZone: 'America/Caracas',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  const parts = formatter.formatToParts(now);
+  const partMap = Object.fromEntries(parts.map(p => [p.type, p.value]));
+  return `${partMap.year}-${partMap.month}-${partMap.day}`;
+};
+
 export default function AccountingModule() {
   const { entries, addEntry, getTotalIngresos, getTotalEgresos } = useAccounting();
   const [search, setSearch] = useState('');
@@ -40,31 +57,45 @@ export default function AccountingModule() {
   ];
 
   // Filtrar entradas basadas en búsqueda, tipo, categoría y fechas
-  const filteredEntries = entries.filter(entry => {
+  const filteredEntries = (entries || []).filter(entry => {
     if (filterType !== 'todos' && entry.type !== filterType) return false;
     if (filterCategory !== 'todas' && entry.category !== filterCategory) return false;
-    if (search && !entry.concept.toLowerCase().includes(search.toLowerCase()) && !entry.description.toLowerCase().includes(search.toLowerCase())) return false;
+    if (search && !entry.concept?.toLowerCase().includes(search.toLowerCase()) && !entry.description?.toLowerCase().includes(search.toLowerCase())) return false;
     if (startDate && new Date(entry.date) < new Date(startDate)) return false;
     if (endDate && new Date(entry.date) > new Date(endDate)) return false;
     return true;
   }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-  const totalIngresos = filteredEntries.filter(e => e.type === 'ingreso').reduce((sum, e) => sum + e.amount, 0);
-  const totalEgresos = filteredEntries.filter(e => e.type === 'egreso').reduce((sum, e) => sum + e.amount, 0);
+  const totalIngresos = getTotalIngresos ? getTotalIngresos() : 0;
+  const totalEgresos = getTotalEgresos ? getTotalEgresos() : 0;
   const balance = totalIngresos - totalEgresos;
 
+  // ✅ Función corregida - genera el id antes de guardar
   const handleExpenseConfirm = async (data: any) => {
+    if (!addEntry) {
+      console.error('addEntry no está disponible');
+      alert('Error: No se puede registrar el egreso');
+      return;
+    }
+    
+    const now = getVenezuelaDate();
+    const entryId = getTimestamp();
+    
     await addEntry({
-      date: data.date,
+      id: entryId,  // ✅ ID generado automáticamente
+      date: data.date || now,
       type: 'egreso',
       category: data.category,
       subcategory: data.subcategory,
       concept: data.concept || data.category,
-      description: data.description,
-      amount: data.amount,
-      referenceType: 'expense'
+      description: data.description || '',
+      amount: typeof data.amount === 'number' ? data.amount : parseFloat(data.amount) || 0,
+      referenceType: 'expense',
+      createdAt: new Date().toISOString()
     });
+    
     alert('Egreso registrado correctamente');
+    setShowExpenseModal(false);
   };
 
   const formatDate = (dateStr: string) => {

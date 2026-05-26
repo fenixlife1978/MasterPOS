@@ -422,8 +422,8 @@ export default function SuppliersModule() {
 
     return (
       <Dialog open={true} onOpenChange={onClose}>
-        <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-2xl p-0 overflow-hidden rounded-xl shadow-xl max-h-[85vh]">
-          <DialogHeader className="bg-[#1A2C4E] p-4 text-white sticky top-0">
+        <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-2xl p-0 overflow-hidden rounded-xl shadow-xl max-h-[85vh] flex flex-col">
+          <DialogHeader className="bg-[#1A2C4E] p-4 text-white rounded-t-xl flex-shrink-0">
             <div className="flex justify-between items-center">
               <DialogTitle className="text-base font-black flex items-center gap-2">
                 <Wallet size={16} /> Historial de Pagos
@@ -432,7 +432,7 @@ export default function SuppliersModule() {
             </div>
             <p className="text-xs opacity-70 mt-1">{supplier.name}</p>
           </DialogHeader>
-          <div className="p-4">
+          <div className="flex-1 overflow-y-auto p-4">
             <div className="bg-green-50 rounded-lg p-3 mb-4 text-center border border-green-200 transition-all duration-200">
               <p className="text-[9px] font-black uppercase text-green-700">Total Pagado</p>
               <p className="text-2xl font-black text-green-700">${totalPaid.toFixed(2)}</p>
@@ -444,7 +444,7 @@ export default function SuppliersModule() {
                 <p className="text-xs">No hay pagos registrados para este proveedor</p>
               </div>
             ) : (
-              <div className="space-y-2 max-h-[400px] overflow-y-auto">
+              <div className="space-y-2">
                 {payments.map(payment => {
                   const relatedInvoice = invoices.find(i => i.id === payment.invoiceId);
                   const displayDate = new Date(payment.date).toLocaleDateString('es-VE', {
@@ -484,7 +484,7 @@ export default function SuppliersModule() {
               </div>
             )}
           </div>
-          <div className="bg-slate-50 p-3 border-t flex justify-end">
+          <div className="bg-slate-50 p-3 border-t flex justify-end flex-shrink-0">
             <Button onClick={onClose} variant="ghost" size="sm" className="h-7 text-xs">CERRAR</Button>
           </div>
         </DialogContent>
@@ -492,6 +492,7 @@ export default function SuppliersModule() {
     );
   };
 
+  // ✅ PurchaseHistoryModal CORREGIDO - con scroll vertical y estructura flex
   const PurchaseHistoryModal = ({ supplier, onClose }: { supplier: Supplier; onClose: () => void }) => {
     const supplierInvoices = filteredInvoices.filter(i => i.supplierId === supplier.id);
     const totalPurchases = supplierInvoices.reduce((sum, i) => sum + i.total, 0);
@@ -511,157 +512,155 @@ export default function SuppliersModule() {
 
     return (
       <Dialog open={true} onOpenChange={onClose}>
-        <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-4xl p-0 overflow-hidden rounded-xl shadow-xl max-h-[90vh]">
-          <DialogHeader className="sr-only">
-            <DialogTitle>Historial de Compras - {supplier.name}</DialogTitle>
-          </DialogHeader>
-          <div className="flex flex-col h-full">
-            <div className="bg-[#1A2C4E] p-4 text-white sticky top-0 z-10">
-              <div className="flex justify-between items-center">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-primary/20 rounded-lg flex items-center justify-center">
-                    <History size={20} className="text-primary" />
-                  </div>
-                  <div>
-                    <h3 className="text-base font-black">Historial de Compras</h3>
-                    <p className="text-xs opacity-70">{supplier.name} • {supplier.rif}</p>
-                  </div>
+        <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-4xl p-0 overflow-hidden rounded-xl shadow-xl max-h-[90vh] flex flex-col">
+          {/* Header fijo */}
+          <div className="bg-[#1A2C4E] p-4 text-white flex-shrink-0">
+            <div className="flex justify-between items-center">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-primary/20 rounded-lg flex items-center justify-center">
+                  <History size={20} className="text-primary" />
                 </div>
-                <button onClick={onClose} className="text-white/60 hover:text-white"><X size={20} /></button>
+                <div>
+                  <h3 className="text-base font-black">Historial de Compras</h3>
+                  <p className="text-xs opacity-70">{supplier.name} • {supplier.rif}</p>
+                </div>
+              </div>
+              <button onClick={onClose} className="text-white/60 hover:text-white"><X size={20} /></button>
+            </div>
+          </div>
+          
+          {/* ✅ Contenido con scroll vertical */}
+          <div className="flex-1 overflow-y-auto p-4">
+            <div className="grid grid-cols-3 gap-3 mb-4">
+              <div className="bg-slate-50 rounded-lg p-3 text-center border">
+                <p className="text-[9px] font-black uppercase text-slate-500">Total Facturado</p>
+                <p className="text-xl font-black text-black">${totalPurchases.toFixed(2)}</p>
+              </div>
+              <div className="bg-slate-50 rounded-lg p-3 text-center border">
+                <p className="text-[9px] font-black uppercase text-slate-500">Total Abonado</p>
+                <p className="text-xl font-black text-green-600">${totalPaid.toFixed(2)}</p>
+              </div>
+              <div className="bg-slate-50 rounded-lg p-3 text-center border">
+                <p className="text-[9px] font-black uppercase text-slate-500">Saldo por Pagar</p>
+                <p className={cn("text-xl font-black", totalDebt > 0 ? "text-red-600" : "text-green-600")}>
+                  ${totalDebt.toFixed(2)}
+                </p>
               </div>
             </div>
-            
-            <div className="p-4 overflow-y-auto flex-1">
-              <div className="grid grid-cols-3 gap-3 mb-4">
-                <div className="bg-slate-50 rounded-lg p-3 text-center border">
-                  <p className="text-[9px] font-black uppercase text-slate-500">Total Facturado</p>
-                  <p className="text-xl font-black text-black">${totalPurchases.toFixed(2)}</p>
-                </div>
-                <div className="bg-slate-50 rounded-lg p-3 text-center border">
-                  <p className="text-[9px] font-black uppercase text-slate-500">Total Abonado</p>
-                  <p className="text-xl font-black text-green-600">${totalPaid.toFixed(2)}</p>
-                </div>
-                <div className="bg-slate-50 rounded-lg p-3 text-center border">
-                  <p className="text-[9px] font-black uppercase text-slate-500">Saldo por Pagar</p>
-                  <p className={cn("text-xl font-black", totalDebt > 0 ? "text-red-600" : "text-green-600")}>
-                    ${totalDebt.toFixed(2)}
-                  </p>
-                </div>
+
+            {/* Botón para pagar */}
+            {totalDebt > 0 && (
+              <div className="mb-4 flex justify-end">
+                <Button onClick={() => handleOpenPaymentModal(supplier)} className="bg-green-600 hover:bg-green-700 text-white font-black h-8 text-xs">
+                  <HandCoins size={14} className="mr-1" /> PAGAR DEUDA (${totalDebt.toFixed(2)})
+                </Button>
               </div>
+            )}
 
-              {/* Botón para pagar */}
-              {totalDebt > 0 && (
-                <div className="mb-4 flex justify-end">
-                  <Button onClick={() => handleOpenPaymentModal(supplier)} className="bg-green-600 hover:bg-green-700 text-white font-black h-8 text-xs">
-                    <HandCoins size={14} className="mr-1" /> PAGAR DEUDA (${totalDebt.toFixed(2)})
-                  </Button>
+            <div className="space-y-2">
+              {supplierInvoices.length === 0 ? (
+                <div className="text-center py-12 text-black/30 italic">
+                  No se han registrado compras para este proveedor
                 </div>
-              )}
-
-              <div className="space-y-2">
-                {supplierInvoices.length === 0 ? (
-                  <div className="text-center py-12 text-black/30 italic">
-                    No se han registrado compras para este proveedor
-                  </div>
-                ) : (
-                  supplierInvoices.map(inv => {
-                    const isExpanded = expandedInvoice?.invoiceId === inv.id;
-                    const items = purchaseItems[inv.id] || [];
-                    const owed = inv.total - inv.paidAmount;
-                    
-                    return (
-                      <div key={inv.id} className="border border-[#9E9E9E] rounded-lg overflow-hidden">
-                        <div 
-                          className={cn(
-                            "flex justify-between items-center p-3 cursor-pointer transition-colors",
-                            isExpanded ? "bg-[#1A2C4E] text-white" : "bg-white hover:bg-[#F5F5F5]"
-                          )}
-                          onClick={() => toggleInvoiceExpand(inv.id)}
-                        >
-                          <div className="flex items-center gap-3">
-                            {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                            <div>
-                              <p className="text-xs font-black">Factura #{inv.invoiceNumber}</p>
-                              <p className={cn("text-[9px]", isExpanded ? "text-white/60" : "text-black/50")}>
-                                {formatDate(inv.date)} • {inv.itemsCount || items.length} items
-                              </p>
-                            </div>
-                          </div>
-                          <div className="text-right">
-                            <p className="text-sm font-black text-primary">${inv.total.toFixed(2)}</p>
-                            {owed > 0 && (
-                              <button
-                                onClick={(e) => { e.stopPropagation(); handleOpenPaymentModal(supplier, inv); }}
-                                className="text-[9px] font-bold text-green-600 hover:underline mt-0.5"
-                              >
-                                Pagar saldo (${owed.toFixed(2)})
-                              </button>
-                            )}
-                            {owed === 0 && (
-                              <span className="text-[8px] font-bold text-green-500">PAGADA</span>
-                            )}
+              ) : (
+                supplierInvoices.map(inv => {
+                  const isExpanded = expandedInvoice?.invoiceId === inv.id;
+                  const items = purchaseItems[inv.id] || [];
+                  const owed = inv.total - inv.paidAmount;
+                  
+                  return (
+                    <div key={inv.id} className="border border-[#9E9E9E] rounded-lg overflow-hidden">
+                      <div 
+                        className={cn(
+                          "flex justify-between items-center p-3 cursor-pointer transition-colors",
+                          isExpanded ? "bg-[#1A2C4E] text-white" : "bg-white hover:bg-[#F5F5F5]"
+                        )}
+                        onClick={() => toggleInvoiceExpand(inv.id)}
+                      >
+                        <div className="flex items-center gap-3">
+                          {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                          <div>
+                            <p className="text-xs font-black">Factura #{inv.invoiceNumber}</p>
+                            <p className={cn("text-[9px]", isExpanded ? "text-white/60" : "text-black/50")}>
+                              {formatDate(inv.date)} • {inv.itemsCount || items.length} items
+                            </p>
                           </div>
                         </div>
-                        
-                        {isExpanded && (
-                          <div className="bg-[#FAFAFA] p-3 border-t border-[#9E9E9E] animate-in slide-in-from-top-1 duration-200">
-                            <h4 className="text-[9px] font-black uppercase text-black/60 mb-2 flex items-center gap-1">
-                              <Package size={10} /> Detalle de Productos
-                            </h4>
-                            <div className="overflow-x-auto">
-                              <table className="w-full text-left text-[9px]">
-                                <thead className="bg-[#E8E8E8]">
-                                  <tr>
-                                    <th className="p-1.5">Producto</th>
-                                    <th className="p-1.5 text-center w-16">Cant.</th>
-                                    <th className="p-1.5 text-right w-20">Costo $</th>
-                                    <th className="p-1.5 text-right w-24">Subtotal $</th>
-                                  </tr>
-                                </thead>
-                                <tbody className="divide-y divide-gray-100">
-                                  {items.length === 0 ? (
-                                    <tr>
-                                      <td colSpan={4} className="p-3 text-center text-black/40 italic">Cargando detalles...</td>
-                                    </tr>
-                                  ) : (
-                                    items.map((item, idx) => (
-                                      <tr key={idx} className="hover:bg-white">
-                                        <td className="p-1.5 font-medium">{item.productName}</td>
-                                        <td className="p-1.5 text-center">{item.qty}</td>
-                                        <td className="p-1.5 text-right font-mono">${item.costUsd.toFixed(2)}</td>
-                                        <td className="p-1.5 text-right font-bold">${item.totalUsd.toFixed(2)}</td>
-                                      </tr>
-                                    ))
-                                  )}
-                                </tbody>
-                                <tfoot className="bg-[#F0F0F0] font-black">
-                                  <tr>
-                                    <td colSpan={3} className="p-1.5 text-right">TOTAL FACTURA:</td>
-                                    <td className="p-1.5 text-right text-secondary">${inv.total.toFixed(2)}</td>
-                                  </tr>
-                                </tfoot>
-                              </table>
-                            </div>
-                          </div>
-                        )}
+                        <div className="text-right">
+                          <p className="text-sm font-black text-primary">${inv.total.toFixed(2)}</p>
+                          {owed > 0 && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handleOpenPaymentModal(supplier, inv); }}
+                              className="text-[9px] font-bold text-green-600 hover:underline mt-0.5"
+                            >
+                              Pagar saldo (${owed.toFixed(2)})
+                            </button>
+                          )}
+                          {owed === 0 && (
+                            <span className="text-[8px] font-bold text-green-500">PAGADA</span>
+                          )}
+                        </div>
                       </div>
-                    );
-                  })
-                )}
-              </div>
+                      
+                      {isExpanded && (
+                        <div className="bg-[#FAFAFA] p-3 border-t border-[#9E9E9E] animate-in slide-in-from-top-1 duration-200">
+                          <h4 className="text-[9px] font-black uppercase text-black/60 mb-2 flex items-center gap-1">
+                            <Package size={10} /> Detalle de Productos
+                          </h4>
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-left text-[9px]">
+                              <thead className="bg-[#E8E8E8]">
+                                <tr>
+                                  <th className="p-1.5">Producto</th>
+                                  <th className="p-1.5 text-center w-16">Cant.</th>
+                                  <th className="p-1.5 text-right w-20">Costo $</th>
+                                  <th className="p-1.5 text-right w-24">Subtotal $</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-gray-100">
+                                {items.length === 0 ? (
+                                  <tr>
+                                    <td colSpan={4} className="p-3 text-center text-black/40 italic">Cargando detalles...</td>
+                                  </tr>
+                                ) : (
+                                  items.map((item, idx) => (
+                                    <tr key={idx} className="hover:bg-white">
+                                      <td className="p-1.5 font-medium">{item.productName}</td>
+                                      <td className="p-1.5 text-center">{item.qty}</td>
+                                      <td className="p-1.5 text-right font-mono">${item.costUsd.toFixed(2)}</td>
+                                      <td className="p-1.5 text-right font-bold">${item.totalUsd.toFixed(2)}</td>
+                                    </tr>
+                                  ))
+                                )}
+                              </tbody>
+                              <tfoot className="bg-[#F0F0F0] font-black">
+                                <tr>
+                                  <td colSpan={3} className="p-1.5 text-right">TOTAL FACTURA:</td>
+                                  <td className="p-1.5 text-right text-secondary">${inv.total.toFixed(2)}</td>
+                                </tr>
+                              </tfoot>
+                            </table>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
             </div>
-            
-            <div className="bg-slate-50 p-3 border-t flex justify-between items-center">
-              <Button 
-                onClick={() => setViewingPayments(supplier)} 
-                variant="outline" 
-                size="sm" 
-                className="h-7 text-xs border-[#9E9E9E]"
-              >
-                <Wallet size={12} className="mr-1" /> VER HISTORIAL DE PAGOS
-              </Button>
-              <Button onClick={onClose} variant="ghost" size="sm" className="h-7 text-xs">CERRAR HISTORIAL</Button>
-            </div>
+          </div>
+          
+          {/* Footer fijo */}
+          <div className="bg-slate-50 p-3 border-t flex justify-between items-center flex-shrink-0">
+            <Button 
+              onClick={() => setViewingPayments(supplier)} 
+              variant="outline" 
+              size="sm" 
+              className="h-7 text-xs border-[#9E9E9E]"
+            >
+              <Wallet size={12} className="mr-1" /> VER HISTORIAL DE PAGOS
+            </Button>
+            <Button onClick={onClose} variant="ghost" size="sm" className="h-7 text-xs">CERRAR HISTORIAL</Button>
           </div>
         </DialogContent>
       </Dialog>

@@ -18,7 +18,32 @@ export function useAccounting() {
     return () => unsub();
   }, [user]);
 
+  // ✅ Función para guardar una entrada (alias de saveEntry)
   const saveEntry = useCallback((entry: any) => syncService.saveAccountingEntry(entry), []);
+  
+  // ✅ Alias para mantener compatibilidad con el módulo de contabilidad
+  const addEntry = saveEntry;
 
-  return { entries, saveEntry, isHydrated };
+  // ✅ Función para obtener total de ingresos
+  const getTotalIngresos = useCallback(() => {
+    return entries
+      .filter(e => e.type === 'ingreso')
+      .reduce((sum, e) => sum + (e.amount || 0), 0);
+  }, [entries]);
+
+  // ✅ Función para obtener total de egresos
+  const getTotalEgresos = useCallback(() => {
+    return entries
+      .filter(e => e.type === 'egreso')
+      .reduce((sum, e) => sum + (e.amount || 0), 0);
+  }, [entries]);
+
+  return { 
+    entries, 
+    saveEntry, 
+    addEntry,      // ✅ Exportado para compatibilidad
+    getTotalIngresos,
+    getTotalEgresos,
+    isHydrated 
+  };
 }

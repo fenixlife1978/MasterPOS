@@ -222,13 +222,13 @@ export default function ReceiptModal({ transaction, exchangeRate, receiptNumber,
             className="bg-white p-5 shadow-sm text-black font-mono select-none"
             style={{ width: '72mm', boxSizing: 'border-box', color: '#000' }}
           >
-            {/* ENCABEZADO */}
+            {/* ENCABEZADO - DATOS ACTUALIZADOS */}
             <div className="text-center" style={{ marginBottom: '6px', paddingBottom: '6px', borderBottom: '1px dashed #000' }}>
-              <h1 style={{ fontSize: '16px', fontWeight: 'bold', margin: '0 0 2px 0', letterSpacing: '1px' }}>LICOPOS ELITE</h1>
-              <p style={{ fontSize: '10px', margin: '2px 0', fontWeight: 'bold' }}>LICORERÍA & BODEGÓN</p>
-              <p style={{ fontSize: '9px', margin: '2px 0' }}>RIF: J-12345678-0</p>
-              <p style={{ fontSize: '9px', margin: '2px 0' }}>TEL: (0212) 555-1234</p>
-              <p style={{ fontSize: '9px', margin: '2px 0' }}>SAN FELIPE - YARACUY</p>
+              <h1 style={{ fontSize: '16px', fontWeight: 'bold', margin: '0 0 2px 0', letterSpacing: '1px' }}>MasterPOSv1</h1>
+              <p style={{ fontSize: '10px', margin: '2px 0', fontWeight: 'bold' }}>Licoreria Castillo</p>
+              <p style={{ fontSize: '9px', margin: '2px 0' }}>RIF: V-11654282-6</p>
+              <p style={{ fontSize: '9px', margin: '2px 0' }}>TEL: 0424-5397181</p>
+              <p style={{ fontSize: '9px', margin: '2px 0' }}>Guama - Yaracuy</p>
             </div>
 
             <div style={{ textAlign: 'center', marginBottom: '6px' }}>
@@ -272,17 +272,17 @@ export default function ReceiptModal({ transaction, exchangeRate, receiptNumber,
                       <td style={{ padding: '4px 0', paddingLeft: '4px', fontSize: '9px' }}>
                         {item.name.toUpperCase().slice(0, 22)}
                         <div style={{ fontSize: '8px', color: '#555' }}>Ref: Bs {item.priceBs.toFixed(2)}</div>
-                      </td>
+                       </td>
                       <td style={{ textAlign: 'right', padding: '4px 0', fontSize: '9px', fontWeight: 'bold' }}>
                         {(item.priceBs * item.qty).toFixed(2)}
-                      </td>
-                    </tr>
+                       </td>
+                     </tr>
                   ))
                 ) : (
                   <tr>
                     <td colSpan={3} style={{ textAlign: 'center', padding: '8px 0', color: '#666', fontStyle: 'italic' }}>
                       {isCobroDeuda ? '* Abono de cuenta aplicado *' : '* Operación de Pago *'}
-                    </td>
+                     </td>
                   </tr>
                 )}
               </tbody>

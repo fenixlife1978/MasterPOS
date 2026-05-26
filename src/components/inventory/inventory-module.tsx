@@ -17,6 +17,7 @@ import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { Product, Category, AdminCode, KitComponent } from '@/lib/types';
 import { syncService } from '@/services/syncService';
+import * as XLSX from 'xlsx';
 
 // ✅ Redondeo a 2 decimales (comercial)
 const roundTo2 = (num: number): number => Math.round(num * 100) / 100;
@@ -210,6 +211,112 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
   
   const getProductMinStock = (product: Product) => product.minStock || 5;
   
+  // ✅ Función para exportar Kardex a PDF
+  const exportKardexToPDF = (product: Product) => {
+    const entries = getKardexForProduct(product.id);
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+    
+    const html = `
+      <html>
+        <head>
+          <title>Kardex - ${product.name}</title>
+          <style>
+            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 30px; color: #333; }
+            .header { text-align: center; border-bottom: 2px solid #1A2C4E; padding-bottom: 10px; margin-bottom: 20px; }
+            h1 { margin: 0; color: #1A2C4E; font-size: 20px; }
+            .info { margin-bottom: 20px; }
+            table { width: 100%; border-collapse: collapse; }
+            th { background-color: #1A2C4E; color: white; text-align: left; padding: 8px; font-size: 11px; }
+            td { padding: 6px 8px; border-bottom: 1px solid #ddd; font-size: 10px; }
+            .text-right { text-align: right; }
+            .text-center { text-align: center; }
+            .footer { margin-top: 30px; text-align: center; font-size: 9px; color: #999; border-top: 1px solid #eee; padding-top: 10px; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>MasterPOS - Tarjeta Kardex</h1>
+          </div>
+          <div class="info">
+            <p><strong>Producto:</strong> ${product.name}</p>
+            <p><strong>Código:</strong> ${product.barcode}</p>
+            <p><strong>Categoría:</strong> ${product.category}</p>
+            <p><strong>Stock Actual:</strong> ${product.stock} UDS</p>
+            <p><strong>Costo Actual:</strong> $${(product.costUsd || 0).toFixed(4)}</p>
+            <p><strong>Fecha:</strong> ${new Date().toLocaleString('es-VE')}</p>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>FECHA</th>
+                <th>TIPO</th>
+                <th class="text-right">CANTIDAD</th>
+                <th class="text-right">COSTO $</th>
+                <th class="text-right">STOCK PREVIO</th>
+                <th class="text-right">STOCK NUEVO</th>
+                <th>MOTIVO</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${entries.map(entry => `
+                <tr>
+                  <td>${entry.date}</td>
+                  <td>${entry.type === 'venta' ? 'VENTA' : entry.type === 'compra' ? 'COMPRA' : 'AJUSTE'}</td>
+                  <td class="text-right">${entry.quantity > 0 ? `+${entry.quantity}` : entry.quantity}</td>
+                  <td class="text-right">${entry.costUsd ? `$${entry.costUsd.toFixed(4)}` : '-'}</td>
+                  <td class="text-right">${entry.previousStock}</td>
+                  <td class="text-right">${entry.newStock}</td>
+                  <td>${entry.note || entry.reference}</td>
+                </tr>
+              `).join('')}
+              ${entries.length === 0 ? '<tr><td colspan="7" class="text-center">No hay movimientos registrados</td></tr>' : ''}
+            </tbody>
+          </table>
+          <div class="footer">Documento generado desde MasterPOS - Sistema de Punto de Venta</div>
+        </body>
+      </html>
+    `;
+    printWindow.document.write(html);
+    printWindow.document.close();
+    setTimeout(() => { printWindow.print(); printWindow.close(); }, 500);
+  };
+  
+  // ✅ Función para compartir Kardex como PDF
+  const shareKardexPDF = (product: Product) => {
+    if (navigator.share) {
+      const entries = getKardexForProduct(product.id);
+      const content = `Kardex - ${product.name}\nStock Actual: ${product.stock} UDS\nCosto Actual: $${(product.costUsd || 0).toFixed(4)}\n\nMovimientos:\n${entries.map(e => `${e.date} - ${e.type}: ${e.quantity} uds (Stock: ${e.previousStock} → ${e.newStock})`).join('\n')}`;
+      navigator.share({
+        title: `Kardex - ${product.name}`,
+        text: content,
+      }).catch(() => exportKardexToPDF(product));
+    } else {
+      exportKardexToPDF(product);
+    }
+  };
+  
+  // ✅ Función para exportar Kardex a Excel
+  const exportKardexToExcel = (product: Product) => {
+    const entries = getKardexForProduct(product.id);
+    const data = entries.map(entry => ({
+      FECHA: entry.date,
+      TIPO: entry.type === 'venta' ? 'VENTA' : entry.type === 'compra' ? 'COMPRA' : 'AJUSTE',
+      CANTIDAD: entry.quantity,
+      COSTO_USD: entry.costUsd || 0,
+      STOCK_PREVIO: entry.previousStock,
+      STOCK_NUEVO: entry.newStock,
+      MOTIVO: entry.note || entry.reference,
+    }));
+    
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, `Kardex_${product.name}`);
+    XLSX.writeFile(wb, `Kardex_${product.name}_${new Date().toISOString().split('T')[0]}.xlsx`);
+    
+    toast({ title: "Exportado", description: "Kardex exportado a Excel correctamente" });
+  };
+  
   // ==================== MANEJO DE PRODUCTOS (CRUD) ====================
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -375,22 +482,10 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
         const { product, newQty, reason } = pendingAdjustment;
         const previousStock = product.stock;
         const updatedProduct = { ...product, stock: newQty };
-        await state.updateProduct(updatedProduct);
         
-        const kardexEntry: KardexEntry = {
-          id: `${Date.now()}_${Math.random()}`,
-          productId: product.id,
-          date: new Date().toLocaleString('es-VE'),
-          type: 'ajuste_manual',
-          quantity: newQty - previousStock,
-          previousStock,
-          newStock: newQty,
-          reference: 'Ajuste manual',
-          note: reason,
-          costUsd: product.costUsd,
-        };
-        await syncService.saveKardexEntry?.(kardexEntry);
-        addKardexEntryLocal(product.id, kardexEntry);
+        // ✅ Solo actualizar el producto, NO crear entrada de kardex duplicada
+        // La entrada de kardex la creará el método updateProduct internamente
+        await state.updateProduct(updatedProduct);
         
         toast({ title: "Ajuste Realizado", description: `Stock actualizado de ${previousStock} a ${newQty} unidades` });
         setAdjustingStock(null);
@@ -932,7 +1027,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
       
       {/* ==================== MODALES ==================== */}
       
-      {/* Modal de detalle de costo - CORREGIDO con Costo Anterior y Nuevo Costo */}
+      {/* Modal de detalle de costo */}
       {viewingCostDetail && (
         <Dialog open={true} onOpenChange={() => setViewingCostDetail(null)}>
           <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-lg p-0 rounded-xl shadow-xl">
@@ -1028,10 +1123,10 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
         </Dialog>
       )}
       
-      {/* Modal de Kardex - CORREGIDO con scroll horizontal */}
+      {/* Modal de Kardex - CORREGIDO con scroll horizontal y botones de exportación */}
       {viewingKardex && (
         <Dialog open={true} onOpenChange={() => setViewingKardex(null)}>
-          <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-4xl p-0 overflow-hidden rounded-xl shadow-xl max-h-[85vh]">
+          <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-5xl p-0 overflow-hidden rounded-xl shadow-xl max-h-[85vh]">
             <DialogHeader className="bg-[#1A2C4E] p-3 text-white sticky top-0">
               <div className="flex justify-between items-center">
                 <div>
@@ -1040,7 +1135,33 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                   </DialogTitle>
                   <p className="text-[10px] opacity-70">{viewingKardex.name}</p>
                 </div>
-                <button onClick={() => setViewingKardex(null)}><X size={16} /></button>
+                <div className="flex items-center gap-2">
+                  {/* Botón Exportar PDF */}
+                  <button 
+                    onClick={() => exportKardexToPDF(viewingKardex)}
+                    className="text-white/60 hover:text-white p-1 transition-colors"
+                    title="Exportar a PDF"
+                  >
+                    <Printer size={14} />
+                  </button>
+                  {/* Botón Compartir PDF */}
+                  <button 
+                    onClick={() => shareKardexPDF(viewingKardex)}
+                    className="text-white/60 hover:text-white p-1 transition-colors"
+                    title="Compartir PDF"
+                  >
+                    <Share2 size={14} />
+                  </button>
+                  {/* Botón Exportar Excel */}
+                  <button 
+                    onClick={() => exportKardexToExcel(viewingKardex)}
+                    className="text-white/60 hover:text-white p-1 transition-colors"
+                    title="Exportar a Excel"
+                  >
+                    <FileSpreadsheet size={14} />
+                  </button>
+                  <button onClick={() => setViewingKardex(null)} className="text-white/60 hover:text-white p-1"><X size={16} /></button>
+                </div>
               </div>
             </DialogHeader>
             <div className="p-3 overflow-y-auto flex-1">

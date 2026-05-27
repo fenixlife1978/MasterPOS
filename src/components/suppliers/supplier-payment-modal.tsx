@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
+import { formatBs, formatUsd, formatBsNumber, formatUsdNumber } from '@/lib/currency-formatter';
 
 interface SupplierPaymentModalProps {
   open: boolean;
@@ -92,16 +93,13 @@ export default function SupplierPaymentModal({
     let finalUsdAmount = 0;
     const finalExchangeRate = parseFloat(customRate) || exchangeRate;
 
-    // ✅ CORREGIDO: Calcular correctamente el monto en USD según el método de pago
     if (method === 'efectivo_usd' || method === 'zelle') {
-      // Pago directo en USD
       finalUsdAmount = usdAmount;
       if (finalUsdAmount <= 0) {
         alert('Ingrese un monto válido en USD');
         return;
       }
     } else {
-      // Pago en Bs (efectivo_bs, transferencia, pago_movil, cheque, biopago)
       const bsAmount = parseFloat(amount) || 0;
       if (bsAmount <= 0) {
         alert('Ingrese un monto válido en Bolívares');
@@ -110,9 +108,8 @@ export default function SupplierPaymentModal({
       finalUsdAmount = bsAmount / finalExchangeRate;
     }
 
-    // Validar que no exceda el saldo pendiente (que está en USD)
     if (finalUsdAmount > remaining) {
-      const confirmPartial = confirm(`El monto excede el saldo pendiente ($${remaining.toFixed(2)} USD). ¿Desea registrar solo el saldo pendiente como pago parcial?`);
+      const confirmPartial = confirm(`El monto excede el saldo pendiente (${formatUsd(remaining)}). ¿Desea registrar solo el saldo pendiente como pago parcial?`);
       if (confirmPartial) {
         finalUsdAmount = remaining;
       } else {
@@ -145,25 +142,22 @@ export default function SupplierPaymentModal({
           </div>
           
           <div className="p-5">
-            {/* Layout horizontal: 2 columnas */}
             <div className="grid grid-cols-2 gap-5">
-              {/* Columna izquierda - Información de factura */}
               <div className="bg-[#F5F5F5] rounded-lg p-4">
                 <p className="text-[10px] text-black/60 text-center">Total Factura</p>
-                <p className="text-2xl font-black text-black text-center">${total.toFixed(2)}</p>
+                <p className="text-2xl font-black text-black text-center">{formatUsd(total)}</p>
                 <div className="grid grid-cols-2 gap-2 mt-3 text-center">
                   <div>
                     <p className="text-[9px] text-black/50">Pagado</p>
-                    <p className="text-sm font-bold text-green-600">${currentPaid.toFixed(2)}</p>
+                    <p className="text-sm font-bold text-green-600">{formatUsd(currentPaid)}</p>
                   </div>
                   <div>
                     <p className="text-[9px] text-black/50">Pendiente</p>
-                    <p className="text-sm font-bold text-red-600">${remaining.toFixed(2)}</p>
+                    <p className="text-sm font-bold text-red-600">{formatUsd(remaining)}</p>
                   </div>
                 </div>
               </div>
 
-              {/* Columna derecha - Métodos de pago */}
               <div>
                 <label className="text-[10px] font-bold text-black/60 uppercase tracking-widest block mb-2">Método de pago</label>
                 <div className="grid grid-cols-4 gap-1.5">
@@ -191,7 +185,6 @@ export default function SupplierPaymentModal({
               </div>
             </div>
 
-            {/* Sección de monto y tasa */}
             <div className="grid grid-cols-2 gap-5 mt-4">
               {isUSD ? (
                 <div className="bg-green-50 p-3 rounded-lg">
@@ -205,7 +198,7 @@ export default function SupplierPaymentModal({
                     placeholder="0.00"
                   />
                   <p className="text-[10px] text-green-700 mt-1 text-center">
-                    Equivalente: Bs {(usdAmount * (parseFloat(customRate) || exchangeRate)).toFixed(2)}
+                    Equivalente: {formatBs(usdAmount * (parseFloat(customRate) || exchangeRate))}
                   </p>
                 </div>
               ) : (
@@ -220,7 +213,7 @@ export default function SupplierPaymentModal({
                     placeholder="0.00"
                   />
                   <p className="text-[10px] text-blue-700 mt-1 text-center">
-                    Equivalente: ${usdAmount.toFixed(2)} USD
+                    Equivalente: {formatUsd(usdAmount)}
                   </p>
                 </div>
               )}
@@ -239,7 +232,6 @@ export default function SupplierPaymentModal({
               </div>
             </div>
 
-            {/* Referencia y banco (si aplica) */}
             {needsReference && (
               <div className="grid grid-cols-2 gap-4 mt-3">
                 <div>
@@ -274,7 +266,7 @@ export default function SupplierPaymentModal({
 
             {remaining > 0 && (
               <p className="text-[9px] text-black/50 italic text-center mt-3">
-                Saldo pendiente: <span className="font-bold text-red-600">${remaining.toFixed(2)} USD</span>
+                Saldo pendiente: <span className="font-bold text-red-600">{formatUsd(remaining)}</span>
               </p>
             )}
           </div>

@@ -22,6 +22,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { formatBs, formatUsd, formatBsNumber, formatUsdNumber } from '@/lib/currency-formatter';
 
 interface AdminDashboardProps {
   state: ReturnType<typeof usePOSState>;
@@ -107,7 +108,7 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
     setIsUpdatingRate(true);
     try {
       await state.setExchangeRate(newRate);
-      toast({ title: "Tasa actualizada", description: `Nueva tasa BCV: Bs ${newRate.toFixed(2)}` });
+      toast({ title: "Tasa actualizada", description: `Nueva tasa BCV: ${formatBs(newRate)}` });
     } catch (error) {
       toast({ title: "Error", description: "No se pudo actualizar la tasa", variant: "destructive" });
     } finally {
@@ -393,12 +394,12 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
               </div>
               <div className="bg-white rounded-xl border border-[#9E9E9E] p-4">
                 <p className="text-[10px] font-black text-black/60 uppercase">Ingresos del Mes</p>
-                <p className="text-2xl font-black text-green-600">Bs {monthlyRevenue.toFixed(2)}</p>
+                <p className="text-2xl font-black text-green-600">{formatBs(monthlyRevenue)}</p>
                 <p className="text-[8px] text-black/50">Reinicia cada 1ro del mes</p>
               </div>
               <div className="bg-white rounded-xl border border-[#9E9E9E] p-4">
                 <p className="text-[10px] font-black text-black/60 uppercase">Gastos del Mes</p>
-                <p className="text-2xl font-black text-red-600">Bs {monthlyExpenses.toFixed(2)}</p>
+                <p className="text-2xl font-black text-red-600">{formatBs(monthlyExpenses)}</p>
                 <p className="text-[8px] text-black/50">Compras pagadas en el mes</p>
               </div>
             </div>
@@ -409,7 +410,7 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
                   <CreditCard size={18} className="text-orange-500" />
                   <p className="text-sm font-black text-black uppercase">Cuentas por Cobrar</p>
                 </div>
-                <p className="text-2xl font-black text-red-600">Bs {totalCredit.toFixed(2)}</p>
+                <p className="text-2xl font-black text-red-600">{formatBs(totalCredit)}</p>
                 <p className="text-[10px] text-black/50">Total de créditos pendientes de clientes</p>
               </div>
               <div className="bg-white rounded-xl border border-[#9E9E9E] p-4">
@@ -417,7 +418,7 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
                   <Truck size={18} className="text-blue-500" />
                   <p className="text-sm font-black text-black uppercase">Cuentas por Pagar</p>
                 </div>
-                <p className="text-2xl font-black text-red-600">Bs {totalPayable.toFixed(2)}</p>
+                <p className="text-2xl font-black text-red-600">{formatBs(totalPayable)}</p>
                 <p className="text-[10px] text-black/50">Total de facturas pendientes a proveedores</p>
               </div>
             </div>

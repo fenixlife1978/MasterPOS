@@ -5,6 +5,7 @@ import { Product, CartItem } from '@/lib/types';
 import { X, DollarSign } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { formatBs, formatUsd, formatBsNumber, formatUsdNumber } from '@/lib/currency-formatter';
 
 interface PriceTypeModalProps {
   product: Product;
@@ -65,8 +66,8 @@ export default function PriceTypeModal({ product, currentItem, exchangeRate, onC
                   <p className="text-[10px] text-gray-500">Precio unitario</p>
                 </div>
                 <div className="text-right">
-                  <p className="font-mono font-bold text-sm">${opt.priceUsd!.toFixed(2)}</p>
-                  <p className="font-mono text-xs text-gray-500">Bs {(opt.priceUsd! * exchangeRate).toFixed(2)}</p>
+                  <p className="font-mono font-bold text-sm">{formatUsd(opt.priceUsd!)}</p>
+                  <p className="font-mono text-xs text-gray-500">{formatBs(opt.priceUsd! * exchangeRate)}</p>
                 </div>
               </div>
             </button>
@@ -80,8 +81,8 @@ export default function PriceTypeModal({ product, currentItem, exchangeRate, onC
                   <p className="font-bold text-sm">Precio actual (personalizado)</p>
                 </div>
                 <div className="text-right">
-                  <p className="font-mono font-bold text-sm">${currentPriceUsd.toFixed(2)}</p>
-                  <p className="font-mono text-xs text-gray-500">Bs {currentPriceBs.toFixed(2)}</p>
+                  <p className="font-mono font-bold text-sm">{formatUsd(currentPriceUsd)}</p>
+                  <p className="font-mono text-xs text-gray-500">{formatBs(currentPriceBs)}</p>
                 </div>
               </div>
             </div>

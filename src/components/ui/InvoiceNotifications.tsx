@@ -6,6 +6,7 @@ import { AlertCircle, Bell, X, Clock, Calendar, Truck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
+import { formatBs, formatUsd, formatBsNumber, formatUsdNumber } from '@/lib/currency-formatter';
 
 interface InvoiceNotificationsProps {
   variant?: 'dashboard' | 'cashier';
@@ -122,8 +123,8 @@ export default function InvoiceNotifications({ variant = 'dashboard' }: InvoiceN
                             <div className="flex-1">
                               <p className="text-sm font-bold">{notif.message}</p>
                               <p className="text-[10px] mt-1">Proveedor: {notif.supplierName}</p>
-                              <p className="text-[9px]">Monto pendiente: <span className="font-bold">Bs {remaining.toFixed(2)}</span></p>
-                              <p className="text-[9px]">Total factura: Bs {notif.total.toFixed(2)} | Pagado: Bs {notif.paidAmount.toFixed(2)}</p>
+                              <p className="text-[9px]">Monto pendiente: <span className="font-bold">{formatBs(remaining)}</span></p>
+                              <p className="text-[9px]">Total factura: {formatBs(notif.total)} | Pagado: {formatBs(notif.paidAmount)}</p>
                             </div>
                           </div>
                         </div>
@@ -200,7 +201,7 @@ export default function InvoiceNotifications({ variant = 'dashboard' }: InvoiceN
                           <div className="flex-1">
                             <p className="text-sm font-bold">{notif.message}</p>
                             <p className="text-[10px] mt-1">Proveedor: {notif.supplierName}</p>
-                            <p className="text-[9px]">Monto pendiente: <span className="font-bold">Bs {remaining.toFixed(2)}</span></p>
+                            <p className="text-[9px]">Monto pendiente: <span className="font-bold">{formatBs(remaining)}</span></p>
                           </div>
                         </div>
                       </div>

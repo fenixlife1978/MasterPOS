@@ -4,6 +4,7 @@ import { useState, useMemo } from 'react';
 import { Client, CartItem } from '@/lib/types';
 import { Handshake, X, Search, UserPlus, UserCheck, DollarSign } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { formatBs, formatUsd, formatBsNumber, formatUsdNumber } from '@/lib/currency-formatter';
 
 interface CreditModalProps {
   cart: CartItem[];
@@ -76,7 +77,7 @@ export default function CreditModal({ cart, clients, exchangeRate, total, onClos
               <span className="text-[10px] font-black text-amber-400 uppercase tracking-widest">Tasa BCV al momento</span>
             </div>
             <div className="text-right">
-              <p className="text-sm font-black text-white">1 USD = Bs {exchangeRate.toFixed(2)}</p>
+              <p className="text-sm font-black text-white">1 USD = {formatBsNumber(exchangeRate)}</p>
               <p className="text-[8px] text-amber-400/70">Esta tasa quedará registrada permanentemente</p>
             </div>
           </div>
@@ -123,7 +124,7 @@ export default function CreditModal({ cart, clients, exchangeRate, total, onClos
                     <div className="text-sm font-bold text-white">{c.name}</div>
                     <div className="text-[10px] text-white/50">{c.cedula}</div>
                   </div>
-                  {c.debt > 0 && <div className="text-xs text-[#FF6B6B] font-bold">Deuda: BS {c.debt.toFixed(2)}</div>}
+                  {c.debt > 0 && <div className="text-xs text-[#FF6B6B] font-bold">Deuda: {formatBs(c.debt)}</div>}
                 </button>
               ))}
             </div>
@@ -186,16 +187,16 @@ export default function CreditModal({ cart, clients, exchangeRate, total, onClos
           {!isNewMode && selected && (
             <div className="flex justify-between text-xs mb-1">
               <span className="text-white/60">Deuda actual:</span>
-              <span className="font-bold text-[#FF6B6B]">BS {selected?.debt?.toFixed(2) || '0.00'}</span>
+              <span className="font-bold text-[#FF6B6B]">{formatBs(selected?.debt || 0)}</span>
             </div>
           )}
           <div className="flex justify-between text-xs pt-2 mt-2 border-t border-white/20">
             <span className="text-white/60">Nuevo crédito (Bs):</span>
-            <span className="font-black text-primary">BS {total.toFixed(2)}</span>
+            <span className="font-black text-primary">{formatBs(total)}</span>
           </div>
           <div className="flex justify-between text-xs pt-1">
             <span className="text-white/60">Equivalente en USD:</span>
-            <span className="font-black text-amber-400">${totalUsd.toFixed(2)}</span>
+            <span className="font-black text-amber-400">{formatUsd(totalUsd)}</span>
           </div>
         </div>
 

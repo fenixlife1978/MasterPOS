@@ -66,7 +66,6 @@ export function usePOSState() {
 
   // ✅ Función para recalcular precios en Bs de todos los productos cuando cambia la tasa
   const recalcAllPricesWithNewRate = useCallback((newRate: number) => {
-    console.log(`🔄 Recalculando precios con nueva tasa: ${newRate}`);
     setProducts(prevProducts => 
       prevProducts.map(product => ({
         ...product,
@@ -120,15 +119,13 @@ export function usePOSState() {
       saveRegisterToLocalStorage(registerData);
     });
     
-    // ✅ SUSCRIPCIÓN A CAMBIOS GLOBALES (TASA BCV) - ESTO ES LO QUE FALTABA
+    // ✅ SUSCRIPCIÓN A CAMBIOS GLOBALES (TASA BCV)
     const unsubSettings = syncService.subscribeToGlobalSettings?.((settings: any) => {
-      console.log('📡 Cambios globales recibidos:', settings);
       if (settings) {
         if (typeof settings.defaultIvaPercentage === 'number') {
           setGlobalIvaPercentage(settings.defaultIvaPercentage);
         }
         if (typeof settings.exchangeRate === 'number' && settings.exchangeRate !== exchangeRate) {
-          console.log(`💰 Tasa BCV actualizada en tiempo real: ${exchangeRate} → ${settings.exchangeRate}`);
           setExchangeRate(settings.exchangeRate);
           localStorage.setItem(STORAGE_KEYS.EXCHANGE_RATE, settings.exchangeRate.toString());
           // ✅ Recalcular todos los precios en Bs automáticamente
@@ -142,7 +139,6 @@ export function usePOSState() {
       if (settings) {
         if (typeof settings.defaultIvaPercentage === 'number') setGlobalIvaPercentage(settings.defaultIvaPercentage);
         if (typeof settings.exchangeRate === 'number' && settings.exchangeRate !== exchangeRate) {
-          console.log(`💰 Tasa BCV cargada inicial: ${exchangeRate} → ${settings.exchangeRate}`);
           setExchangeRate(settings.exchangeRate);
           localStorage.setItem(STORAGE_KEYS.EXCHANGE_RATE, settings.exchangeRate.toString());
           // ✅ Recalcular precios con la nueva tasa
@@ -405,13 +401,13 @@ export function usePOSState() {
           ? `[${type === 'colaboracion' ? 'Colaboración' : 'Consumo Propio'}] ${paymentData.notes || 'Sin motivo'}`
           : `Venta ID: ${tx.id}`;
         
-        // ✅ CORREGIDO: quantity como NEGATIVO para ventas (salida de inventario)
+        // ✅ quantity como NEGATIVO para ventas (salida de inventario)
         kardexEntries.push({
           id: `${Date.now()}_${Math.random()}`,
           productId: product.id,
           date: tx.date,
           type: kardexType,
-          quantity: -qtyToSubtract,  // ✅ NEGATIVO para que se muestre con signo -
+          quantity: -qtyToSubtract,
           previousStock: product.stock,
           newStock,
           reference,
@@ -442,7 +438,6 @@ export function usePOSState() {
     const newTxs = [...(register.txs || []), tx];
     const registerUpdate = { txs: newTxs };
 
-    console.log('📦 Enviando a runAtomicSale - kardexEntries:', JSON.stringify(kardexEntries, null, 2));
     await syncService.runAtomicSale(terminalId, tx, {
       products: stockUpdates,
       kardexEntries,
@@ -476,10 +471,12 @@ export function usePOSState() {
         exchangeRate,
       };
       setAccounts(prev => [...prev, newAccount]);
+      await syncService.saveAccount(newAccount);
       const client = clients.find(c => c.id === targetClientId);
       if (client) {
         const updatedClient = { ...client, debt: (client.debt || 0) + total };
         setClients(prev => prev.map(c => c.id === targetClientId ? updatedClient : c));
+        await syncService.saveClient(updatedClient);
       }
       await registerCreditEntry(tx, client || { name: paymentData.clientName } as any);
     } else if (type === 'contado') {
@@ -546,7 +543,6 @@ export function usePOSState() {
   }, [register, clients, accounts, exchangeRate, terminalId, saveRegisterToLocalStorage]);
 
   const setExchangeRateProxy = useCallback(async (newRate: number) => {
-    console.log(`💰 Actualizando tasa BCV: ${exchangeRate} → ${newRate}`);
     setExchangeRate(newRate);
     localStorage.setItem(STORAGE_KEYS.EXCHANGE_RATE, newRate.toString());
     await syncService.saveGlobalSettings({ exchangeRate: newRate });

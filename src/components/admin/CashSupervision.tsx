@@ -12,6 +12,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
+import { formatBs, formatUsd, formatBsNumber, formatUsdNumber } from '@/lib/currency-formatter';
 
 interface Terminal {
   id: number;
@@ -250,8 +251,8 @@ export default function CashSupervision() {
                     <td className="p-3 text-center text-xs">
                       {openAmount ? (
                         <div className="flex flex-col items-center">
-                          <span className="font-bold">Bs {openAmount.bs.toFixed(2)}</span>
-                          <span className="text-gray-500">+ $ {openAmount.usd.toFixed(2)}</span>
+                          <span className="font-bold">{formatBs(openAmount.bs)}</span>
+                          <span className="text-gray-500">+ {formatUsd(openAmount.usd)}</span>
                         </div>
                       ) : (
                         <span className="text-gray-400">—</span>
@@ -297,7 +298,7 @@ export default function CashSupervision() {
               </div>
               <div>
                 <p className="text-[9px] font-black uppercase text-gray-500">Fondo de Apertura</p>
-                <p className="text-sm font-bold">Bs {selectedRegister?.openAmountBs?.toFixed(2)} + $ {selectedRegister?.openAmountUsd?.toFixed(2)}</p>
+                <p className="text-sm font-bold">{formatBs(selectedRegister?.openAmountBs || 0)} + {formatUsd(selectedRegister?.openAmountUsd || 0)}</p>
               </div>
             </div>
 
@@ -314,42 +315,42 @@ export default function CashSupervision() {
                         <Banknote size={12} className="text-green-600" />
                         <span className="text-[8px] font-bold uppercase text-gray-500">Efectivo BS</span>
                       </div>
-                      <p className="text-lg font-black text-black">Bs {totals.efectivo_bs.toFixed(2)}</p>
+                      <p className="text-lg font-black text-black">{formatBs(totals.efectivo_bs)}</p>
                     </div>
                     <div className="bg-white rounded-lg p-2 border">
                       <div className="flex items-center gap-2 mb-1">
                         <DollarSign size={12} className="text-emerald-600" />
                         <span className="text-[8px] font-bold uppercase text-gray-500">Efectivo USD</span>
                       </div>
-                      <p className="text-lg font-black text-black">Bs {totals.usd_efectivo.toFixed(2)}</p>
+                      <p className="text-lg font-black text-black">{formatBs(totals.usd_efectivo)}</p>
                     </div>
                     <div className="bg-white rounded-lg p-2 border">
                       <div className="flex items-center gap-2 mb-1">
                         <CreditCard size={12} className="text-blue-600" />
                         <span className="text-[8px] font-bold uppercase text-gray-500">Tarjeta</span>
                       </div>
-                      <p className="text-lg font-black text-black">Bs {totals.tarjeta.toFixed(2)}</p>
+                      <p className="text-lg font-black text-black">{formatBs(totals.tarjeta)}</p>
                     </div>
                     <div className="bg-white rounded-lg p-2 border">
                       <div className="flex items-center gap-2 mb-1">
                         <Fingerprint size={12} className="text-purple-600" />
                         <span className="text-[8px] font-bold uppercase text-gray-500">Biopago</span>
                       </div>
-                      <p className="text-lg font-black text-black">Bs {totals.biopago.toFixed(2)}</p>
+                      <p className="text-lg font-black text-black">{formatBs(totals.biopago)}</p>
                     </div>
                     <div className="bg-white rounded-lg p-2 border">
                       <div className="flex items-center gap-2 mb-1">
                         <Smartphone size={12} className="text-orange-600" />
                         <span className="text-[8px] font-bold uppercase text-gray-500">Pago Móvil</span>
                       </div>
-                      <p className="text-lg font-black text-black">Bs {totals.pago_movil.toFixed(2)}</p>
+                      <p className="text-lg font-black text-black">{formatBs(totals.pago_movil)}</p>
                     </div>
                     <div className="bg-white rounded-lg p-2 border">
                       <div className="flex items-center gap-2 mb-1">
                         <Plane size={12} className="text-red-600" />
                         <span className="text-[8px] font-bold uppercase text-gray-500">Zelle</span>
                       </div>
-                      <p className="text-lg font-black text-black">Bs {totals.zelle.toFixed(2)}</p>
+                      <p className="text-lg font-black text-black">{formatBs(totals.zelle)}</p>
                     </div>
                   </div>
                 </div>
@@ -360,7 +361,7 @@ export default function CashSupervision() {
                       <Receipt size={12} className="text-amber-600" />
                       <span className="text-[8px] font-bold uppercase text-amber-700">Ventas a Crédito</span>
                     </div>
-                    <p className="text-xl font-black text-amber-700">Bs {totals.credito.toFixed(2)}</p>
+                    <p className="text-xl font-black text-amber-700">{formatBs(totals.credito)}</p>
                     <p className="text-[8px] text-amber-500 mt-1">Cuentas por cobrar</p>
                   </div>
                   <div className="bg-red-50 rounded-xl p-3 border border-red-200">
@@ -368,7 +369,7 @@ export default function CashSupervision() {
                       <TrendingDown size={12} className="text-red-600" />
                       <span className="text-[8px] font-bold uppercase text-red-700">Colaboraciones / Consumo</span>
                     </div>
-                    <p className="text-xl font-black text-red-700">Bs {totals.colaboracion.toFixed(2)}</p>
+                    <p className="text-xl font-black text-red-700">{formatBs(totals.colaboracion)}</p>
                     <p className="text-[8px] text-red-500 mt-1">Costo de salidas</p>
                   </div>
                 </div>

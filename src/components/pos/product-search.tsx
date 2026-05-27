@@ -6,6 +6,7 @@ import { Search, Barcode, UserCircle, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import ClientPanel from './client-panel';
 import { usePOSState } from '@/hooks/use-pos-state';
+import { formatBs, formatUsd, formatBsNumber, formatUsdNumber } from '@/lib/currency-formatter';
 
 // Umbral mínimo de stock por defecto (si el producto no tiene configurado uno)
 const DEFAULT_MIN_STOCK = 5;
@@ -216,7 +217,7 @@ export default function ProductSearch({ state, onAdd }: ProductSearchProps) {
                         <div className="flex-1 min-w-0">
                           <div className="text-[13px] font-medium truncate text-black">{p.name}</div>
                           <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                            <span className="text-[12px] font-bold text-[#D4A017]">${p.priceUsd.toFixed(2)}</span>
+                            <span className="text-[12px] font-bold text-[#D4A017]">{formatUsd(p.priceUsd)}</span>
                             <span className={cn(
                               "text-[10px] font-bold px-1.5 py-0.5 rounded-full",
                               stockColor

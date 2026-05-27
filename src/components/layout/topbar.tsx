@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils';
 import { syncService } from '@/services/syncService';
 import InvoiceNotifications from '@/components/ui/InvoiceNotifications';
 import { useAuth } from '@/context/AuthContext';
+import { formatBs, formatUsd, formatBsNumber, formatUsdNumber } from '@/lib/currency-formatter';
 
 interface TopbarProps {
   register: CashRegister | null;
@@ -109,7 +110,7 @@ export default function Topbar({ register, rate, onRateChange }: TopbarProps) {
           <RefreshCw size={16} className="text-primary" />
           <div className="flex items-center gap-2 text-[13px]">
             <span className="text-white/70 font-bold tracking-widest text-[11px]">TASA BCV:</span>
-            <span className="text-primary font-black text-[15px]">{rate.toFixed(2)}</span>
+            <span className="text-primary font-black text-[15px]">{formatBsNumber(rate)}</span>
             <span className="text-white/40 text-[10px] font-bold ml-1">BS/USD</span>
           </div>
         </div>

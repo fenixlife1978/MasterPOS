@@ -6,6 +6,7 @@ import { AlertCircle, Bell, X, Clock, Calendar, Truck, DollarSign, CheckCircle }
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
+import { formatBs, formatUsd, formatBsNumber, formatUsdNumber } from '@/lib/currency-formatter';
 
 interface InvoiceReminderModalProps {
   onAcknowledge?: () => void;
@@ -131,11 +132,11 @@ export default function InvoiceReminderModal({ onAcknowledge }: InvoiceReminderM
                         </div>
                         <div>
                           <p className="text-[10px] text-black/50">Total Factura</p>
-                          <p className="font-bold text-black">Bs {notif.total.toFixed(2)}</p>
+                          <p className="font-bold text-black">{formatBs(notif.total)}</p>
                         </div>
                         <div>
                           <p className="text-[10px] text-black/50">Monto Pendiente</p>
-                          <p className="font-bold text-red-600">Bs {notif.remaining.toFixed(2)}</p>
+                          <p className="font-bold text-red-600">{formatBs(notif.remaining)}</p>
                         </div>
                       </div>
                     </div>
@@ -147,7 +148,7 @@ export default function InvoiceReminderModal({ onAcknowledge }: InvoiceReminderM
             {/* Resumen */}
             <div className="mt-4 p-3 bg-[#1A2C4E] rounded-xl text-white text-center">
               <p className="text-[10px] text-white/60">Total pendiente por pagar</p>
-              <p className="text-2xl font-black">Bs {totalPending.toFixed(2)}</p>
+              <p className="text-2xl font-black">{formatBs(totalPending)}</p>
             </div>
           </div>
           

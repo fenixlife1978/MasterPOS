@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
+import { formatBs, formatUsd, formatBsNumber, formatUsdNumber } from '@/lib/currency-formatter';
 
 interface ClientsModuleProps {
   state: ReturnType<typeof usePOSState>;
@@ -120,7 +121,7 @@ export default function ClientsModule({ state }: ClientsModuleProps) {
                         "px-3 py-1 rounded-full text-[10px] font-black border shadow-sm",
                         hasDebt ? "bg-red-100 text-red-700 border-red-300" : "bg-green-100 text-green-700 border-green-300"
                       )}>
-                        BS {c.debt.toFixed(2)}
+                        {formatBs(c.debt)}
                       </span>
                     </TableCell>
                     <TableCell className="text-right">

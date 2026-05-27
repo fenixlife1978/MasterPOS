@@ -19,6 +19,7 @@ import { cn } from '@/lib/utils';
 import { Supplier, SupplierInvoice, PurchaseInvoiceItem, SupplierPayment } from '@/lib/types';
 import { syncService } from '@/services/syncService';
 import SupplierPaymentModal from './supplier-payment-modal';
+import { formatBs, formatUsd, formatBsNumber, formatUsdNumber } from '@/lib/currency-formatter';
 
 interface ExpandedInvoice {
   invoiceId: number;
@@ -279,7 +280,7 @@ export default function SuppliersModule() {
         method: paymentData.method,
         reference: paymentData.reference || '',
         bank: paymentData.bank,
-        notes: `Pago registrado. Tasa usada: ${paymentData.exchangeRate?.toFixed(2)} Bs/USD`
+        notes: `Pago registrado. Tasa usada: {formatUsd(paymentData.exchangeRate?)} Bs/USD`
       };
       
       await syncService.saveSupplierPayment(newPayment);
@@ -292,7 +293,7 @@ export default function SuppliersModule() {
         category: 'pagos_proveedores',
         subcategory: 'abono',
         concept: `Pago a proveedor ${selectedSupplierForPayment.name}`,
-        description: `Pago de ${paymentData.amount.toFixed(2)} USD`,
+        description: `Pago de {formatUsd(paymentData.amount)} USD`,
         amount: paymentData.amount,
         referenceId: newPayment.id,
         referenceType: 'supplier_payment',
@@ -308,7 +309,7 @@ export default function SuppliersModule() {
       
       toast({ 
         title: "Pago registrado", 
-        description: `Se ha registrado un pago de $${paymentData.amount.toFixed(2)} a ${selectedSupplierForPayment.name}` 
+        description: `Se ha registrado un pago de ${formatUsd(paymentData.amount)} a ${selectedSupplierForPayment.name}` 
       });
       
       setShowPaymentModal(false);
@@ -325,7 +326,7 @@ export default function SuppliersModule() {
 
   // ==================== FUNCIÓN PARA REVERTIR PAGO ====================
   const handleReversePayment = useCallback(async (payment: SupplierPayment) => {
-    if (!confirm(`¿Está seguro de ANULAR este pago de $${payment.amount.toFixed(2)}? Esta acción revertirá el saldo de las facturas afectadas y no se puede deshacer.`)) {
+    if (!confirm(`¿Está seguro de ANULAR este pago de ${formatUsd(payment.amount)}? Esta acción revertirá el saldo de las facturas afectadas y no se puede deshacer.`)) {
       return;
     }
 
@@ -371,7 +372,7 @@ export default function SuppliersModule() {
         category: 'reversiones_pagos',
         subcategory: 'anulacion_pago',
         concept: `ANULACIÓN de pago a proveedor`,
-        description: `Reversión de pago de $${payment.amount.toFixed(2)}`,
+        description: `Reversión de pago de ${formatUsd(payment.amount)}`,
         amount: payment.amount,
         referenceId: payment.id,
         referenceType: 'payment_reversal',
@@ -397,7 +398,7 @@ export default function SuppliersModule() {
       
       toast({ 
         title: "Pago anulado", 
-        description: `Se ha anulado el pago de $${payment.amount.toFixed(2)}. El saldo ha sido restaurado.`,
+        description: `Se ha anulado el pago de ${formatUsd(payment.amount)}. El saldo ha sido restaurado.`,
       });
       
     } catch (error) {
@@ -435,7 +436,7 @@ export default function SuppliersModule() {
           <div className="flex-1 overflow-y-auto p-4">
             <div className="bg-green-50 rounded-lg p-3 mb-4 text-center border border-green-200 transition-all duration-200">
               <p className="text-[9px] font-black uppercase text-green-700">Total Pagado</p>
-              <p className="text-2xl font-black text-green-700">${totalPaid.toFixed(2)}</p>
+              <p className="text-2xl font-black text-green-700">{formatUsd(totalPaid)}</p>
             </div>
             
             {payments.length === 0 ? (
@@ -463,7 +464,7 @@ export default function SuppliersModule() {
                           )}
                         </div>
                         <div className="text-right">
-                          <p className="text-sm font-black text-secondary">${payment.amount.toFixed(2)}</p>
+                          <p className="text-sm font-black text-secondary">{formatUsd(payment.amount)}</p>
                         </div>
                       </div>
                       {payment.reference && (
@@ -534,16 +535,16 @@ export default function SuppliersModule() {
             <div className="grid grid-cols-3 gap-3 mb-4">
               <div className="bg-slate-50 rounded-lg p-3 text-center border">
                 <p className="text-[9px] font-black uppercase text-slate-500">Total Facturado</p>
-                <p className="text-xl font-black text-black">${totalPurchases.toFixed(2)}</p>
+                <p className="text-xl font-black text-black">{formatUsd(totalPurchases)}</p>
               </div>
               <div className="bg-slate-50 rounded-lg p-3 text-center border">
                 <p className="text-[9px] font-black uppercase text-slate-500">Total Abonado</p>
-                <p className="text-xl font-black text-green-600">${totalPaid.toFixed(2)}</p>
+                <p className="text-xl font-black text-green-600">{formatUsd(totalPaid)}</p>
               </div>
               <div className="bg-slate-50 rounded-lg p-3 text-center border">
                 <p className="text-[9px] font-black uppercase text-slate-500">Saldo por Pagar</p>
                 <p className={cn("text-xl font-black", totalDebt > 0 ? "text-red-600" : "text-green-600")}>
-                  ${totalDebt.toFixed(2)}
+                  {formatUsd(totalDebt)}
                 </p>
               </div>
             </div>
@@ -552,7 +553,7 @@ export default function SuppliersModule() {
             {totalDebt > 0 && (
               <div className="mb-4 flex justify-end">
                 <Button onClick={() => handleOpenPaymentModal(supplier)} className="bg-green-600 hover:bg-green-700 text-white font-black h-8 text-xs">
-                  <HandCoins size={14} className="mr-1" /> PAGAR DEUDA (${totalDebt.toFixed(2)})
+                  <HandCoins size={14} className="mr-1" /> PAGAR DEUDA ({formatUsd(totalDebt)})
                 </Button>
               </div>
             )}
@@ -587,13 +588,13 @@ export default function SuppliersModule() {
                           </div>
                         </div>
                         <div className="text-right">
-                          <p className="text-sm font-black text-primary">${inv.total.toFixed(2)}</p>
+                          <p className="text-sm font-black text-primary">{formatUsd(inv.total)}</p>
                           {owed > 0 && (
                             <button
                               onClick={(e) => { e.stopPropagation(); handleOpenPaymentModal(supplier, inv); }}
                               className="text-[9px] font-bold text-green-600 hover:underline mt-0.5"
                             >
-                              Pagar saldo (${owed.toFixed(2)})
+                              Pagar saldo ({formatUsd(owed)})
                             </button>
                           )}
                           {owed === 0 && (
@@ -627,8 +628,8 @@ export default function SuppliersModule() {
                                     <tr key={idx} className="hover:bg-white">
                                       <td className="p-1.5 font-medium">{item.productName}</td>
                                       <td className="p-1.5 text-center">{item.qty}</td>
-                                      <td className="p-1.5 text-right font-mono">${item.costUsd.toFixed(2)}</td>
-                                      <td className="p-1.5 text-right font-bold">${item.totalUsd.toFixed(2)}</td>
+                                      <td className="p-1.5 text-right font-mono">{formatUsd(item.costUsd)}</td>
+                                      <td className="p-1.5 text-right font-bold">{formatUsd(item.totalUsd)}</td>
                                     </tr>
                                   ))
                                 )}
@@ -636,7 +637,7 @@ export default function SuppliersModule() {
                               <tfoot className="bg-[#F0F0F0] font-black">
                                 <tr>
                                   <td colSpan={3} className="p-1.5 text-right">TOTAL FACTURA:</td>
-                                  <td className="p-1.5 text-right text-secondary">${inv.total.toFixed(2)}</td>
+                                  <td className="p-1.5 text-right text-secondary">{formatUsd(inv.total)}</td>
                                 </tr>
                               </tfoot>
                             </table>
@@ -720,11 +721,11 @@ export default function SuppliersModule() {
                           <p className="text-[9px] text-black/40">{s.phone}</p>
                         </TableCell>
                         <TableCell className="text-right font-mono text-xs text-secondary font-bold">
-                          ${totalPurchases.toFixed(2)}
+                          {formatUsd(totalPurchases)}
                         </TableCell>
                         <TableCell className="text-right">
                           <span className={cn("font-mono text-xs font-black", debt > 0 ? "text-red-600" : "text-green-600")}>
-                            ${debt.toFixed(2)}
+                            {formatUsd(debt)}
                           </span>
                         </TableCell>
                         <TableCell className="text-center">

@@ -8,6 +8,7 @@ import { usePOSState } from '@/hooks/use-pos-state';
 import PaymentModal from './payment-modal';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { formatBs, formatUsd, formatBsNumber, formatUsdNumber } from '@/lib/currency-formatter';
 
 interface ClientPanelProps {
   client: Client;
@@ -83,7 +84,7 @@ export default function ClientPanel({ client, state, onClose }: ClientPanelProps
     state.applyAbono(client.id, amountPaid);
     setShowPaymentModal(false);
     setAbono('');
-    alert(`Pago registrado correctamente. Monto: BS ${amountPaid.toFixed(2)}`);
+    alert(`Pago registrado correctamente. Monto: ${formatBs(amountPaid)}`);
   };
 
   const handleTransactionClick = (account: any) => {
@@ -180,9 +181,9 @@ export default function ClientPanel({ client, state, onClose }: ClientPanelProps
                 "text-2xl font-black mt-1",
                 totalDebt > 0 ? "text-[#E74C3C]" : "text-[#2ECC71]"
               )}>
-                BS {totalDebt.toFixed(2)}
+                {formatBs(totalDebt)}
               </div>
-              <div className="text-[12px] font-bold text-black mt-0.5">USD {(totalDebt / state.exchangeRate).toFixed(2)}</div>
+              <div className="text-[12px] font-bold text-black mt-0.5">{formatUsd(totalDebt / state.exchangeRate)}</div>
             </div>
           </div>
 
@@ -261,7 +262,7 @@ export default function ClientPanel({ client, state, onClose }: ClientPanelProps
                           </span>
                           {(a.paidAmount || 0) > 0 && !isPaid && (
                             <span className="text-[9px] text-black/50">
-                              Abonado: BS {(a.paidAmount || 0).toFixed(2)}
+                              Abonado: {formatBs(a.paidAmount || 0)}
                             </span>
                           )}
                         </div>
@@ -271,7 +272,7 @@ export default function ClientPanel({ client, state, onClose }: ClientPanelProps
                           "text-[13px] font-bold",
                           isPaid ? "text-[#2ECC71]" : isPartial ? "text-[#F39C12]" : "text-[#E74C3C]"
                         )}>
-                          BS {remaining.toFixed(2)}
+                          {formatBs(remaining)}
                         </div>
                       </div>
                       <Eye size={14} className="text-black/30" />
@@ -332,9 +333,9 @@ export default function ClientPanel({ client, state, onClose }: ClientPanelProps
                   </div>
                   <div>
                     <label className="text-[10px] font-black text-black/60 uppercase tracking-widest">Monto Total</label>
-                    <p className="text-lg font-black text-black">BS {selectedTransaction.accountInfo.amountBs.toFixed(2)}</p>
+                    <p className="text-lg font-black text-black">{formatBs(selectedTransaction.accountInfo.amountBs)}</p>
                     {historicalRate && (
-                      <p className="text-xs text-black/50">≈ USD {(selectedTransaction.accountInfo.amountBs / historicalRate).toFixed(2)} <span className="text-amber-600">(al momento del crédito)</span></p>
+                      <p className="text-xs text-black/50">≈ {formatUsd(selectedTransaction.accountInfo.amountBs / historicalRate)} <span className="text-amber-600">(al momento del crédito)</span></p>
                     )}
                   </div>
                   <div>
@@ -361,7 +362,7 @@ export default function ClientPanel({ client, state, onClose }: ClientPanelProps
                     <div className="text-right">
                       {historicalRate ? (
                         <>
-                          <p className="text-lg font-black text-amber-800">1 USD = Bs {historicalRate.toFixed(2)}</p>
+                          <p className="text-lg font-black text-amber-800">1 USD = {formatBsNumber(historicalRate)}</p>
                           <p className="text-[8px] text-amber-600">Valor fijo aplicado el {new Date(selectedTransaction.accountInfo.date).toLocaleDateString('es-VE')}</p>
                         </>
                       ) : (
@@ -395,12 +396,12 @@ export default function ClientPanel({ client, state, onClose }: ClientPanelProps
                                 <td className="p-3 text-xs text-black/80">{item.qty}</td>
                                 <td className="p-3 text-xs text-black font-medium">{item.name}</td>
                                 <td className="p-3 text-right text-xs text-black/80">
-                                  {item.priceBs > 0 ? `BS ${item.priceBs.toFixed(2)}` : 
-                                   item.priceUsd > 0 ? `$${item.priceUsd.toFixed(2)}` : '—'}
+                                  {item.priceBs > 0 ? formatBs(item.priceBs) : 
+                                   item.priceUsd > 0 ? formatUsd(item.priceUsd) : '—'}
                                 </td>
                                 <td className="p-3 text-right text-xs font-bold text-black">
-                                  {item.priceBs > 0 ? `BS ${(item.priceBs * item.qty).toFixed(2)}` : 
-                                   item.priceUsd > 0 ? `$${(item.priceUsd * item.qty).toFixed(2)}` : '—'}
+                                  {item.priceBs > 0 ? formatBs(item.priceBs * item.qty) : 
+                                   item.priceUsd > 0 ? formatUsd(item.priceUsd * item.qty) : '—'}
                                 </td>
                               </tr>
                             ));
@@ -423,27 +424,27 @@ export default function ClientPanel({ client, state, onClose }: ClientPanelProps
                   <div className="flex justify-between text-sm">
                     <span className="text-black/60">Monto Total (Bs):</span>
                     <div className="text-right">
-                      <span className="font-bold text-black">BS {selectedTransaction.accountInfo.amountBs.toFixed(2)}</span>
+                      <span className="font-bold text-black">{formatBs(selectedTransaction.accountInfo.amountBs)}</span>
                       {historicalRate && (
-                        <span className="text-xs text-black/50 ml-2">(USD {(selectedTransaction.accountInfo.amountBs / historicalRate).toFixed(2)})</span>
+                        <span className="text-xs text-black/50 ml-2">({formatUsd(selectedTransaction.accountInfo.amountBs / historicalRate)})</span>
                       )}
                     </div>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-black/60">Monto Pagado (Bs):</span>
                     <div className="text-right">
-                      <span className="font-bold text-green-600">BS {(selectedTransaction.accountInfo.paidAmount || 0).toFixed(2)}</span>
+                      <span className="font-bold text-green-600">{formatBs(selectedTransaction.accountInfo.paidAmount || 0)}</span>
                       {historicalRate && (
-                        <span className="text-xs text-black/50 ml-2">(USD {((selectedTransaction.accountInfo.paidAmount || 0) / historicalRate).toFixed(2)})</span>
+                        <span className="text-xs text-black/50 ml-2">({formatUsd((selectedTransaction.accountInfo.paidAmount || 0) / historicalRate)})</span>
                       )}
                     </div>
                   </div>
                   <div className="flex justify-between text-sm pt-1 border-t border-dashed border-[#9E9E9E]">
                     <span className="text-black/60">Saldo Pendiente (Bs):</span>
                     <div className="text-right">
-                      <span className="font-bold text-red-600">BS {(selectedTransaction.accountInfo.amountBs - (selectedTransaction.accountInfo.paidAmount || 0)).toFixed(2)}</span>
+                      <span className="font-bold text-red-600">{formatBs(selectedTransaction.accountInfo.amountBs - (selectedTransaction.accountInfo.paidAmount || 0))}</span>
                       {historicalRate && (
-                        <span className="text-xs text-black/50 ml-2">(USD {((selectedTransaction.accountInfo.amountBs - (selectedTransaction.accountInfo.paidAmount || 0)) / historicalRate).toFixed(2)})</span>
+                        <span className="text-xs text-black/50 ml-2">({formatUsd((selectedTransaction.accountInfo.amountBs - (selectedTransaction.accountInfo.paidAmount || 0)) / historicalRate)})</span>
                       )}
                     </div>
                   </div>
@@ -481,7 +482,7 @@ export default function ClientPanel({ client, state, onClose }: ClientPanelProps
                             return abonos.map((abono, idx) => (
                               <tr key={idx} className="border-b border-[#9E9E9E]/50 hover:bg-[#F5F5F5]">
                                 <td className="p-3 text-xs text-black/80">{formatDateShort(abono.date)}</td>
-                                <td className="p-3 text-right text-xs font-bold text-green-600">BS {abono.total.toFixed(2)}</td>
+                                <td className="p-3 text-right text-xs font-bold text-green-600">{formatBs(abono.total)}</td>
                               </tr>
                             ));
                           })()}
@@ -490,7 +491,7 @@ export default function ClientPanel({ client, state, onClose }: ClientPanelProps
                           <tr>
                             <td className="p-3 text-xs font-bold text-black">TOTAL ABONADO</td>
                             <td className="p-3 text-right text-sm font-black text-green-700">
-                              BS {(selectedTransaction.accountInfo.paidAmount || 0).toFixed(2)}
+                              {formatBs(selectedTransaction.accountInfo.paidAmount || 0)}
                             </td>
                           </tr>
                         </tfoot>

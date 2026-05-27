@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 import ExpenseModal from './expense-modal';
+import { formatBs, formatUsd, formatBsNumber, formatUsdNumber } from '@/lib/currency-formatter';
 
 // ✅ Función para obtener timestamp único
 const getTimestamp = (): number => Date.now();
@@ -124,15 +125,15 @@ export default function AccountingModule() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         <div className="bg-white rounded-xl border border-[#9E9E9E] p-4 shadow-sm">
           <div className="flex items-center gap-2 mb-2"><TrendingUp size={18} className="text-green-600" /><p className="text-xs font-black text-black/60 uppercase">Total Ingresos</p></div>
-          <p className="text-2xl font-black text-green-600">Bs {totalIngresos.toFixed(2)}</p>
+          <p className="text-2xl font-black text-green-600">{formatBs(totalIngresos)}</p>
         </div>
         <div className="bg-white rounded-xl border border-[#9E9E9E] p-4 shadow-sm">
           <div className="flex items-center gap-2 mb-2"><TrendingDown size={18} className="text-red-600" /><p className="text-xs font-black text-black/60 uppercase">Total Egresos</p></div>
-          <p className="text-2xl font-black text-red-600">Bs {totalEgresos.toFixed(2)}</p>
+          <p className="text-2xl font-black text-red-600">{formatBs(totalEgresos)}</p>
         </div>
         <div className={cn("bg-white rounded-xl border p-4 shadow-sm", balance >= 0 ? "border-green-500" : "border-red-500")}>
           <div className="flex items-center gap-2 mb-2"><DollarSign size={18} className={balance >= 0 ? "text-green-600" : "text-red-600"} /><p className="text-xs font-black text-black/60 uppercase">Balance</p></div>
-          <p className={cn("text-2xl font-black", balance >= 0 ? "text-green-600" : "text-red-600")}>Bs {balance.toFixed(2)}</p>
+          <p className={cn("text-2xl font-black", balance >= 0 ? "text-green-600" : "text-red-600")}>{formatBs(balance)}</p>
         </div>
       </div>
 
@@ -183,16 +184,16 @@ export default function AccountingModule() {
                   <TableCell className="text-xs text-black/80">{getCategoryLabel(entry.category)}</TableCell>
                   <TableCell className="text-xs font-medium text-black">{entry.concept}</TableCell>
                   <TableCell className="text-xs text-black/60 max-w-[200px] truncate">{entry.description}</TableCell>
-                  <TableCell className={cn("text-right font-bold text-sm", entry.type === 'ingreso' ? "text-green-600" : "text-red-600")}>{entry.type === 'ingreso' ? '+' : '-'} Bs {entry.amount.toFixed(2)}</TableCell>
+                  <TableCell className={cn("text-right font-bold text-sm", entry.type === 'ingreso' ? "text-green-600" : "text-red-600")}>{entry.type === 'ingreso' ? '+' : '-'} {formatBs(entry.amount)}</TableCell>
                   <TableCell className="text-center"><button className="text-primary text-[10px] font-bold hover:underline">Ver</button></TableCell>
                 </TableRow>
               ))}
               {filteredEntries.length === 0 && (<TableRow><TableCell colSpan={7} className="text-center py-10 text-black/50 italic">No hay movimientos que coincidan con los filtros</TableCell></TableRow>)}
             </TableBody>
             <tfoot className="bg-[#F0F0F0] sticky bottom-0">
-              <TableRow className="border-t-2 border-[#9E9E9E]"><TableCell colSpan={5} className="p-3 text-right font-black text-black">TOTAL FILTRADO INGRESOS:</TableCell><TableCell className="p-3 text-right font-black text-green-600">+ Bs {totalIngresos.toFixed(2)}</TableCell><TableCell></TableCell></TableRow>
-              <TableRow><TableCell colSpan={5} className="p-3 text-right font-black text-black">TOTAL FILTRADO EGRESOS:</TableCell><TableCell className="p-3 text-right font-black text-red-600">- Bs {totalEgresos.toFixed(2)}</TableCell><TableCell></TableCell></TableRow>
-              <TableRow className="bg-[#E8E8E8]"><TableCell colSpan={5} className="p-3 text-right font-black text-black">BALANCE PERIODO:</TableCell><TableCell className={cn("p-3 text-right font-black text-lg", balance >= 0 ? "text-green-600" : "text-red-600")}>Bs {balance.toFixed(2)}</TableCell><TableCell></TableCell></TableRow>
+              <TableRow className="border-t-2 border-[#9E9E9E]"><TableCell colSpan={5} className="p-3 text-right font-black text-black">TOTAL FILTRADO INGRESOS:</TableCell><TableCell className="p-3 text-right font-black text-green-600">+ {formatBs(totalIngresos)}</TableCell><TableCell></TableCell></TableRow>
+              <TableRow><TableCell colSpan={5} className="p-3 text-right font-black text-black">TOTAL FILTRADO EGRESOS:</TableCell><TableCell className="p-3 text-right font-black text-red-600">- {formatBs(totalEgresos)}</TableCell><TableCell></TableCell></TableRow>
+              <TableRow className="bg-[#E8E8E8]"><TableCell colSpan={5} className="p-3 text-right font-black text-black">BALANCE PERIODO:</TableCell><TableCell className={cn("p-3 text-right font-black text-lg", balance >= 0 ? "text-green-600" : "text-red-600")}>{formatBs(balance)}</TableCell><TableCell></TableCell></TableRow>
             </tfoot>
           </Table>
         </div>
@@ -212,7 +213,7 @@ export default function AccountingModule() {
                 <div className="grid grid-cols-2 gap-2"><p className="text-[10px] font-bold text-black/60">Categoría</p><p className="text-sm text-black">{getCategoryLabel(selectedEntry.category)}</p></div>
                 {selectedEntry.subcategory && <div className="grid grid-cols-2 gap-2"><p className="text-[10px] font-bold text-black/60">Subcategoría</p><p className="text-sm text-black">{selectedEntry.subcategory}</p></div>}
                 <div className="grid grid-cols-2 gap-2"><p className="text-[10px] font-bold text-black/60">Concepto</p><p className="text-sm font-medium text-black">{selectedEntry.concept}</p></div>
-                <div className="grid grid-cols-2 gap-2"><p className="text-[10px] font-bold text-black/60">Monto</p><p className={cn("text-lg font-black", selectedEntry.type === 'ingreso' ? "text-green-600" : "text-red-600")}>Bs {selectedEntry.amount.toFixed(2)}</p></div>
+                <div className="grid grid-cols-2 gap-2"><p className="text-[10px] font-bold text-black/60">Monto</p><p className={cn("text-lg font-black", selectedEntry.type === 'ingreso' ? "text-green-600" : "text-red-600")}>{formatBs(selectedEntry.amount)}</p></div>
                 {selectedEntry.description && <div className="grid grid-cols-2 gap-2"><p className="text-[10px] font-bold text-black/60">Descripción</p><p className="text-sm text-black/70">{selectedEntry.description}</p></div>}
               </div>
               <div className="bg-[#F5F5F5] p-4 border-t flex justify-end"><Button onClick={() => setShowEntryDetail(false)}>CERRAR</Button></div>

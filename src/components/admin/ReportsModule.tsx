@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils';
 import { Transaction } from '@/lib/types';
 import { getStartOfDay, getEndOfDay, formatLocalDate } from '@/lib/date-utils';
 import { syncService } from '@/services/syncService';
+import { formatBs, formatUsd, formatBsNumber, formatUsdNumber } from '@/lib/currency-formatter';
 
 interface ReportsModuleProps {
   state: ReturnType<typeof usePOSState>;
@@ -120,22 +121,22 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
                 <td>${formatLocalDate(t.date)}</td>
                 <td><span class="badge">${t.type.toUpperCase()}</span></td>
                 <td>${t.clientName || '—'}</td>
-                <td class="text-right">Bs ${t.total.toFixed(2)}</td>
+                <td class="text-right">${formatBs(t.total)}</td>
               </tr>
             `).join('')}
           </tbody>
-          <tfoot><tr><td colspan="3" class="text-right"><strong>Total General</strong></td><td class="text-right"><strong>Bs ${totalGeneral.toFixed(2)}</strong></td></tr></tfoot>
+          <tfoot><tr><td colspan="3" class="text-right"><strong>Total General</strong></td><td class="text-right"><strong>${formatBs(totalGeneral)}</strong></td></tr></tfoot>
         </table>
       `;
     } else if (activeReport === 'summary' && hasSearched) {
       content = `
         <div class="summary-grid">
-          <div class="summary-card"><div class="card-title">Total General</div><div class="card-value text-primary">Bs ${totalGeneral.toFixed(2)}</div></div>
-          <div class="summary-card"><div class="card-title">Ventas Contado</div><div class="card-value text-green">Bs ${contadoTotal.toFixed(2)}</div></div>
-          <div class="summary-card"><div class="card-title">Ventas Crédito</div><div class="card-value text-orange">Bs ${creditoTotal.toFixed(2)}</div></div>
-          <div class="summary-card"><div class="card-title">Cobros de Deuda</div><div class="card-value text-purple">Bs ${cobroTotal.toFixed(2)}</div></div>
-          <div class="summary-card"><div class="card-title">Colaboraciones/Consumo</div><div class="card-value text-red">Bs ${colaboracionTotal.toFixed(2)}</div></div>
-          <div class="summary-card"><div class="card-title">Costo de Operación</div><div class="card-value">Bs ${costoTotalOperacion.toFixed(2)}</div></div>
+          <div class="summary-card"><div class="card-title">Total General</div><div class="card-value text-primary">${formatBs(totalGeneral)}</div></div>
+          <div class="summary-card"><div class="card-title">Ventas Contado</div><div class="card-value text-green">${formatBs(contadoTotal)}</div></div>
+          <div class="summary-card"><div class="card-title">Ventas Crédito</div><div class="card-value text-orange">${formatBs(creditoTotal)}</div></div>
+          <div class="summary-card"><div class="card-title">Cobros de Deuda</div><div class="card-value text-purple">${formatBs(cobroTotal)}</div></div>
+          <div class="summary-card"><div class="card-title">Colaboraciones/Consumo</div><div class="card-value text-red">${formatBs(colaboracionTotal)}</div></div>
+          <div class="summary-card"><div class="card-title">Costo de Operación</div><div class="card-value">${formatBs(costoTotalOperacion)}</div></div>
         </div>
       `;
     } else if (activeReport === 'consolidated') {
@@ -146,17 +147,18 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
             ${monthlyConsolidated.map(row => `
               <tr>
                 <td>${row.label} ${row.year}</td>
-                <td class="text-right text-green">Bs ${row.income.toFixed(2)}</td>
-                <td class="text-right text-red">Bs ${row.expense.toFixed(2)}</td>
-                <td class="text-right ${row.income - row.expense >= 0 ? 'text-green' : 'text-red'}">Bs ${(row.income - row.expense).toFixed(2)}</td>
+                <td class="text-right text-green">${formatBs(row.income)}</td>
+                <td class="text-right text-red">${formatBs(row.expense)}</td>
+                <td class="text-right ${row.income - row.expense >= 0 ? 'text-green' : 'text-red'}">${formatBs(row.income - row.expense)}</td>
               </tr>
             `).join('')}
           </tbody>
           <tfoot>
             <tr><td class="text-right"><strong>TOTAL</strong></td>
-            <td class="text-right"><strong>Bs ${monthlyConsolidated.reduce((s,r)=>s+r.income,0).toFixed(2)}</strong></td>
-            <td class="text-right"><strong>Bs ${monthlyConsolidated.reduce((s,r)=>s+r.expense,0).toFixed(2)}</strong></td>
-            <td class="text-right"><strong>Bs ${(monthlyConsolidated.reduce((s,r)=>s+r.income,0) - monthlyConsolidated.reduce((s,r)=>s+r.expense,0)).toFixed(2)}</strong></td></tr>
+            <td class="text-right"><strong>${formatBs(monthlyConsolidated.reduce((s,r)=>s+r.income,0))}</strong></td>
+            <td class="text-right"><strong>${formatBs(monthlyConsolidated.reduce((s,r)=>s+r.expense,0))}</strong></td>
+            <td class="text-right"><strong>${formatBs(monthlyConsolidated.reduce((s,r)=>s+r.income,0) - monthlyConsolidated.reduce((s,r)=>s+r.expense,0))}</strong></td>
+          </tr>
           </tfoot>
         </table>
       `;
@@ -333,24 +335,24 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
     if (activeReport === 'transactions' && hasSearched) {
       csvRows.push(['Fecha', 'Tipo', 'Cliente', 'Total Bs']);
       filteredTransactions.forEach(t => {
-        csvRows.push([formatLocalDate(t.date), t.type, t.clientName || '—', t.total.toFixed(2)]);
+        csvRows.push([formatLocalDate(t.date), t.type, t.clientName || '—', formatBsNumber(t.total)]);
       });
     } else if (activeReport === 'summary' && hasSearched) {
       csvRows.push(['Concepto', 'Monto Bs']);
-      csvRows.push(['Total General', totalGeneral.toFixed(2)]);
-      csvRows.push(['Ventas Contado', contadoTotal.toFixed(2)]);
-      csvRows.push(['Ventas Crédito', creditoTotal.toFixed(2)]);
-      csvRows.push(['Cobros de Deuda', cobroTotal.toFixed(2)]);
-      csvRows.push(['Colaboraciones/Consumo (Costo)', colaboracionTotal.toFixed(2)]);
-      csvRows.push(['Costo Total Operación', costoTotalOperacion.toFixed(2)]);
+      csvRows.push(['Total General', formatBsNumber(totalGeneral)]);
+      csvRows.push(['Ventas Contado', formatBsNumber(contadoTotal)]);
+      csvRows.push(['Ventas Crédito', formatBsNumber(creditoTotal)]);
+      csvRows.push(['Cobros de Deuda', formatBsNumber(cobroTotal)]);
+      csvRows.push(['Colaboraciones/Consumo (Costo)', formatBsNumber(colaboracionTotal)]);
+      csvRows.push(['Costo Total Operación', formatBsNumber(costoTotalOperacion)]);
     } else if (activeReport === 'consolidated') {
       csvRows.push(['Mes', 'Ingresos (Bs)', 'Egresos (Bs)', 'Balance (Bs)']);
       monthlyConsolidated.forEach(row => {
-        csvRows.push([`${row.label} ${row.year}`, row.income.toFixed(2), row.expense.toFixed(2), (row.income - row.expense).toFixed(2)]);
+        csvRows.push([`${row.label} ${row.year}`, formatBsNumber(row.income), formatBsNumber(row.expense), formatBsNumber(row.income - row.expense)]);
       });
       const totalIncome = monthlyConsolidated.reduce((s, r) => s + r.income, 0);
       const totalExpense = monthlyConsolidated.reduce((s, r) => s + r.expense, 0);
-      csvRows.push(['TOTAL', totalIncome.toFixed(2), totalExpense.toFixed(2), (totalIncome - totalExpense).toFixed(2)]);
+      csvRows.push(['TOTAL', formatBsNumber(totalIncome), formatBsNumber(totalExpense), formatBsNumber(totalIncome - totalExpense)]);
     } else {
       alert('No hay datos para exportar. Realice una búsqueda primero.');
       return;
@@ -408,7 +410,7 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
                         <td className="p-2 text-xs">{formatLocalDate(t.date)}</td>
                         <td className="p-2"><span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-gray-100">{t.type.toUpperCase()}</span></td>
                         <td className="p-2 text-xs">{t.clientName || '—'}</td>
-                        <td className="p-2 text-right font-bold">Bs {t.total.toFixed(2)}</td>
+                        <td className="p-2 text-right font-bold">{formatBs(t.total)}</td>
                         {isAdmin && <td className="p-2 text-center"><button onClick={() => handleDeleteTransaction(t.id)} className="text-red-500 hover:text-red-700"><X size={14} /></button></td>}
                       </tr>
                     ))}
@@ -429,12 +431,12 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
             {hasSearched && (
               <div className="bg-gray-50 rounded-xl p-5 border border-gray-200 space-y-3">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="bg-white p-4 rounded-xl shadow-sm border-l-4 border-primary"><p className="text-[10px] font-black text-black/40">Total General</p><p className="text-2xl font-black text-primary">Bs {totalGeneral.toFixed(2)}</p></div>
-                  <div className="bg-white p-4 rounded-xl shadow-sm border-l-4 border-green-500"><p className="text-[10px] font-black text-black/40">Ventas Contado</p><p className="text-2xl font-black text-green-600">Bs {contadoTotal.toFixed(2)}</p></div>
-                  <div className="bg-white p-4 rounded-xl shadow-sm border-l-4 border-orange-500"><p className="text-[10px] font-black text-black/40">Ventas Crédito</p><p className="text-2xl font-black text-orange-600">Bs {creditoTotal.toFixed(2)}</p></div>
-                  <div className="bg-white p-4 rounded-xl shadow-sm border-l-4 border-purple-500"><p className="text-[10px] font-black text-black/40">Cobros de Deuda</p><p className="text-2xl font-black text-purple-600">Bs {cobroTotal.toFixed(2)}</p></div>
-                  <div className="bg-white p-4 rounded-xl shadow-sm border-l-4 border-red-500"><p className="text-[10px] font-black text-black/40">Colaboraciones/Consumo (Costo)</p><p className="text-2xl font-black text-red-600">Bs {colaboracionTotal.toFixed(2)}</p></div>
-                  <div className="bg-white p-4 rounded-xl shadow-sm border-l-4 border-gray-500"><p className="text-[10px] font-black text-black/40">Costo Total de Operación</p><p className="text-2xl font-black">Bs {costoTotalOperacion.toFixed(2)}</p></div>
+                  <div className="bg-white p-4 rounded-xl shadow-sm border-l-4 border-primary"><p className="text-[10px] font-black text-black/40">Total General</p><p className="text-2xl font-black text-primary">{formatBs(totalGeneral)}</p></div>
+                  <div className="bg-white p-4 rounded-xl shadow-sm border-l-4 border-green-500"><p className="text-[10px] font-black text-black/40">Ventas Contado</p><p className="text-2xl font-black text-green-600">{formatBs(contadoTotal)}</p></div>
+                  <div className="bg-white p-4 rounded-xl shadow-sm border-l-4 border-orange-500"><p className="text-[10px] font-black text-black/40">Ventas Crédito</p><p className="text-2xl font-black text-orange-600">{formatBs(creditoTotal)}</p></div>
+                  <div className="bg-white p-4 rounded-xl shadow-sm border-l-4 border-purple-500"><p className="text-[10px] font-black text-black/40">Cobros de Deuda</p><p className="text-2xl font-black text-purple-600">{formatBs(cobroTotal)}</p></div>
+                  <div className="bg-white p-4 rounded-xl shadow-sm border-l-4 border-red-500"><p className="text-[10px] font-black text-black/40">Colaboraciones/Consumo (Costo)</p><p className="text-2xl font-black text-red-600">{formatBs(colaboracionTotal)}</p></div>
+                  <div className="bg-white p-4 rounded-xl shadow-sm border-l-4 border-gray-500"><p className="text-[10px] font-black text-black/40">Costo Total de Operación</p><p className="text-2xl font-black">{formatBs(costoTotalOperacion)}</p></div>
                 </div>
               </div>
             )}
@@ -453,9 +455,9 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
                     return (
                       <tr key={idx} className="hover:bg-[#F5F5F5]">
                         <td className="p-3"><p className="font-black">{row.label}</p><p className="text-[10px] text-black/50">{row.year}</p></td>
-                        <td className="p-3 text-right text-green-600 font-bold">Bs {row.income.toFixed(2)}</td>
-                        <td className="p-3 text-right text-red-600 font-bold">Bs {row.expense.toFixed(2)}</td>
-                        <td className={cn("p-3 text-right font-black", balance >= 0 ? "text-green-700" : "text-red-700")}>Bs {balance.toFixed(2)}</td>
+                        <td className="p-3 text-right text-green-600 font-bold">{formatBs(row.income)}</td>
+                        <td className="p-3 text-right text-red-600 font-bold">{formatBs(row.expense)}</td>
+                        <td className={cn("p-3 text-right font-black", balance >= 0 ? "text-green-700" : "text-red-700")}>{formatBs(balance)}</td>
                       </tr>
                     );
                   })}
@@ -463,9 +465,9 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
                 <tfoot className="bg-[#F0F0F0]">
                   <tr className="font-black">
                     <td className="p-4">TOTAL HISTÓRICO</td>
-                    <td className="p-4 text-right text-green-700">Bs {monthlyConsolidated.reduce((s, r) => s + r.income, 0).toFixed(2)}</td>
-                    <td className="p-4 text-right text-red-700">Bs {monthlyConsolidated.reduce((s, r) => s + r.expense, 0).toFixed(2)}</td>
-                    <td className="p-4 text-right">Bs {(monthlyConsolidated.reduce((s, r) => s + r.income, 0) - monthlyConsolidated.reduce((s, r) => s + r.expense, 0)).toFixed(2)}</td>
+                    <td className="p-4 text-right text-green-700">{formatBs(monthlyConsolidated.reduce((s, r) => s + r.income, 0))}</td>
+                    <td className="p-4 text-right text-red-700">{formatBs(monthlyConsolidated.reduce((s, r) => s + r.expense, 0))}</td>
+                    <td className="p-4 text-right">{formatBs(monthlyConsolidated.reduce((s, r) => s + r.income, 0) - monthlyConsolidated.reduce((s, r) => s + r.expense, 0))}</td>
                   </tr>
                 </tfoot>
               </table>

@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import PaymentModal from '../pos/payment-modal';
 import { CartItem } from '@/lib/types';
+import { formatBs, formatUsd, formatBsNumber, formatUsdNumber } from '@/lib/currency-formatter';
 
 interface AccountsModuleProps {
   state: ReturnType<typeof usePOSState>;
@@ -149,7 +150,7 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
             <div className="flex items-center gap-4 mt-2">
               <div className="bg-[#1A2C4E] rounded-xl px-4 py-2">
                 <span className="text-[10px] text-white/60 uppercase tracking-widest">Total General</span>
-                <div className="text-2xl font-black text-white">BS {totalGeneralDebt.toFixed(2)}</div>
+                <div className="text-2xl font-black text-white">{formatBs(totalGeneralDebt)}</div>
               </div>
               <div className="bg-[#D4A017]/10 rounded-xl px-4 py-2 border border-[#D4A017]/30">
                 <span className="text-[10px] text-black/60 uppercase tracking-widest">Clientes con Deuda</span>
@@ -188,9 +189,9 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
                         <TableCell className="py-3">{isExpanded ? <ChevronDown size={16} className="text-black/60" /> : <ChevronRight size={16} className="text-black/60" />}</TableCell>
                         <TableCell className="font-bold text-black">{client.clientName}</TableCell>
                         <TableCell className="text-black/60 text-sm">{client.clientCedula}</TableCell>
-                        <TableCell className="text-right font-bold text-black">BS {client.totalOriginal.toFixed(2)}</TableCell>
-                        <TableCell className="text-right font-bold text-[#2ECC71]">BS {client.totalPaid.toFixed(2)}</TableCell>
-                        <TableCell className="text-right"><span className={cn("font-black", hasDebt ? "text-[#E74C3C]" : "text-[#2ECC71]")}>BS {client.totalDebt.toFixed(2)}</span></TableCell>
+                        <TableCell className="text-right font-bold text-black">{formatBs(client.totalOriginal)}</TableCell>
+                        <TableCell className="text-right font-bold text-[#2ECC71]">{formatBs(client.totalPaid)}</TableCell>
+                        <TableCell className="text-right"><span className={cn("font-black", hasDebt ? "text-[#E74C3C]" : "text-[#2ECC71]")}>{formatBs(client.totalDebt)}</span></TableCell>
                         <TableCell className="text-center">
                           {hasDebt && (
                             <button onClick={(e) => { e.stopPropagation(); handlePayDebt(client.clientId, client.clientName, client.totalDebt); }} className="px-3 py-1.5 bg-[#D4A017] text-black text-[10px] font-bold rounded-lg hover:brightness-110 transition-all flex items-center gap-1 mx-auto">
@@ -223,9 +224,9 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
                                       <TableRow key={account.id} className="border-b border-[#9E9E9E]/50 hover:bg-[#F5F5F5]">
                                         <TableCell className="text-[11px] text-black/60">{new Date(account.date).toLocaleDateString('es-VE')}</TableCell>
                                         <TableCell className="text-[11px] text-black/70 max-w-[250px] truncate">{account.products}</TableCell>
-                                        <TableCell className="text-right text-[11px] font-bold text-black">BS {account.amountBs.toFixed(2)}</TableCell>
-                                        <TableCell className="text-right text-[11px] text-[#2ECC71] font-bold">BS {(account.paidAmount || 0).toFixed(2)}</TableCell>
-                                        <TableCell className="text-right text-[11px] font-bold"><span className={remaining > 0 ? "text-[#E74C3C]" : "text-[#2ECC71]"}>BS {remaining.toFixed(2)}</span></TableCell>
+                                        <TableCell className="text-right text-[11px] font-bold text-black">{formatBs(account.amountBs)}</TableCell>
+                                        <TableCell className="text-right text-[11px] text-[#2ECC71] font-bold">{formatBs(account.paidAmount || 0)}</TableCell>
+                                        <TableCell className="text-right text-[11px] font-bold"><span className={remaining > 0 ? "text-[#E74C3C]" : "text-[#2ECC71]"}>{formatBs(remaining)}</span></TableCell>
                                         <TableCell className="text-center"><span className={cn("px-2 py-0.5 rounded-full text-[9px] font-bold", account.status === 'pagada' ? "bg-[#2ECC71]/20 text-[#2ECC71]" : account.status === 'parcial' ? "bg-[#F39C12]/20 text-[#F39C12]" : "bg-[#E74C3C]/20 text-[#E74C3C]")}>{account.status === 'pagada' ? 'PAGADA' : account.status === 'parcial' ? 'PARCIAL' : 'PENDIENTE'}</span></TableCell>
                                         <TableCell className="text-center">
                                           <button onClick={() => handleTransactionClick(account)} className="p-1.5 rounded-lg hover:bg-gray-200 transition-colors">
@@ -279,8 +280,8 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
                 <div className="grid grid-cols-2 gap-4 pb-4 border-b border-[#9E9E9E]">
                   <div><label className="text-[10px] font-black text-black/60 uppercase">Fecha</label><p className="text-sm font-bold text-black">{formatDate(selectedTransaction.accountInfo.date)}</p></div>
                   <div><label className="text-[10px] font-black text-black/60 uppercase">Tipo</label><p className="text-sm font-bold text-black uppercase">CRÉDITO</p></div>
-                  <div><label className="text-[10px] font-black text-black/60 uppercase">Monto Total</label><p className="text-lg font-black text-black">BS {selectedTransaction.accountInfo.amountBs.toFixed(2)}</p>
-                    {historicalRate && <p className="text-xs text-black/50">≈ USD {(selectedTransaction.accountInfo.amountBs / historicalRate).toFixed(2)} <span className="text-amber-600">(al momento del crédito)</span></p>}
+                  <div><label className="text-[10px] font-black text-black/60 uppercase">Monto Total</label><p className="text-lg font-black text-black">{formatBs(selectedTransaction.accountInfo.amountBs)}</p>
+                    {historicalRate && <p className="text-xs text-black/50">≈ {formatUsd(selectedTransaction.accountInfo.amountBs / historicalRate)} <span className="text-amber-600">(al momento del crédito)</span></p>}
                   </div>
                   <div><label className="text-[10px] font-black text-black/60 uppercase">Estado</label><p className={cn("inline-block px-3 py-1 rounded-full text-[10px] font-bold", selectedTransaction.accountInfo.status === 'pagada' ? "bg-green-100 text-green-700" : selectedTransaction.accountInfo.status === 'parcial' ? "bg-yellow-100 text-yellow-700" : "bg-red-100 text-red-700")}>{selectedTransaction.accountInfo.status === 'pagada' ? 'PAGADA' : selectedTransaction.accountInfo.status === 'parcial' ? 'PARCIAL' : 'PENDIENTE'}</p></div>
                 </div>
@@ -295,7 +296,7 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
                     <div className="text-right">
                       {historicalRate ? (
                         <>
-                          <p className="text-lg font-black text-amber-800">1 USD = Bs {historicalRate.toFixed(2)}</p>
+                          <p className="text-lg font-black text-amber-800">1 USD = {formatBsNumber(historicalRate)}</p>
                           <p className="text-[8px] text-amber-600">Valor fijo aplicado el {new Date(selectedTransaction.accountInfo.date).toLocaleDateString('es-VE')}</p>
                         </>
                       ) : (
@@ -318,12 +319,12 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
                               <td className="p-3 text-xs text-black/80">{item.qty}</td>
                               <td className="p-3 text-xs text-black font-medium">{item.name}</td>
                               <td className="p-3 text-right text-xs text-black/80">
-                                {item.priceBs > 0 ? `BS ${item.priceBs.toFixed(2)}` : 
-                                 item.priceUsd > 0 ? `$${item.priceUsd.toFixed(2)}` : '—'}
+                                {item.priceBs > 0 ? formatBs(item.priceBs) : 
+                                 item.priceUsd > 0 ? formatUsd(item.priceUsd) : '—'}
                               </td>
                               <td className="p-3 text-right text-xs font-bold text-black">
-                                {item.priceBs > 0 ? `BS ${(item.priceBs * item.qty).toFixed(2)}` : 
-                                 item.priceUsd > 0 ? `$${(item.priceUsd * item.qty).toFixed(2)}` : '—'}
+                                {item.priceBs > 0 ? formatBs(item.priceBs * item.qty) : 
+                                 item.priceUsd > 0 ? formatUsd(item.priceUsd * item.qty) : '—'}
                                </td>
                             </tr>
                           ));
@@ -339,27 +340,27 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
                   <div className="flex justify-between text-sm">
                     <span className="text-black/60">Monto Total (Bs):</span>
                     <div className="text-right">
-                      <span className="font-bold text-black">BS {selectedTransaction.accountInfo.amountBs.toFixed(2)}</span>
+                      <span className="font-bold text-black">{formatBs(selectedTransaction.accountInfo.amountBs)}</span>
                       {historicalRate && (
-                        <span className="text-xs text-black/50 ml-2">(USD {(selectedTransaction.accountInfo.amountBs / historicalRate).toFixed(2)})</span>
+                        <span className="text-xs text-black/50 ml-2">({formatUsd(selectedTransaction.accountInfo.amountBs / historicalRate)})</span>
                       )}
                     </div>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-black/60">Monto Pagado (Bs):</span>
                     <div className="text-right">
-                      <span className="font-bold text-green-600">BS {(selectedTransaction.accountInfo.paidAmount || 0).toFixed(2)}</span>
+                      <span className="font-bold text-green-600">{formatBs(selectedTransaction.accountInfo.paidAmount || 0)}</span>
                       {historicalRate && (
-                        <span className="text-xs text-black/50 ml-2">(USD {((selectedTransaction.accountInfo.paidAmount || 0) / historicalRate).toFixed(2)})</span>
+                        <span className="text-xs text-black/50 ml-2">({formatUsd((selectedTransaction.accountInfo.paidAmount || 0) / historicalRate)})</span>
                       )}
                     </div>
                   </div>
                   <div className="flex justify-between text-sm pt-1 border-t border-dashed border-[#9E9E9E]">
                     <span className="text-black/60">Saldo Pendiente (Bs):</span>
                     <div className="text-right">
-                      <span className="font-bold text-red-600">BS {(selectedTransaction.accountInfo.amountBs - (selectedTransaction.accountInfo.paidAmount || 0)).toFixed(2)}</span>
+                      <span className="font-bold text-red-600">{formatBs(selectedTransaction.accountInfo.amountBs - (selectedTransaction.accountInfo.paidAmount || 0))}</span>
                       {historicalRate && (
-                        <span className="text-xs text-black/50 ml-2">(USD {((selectedTransaction.accountInfo.amountBs - (selectedTransaction.accountInfo.paidAmount || 0)) / historicalRate).toFixed(2)})</span>
+                        <span className="text-xs text-black/50 ml-2">({formatUsd((selectedTransaction.accountInfo.amountBs - (selectedTransaction.accountInfo.paidAmount || 0)) / historicalRate)})</span>
                       )}
                     </div>
                   </div>
@@ -381,12 +382,12 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
                             return abonos.map((abono, idx) => (
                               <tr key={idx} className="border-b border-[#9E9E9E]/50 hover:bg-[#F5F5F5]">
                                 <td className="p-3 text-xs text-black/80">{formatDateShort(abono.date)}</td>
-                                <td className="p-3 text-right text-xs font-bold text-green-600">BS {abono.total.toFixed(2)}</td>
+                                <td className="p-3 text-right text-xs font-bold text-green-600">{formatBs(abono.total)}</td>
                               </tr>
                             ));
                           })()}
                         </tbody>
-                        <tfoot className="bg-[#F0F0F0]"><tr><td className="p-3 text-xs font-bold text-black">TOTAL ABONADO</td><td className="p-3 text-right text-sm font-black text-green-700">BS {(selectedTransaction.accountInfo.paidAmount || 0).toFixed(2)}</td></tr></tfoot>
+                        <tfoot className="bg-[#F0F0F0]"><tr><td className="p-3 text-xs font-bold text-black">TOTAL ABONADO</td><td className="p-3 text-right text-sm font-black text-green-700">{formatBs(selectedTransaction.accountInfo.paidAmount || 0)}</td></tr></tfoot>
                       </table>
                     </div>
                   </div>

@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils';
 import { syncService } from '@/services/syncService';
 import { Printer, Share2, X } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
+import { formatBs, formatUsd, formatBsNumber, formatUsdNumber } from '@/lib/currency-formatter';
 
 interface CierreFinalFormProps {
   onClose: () => void;
@@ -185,7 +186,7 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
 
     return {
       ...pm,
-      saldoInicial: pm.isUsd ? `$ ${saldoInicialVal.toFixed(2)}` : `Bs ${saldoInicialVal.toFixed(2)}`,
+      saldoInicial: pm.isUsd ? formatUsd(saldoInicialVal) : formatBs(saldoInicialVal),
       vMananaBs: vMananaBs,
       vTardeBs: vTardeBs,
       sistBs: sistBs,
@@ -312,14 +313,14 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
         <p>${data.fechaCierre}</p>
       </div>
       <div class="line"></div>
-      <p><strong>Apertura:</strong> Bs ${data.apertura.bs.toFixed(2)} + $${data.apertura.usd.toFixed(2)}</p>
-      <p><strong>Ventas Contado:</strong> Bs ${data.ventas.totalContado.toFixed(2)}</p>
-      <p><strong>Ventas Crédito:</strong> Bs ${data.ventas.credito.toFixed(2)}</p>
+      <p><strong>Apertura:</strong> ${formatBs(data.apertura.bs)} + ${formatUsd(data.apertura.usd)}</p>
+      <p><strong>Ventas Contado:</strong> ${formatBs(data.ventas.totalContado)}</p>
+      <p><strong>Ventas Crédito:</strong> ${formatBs(data.ventas.credito)}</p>
       <div class="line"></div>
       <div class="center">
         <div style="font-size: 28px; font-weight: bold; color: ${estadoColor};">${estadoIcono} ${estado}</div>
         <div style="font-size: 48px; font-weight: black; margin: 10px 0;">
-          ${diff > 0 ? '+' : ''}Bs ${Math.abs(diff).toFixed(2)}
+          ${diff > 0 ? '+' : ''}${formatBsNumber(Math.abs(diff))}
         </div>
       </div>
       <div class="line"></div>
@@ -327,7 +328,7 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
       <table>
         <thead><tr><th>Método</th><th>Sistema (Bs)</th><th>Real (Bs)</th><th>Diferencia</th></tr></thead>
         <tbody>
-          ${data.cuadre.map((r: any) => `<tr><td>${r.metodo}</td><td class="right">${r.sistema.toFixed(2)}</td><td class="right">${r.real.toFixed(2)}</td><td class="right">${r.diferencia.toFixed(2)}</td>`).join('')}
+          ${data.cuadre.map((r: any) => `<tr><td>${r.metodo}</td><td class="right">${formatBsNumber(r.sistema)}</td><td class="right">${formatBsNumber(r.real)}</td><td class="right">${formatBsNumber(r.diferencia)}</td></tr>`).join('')}
         </tbody>
       </table>
       <div class="line"></div>
@@ -340,7 +341,7 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
   const generarTextoResumen = (data: any) => {
     const diff = data.totales.diferencia;
     const estado = data.totales.estado;
-    return `MASTERPOS - Cierre de Jornada\nFecha: ${data.fechaCierre}\nApertura: Bs ${data.apertura.bs.toFixed(2)} + $${data.apertura.usd.toFixed(2)}\nVentas Contado: Bs ${data.ventas.totalContado.toFixed(2)}\nVentas Crédito: Bs ${data.ventas.credito.toFixed(2)}\nRESULTADO: ${estado} por Bs ${Math.abs(diff).toFixed(2)}`;
+    return `MASTERPOS - Cierre de Jornada\nFecha: ${data.fechaCierre}\nApertura: ${formatBs(data.apertura.bs)} + ${formatUsd(data.apertura.usd)}\nVentas Contado: ${formatBs(data.ventas.totalContado)}\nVentas Crédito: ${formatBs(data.ventas.credito)}\nRESULTADO: ${estado} por ${formatBs(Math.abs(diff))}`;
   };
 
   return (
@@ -369,9 +370,9 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
                   <tr key={r.id} className="hover:bg-slate-50">
                     <td className="p-2 font-bold">{r.metodo}</td>
                     <td className="p-2 text-center">{r.saldoInicial}</td>
-                    <td className="p-2 text-center font-mono">Bs {r.vMananaBs.toFixed(2)}</td>
-                    <td className="p-2 text-center font-mono">Bs {r.vTardeBs.toFixed(2)}</td>
-                    <td className="p-2 text-center font-bold text-blue-700">Bs {r.sistBs.toFixed(2)}</td>
+                    <td className="p-2 text-center font-mono">{formatBs(r.vMananaBs)}</td>
+                    <td className="p-2 text-center font-mono">{formatBs(r.vTardeBs)}</td>
+                    <td className="p-2 text-center font-bold text-blue-700">{formatBs(r.sistBs)}</td>
                     <td className="p-2 text-center">
                       <div className="flex items-center justify-center gap-1">
                         <Input 
@@ -386,20 +387,20 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
                       </div>
                       {r.isUsd && r.fisicoIngresado > 0 && (
                         <div className="text-[8px] text-slate-400 mt-0.5">
-                          ≈ Bs {(r.fisicoIngresado * tasaP2).toFixed(2)}
+                          ≈ {formatBs(r.fisicoIngresado * tasaP2)}
                         </div>
                       )}
                     </td>
                     <td className={cn("p-2 text-center font-bold", r.diffBs < 0 ? "text-red-600" : r.diffBs > 0 ? "text-emerald-600" : "text-slate-500")}>
-                      {r.diffBs === 0 ? '✓' : r.diffBs.toFixed(2)}
+                      {r.diffBs === 0 ? '✓' : formatBsNumber(Math.abs(r.diffBs))}
                     </td>
                   </tr>
                 ))}
                 <tr className="bg-[#1E3A8A] text-white font-bold">
                   <td colSpan={4} className="p-2 text-right">TOTAL CONSOLIDADO:</td>
-                  <td className="p-2 text-center">Bs {totalSistBs.toFixed(2)}</td>
-                  <td className="p-2 text-center">Bs {totalFisBs.toFixed(2)}</td>
-                  <td className="p-2 text-center">{diffNeta === 0 ? '✓' : diffNeta.toFixed(2)}</td>
+                  <td className="p-2 text-center">{formatBs(totalSistBs)}</td>
+                  <td className="p-2 text-center">{formatBs(totalFisBs)}</td>
+                  <td className="p-2 text-center">{diffNeta === 0 ? '✓' : formatBsNumber(Math.abs(diffNeta))}</td>
                 </tr>
               </tbody>
             </table>
@@ -430,13 +431,13 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
             <div className="p-6 space-y-4">
               <div className="text-center"><p className="text-sm text-gray-500">Fecha y hora</p><p className="font-mono">{closeReportData.fechaCierre}</p></div>
               <div className="grid grid-cols-2 gap-4 border-b pb-4">
-                <div><p className="text-xs text-gray-500">Apertura</p><p className="font-bold">Bs {closeReportData.apertura.bs.toFixed(2)}</p><p className="font-bold">$ {closeReportData.apertura.usd.toFixed(2)}</p></div>
-                <div><p className="text-xs text-gray-500">Ventas del día</p><p className="font-bold">Contado: Bs {closeReportData.ventas.totalContado.toFixed(2)}</p><p className="font-bold">Crédito: Bs {closeReportData.ventas.credito.toFixed(2)}</p></div>
+                <div><p className="text-xs text-gray-500">Apertura</p><p className="font-bold">{formatBs(closeReportData.apertura.bs)}</p><p className="font-bold">{formatUsd(closeReportData.apertura.usd)}</p></div>
+                <div><p className="text-xs text-gray-500">Ventas del día</p><p className="font-bold">Contado: {formatBs(closeReportData.ventas.totalContado)}</p><p className="font-bold">Crédito: {formatBs(closeReportData.ventas.credito)}</p></div>
               </div>
               <div className="text-center py-4 bg-gray-50 rounded-lg">
                 <p className="text-xs uppercase tracking-wider text-gray-500">RESULTADO DE LA JORNADA</p>
                 <p className={cn("text-5xl font-black mt-2", closeReportData.totales.diferencia > 0 ? "text-emerald-600" : closeReportData.totales.diferencia < 0 ? "text-red-600" : "text-blue-600")}>
-                  {closeReportData.totales.diferencia > 0 ? '+' : ''}{closeReportData.totales.diferencia.toFixed(2)} Bs
+                  {closeReportData.totales.diferencia > 0 ? '+' : ''}{formatBsNumber(Math.abs(closeReportData.totales.diferencia))} Bs
                 </p>
                 <p className={cn("text-sm font-bold mt-1", closeReportData.totales.diferencia > 0 ? "text-emerald-600" : closeReportData.totales.diferencia < 0 ? "text-red-600" : "text-blue-600")}>
                   {closeReportData.totales.estado}

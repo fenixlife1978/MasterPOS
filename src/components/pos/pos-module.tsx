@@ -14,6 +14,23 @@ import AuthorizationModal from './AuthorizationModal'; // ✅ NUEVO
 import { syncService } from '@/services/syncService';   // ✅ Para validar PIN
 import { useAuth } from '@/context/AuthContext';        // ✅ Para obtener el usuario autorizante
 
+// ✅ NUEVA FUNCIÓN DE FORMATEO (para usar en este archivo también)
+const formatBs = (amount: number): string => {
+  if (isNaN(amount)) return 'Bs. 0,00';
+  return 'Bs. ' + amount.toLocaleString('es-VE', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
+};
+
+const formatUsd = (amount: number): string => {
+  if (isNaN(amount)) return 'USD $0,00';
+  return 'USD $' + amount.toLocaleString('es-VE', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
+};
+
 interface POSModuleProps {
   state: ReturnType<typeof usePOSState>;
 }

@@ -13,6 +13,7 @@ import { cn } from '@/lib/utils';
 import { useAuth } from '@/context/AuthContext';
 import CorteParcialForm from '@/components/register/CorteParcialForm';
 import CierreFinalForm from '@/components/register/CierreFinalForm';
+import { formatBs, formatUsd, formatBsNumber, formatUsdNumber } from '@/lib/currency-formatter';
 
 interface CashModuleProps {
   state: ReturnType<typeof usePOSState>;
@@ -186,7 +187,7 @@ export default function CashModule({ state }: CashModuleProps) {
           <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
             <span className="text-slate-500 block text-[10px] font-bold uppercase">Tasa BCV Actual:</span>
             <span className="text-base font-mono font-bold text-slate-900">
-              Bs {state.exchangeRate.toFixed(2)} / $
+              {formatBs(state.exchangeRate)} / $
             </span>
           </div>
           <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
@@ -198,15 +199,15 @@ export default function CashModule({ state }: CashModuleProps) {
           <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
             <span className="text-slate-500 block text-[10px] font-bold uppercase">Total en Caja (Sistema):</span>
             <span className="text-base font-mono font-bold text-blue-700">
-              {!isClosed ? `Bs ${totalEnCaja.toFixed(2)}` : '—'}
+              {!isClosed ? formatBs(totalEnCaja) : '—'}
             </span>
             {!isClosed && (
               <>
-                <p className="text-[10px] text-slate-500">≈ $ {totalEnCajaUSD.toFixed(2)}</p>
+                <p className="text-[10px] text-slate-500">≈ {formatUsd(totalEnCajaUSD)}</p>
                 <div className="mt-1.5 pt-1.5 border-t border-slate-200 flex flex-col gap-0.5">
                    <p className="text-[8px] font-bold text-slate-400 uppercase">Fondo de Apertura:</p>
                    <p className="text-[9px] font-bold text-slate-600">
-                     Bs {reg?.openAmountBs?.toFixed(2)} + $ {reg?.openAmountUsd?.toFixed(2)}
+                     {formatBs(reg?.openAmountBs || 0)} + {formatUsd(reg?.openAmountUsd || 0)}
                    </p>
                 </div>
               </>
@@ -314,19 +315,19 @@ export default function CashModule({ state }: CashModuleProps) {
                           </div>
                          </td>
                         <td className="p-2 text-right font-mono font-bold">
-                          Bs {monto.toFixed(2)}
+                          {formatBs(monto)}
                          </td>
                        </tr>
                     );
                   })}
                   <tr className="bg-[#F0F0F0] font-black">
                     <td className="p-2">TOTAL VENTAS CONTADO / INGRESOS</td>
-                    <td className="p-2 text-right font-mono">Bs {totalContado.toFixed(2)}</td>
-                  </tr>
+                    <td className="p-2 text-right font-mono">{formatBs(totalContado)}</td>
+                   </tr>
                   <tr className="bg-[#E8E8E8]">
                     <td className="p-2">VENTAS CRÉDITO (Cuentas por Cobrar)</td>
-                    <td className="p-2 text-right font-mono">Bs {totalCredito.toFixed(2)}</td>
-                  </tr>
+                    <td className="p-2 text-right font-mono">{formatBs(totalCredito)}</td>
+                   </tr>
                 </tbody>
               </table>
             </div>
@@ -404,7 +405,7 @@ export default function CashModule({ state }: CashModuleProps) {
                           </td>
                           <td className="p-1.5 text-black/50 uppercase text-[8px]">{methodLabels[tx.payMethod] || tx.payMethod || 'N/A'}</td>
                           <td className="p-1.5 text-black/60 max-w-[100px] truncate">{tx.clientName || 'CLIENTE FINAL'}</td>
-                          <td className="p-1.5 text-right font-bold font-mono">Bs {displayAmount.toFixed(2)}</td>
+                          <td className="p-1.5 text-right font-bold font-mono">{formatBs(displayAmount)}</td>
                         </tr>
                       );
                     })}
@@ -441,7 +442,7 @@ export default function CashModule({ state }: CashModuleProps) {
                                 {h.tipoCorte === 'corte_tasa' ? 'CORTE PARCIAL' : 'CIERRE TOTAL'}
                               </span>
                             </div>
-                            <p className="text-[9px] text-black/50">Tasa: Bs {h.tasaBCV?.toFixed(2)} | Ventas: Bs {h.ventas?.totalContado?.toFixed(2)}</p>
+                            <p className="text-[9px] text-black/50">Tasa: {formatBs(h.tasaBCV || 0)} | Ventas: {formatBs(h.ventas?.totalContado || 0)}</p>
                           </div>
                         </div>
                       </div>

@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Calculator, X, CreditCard, DollarSign, Fingerprint, Smartphone, Plane, ChevronDown, ChevronUp, Wallet, Plus, Undo, Eraser } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { formatBs, formatUsd, formatBsNumber, formatUsdNumber } from '@/lib/currency-formatter';
 
 interface PaymentItem {
   id: string;
@@ -218,7 +219,7 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
   const handleFinalConfirm = () => {
     if (showCompoundModal) {
       if (compoundTotalPaid < total) {
-        alert(`Falta pagar: BS ${compoundRemaining.toFixed(2)}`);
+        alert(`Falta pagar: ${formatBs(compoundRemaining)}`);
         return;
       }
       const mainPayment = compoundPayments.find(p => p.amount > 0) || { method: 'efectivo_bs' };
@@ -230,7 +231,7 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
       });
     } else {
       if (currentAmount < total) {
-        alert(`Falta pagar: BS ${remaining.toFixed(2)}`);
+        alert(`Falta pagar: ${formatBs(remaining)}`);
         return;
       }
       onConfirm({ 
@@ -417,10 +418,10 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
           <div className="bg-white/10 rounded-lg p-4 my-3">
             <p className="text-[10px] text-white/60 uppercase tracking-widest mb-1">Monto a devolver</p>
             <div className="text-4xl font-black text-[#2ECC71] mb-1">
-              BS {changeAmountToShow.toFixed(2)}
+              {formatBs(changeAmountToShow)}
             </div>
             <div className="text-xs text-white/40">
-              ≈ USD {(changeAmountToShow / exchangeRate).toFixed(2)}
+              ≈ {formatUsd(changeAmountToShow / exchangeRate)}
             </div>
           </div>
           
@@ -493,7 +494,9 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
                       <span className="text-xs font-bold text-black">{getMethodLabel(p.method)}</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-black text-[#2ECC71]">{currency} {displayAmount.toFixed(2)}</span>
+                      <span className="text-sm font-black text-[#2ECC71]">
+                        {isUsdPay ? formatUsd(displayAmount) : formatBs(displayAmount)}
+                      </span>
                       {p.reference && (
                         <span className="text-[8px] text-black/50">Ref: {p.lastDigits}</span>
                       )}
@@ -509,16 +512,16 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
         <div className="bg-white/80 rounded-lg p-2 mb-2">
           <div className="flex justify-between text-xs">
             <span className="text-black/60">Total:</span>
-            <span className="font-bold text-black">BS {total.toFixed(2)}</span>
+            <span className="font-bold text-black">{formatBs(total)}</span>
           </div>
           <div className="flex justify-between text-xs">
             <span className="text-black/60">Pagado:</span>
-            <span className="font-bold text-[#2ECC71]">BS {compoundTotalPaid.toFixed(2)}</span>
+            <span className="font-bold text-[#2ECC71]">{formatBs(compoundTotalPaid)}</span>
           </div>
           <div className="flex justify-between text-sm pt-1">
             <span className="text-black font-bold">FALTANTE:</span>
             <span className={cn("font-black", compoundRemaining > 0 ? "text-[#E74C3C]" : "text-[#2ECC71]")}>
-              BS {compoundRemaining.toFixed(2)}
+              {formatBs(compoundRemaining)}
             </span>
           </div>
         </div>
@@ -561,7 +564,7 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
           <div className="bg-[#1A2C4E] rounded-lg p-2 text-right">
             <div className="text-[8px] text-white/60 uppercase font-bold">Monto a asignar</div>
             <div className="text-lg font-black text-white">
-              {isUsd ? `USD ${(parseFloat(buffer) || 0).toFixed(2)}` : `BS ${(parseFloat(buffer) || 0).toFixed(2)}`}
+              {isUsd ? `USD ${formatUsdNumber(parseFloat(buffer) || 0)}` : `Bs ${formatBsNumber(parseFloat(buffer) || 0)}`}
             </div>
           </div>
         </div>
@@ -639,9 +642,9 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
         >
           {compoundTotalPaid >= total 
             ? (compoundChange > 0 
-                ? `COMPLETAR - Vuelto: BS ${compoundChange.toFixed(2)}` 
+                ? `COMPLETAR - Vuelto: ${formatBs(compoundChange)}` 
                 : `COMPLETAR PAGO`)
-            : `FALTAN: BS ${compoundRemaining.toFixed(2)}`}
+            : `FALTAN: ${formatBs(compoundRemaining)}`}
         </button>
       </div>
     </div>
@@ -680,32 +683,32 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
               {currentMethodInfo?.label}
             </div>
             <div className="text-xl font-black text-white mt-0.5 tracking-tighter">
-              {isUsd ? `USD ${(parseFloat(buffer) || 0).toFixed(2)}` : `BS ${(parseFloat(buffer) || 0).toFixed(2)}`}
+              {isUsd ? `USD ${formatUsdNumber(parseFloat(buffer) || 0)}` : `Bs ${formatBsNumber(parseFloat(buffer) || 0)}`}
             </div>
             <div className="text-[9px] text-[#D4A017] font-bold">
-              ≈ {isUsd ? `BS ${((parseFloat(buffer) || 0) * exchangeRate).toFixed(2)}` : `USD ${((parseFloat(buffer) || 0) / exchangeRate).toFixed(2)}`}
+              ≈ {isUsd ? formatBs((parseFloat(buffer) || 0) * exchangeRate) : formatUsd((parseFloat(buffer) || 0) / exchangeRate)}
             </div>
           </div>
 
           <div className="bg-white/80 rounded-lg p-2 mb-2">
             <div className="flex justify-between text-xs">
               <span className="text-black/60">Total a pagar:</span>
-              <span className="font-bold text-black">BS {total.toFixed(2)}</span>
+              <span className="font-bold text-black">{formatBs(total)}</span>
             </div>
             <div className="flex justify-between text-xs">
               <span className="text-black/60">Pagado:</span>
-              <span className="font-bold text-[#2ECC71]">BS {currentAmount.toFixed(2)}</span>
+              <span className="font-bold text-[#2ECC71]">{formatBs(currentAmount)}</span>
             </div>
             <div className="flex justify-between text-sm pt-1">
               <span className="text-black font-bold">FALTANTE:</span>
               <span className={cn("font-black", remaining > 0 ? "text-[#E74C3C]" : "text-[#2ECC71]")}>
-                BS {remaining.toFixed(2)}
+                {formatBs(remaining)}
               </span>
             </div>
             {changeAmount > 0 && (
               <div className="flex justify-between text-sm pt-1 mt-1 border-t border-[#2ECC71]">
                 <span className="text-black font-bold">VUELTO:</span>
-                <span className="font-black text-[#2ECC71]">BS {changeAmount.toFixed(2)}</span>
+                <span className="font-black text-[#2ECC71]">{formatBs(changeAmount)}</span>
               </div>
             )}
           </div>
@@ -814,9 +817,9 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
           >
             {isFullyPaid 
               ? (changeAmount > 0 
-                  ? `COMPLETAR - Vuelto: BS ${changeAmount.toFixed(2)}` 
+                  ? `COMPLETAR - Vuelto: ${formatBs(changeAmount)}` 
                   : `COMPLETAR PAGO`)
-              : `FALTAN: BS ${remaining.toFixed(2)}`}
+              : `FALTAN: ${formatBs(remaining)}`}
           </button>
         </div>
       </div>

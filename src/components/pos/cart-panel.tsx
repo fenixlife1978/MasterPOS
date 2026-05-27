@@ -6,6 +6,23 @@ import { cn } from '@/lib/utils';
 import { useState } from 'react';
 import PriceTypeModal from './PriceTypeModal';
 
+// ✅ NUEVA FUNCIÓN DE FORMATEO
+const formatBs = (amount: number): string => {
+  if (isNaN(amount)) return 'Bs. 0,00';
+  return 'Bs. ' + amount.toLocaleString('es-VE', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
+};
+
+const formatUsd = (amount: number): string => {
+  if (isNaN(amount)) return 'USD $0,00';
+  return 'USD $' + amount.toLocaleString('es-VE', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
+};
+
 interface CartPanelProps {
   cart: CartItem[];
   onUpdateQty: (id: number, delta: number) => void;
@@ -256,25 +273,25 @@ export default function CartPanel({
                       />
                     </div>
                     
-                    {/* Precio USD */}
+                    {/* ✅ Precio USD - FORMATEADO */}
                     <div className="col-span-2 text-center">
                       <div className="font-mono text-sm font-bold text-black/80">
-                        ${priceUsd.toFixed(2)}
+                        {formatUsd(priceUsd)}
                       </div>
                       <div className="text-[9px] text-black/60">USD</div>
                     </div>
                     
-                    {/* Precio Bs */}
+                    {/* ✅ Precio Bs - FORMATEADO */}
                     <div className="col-span-2 text-center">
                       <div className="font-mono text-sm font-bold text-black/80">
-                        Bs {item.priceBs.toFixed(2)}
+                        {formatBs(item.priceBs)}
                       </div>
                       <div className="text-[9px] text-black/60">Bs</div>
                     </div>
                     
-                    {/* Subtotal */}
+                    {/* ✅ Subtotal - FORMATEADO */}
                     <div className="col-span-1 text-right font-mono text-sm font-black text-black">
-                      Bs {itemSubtotal.toFixed(2)}
+                      {formatBs(itemSubtotal)}
                     </div>
                     
                     {/* Botón eliminar */}
@@ -297,27 +314,31 @@ export default function CartPanel({
         {/* Totales y botón de cobro */}
         <div className="border-t border-black bg-white shrink-0">
           <div className="p-5 space-y-2">
+            {/* ✅ Subtotal - FORMATEADO */}
             <div className="flex justify-between font-mono text-base">
               <span className="text-black/80 font-bold">Subtotal:</span>
-              <span className="font-black text-black">Bs {subtotal.toFixed(2)}</span>
+              <span className="font-black text-black">{formatBs(subtotal)}</span>
             </div>
+            {/* ✅ IVA - FORMATEADO */}
             {hasAnyIvaProduct && iva > 0 && (
               <div className="flex justify-between font-mono text-base">
                 <span className="text-black/80 font-bold">IVA (16%):</span>
-                <span className="font-black text-amber-700">Bs {iva.toFixed(2)}</span>
+                <span className="font-black text-amber-700">{formatBs(iva)}</span>
               </div>
             )}
             <div className="pt-4 mt-2 border-t-2 border-black flex justify-between items-end">
               <div>
                 <div className="text-xs text-black/80 font-black uppercase tracking-wider">Equivalente en USD</div>
+                {/* ✅ Total USD - FORMATEADO */}
                 <div className="font-mono text-2xl font-black text-black/80">
-                  USD {totalUsd.toFixed(2)}
+                  {formatUsd(totalUsd)}
                 </div>
               </div>
               <div className="text-right">
                 <div className="text-xs text-black/80 font-black uppercase tracking-wider">TOTAL A PAGAR</div>
+                {/* ✅ Total Bs - FORMATEADO */}
                 <div className="font-mono text-4xl font-black text-black">
-                  Bs {total.toFixed(2)}
+                  {formatBs(total)}
                 </div>
               </div>
             </div>

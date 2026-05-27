@@ -8,6 +8,7 @@ import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@
 import { cn } from '@/lib/utils';
 import { Product, SupplierInvoice, PurchaseInvoiceItem } from '@/lib/types';
 import { syncService } from '@/services/syncService';
+import { formatBs, formatUsd, formatBsNumber, formatUsdNumber } from '@/lib/currency-formatter';
 
 interface PurchaseItemTemp {
   productId: number;
@@ -168,7 +169,7 @@ export default function RegisterPurchase() {
       const timestamp = new Date().toISOString();
       const invoiceId = Date.now();
       
-      const paymentNotes = `Tipo de pago: ${paymentType === 'contado' ? 'Contado' : paymentType === 'credito' ? `Crédito a ${creditTermDays} días` : `Mixto (USD: ${paidUsd.toFixed(2)} / Bs: ${paidBs.toFixed(2)})`}. Saldo pendiente: $${remainingUsd.toFixed(4)}`;
+      const paymentNotes = `Tipo de pago: ${paymentType === 'contado' ? 'Contado' : paymentType === 'credito' ? `Crédito a ${creditTermDays} días` : `Mixto (USD: ${formatUsdNumber(paidUsd)} / Bs: ${formatBsNumber(paidBs)})`}. Saldo pendiente: ${formatUsd(remainingUsd, 4)}`;
       
       const newInvoice: SupplierInvoice = {
         id: invoiceId,
@@ -225,7 +226,7 @@ export default function RegisterPurchase() {
       // ✅ Refrescar el estado local de productos
       await state.refreshProducts?.();
       
-      alert(`✅ Compra registrada exitosamente\nEstado: ${invoiceStatus()}\nTotal: $${totalInvoiceUsd.toFixed(4)}\nPagado: $${totalPaidUsd.toFixed(2)}\nSaldo: $${remainingUsd.toFixed(4)}`);
+      alert(`✅ Compra registrada exitosamente\nEstado: ${invoiceStatus()}\nTotal: ${formatUsd(totalInvoiceUsd, 4)}\nPagado: ${formatUsd(totalPaidUsd)}\nSaldo: ${formatUsd(remainingUsd, 4)}`);
       setTempItems([]);
       setInvoiceNumber('');
       setSelectedSupplierId('');
@@ -299,7 +300,7 @@ export default function RegisterPurchase() {
                       />
                     </div>
                     <p className="text-[8px] text-black/40 mt-1">
-                      Tasa actual del sistema: Bs {state.exchangeRate.toFixed(2)}
+                      Tasa actual del sistema: {formatBs(state.exchangeRate)}
                     </p>
                   </div>
                 </div>
@@ -399,15 +400,15 @@ export default function RegisterPurchase() {
                   <div className="bg-gray-50 p-2 rounded-md mt-2">
                     <div className="flex justify-between text-[9px]">
                       <span>Total factura USD:</span>
-                      <span className="font-bold">${totalInvoiceUsd.toFixed(4)}</span>
+                      <span className="font-bold">{formatUsd(totalInvoiceUsd, 4)}</span>
                     </div>
                     <div className="flex justify-between text-[9px]">
                       <span>Total pagado USD:</span>
-                      <span className="font-bold text-green-600">${totalPaidUsd.toFixed(2)}</span>
+                      <span className="font-bold text-green-600">{formatUsd(totalPaidUsd)}</span>
                     </div>
                     <div className="flex justify-between text-[9px] font-bold">
                       <span>Saldo pendiente USD:</span>
-                      <span className={remainingUsd > 0 ? "text-red-600" : "text-green-600"}>${remainingUsd.toFixed(4)}</span>
+                      <span className={remainingUsd > 0 ? "text-red-600" : "text-green-600"}>{formatUsd(remainingUsd, 4)}</span>
                     </div>
                     {paymentType === 'credito' && (
                       <div className="text-[8px] text-amber-600 mt-1 text-center">
@@ -442,7 +443,7 @@ export default function RegisterPurchase() {
                             className="w-full text-left p-2 hover:bg-primary/10 transition-colors border-b border-gray-100 last:border-0 text-xs"
                           >
                             <p className="font-bold">{p.name}</p>
-                            <p className="text-[9px] text-black/40">Stock: {p.stock} | Costo: ${p.costUsd?.toFixed(4)}</p>
+                            <p className="text-[9px] text-black/40">Stock: {p.stock} | Costo: {formatUsd(p.costUsd || 0, 4)}</p>
                           </button>
                         ))}
                       </div>
@@ -485,7 +486,7 @@ export default function RegisterPurchase() {
                   <h3 className="text-xs font-black uppercase tracking-wider">Detalle del Ingreso ({tempItems.length} items)</h3>
                   <div className="text-right">
                     <p className="text-[9px] text-white/60">Total Factura USD</p>
-                    <p className="text-lg font-black text-primary">${totalInvoiceUsd.toFixed(4)}</p>
+                    <p className="text-lg font-black text-primary">{formatUsd(totalInvoiceUsd, 4)}</p>
                   </div>
                 </div>
                 
@@ -508,8 +509,8 @@ export default function RegisterPurchase() {
                           <TableRow key={idx}>
                             <TableCell className="font-bold text-xs">{item.name}</TableCell>
                             <TableCell className="text-center text-xs">{item.qty}</TableCell>
-                            <TableCell className="text-right font-mono text-xs">${item.costUsd.toFixed(4)}</TableCell>
-                            <TableCell className="text-right font-black text-xs">${(item.qty * item.costUsd).toFixed(4)}</TableCell>
+                            <TableCell className="text-right font-mono text-xs">{formatUsd(item.costUsd, 4)}</TableCell>
+                            <TableCell className="text-right font-black text-xs">{formatUsd(item.qty * item.costUsd, 4)}</TableCell>
                             <TableCell><button onClick={() => handleRemoveTempItem(idx)} className="text-red-500 hover:text-red-700"><Trash2 size={14} /></button></TableCell>
                           </TableRow>
                         ))
@@ -522,12 +523,12 @@ export default function RegisterPurchase() {
                   <div className="flex gap-3">
                     <div className="bg-white border border-gray-300 rounded px-2 py-1">
                       <span className="text-[8px] block text-gray-500 uppercase">Total en Bolívares</span>
-                      <span className="text-xs font-black text-secondary">Bs {totalInvoiceBs.toFixed(2)}</span>
+                      <span className="text-xs font-black text-secondary">{formatBs(totalInvoiceBs)}</span>
                     </div>
                     {paymentType !== 'contado' && remainingUsd > 0 && (
                       <div className="bg-yellow-50 border border-yellow-200 rounded px-2 py-1">
                         <span className="text-[8px] block text-yellow-700 uppercase">Crédito pendiente</span>
-                        <span className="text-xs font-black text-yellow-800">${remainingUsd.toFixed(4)}</span>
+                        <span className="text-xs font-black text-yellow-800">{formatUsd(remainingUsd, 4)}</span>
                       </div>
                     )}
                   </div>

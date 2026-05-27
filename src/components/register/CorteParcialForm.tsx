@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { syncService } from '@/services/syncService';
 import { useAuth } from '@/context/AuthContext';
+import { formatBs, formatUsd, formatBsNumber, formatUsdNumber } from '@/lib/currency-formatter';
 
 interface CorteParcialFormProps {
   onClose: () => void;
@@ -174,15 +175,15 @@ export default function CorteParcialForm({ onClose, onCorteConfirmado, tasaActua
         <div className="bg-white p-3 grid grid-cols-3 gap-3 border-b">
           <div className="bg-slate-50 p-2 rounded-lg border">
             <span className="text-[8px] font-bold text-slate-500 uppercase">Tasa Actual:</span>
-            <p className="text-sm font-bold">Bs {tasaActual.toFixed(2)}</p>
+            <p className="text-sm font-bold">{formatBs(tasaActual)}</p>
           </div>
           <div className="bg-slate-50 p-2 rounded-lg border">
             <span className="text-[8px] font-bold text-slate-500 uppercase">Apertura BS:</span>
-            <p className="text-sm font-bold">Bs {openAmountBs.toFixed(2)}</p>
+            <p className="text-sm font-bold">{formatBs(openAmountBs)}</p>
           </div>
           <div className="bg-slate-50 p-2 rounded-lg border">
             <span className="text-[8px] font-bold text-slate-500 uppercase">Apertura USD:</span>
-            <p className="text-sm font-bold">$ {openAmountUsd.toFixed(2)}</p>
+            <p className="text-sm font-bold">{formatUsd(openAmountUsd)}</p>
           </div>
         </div>
 
@@ -202,9 +203,9 @@ export default function CorteParcialForm({ onClose, onCorteConfirmado, tasaActua
               {rows.map(r => (
                 <tr key={r.id} className="hover:bg-slate-50">
                   <td className="p-2 font-bold">{r.metodo}</td>
-                  <td className="p-2 text-center font-mono">Bs {r.saldoInicialBs.toFixed(2)}</td>
-                  <td className="p-2 text-center font-mono">Bs {r.ventasBs.toFixed(2)}</td>
-                  <td className="p-2 text-center font-mono font-bold">Bs {r.teoricoBs.toFixed(2)}</td>
+                  <td className="p-2 text-center font-mono">{formatBs(r.saldoInicialBs)}</td>
+                  <td className="p-2 text-center font-mono">{formatBs(r.ventasBs)}</td>
+                  <td className="p-2 text-center font-mono font-bold">{formatBs(r.teoricoBs)}</td>
                   <td className="p-2 text-center">
                     <div className="flex items-center justify-center gap-1">
                       <Input 
@@ -219,22 +220,22 @@ export default function CorteParcialForm({ onClose, onCorteConfirmado, tasaActua
                     </div>
                     {r.isUsd && r.fisicoIngresado > 0 && (
                       <div className="text-[8px] text-slate-400 mt-0.5">
-                        ≈ Bs {(r.fisicoIngresado * tasaActual).toFixed(2)}
+                        ≈ {formatBs(r.fisicoIngresado * tasaActual)}
                       </div>
                     )}
                   </td>
                   <td className={cn("p-2 text-center font-bold", r.diffBs < 0 ? "text-red-600" : r.diffBs > 0 ? "text-emerald-600" : "text-slate-500")}>
-                    {r.diffBs === 0 ? '✓' : r.diffBs.toFixed(2)}
-                  </td>
+                    {r.diffBs === 0 ? '✓' : formatBsNumber(Math.abs(r.diffBs))}
+                   </td>
                 </tr>
               ))}
             </tbody>
             <tfoot className="bg-slate-100 sticky bottom-0">
               <tr className="border-t-2 border-slate-300 font-black">
                 <td className="p-2 text-right" colSpan={3}>TOTALES:</td>
-                <td className="p-2 text-center font-mono">Bs {totalTeoricoBs.toFixed(2)}</td>
+                <td className="p-2 text-center font-mono">{formatBs(totalTeoricoBs)}</td>
                 <td className="p-2 text-center">—</td>
-                <td className="p-2 text-center">{diffNeta === 0 ? '✓' : diffNeta.toFixed(2)}</td>
+                <td className="p-2 text-center">{diffNeta === 0 ? '✓' : formatBsNumber(Math.abs(diffNeta))}</td>
               </tr>
             </tfoot>
           </table>
@@ -273,7 +274,7 @@ export default function CorteParcialForm({ onClose, onCorteConfirmado, tasaActua
             <div className="text-right">
               <p className="text-[10px] font-bold text-slate-500 uppercase">Diferencia Neta Global:</p>
               <p className={cn("text-2xl font-black", diffNeta < 0 ? "text-red-600" : diffNeta > 0 ? "text-emerald-600" : "text-slate-500")}>
-                Bs {diffNeta.toFixed(2)}
+                {formatBs(diffNeta)}
               </p>
             </div>
           </div>

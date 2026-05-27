@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils';
 import { Transaction, CartItem } from '@/lib/types';
 import { registerReturnEntry } from '@/services/accountingService';
 import { syncService } from '@/services/syncService';
+import { formatBs, formatUsd, formatBsNumber, formatUsdNumber } from '@/lib/currency-formatter';
 
 interface ReturnItem {
   productId: number;
@@ -141,7 +142,7 @@ export default function ReturnsModule() {
                   <TableCell className="font-bold text-sm">#{t.id}</TableCell>
                   <TableCell className="text-sm">{t.clientName || 'Cliente Final'}</TableCell>
                   <TableCell className="text-xs text-black/60">{new Date(t.date).toLocaleDateString()}</TableCell>
-                  <TableCell className="text-right font-bold">Bs {t.total.toFixed(2)}</TableCell>
+                  <TableCell className="text-right font-bold">{formatBs(t.total)}</TableCell>
                   <TableCell className="text-center">
                     <div className="flex justify-center gap-2">
                       <button disabled={returned} onClick={() => openReturnModal(t, 'total')} className={cn("px-3 py-1 text-white text-[10px] font-bold rounded-lg", returned ? "bg-gray-400" : "bg-red-600 hover:bg-red-700")}>{returned ? 'PROCESADA' : 'DEV. TOTAL'}</button>
@@ -174,7 +175,7 @@ export default function ReturnsModule() {
                 <div className="flex items-center gap-2"><Hash size={14} className="text-primary" /><span className="font-bold">Venta #{selectedTransaction.id}</span></div>
                 <div className="flex items-center gap-2"><User size={14} className="text-primary" /><span>{selectedTransaction.clientName || 'Cliente Final'}</span></div>
                 <div className="flex items-center gap-2"><Calendar size={14} className="text-primary" /><span className="text-xs">{new Date(selectedTransaction.date).toLocaleString()}</span></div>
-                <div className="flex items-center gap-2"><Banknote size={14} className="text-primary" /><span className="font-bold">Total venta: Bs {selectedTransaction.total.toFixed(2)}</span></div>
+                <div className="flex items-center gap-2"><Banknote size={14} className="text-primary" /><span className="font-bold">Total venta: {formatBs(selectedTransaction.total)}</span></div>
               </div>
             )}
 
@@ -199,7 +200,7 @@ export default function ReturnsModule() {
                           <p className="font-bold text-xs">{item.name}</p>
                         </td>
                         <td className="p-2.5 text-center text-xs font-mono">
-                          Bs {item.priceBs.toFixed(2)}
+                          {formatBs(item.priceBs)}
                         </td>
                         <td className="p-2.5 text-center text-xs text-black/60">
                           {item.originalQty} und
@@ -237,7 +238,7 @@ export default function ReturnsModule() {
                           "p-2.5 text-right font-bold text-xs",
                           item.amount > 0 ? "text-red-600" : "text-black/30"
                         )}>
-                          Bs {item.amount.toFixed(2)}
+                          {formatBs(item.amount)}
                         </td>
                       </tr>
                     ))}
@@ -253,13 +254,13 @@ export default function ReturnsModule() {
             )}>
               <div>
                 <span className="text-xs font-black uppercase">MONTO A DEVOLVER</span>
-                <p className="text-[10px] text-black/50">{(totalReturnAmount / exchangeRate).toFixed(2)} USD</p>
+                <p className="text-[10px] text-black/50">{formatUsd(totalReturnAmount / exchangeRate)}</p>
               </div>
               <span className={cn(
                 "text-2xl font-black",
                 totalReturnAmount > 0 ? "text-red-600" : "text-black/30"
               )}>
-                Bs {totalReturnAmount.toFixed(2)}
+                {formatBs(totalReturnAmount)}
               </span>
             </div>
 
@@ -292,7 +293,7 @@ export default function ReturnsModule() {
                 <div className="flex items-center gap-2"><Hash size={14} className="text-primary" /><span className="font-bold">Venta #{selectedTransaction.id}</span></div>
                 <div className="flex items-center gap-2"><User size={14} className="text-primary" /><span>{selectedTransaction.clientName || 'Cliente Final'}</span></div>
                 <div className="flex items-center gap-2"><Calendar size={14} className="text-primary" /><span className="text-xs">{new Date(selectedTransaction.date).toLocaleString()}</span></div>
-                <div className="flex items-center gap-2"><Banknote size={14} className="text-primary" /><span className="font-bold">Total: Bs {selectedTransaction.total.toFixed(2)}</span></div>
+                <div className="flex items-center gap-2"><Banknote size={14} className="text-primary" /><span className="font-bold">Total: {formatBs(selectedTransaction.total)}</span></div>
               </div>
             )}
 
@@ -313,9 +314,9 @@ export default function ReturnsModule() {
                     {returnItems.map((item) => (
                       <tr key={item.productId} className="border-b border-[#9E9E9E]/50">
                         <td className="p-2.5 font-bold text-xs">{item.name}</td>
-                        <td className="p-2.5 text-center text-xs font-mono">Bs {item.priceBs.toFixed(2)}</td>
+                        <td className="p-2.5 text-center text-xs font-mono">{formatBs(item.priceBs)}</td>
                         <td className="p-2.5 text-center text-xs">{item.originalQty} und</td>
-                        <td className="p-2.5 text-right font-bold text-red-600 text-xs">Bs {item.amount.toFixed(2)}</td>
+                        <td className="p-2.5 text-right font-bold text-red-600 text-xs">{formatBs(item.amount)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -327,9 +328,9 @@ export default function ReturnsModule() {
             <div className="bg-red-50 border-2 border-red-200 rounded-xl p-4 flex justify-between items-center">
               <div>
                 <span className="text-xs font-black text-red-700 uppercase">TOTAL A DEVOLVER</span>
-                <p className="text-[10px] text-red-500">{(totalReturnAmount / exchangeRate).toFixed(2)} USD</p>
+                <p className="text-[10px] text-red-500">{formatUsd(totalReturnAmount / exchangeRate)}</p>
               </div>
-              <span className="text-2xl font-black text-red-700">Bs {totalReturnAmount.toFixed(2)}</span>
+              <span className="text-2xl font-black text-red-700">{formatBs(totalReturnAmount)}</span>
             </div>
 
             <p className="text-xs text-black/50 text-center">Esta acción repondrá el inventario y registrará el egreso contable en tiempo real.</p>

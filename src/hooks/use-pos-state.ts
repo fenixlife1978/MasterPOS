@@ -5,6 +5,7 @@ import { Product, Client, Transaction, Account, CashRegister, Page, CartItem, Ki
 import { syncService } from '@/services/syncService';
 import { registerSaleEntry, registerCreditEntry, registerDebtPaymentEntry } from '@/services/accountingService';
 import { useAuth } from '@/context/AuthContext';
+import { formatBs, formatUsd, formatBsNumber, formatUsdNumber } from '@/lib/currency-formatter';
 
 // ✅ Redondeo a 2 decimales (comercial)
 const roundTo2 = (num: number): number => Math.round(num * 100) / 100;

@@ -55,7 +55,7 @@ export default function CashSupervision() {
   const [terminals, setTerminals] = useState<Terminal[]>([]);
   const [registers, setRegisters] = useState<Record<string, CashRegisterData | null>>({});
   const [loadingTerminals, setLoadingTerminals] = useState(true);
-  const [loadingRegisters, setLoadingRegisters] = useState(true);
+  const [registersLoaded, setRegistersLoaded] = useState<Record<string, boolean>>({});
   const [selectedTerminal, setSelectedTerminal] = useState<Terminal | null>(null);
   const [selectedRegister, setSelectedRegister] = useState<CashRegisterData | null>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
@@ -78,33 +78,38 @@ export default function CashSupervision() {
     };
   }, [user]);
 
-  // Suscribirse a los registros de caja de cada terminal
+  // Suscribirse a los registros de caja de cada terminal (se ejecuta cuando cambian los terminales)
   useEffect(() => {
-    if (terminals.length === 0) {
-      setLoadingRegisters(false);
-      return;
-    }
+    if (terminals.length === 0) return;
 
-    setLoadingRegisters(true);
     const unsubscribes: (() => void)[] = [];
 
     terminals.forEach(terminal => {
       const terminalId = terminal.id.toString();
+      
       const unsub = syncService.subscribeToRegisterByTerminal(terminalId, (data: CashRegisterData | null) => {
         setRegisters(prev => ({
           ...prev,
           [terminalId]: data
         }));
+        setRegistersLoaded(prev => ({
+          ...prev,
+          [terminalId]: true
+        }));
       });
       unsubscribes.push(unsub);
     });
-
-    setLoadingRegisters(false);
 
     return () => {
       unsubscribes.forEach(unsub => unsub());
     };
   }, [terminals]);
+
+  // ✅ Verificar si los registros de todas las terminales están cargados
+  const allRegistersLoaded = useCallback(() => {
+    if (terminals.length === 0) return true;
+    return terminals.every(terminal => registersLoaded[terminal.id.toString()] === true);
+  }, [terminals, registersLoaded]);
 
   const calculateTotals = useCallback((terminalId: string) => {
     const register = registers[terminalId];
@@ -195,6 +200,16 @@ export default function CashSupervision() {
     );
   }
 
+  // ✅ Mientras se cargan los registros, mostrar loader
+  if (!allRegistersLoaded()) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 size={32} className="animate-spin text-primary" />
+        <span className="ml-2 text-sm text-black/60">Cargando estado de cajas...</span>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <div className="bg-white border border-[#9E9E9E] rounded-xl p-5 shadow-md">
@@ -203,73 +218,66 @@ export default function CashSupervision() {
           <h3 className="text-lg font-black text-black">Supervisión de Cajas en Tiempo Real</h3>
         </div>
         
-        {loadingRegisters ? (
-          <div className="flex items-center justify-center py-12">
-            <Loader2 size={24} className="animate-spin text-primary" />
-            <span className="ml-2 text-sm text-black/60">Cargando estado de cajas...</span>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-[#E8E8E8]">
-                <tr className="border-b border-[#9E9E9E]">
-                  <th className="p-3 text-left text-[10px] font-black uppercase">Terminal</th>
-                  <th className="p-3 text-left text-[10px] font-black uppercase">Ubicación</th>
-                  <th className="p-3 text-center text-[10px] font-black uppercase">Estado</th>
-                  <th className="p-3 text-center text-[10px] font-black uppercase">Hora Apertura</th>
-                  <th className="p-3 text-center text-[10px] font-black uppercase">Fondo Apertura</th>
-                  <th className="p-3 text-center text-[10px] font-black uppercase">Acciones</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {terminals.map((terminal) => {
-                  const { status, color } = getRegisterStatus(terminal.id.toString());
-                  const openAmount = getOpenAmount(terminal.id.toString());
-                  const isOpen = status === 'Abierta';
-                  
-                  return (
-                    <tr key={terminal.id} className="hover:bg-gray-50 transition-colors">
-                      <td className="p-3 font-bold">{terminal.name}</td>
-                      <td className="p-3 text-gray-600 text-xs">{terminal.location || '—'}</td>
-                      <td className="p-3 text-center">
-                        <span className={cn("inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold", color)}>
-                          <span className={cn("w-1.5 h-1.5 rounded-full", isOpen ? "bg-green-600" : "bg-red-600")} />
-                          {status}
-                        </span>
-                       </td>
-                      <td className="p-3 text-center text-xs font-mono">{getOpenTime(terminal.id.toString())}</td>
-                      <td className="p-3 text-center text-xs">
-                        {openAmount ? (
-                          <div className="flex flex-col items-center">
-                            <span className="font-bold">Bs {openAmount.bs.toFixed(2)}</span>
-                            <span className="text-gray-500">+ $ {openAmount.usd.toFixed(2)}</span>
-                          </div>
-                        ) : (
-                          <span className="text-gray-400">—</span>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-[#E8E8E8]">
+              <tr className="border-b border-[#9E9E9E]">
+                <th className="p-3 text-left text-[10px] font-black uppercase">Terminal</th>
+                <th className="p-3 text-left text-[10px] font-black uppercase">Ubicación</th>
+                <th className="p-3 text-center text-[10px] font-black uppercase">Estado</th>
+                <th className="p-3 text-center text-[10px] font-black uppercase">Hora Apertura</th>
+                <th className="p-3 text-center text-[10px] font-black uppercase">Fondo Apertura</th>
+                <th className="p-3 text-center text-[10px] font-black uppercase">Acciones</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {terminals.map((terminal) => {
+                const { status, color } = getRegisterStatus(terminal.id.toString());
+                const openAmount = getOpenAmount(terminal.id.toString());
+                const isOpen = status === 'Abierta';
+                
+                return (
+                  <tr key={terminal.id} className="hover:bg-gray-50 transition-colors">
+                    <td className="p-3 font-bold">{terminal.name}</td>
+                    <td className="p-3 text-gray-600 text-xs">{terminal.location || '—'}</td>
+                    <td className="p-3 text-center">
+                      <span className={cn("inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold", color)}>
+                        <span className={cn("w-1.5 h-1.5 rounded-full", isOpen ? "bg-green-600" : "bg-red-600")} />
+                        {status}
+                      </span>
+                    </td>
+                    <td className="p-3 text-center text-xs font-mono">{getOpenTime(terminal.id.toString())}</td>
+                    <td className="p-3 text-center text-xs">
+                      {openAmount ? (
+                        <div className="flex flex-col items-center">
+                          <span className="font-bold">Bs {openAmount.bs.toFixed(2)}</span>
+                          <span className="text-gray-500">+ $ {openAmount.usd.toFixed(2)}</span>
+                        </div>
+                      ) : (
+                        <span className="text-gray-400">—</span>
+                      )}
+                    </td>
+                    <td className="p-3 text-center">
+                      <Button
+                        onClick={() => handleViewDetail(terminal)}
+                        disabled={!isOpen}
+                        variant="outline"
+                        size="sm"
+                        className={cn(
+                          "h-7 text-[10px] font-bold",
+                          isOpen ? "border-primary text-primary hover:bg-primary/10" : "border-gray-300 text-gray-400 cursor-not-allowed"
                         )}
-                        </td>
-                      <td className="p-3 text-center">
-                        <Button
-                          onClick={() => handleViewDetail(terminal)}
-                          disabled={!isOpen}
-                          variant="outline"
-                          size="sm"
-                          className={cn(
-                            "h-7 text-[10px] font-bold",
-                            isOpen ? "border-primary text-primary hover:bg-primary/10" : "border-gray-300 text-gray-400 cursor-not-allowed"
-                          )}
-                        >
-                          <Eye size={12} className="mr-1" />
-                          Ver Detalle
-                        </Button>
-                        </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
+                      >
+                        <Eye size={12} className="mr-1" />
+                        Ver Detalle
+                      </Button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {/* Modal de detalle */}

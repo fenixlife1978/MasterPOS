@@ -3,6 +3,7 @@
 import { useRef } from 'react';
 import { Printer, X, FileText, Share2 } from 'lucide-react';
 import { Transaction } from '@/lib/types';
+import { formatBs, formatUsd, formatBsNumber, formatUsdNumber } from '@/lib/currency-formatter';
 
 interface ReceiptModalProps {
   transaction: Transaction;
@@ -164,7 +165,7 @@ export default function ReceiptModal({ transaction, exchangeRate, receiptNumber,
       try {
         await navigator.share({
           title: `Recibo ${formattedReceiptNumber}`,
-          text: `Resumen de recibo correlativo nro ${formattedReceiptNumber} por un total de Bs ${transaction.total.toFixed(2)}`,
+          text: `Resumen de recibo correlativo nro ${formattedReceiptNumber} por un total de ${formatBs(transaction.total)}`,
         });
       } catch (err) {
         handlePrint();
@@ -271,18 +272,18 @@ export default function ReceiptModal({ transaction, exchangeRate, receiptNumber,
                       <td style={{ padding: '4px 0', fontSize: '9px', fontWeight: 'bold' }}>{item.qty} x</td>
                       <td style={{ padding: '4px 0', paddingLeft: '4px', fontSize: '9px' }}>
                         {item.name.toUpperCase().slice(0, 22)}
-                        <div style={{ fontSize: '8px', color: '#555' }}>Ref: Bs {item.priceBs.toFixed(2)}</div>
-                       </td>
+                        <div style={{ fontSize: '8px', color: '#555' }}>Ref: {formatBs(item.priceBs)}</div>
+                        </td>
                       <td style={{ textAlign: 'right', padding: '4px 0', fontSize: '9px', fontWeight: 'bold' }}>
-                        {(item.priceBs * item.qty).toFixed(2)}
-                       </td>
-                     </tr>
+                        {formatBsNumber(item.priceBs * item.qty)}
+                        </td>
+                      </tr>
                   ))
                 ) : (
                   <tr>
                     <td colSpan={3} style={{ textAlign: 'center', padding: '8px 0', color: '#666', fontStyle: 'italic' }}>
                       {isCobroDeuda ? '* Abono de cuenta aplicado *' : '* Operación de Pago *'}
-                     </td>
+                      </td>
                   </tr>
                 )}
               </tbody>
@@ -291,28 +292,28 @@ export default function ReceiptModal({ transaction, exchangeRate, receiptNumber,
             <div style={{ borderTop: '1px dashed #000', paddingTop: '4px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', margin: '2px 0' }}>
                 <span>SUBTOTAL:</span>
-                <span>Bs {transactionSubtotal.toFixed(2)}</span>
+                <span>{formatBs(transactionSubtotal)}</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', margin: '2px 0' }}>
                 <span>IVA (16.00%):</span>
-                <span>Bs {transactionIva.toFixed(2)}</span>
+                <span>{formatBs(transactionIva)}</span>
               </div>
               
               <div style={{ fontSize: '13px', fontWeight: 'bold', margin: '5px 0', padding: '3px 0', borderTop: '1px solid #000', borderBottom: '1px solid #000' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
                   <span>{isCredito ? 'TOTAL ADEUDADO:' : 'TOTAL A PAGAR:'}</span>
-                  <span>Bs {transactionTotal.toFixed(2)}</span>
+                  <span>{formatBs(transactionTotal)}</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#333', fontWeight: 'normal', marginTop: '2px' }}>
                   <span>REF. DIVISAS:</span>
-                  <span>$ {(transactionTotal / transactionExchangeRate).toFixed(2)}</span>
+                  <span>{formatUsd(transactionTotal / transactionExchangeRate)}</span>
                 </div>
               </div>
 
               {isCredito && (
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '8px', margin: '2px 0', color: '#e67e22' }}>
                   <span>TASA BCV APLICADA:</span>
-                  <span>1 USD = Bs {transactionExchangeRate.toFixed(2)}</span>
+                  <span>1 USD = {formatBsNumber(transactionExchangeRate)}</span>
                 </div>
               )}
 
@@ -320,12 +321,12 @@ export default function ReceiptModal({ transaction, exchangeRate, receiptNumber,
                 <>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', margin: '2px 0' }}>
                     <span>MONTO RECIBIDO:</span>
-                    <span>Bs {transactionPaidBs.toFixed(2)}</span>
+                    <span>{formatBs(transactionPaidBs)}</span>
                   </div>
                   {transactionChange > 0 && (
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', margin: '2px 0', fontWeight: 'bold' }}>
                       <span>SU CAMBIO (VUELTO):</span>
-                      <span>Bs {transactionChange.toFixed(2)}</span>
+                      <span>{formatBs(transactionChange)}</span>
                     </div>
                   )}
                 </>
@@ -342,7 +343,7 @@ export default function ReceiptModal({ transaction, exchangeRate, receiptNumber,
               <div style={{ border: '1px dashed #e74c3c', padding: '6px', margin: '8px 0', textAlign: 'center', fontSize: '9px', background: '#fff5f5' }}>
                 <p style={{ margin: '2px 0', fontWeight: 'bold', color: '#e74c3c' }}>📋 ESTE ES UN DOCUMENTO DE CRÉDITO</p>
                 <p style={{ margin: '2px 0' }}>El cliente ha recibido los productos a crédito</p>
-                <p style={{ margin: '2px 0', fontWeight: 'bold' }}>Saldo pendiente: Bs {transactionTotal.toFixed(2)}</p>
+                <p style={{ margin: '2px 0', fontWeight: 'bold' }}>Saldo pendiente: {formatBs(transactionTotal)}</p>
                 <p style={{ margin: '2px 0', fontSize: '8px' }}>Conserve este documento como comprobante de deuda</p>
               </div>
             )}

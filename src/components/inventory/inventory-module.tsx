@@ -24,7 +24,7 @@ const roundTo2 = (num: number): number => Math.round(num * 100) / 100;
 // ✅ Redondeo a 4 decimales (para costos)
 const roundTo4 = (num: number): number => Math.round(num * 10000) / 10000;
 
-// ✅ Margen de ganancia fijo interno (no visible para el usuario)
+// ✅ Margen de ganancia por defecto
 const DEFAULT_PROFIT_PERCENT = 30; // 30% máximo legal en Venezuela
 
 // Claves para caché en localStorage
@@ -111,9 +111,14 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
   const [stockInput, setStockInput] = useState('');
   const [minStockInput, setMinStockInput] = useState('');
   
+  // ✅ Estado para el porcentaje de ganancia (bidireccional)
+  const [profitPercentInput, setProfitPercentInput] = useState(DEFAULT_PROFIT_PERCENT.toString());
+  
   // ✅ Precio detal Bs editable para bidireccionalidad
   const [priceRetailBs, setPriceRetailBs] = useState('');
   const [isPriceFixed, setIsPriceFixed] = useState(false);
+  const [isUpdatingFromProfit, setIsUpdatingFromProfit] = useState(false);
+  const [isUpdatingFromPriceBs, setIsUpdatingFromPriceBs] = useState(false);
   
   // ==================== NUEVO: KITS / COMBOS ====================
   const [isKit, setIsKit] = useState(false);
@@ -124,11 +129,42 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
   const [childQuantity, setChildQuantity] = useState('1');
   const [hideChildResults, setHideChildResults] = useState(false);
   
-  // ✅ Función para calcular Precio Detal USD basado en Costo Unitario USD (Costo × 1.30)
-  const calculatePriceUsdFromCost = (cost: number): number => {
+  // ✅ Función para calcular Precio Detal USD desde Costo y % de Ganancia
+  const calculatePriceUsdFromCostAndProfit = (cost: number, profitPercent: number): number => {
     if (cost <= 0) return 0;
-    return roundTo2(cost * (1 + DEFAULT_PROFIT_PERCENT / 100));
+    const marginDecimal = profitPercent / 100;
+    const priceUsd = cost / (1 - marginDecimal);
+    return roundTo2(priceUsd);
   };
+  
+  // ✅ Función para calcular % de Ganancia desde Costo y Precio USD
+  const calculateProfitFromCostAndPriceUsd = (cost: number, priceUsd: number): number => {
+    if (cost <= 0 || priceUsd <= 0) return DEFAULT_PROFIT_PERCENT;
+    const profitPercent = (1 - (cost / priceUsd)) * 100;
+    return Math.min(roundTo2(profitPercent), 99.99);
+  };
+  
+  // ✅ Actualizar precios cuando cambia el % de ganancia
+  const updatePricesFromProfit = useCallback((profitPercent: number, currentCost: number) => {
+    if (isUpdatingFromPriceBs) return;
+    setIsUpdatingFromProfit(true);
+    const priceUsd = calculatePriceUsdFromCostAndProfit(currentCost, profitPercent);
+    const priceBs = priceUsd * state.exchangeRate;
+    setPriceRetailBs(roundTo2(priceBs).toFixed(2));
+    setIsPriceFixed(false);
+    setIsUpdatingFromProfit(false);
+  }, [state.exchangeRate, isUpdatingFromPriceBs]);
+  
+  // ✅ Actualizar % de ganancia cuando cambia el precio en Bs
+  const updateProfitFromPriceBs = useCallback((priceBsValue: number, currentCost: number) => {
+    if (isUpdatingFromProfit) return;
+    setIsUpdatingFromPriceBs(true);
+    const priceUsd = priceBsValue / state.exchangeRate;
+    const newProfitPercent = calculateProfitFromCostAndPriceUsd(currentCost, priceUsd);
+    setProfitPercentInput(roundTo2(newProfitPercent).toString());
+    setIsPriceFixed(true);
+    setIsUpdatingFromPriceBs(false);
+  }, [state.exchangeRate, isUpdatingFromProfit]);
   
   const childProductResults = useMemo(() => {
     if (!searchChildProduct.trim() || hideChildResults) return [];
@@ -204,7 +240,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
   
   // ==================== FUNCIONES AUXILIARES ====================
   const calculateRetailPriceFromCost = (cost: number, profitPercent: number, ivaPercent: number, applyIva: boolean): number => {
-    const basePrice = cost * (1 + profitPercent / 100);
+    const basePrice = cost / (1 - profitPercent / 100);
     const result = applyIva ? basePrice * (1 + ivaPercent / 100) : basePrice;
     return roundTo2(result);
   };
@@ -322,18 +358,19 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
     e.preventDefault();
     const cost = parseFloat(costUsdInput) || 0;
     const iva = ivaType === 'con_iva' ? ivaPercentage : 0;
+    const profitPercent = parseFloat(profitPercentInput) || DEFAULT_PROFIT_PERCENT;
     
-    // ✅ Precio Detal USD = Costo × 1.30 (siempre)
-    let finalPriceUsd = calculatePriceUsdFromCost(cost);
-    let finalPriceBs = finalPriceUsd * state.exchangeRate;
+    // ✅ Calcular precios según el estado
+    let finalPriceUsd, finalPriceBs;
     
-    // Si se editó el precio Bs manualmente, recalcular desde ahí
-    if (priceRetailBs !== '' && priceRetailBs !== 'NaN') {
-      const manualPriceBs = parseFloat(priceRetailBs);
-      if (!isNaN(manualPriceBs) && manualPriceBs > 0) {
-        finalPriceBs = manualPriceBs;
-        // ⚠️ No se recalcula finalPriceUsd desde Bs, se mantiene la fórmula
-      }
+    if (isPriceFixed && priceRetailBs !== '' && priceRetailBs !== 'NaN') {
+      // Precio manual fijo
+      finalPriceBs = parseFloat(priceRetailBs) || 0;
+      finalPriceUsd = finalPriceBs / state.exchangeRate;
+    } else {
+      // Calcular desde la fórmula
+      finalPriceUsd = calculatePriceUsdFromCostAndProfit(cost, profitPercent);
+      finalPriceBs = finalPriceUsd * state.exchangeRate;
     }
     
     const productData: Product = {
@@ -346,7 +383,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
       minStock: parseInt(minStockInput) || 5,
       costUsd: roundTo4(cost),
       costBs: roundTo2(cost * state.exchangeRate),
-      profitPercent: DEFAULT_PROFIT_PERCENT,
+      profitPercent: profitPercent,
       priceUsd: finalPriceUsd,
       priceBs: roundTo2(finalPriceBs),
       priceRetail: finalPriceUsd,
@@ -403,12 +440,14 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
     setPriceCostInput(p.priceCost?.toString() || '');
     setStockInput(p.stock.toString());
     setMinStockInput((p.minStock || 5).toString());
+    setProfitPercentInput((p.profitPercent || DEFAULT_PROFIT_PERCENT).toString());
     setIvaType(p.ivaType || 'con_iva');
     setIvaPercentage(p.ivaPercentage || 16);
     setIsKit(p.isKit || false);
     setKitHasOwnStock(p.kitHasOwnStock || false);
     setKitComponents(p.kitComponents || []);
     setPriceRetailBs(p.priceBs.toString());
+    setIsPriceFixed(true);
     setIsAdding(true);
   };
   
@@ -422,6 +461,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
     setPriceCostInput('');
     setStockInput('');
     setMinStockInput('');
+    setProfitPercentInput(DEFAULT_PROFIT_PERCENT.toString());
     setIvaType('con_iva');
     setIvaPercentage(16);
     setIsKit(false);
@@ -510,7 +550,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
     }
     const updatedProducts = products.map(p => {
       if (p.ivaType === 'con_iva') {
-        const newRetail = calculateRetailPriceFromCost(p.costUsd || 0, DEFAULT_PROFIT_PERCENT, newGlobalIva, true);
+        const newRetail = calculateRetailPriceFromCost(p.costUsd || 0, p.profitPercent || DEFAULT_PROFIT_PERCENT, newGlobalIva, true);
         return { 
           ...p, 
           ivaPercentage: newGlobalIva, 
@@ -633,7 +673,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
             <span class="bold">RESUMEN:</span> ${pdfProducts.length} productos listados | 
             Total ítems en stock: ${pdfProducts.reduce((s, p) => s + p.stock, 0)}
           </div>
-          <table>
+          </table>
             <thead>
               <tr>
                 <th>CÓDIGO</th>
@@ -1030,8 +1070,8 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
       {/* Modal de detalle de costo */}
       {viewingCostDetail && (
         <Dialog open={true} onOpenChange={() => setViewingCostDetail(null)}>
-          <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-lg p-0 rounded-xl shadow-xl">
-            <DialogHeader className="bg-[#1A2C4E] p-3 text-white rounded-t-xl">
+          <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-lg p-0 rounded-xl shadow-xl max-h-[85vh] flex flex-col">
+            <DialogHeader className="bg-[#1A2C4E] p-3 text-white rounded-t-xl flex-shrink-0">
               <div className="flex justify-between items-center">
                 <DialogTitle className="text-sm font-black flex items-center gap-2">
                   <Calculator size={14} /> Detalle de Costo - CPP
@@ -1039,7 +1079,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                 <button onClick={() => setViewingCostDetail(null)} className="text-white/60 hover:text-white"><X size={16} /></button>
               </div>
             </DialogHeader>
-            <div className="p-4">
+            <div className="flex-1 overflow-y-auto p-4">
               <div className="text-center mb-4">
                 <p className="font-bold text-base">{viewingCostDetail.name}</p>
                 <p className="text-[9px] text-black/50">{viewingCostDetail.barcode}</p>
@@ -1055,7 +1095,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                 
                 <div className="border-t border-gray-200 pt-3">
                   <p className="text-[9px] font-bold uppercase text-black/60 mb-2">Historial de Costos (últimas compras)</p>
-                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                  <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
                     {(() => {
                       const entries = kardexEntries[viewingCostDetail.id] || [];
                       const purchaseEntries = entries.filter(e => e.type === 'compra').sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
@@ -1108,7 +1148,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                   </div>
                 </div>
                 
-                <div className="bg-amber-50 rounded-lg p-2 mt-2 border border-amber-200">
+                <div className="bg-amber-50 rounded-lg p-2 mt-2 border border-amber-200 flex-shrink-0">
                   <p className="text-[7px] text-amber-700 text-center">
                     El costo actual se calcula mediante <strong>Promedio Ponderado (CPP)</strong><br />
                     Fórmula: ((Stock Ant × Costo Ant) + (Cantidad Nueva × Costo Nuevo)) / Stock Total
@@ -1116,7 +1156,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                 </div>
               </div>
             </div>
-            <div className="bg-gray-50 p-2 border-t flex justify-end">
+            <div className="bg-gray-50 p-2 border-t flex justify-end flex-shrink-0">
               <Button onClick={() => setViewingCostDetail(null)} variant="ghost" size="sm" className="h-7 text-xs">CERRAR</Button>
             </div>
           </DialogContent>
@@ -1398,7 +1438,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
         </DialogContent>
       </Dialog>
       
-      {/* Modal para crear/editar producto */}
+      {/* Modal para crear/editar producto - CON % GANANCIA BIDIRECCIONAL */}
       <Dialog open={isAdding} onOpenChange={(val) => { if(!val) { setIsAdding(false); setEditingProduct(null); resetForm(); } }}>
         <DialogContent className="bg-white max-w-3xl p-0 rounded-xl max-h-[90vh] flex flex-col">
           <DialogHeader className="bg-[#1A2C4E] p-3 text-white rounded-t-xl flex-shrink-0">
@@ -1603,30 +1643,66 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                   )}
                 </div>
                 
-                {/* Columna derecha: costos y precios */}
+                {/* Columna derecha: costos y precios - CON % GANANCIA BIDIRECCIONAL */}
                 <div className="bg-[#F5F5F5] rounded-lg p-3 space-y-2">
                   <div className="w-3/4">
                     <label className="text-[7px] font-bold uppercase">Costo Unitario USD</label>
                     <Input 
-                      type="text"
-                      inputMode="decimal"
-                      value={costUsdInput}
-                      onChange={(e) => setCostUsdInput(e.target.value)}
-                      className="bg-white h-7 text-xs font-mono"
-                      placeholder="0.0000"
+                      type="text" 
+                      inputMode="decimal" 
+                      value={costUsdInput} 
+                      onChange={(e) => {
+                        setCostUsdInput(e.target.value);
+                        const costVal = parseFloat(e.target.value) || 0;
+                        const profitVal = parseFloat(profitPercentInput) || DEFAULT_PROFIT_PERCENT;
+                        if (!isUpdatingFromPriceBs) {
+                          const newPriceUsd = calculatePriceUsdFromCostAndProfit(costVal, profitVal);
+                          const newPriceBs = newPriceUsd * state.exchangeRate;
+                          setPriceRetailBs(roundTo2(newPriceBs).toFixed(2));
+                          setIsPriceFixed(false);
+                        }
+                      }} 
+                      className="bg-white h-7 text-xs font-mono" 
+                      placeholder="0.0000" 
                     />
+                  </div>
+                  
+                  {/* ✅ % de Ganancia - Campo editable bidireccional */}
+                  <div>
+                    <label className="text-[7px] font-bold uppercase">% de Ganancia</label>
+                    <div className="flex items-center gap-2">
+                      <Input 
+                        type="text" 
+                        inputMode="decimal" 
+                        value={profitPercentInput} 
+                        onChange={(e) => {
+                          const newProfit = parseFloat(e.target.value) || 0;
+                          setProfitPercentInput(e.target.value);
+                          const costVal = parseFloat(costUsdInput) || 0;
+                          if (!isUpdatingFromPriceBs) {
+                            const newPriceUsd = calculatePriceUsdFromCostAndProfit(costVal, newProfit);
+                            const newPriceBs = newPriceUsd * state.exchangeRate;
+                            setPriceRetailBs(roundTo2(newPriceBs).toFixed(2));
+                            setIsPriceFixed(false);
+                          }
+                        }}
+                        className="bg-white h-7 text-xs font-mono w-24 text-right"
+                        placeholder="0"
+                      />
+                      <span className="text-[9px] text-black/60">%</span>
+                    </div>
                   </div>
                   
                   <div className="grid grid-cols-2 gap-2">
                     <div>
                       <label className="text-[7px] font-bold uppercase">Precio Detal USD</label>
                       <Input 
-                        type="text"
-                        inputMode="decimal"
+                        type="text" 
+                        inputMode="decimal" 
                         value={(() => {
                           const costVal = parseFloat(costUsdInput) || 0;
-                          // ✅ Precio Detal USD = Costo Unitario × 1.30
-                          const priceUsd = calculatePriceUsdFromCost(costVal);
+                          const profitVal = parseFloat(profitPercentInput) || DEFAULT_PROFIT_PERCENT;
+                          const priceUsd = calculatePriceUsdFromCostAndProfit(costVal, profitVal);
                           return priceUsd.toFixed(2);
                         })()}
                         className="bg-white h-7 text-xs font-mono"
@@ -1636,13 +1712,20 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                     <div>
                       <label className="text-[7px] font-bold uppercase">Precio Detal Bs (final)</label>
                       <Input 
-                        type="text"
-                        inputMode="decimal"
+                        type="text" 
+                        inputMode="decimal" 
                         value={priceRetailBs === 'NaN' || isNaN(parseFloat(priceRetailBs)) ? '' : priceRetailBs}
                         onChange={(e) => {
                           const newValue = e.target.value;
                           setPriceRetailBs(newValue);
                           setIsPriceFixed(true);
+                          const bsValue = parseFloat(newValue) || 0;
+                          const costVal = parseFloat(costUsdInput) || 0;
+                          if (bsValue > 0 && costVal > 0) {
+                            const priceUsd = bsValue / state.exchangeRate;
+                            const newProfitPercent = calculateProfitFromCostAndPriceUsd(costVal, priceUsd);
+                            setProfitPercentInput(roundTo2(newProfitPercent).toString());
+                          }
                         }}
                         className="bg-white h-7 text-xs font-mono w-full"
                       />
@@ -1654,7 +1737,8 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                       type="button"
                       onClick={() => {
                         const costVal = parseFloat(costUsdInput) || 0;
-                        const priceUsd = calculatePriceUsdFromCost(costVal);
+                        const profitVal = parseFloat(profitPercentInput) || DEFAULT_PROFIT_PERCENT;
+                        const priceUsd = calculatePriceUsdFromCostAndProfit(costVal, profitVal);
                         const calculatedBs = priceUsd * state.exchangeRate;
                         setPriceRetailBs(roundTo2(calculatedBs).toFixed(2));
                         setIsPriceFixed(false);
@@ -1711,7 +1795,8 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                       <span className="font-black text-secondary">
                         ${(() => {
                           const costVal = parseFloat(costUsdInput) || 0;
-                          const priceUsd = calculatePriceUsdFromCost(costVal);
+                          const profitVal = parseFloat(profitPercentInput) || DEFAULT_PROFIT_PERCENT;
+                          const priceUsd = calculatePriceUsdFromCostAndProfit(costVal, profitVal);
                           return priceUsd.toFixed(2);
                         })()}
                       </span>
@@ -1722,7 +1807,8 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                         <span className="text-black/70">
                           ${(() => {
                             const costVal = parseFloat(costUsdInput) || 0;
-                            const priceUsd = calculatePriceUsdFromCost(costVal);
+                            const profitVal = parseFloat(profitPercentInput) || DEFAULT_PROFIT_PERCENT;
+                            const priceUsd = calculatePriceUsdFromCostAndProfit(costVal, profitVal);
                             const ivaAmount = priceUsd * (isNaN(ivaPercentage) ? 0 : ivaPercentage) / 100;
                             return ivaAmount.toFixed(2);
                           })()}

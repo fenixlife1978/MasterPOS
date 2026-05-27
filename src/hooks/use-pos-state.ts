@@ -400,17 +400,18 @@ export function usePOSState() {
         const newStock = product.stock - qtyToSubtract;
         stockUpdates.set(product.id, { newStock });
         
-        const kardexType = isSpecial ? 'ajuste_negativo' : 'salida_venta';
+        const kardexType = isSpecial ? 'ajuste_negativo' : 'venta';
         const reference = isSpecial 
           ? `[${type === 'colaboracion' ? 'Colaboración' : 'Consumo Propio'}] ${paymentData.notes || 'Sin motivo'}`
-          : `Venta #${tx.id}`;
+          : `Venta ID: ${tx.id}`;
         
+        // ✅ CORREGIDO: quantity como NEGATIVO para ventas (salida de inventario)
         kardexEntries.push({
           id: `${Date.now()}_${Math.random()}`,
           productId: product.id,
           date: tx.date,
           type: kardexType,
-          quantity: qtyToSubtract,
+          quantity: -qtyToSubtract,  // ✅ NEGATIVO para que se muestre con signo -
           previousStock: product.stock,
           newStock,
           reference,
@@ -441,6 +442,7 @@ export function usePOSState() {
     const newTxs = [...(register.txs || []), tx];
     const registerUpdate = { txs: newTxs };
 
+    console.log('📦 Enviando a runAtomicSale - kardexEntries:', JSON.stringify(kardexEntries, null, 2));
     await syncService.runAtomicSale(terminalId, tx, {
       products: stockUpdates,
       kardexEntries,

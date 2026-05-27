@@ -18,6 +18,7 @@ import { cn } from '@/lib/utils';
 import { Product, Category, AdminCode, KitComponent } from '@/lib/types';
 import { syncService } from '@/services/syncService';
 import * as XLSX from 'xlsx';
+import { formatBs, formatUsd, formatBsNumber, formatUsdNumber } from '@/lib/currency-formatter';
 
 // ✅ Redondeo a 2 decimales (comercial)
 const roundTo2 = (num: number): number => Math.round(num * 100) / 100;
@@ -37,12 +38,12 @@ const CACHE_KEYS = {
   IVA_PERCENTAGE: 'product_iva_percentage',
 };
 
-// ✅ Tipos locales (coinciden con los de types.ts) - CORREGIDO con costUsd
+// ✅ Tipos locales (incluye 'devolucion')
 interface KardexEntry {
   id: string;
   productId: number;
   date: string;
-  type: 'venta' | 'compra' | 'ajuste_inicial' | 'ajuste_manual';
+  type: 'venta' | 'compra' | 'ajuste_inicial' | 'ajuste_manual' | 'devolucion';
   quantity: number;
   previousStock: number;
   newStock: number;
@@ -223,11 +224,28 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
     }) || (() => {});
     
     const unsubKardex = syncService.subscribeToKardex?.((entries: KardexEntry[]) => {
+      // ✅ Eliminar duplicados por ID
+      const uniqueEntries = entries.reduce((acc, entry) => {
+        if (!acc.some(e => e.id === entry.id)) {
+          acc.push(entry);
+        }
+        return acc;
+      }, [] as KardexEntry[]);
+      
       const grouped: Record<number, KardexEntry[]> = {};
-      entries.forEach(entry => {
+      uniqueEntries.forEach(entry => {
         if (!grouped[entry.productId]) grouped[entry.productId] = [];
-        grouped[entry.productId].push(entry);
+        // ✅ Verificar que no exista ya una entrada con el mismo ID
+        if (!grouped[entry.productId].some(e => e.id === entry.id)) {
+          grouped[entry.productId].push(entry);
+        }
       });
+      
+      // ✅ Ordenar cada grupo por fecha
+      Object.keys(grouped).forEach(productId => {
+        grouped[Number(productId)].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      });
+      
       setKardexEntries(grouped);
       localStorage.setItem(CACHE_KEYS.KARDEX, JSON.stringify(grouped));
     }) || (() => {});
@@ -279,7 +297,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
             <p><strong>Código:</strong> ${product.barcode}</p>
             <p><strong>Categoría:</strong> ${product.category}</p>
             <p><strong>Stock Actual:</strong> ${product.stock} UDS</p>
-            <p><strong>Costo Actual:</strong> $${(product.costUsd || 0).toFixed(4)}</p>
+            <p><strong>Costo Actual:</strong> ${formatUsd(product.costUsd || 0, 4)}</p>
             <p><strong>Fecha:</strong> ${new Date().toLocaleString('es-VE')}</p>
           </div>
           <table>
@@ -298,9 +316,9 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
               ${entries.map(entry => `
                 <tr>
                   <td>${entry.date}</td>
-                  <td>${entry.type === 'venta' ? 'VENTA' : entry.type === 'compra' ? 'COMPRA' : 'AJUSTE'}</td>
+                  <td>${entry.type !== 'compra' && entry.type !== 'ajuste_inicial' && entry.type !== 'devolucion' ? 'VENTA' : entry.type === 'compra' ? 'COMPRA' : entry.type === 'devolucion' ? 'DEVOLUCIÓN' : 'AJUSTE'}</td>
                   <td class="text-right">${entry.quantity > 0 ? `+${entry.quantity}` : entry.quantity}</td>
-                  <td class="text-right">${entry.costUsd ? `$${entry.costUsd.toFixed(4)}` : '-'}</td>
+                  <td class="text-right">${entry.costUsd ? formatUsd(entry.costUsd, 4) : '-'}</td>
                   <td class="text-right">${entry.previousStock}</td>
                   <td class="text-right">${entry.newStock}</td>
                   <td>${entry.note || entry.reference}</td>
@@ -322,7 +340,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
   const shareKardexPDF = (product: Product) => {
     if (navigator.share) {
       const entries = getKardexForProduct(product.id);
-      const content = `Kardex - ${product.name}\nStock Actual: ${product.stock} UDS\nCosto Actual: $${(product.costUsd || 0).toFixed(4)}\n\nMovimientos:\n${entries.map(e => `${e.date} - ${e.type}: ${e.quantity} uds (Stock: ${e.previousStock} → ${e.newStock})`).join('\n')}`;
+      const content = `Kardex - ${product.name}\nStock Actual: ${product.stock} UDS\nCosto Actual: ${formatUsd(product.costUsd || 0, 4)}\n\nMovimientos:\n${entries.map(e => `${e.date} - ${e.type}: ${e.quantity} uds (Stock: ${e.previousStock} → ${e.newStock})`).join('\n')}`;
       navigator.share({
         title: `Kardex - ${product.name}`,
         text: content,
@@ -337,7 +355,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
     const entries = getKardexForProduct(product.id);
     const data = entries.map(entry => ({
       FECHA: entry.date,
-      TIPO: entry.type === 'venta' ? 'VENTA' : entry.type === 'compra' ? 'COMPRA' : 'AJUSTE',
+      TIPO: entry.type !== 'compra' && entry.type !== 'ajuste_inicial' && entry.type !== 'devolucion' ? 'VENTA' : entry.type === 'compra' ? 'COMPRA' : entry.type === 'devolucion' ? 'DEVOLUCIÓN' : 'AJUSTE',
       CANTIDAD: entry.quantity,
       COSTO_USD: entry.costUsd || 0,
       STOCK_PREVIO: entry.previousStock,
@@ -521,11 +539,28 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
       if (pendingAdjustment) {
         const { product, newQty, reason } = pendingAdjustment;
         const previousStock = product.stock;
+        const quantityDiff = newQty - previousStock;
         const updatedProduct = { ...product, stock: newQty };
         
-        // ✅ Solo actualizar el producto, NO crear entrada de kardex duplicada
-        // La entrada de kardex la creará el método updateProduct internamente
+        // ✅ Actualizar el producto
         await state.updateProduct(updatedProduct);
+        
+        // ✅ Crear entrada de kardex para el ajuste manual
+        const kardexEntry: KardexEntry = {
+          id: `${Date.now()}_${Math.random()}`,
+          productId: product.id,
+          date: new Date().toLocaleString('es-VE'),
+          type: 'ajuste_manual',
+          quantity: quantityDiff, // Positivo si aumentó stock, negativo si disminuyó
+          previousStock: previousStock,
+          newStock: newQty,
+          reference: `Ajuste manual - ${reason}`,
+          note: reason,
+          costUsd: product.costUsd,
+        };
+        
+        await syncService.saveKardexEntry?.(kardexEntry);
+        addKardexEntryLocal(product.id, kardexEntry);
         
         toast({ title: "Ajuste Realizado", description: `Stock actualizado de ${previousStock} a ${newQty} unidades` });
         setAdjustingStock(null);
@@ -667,13 +702,13 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
           </div>
           <div class="info">
             <span>FECHA: ${new Date().toLocaleString('es-VE')}</span>
-            <span>TASA BCV: Bs ${state.exchangeRate.toFixed(2)}</span>
+            <span>TASA BCV: ${formatBs(state.exchangeRate)}</span>
           </div>
           <div class="summary">
             <span class="bold">RESUMEN:</span> ${pdfProducts.length} productos listados | 
             Total ítems en stock: ${pdfProducts.reduce((s, p) => s + p.stock, 0)}
           </div>
-          </table>
+          <table>
             <thead>
               <tr>
                 <th>CÓDIGO</th>
@@ -691,8 +726,8 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                   <td class="bold">${p.name}</td>
                   <td>${p.category}</td>
                   <td class="text-center ${p.stock <= getProductMinStock(p) ? 'low-stock' : ''}">${p.stock}</td>
-                  <td class="text-right">$${p.priceUsd.toFixed(2)}</td>
-                  <td class="text-right">Bs ${p.priceBs.toFixed(2)}</td>
+                  <td class="text-right">${formatUsd(p.priceUsd)}</td>
+                  <td class="text-right">${formatBs(p.priceBs)}</td>
                 </tr>
               `).join('')}
             </tbody>
@@ -757,7 +792,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
           </Button>
           <div className="bg-[#1A2C4E] px-3 py-1.5 rounded-xl text-white">
             <span className="text-[9px] font-black uppercase opacity-60">Tasa Sistema</span>
-            <div className="text-base font-black text-primary">Bs {state.exchangeRate.toFixed(2)}</div>
+            <div className="text-base font-black text-primary">{formatBs(state.exchangeRate)}</div>
           </div>
         </div>
       </div>
@@ -881,8 +916,8 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                           {p.stock} UDS
                         </span>
                       </TableCell>
-                      <TableCell className="text-right font-black text-xs text-secondary">${p.priceUsd.toFixed(2)}</TableCell>
-                      <TableCell className="text-right font-black text-xs text-black">Bs {p.priceBs.toFixed(2)}</TableCell>
+                      <TableCell className="text-right font-black text-xs text-secondary">{formatUsd(p.priceUsd)}</TableCell>
+                      <TableCell className="text-right font-black text-xs text-black">{formatBs(p.priceBs)}</TableCell>
                       <TableCell className="text-center">
                         <div className="flex justify-center gap-1">
                           <button 
@@ -996,7 +1031,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                           <p className="text-[7px] font-bold text-primary/70 uppercase">{p.category} | {p.department || 'Sin Dept.'}</p>
                         </TableCell>
                         <TableCell className="text-right font-mono text-[10px] font-bold text-black/80 py-1.5">
-                          ${(p.costUsd || 0).toFixed(4)}
+                          {formatUsd(p.costUsd || 0, 4)}
                         </TableCell>
                         <TableCell className="text-center py-1.5">
                           <span className={cn(
@@ -1007,7 +1042,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                           </span>
                         </TableCell>
                         <TableCell className="text-right font-mono text-[10px] font-black text-black/80 py-1.5">
-                          ${((p.costUsd || 0) * p.stock).toFixed(2)}
+                          {formatUsd((p.costUsd || 0) * p.stock)}
                         </TableCell>
                         <TableCell className="text-center py-1.5">
                           <div className="flex justify-center gap-1.5">
@@ -1059,7 +1094,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
               <span className="font-bold">{reportProducts.filter(p => !search || p.name.toLowerCase().includes(search.toLowerCase()) || p.barcode.includes(search)).length}</span> productos mostrados
             </div>
             <div className="text-[9px] text-black/60">
-              Valor total inventario: <span className="font-bold text-black">${reportProducts.reduce((sum, p) => sum + ((p.costUsd || 0) * p.stock), 0).toFixed(2)} USD</span>
+              Valor total inventario: <span className="font-bold text-black">{formatUsd(reportProducts.reduce((sum, p) => sum + ((p.costUsd || 0) * p.stock), 0))}</span>
             </div>
           </div>
         </div>
@@ -1089,7 +1124,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                 <div className="bg-gray-50 rounded-lg p-3">
                   <div className="flex justify-between items-center">
                     <span className="text-[10px] font-bold uppercase text-black/60">Costo Actual (Ponderado)</span>
-                    <span className="font-mono text-lg font-black text-blue-600">${(viewingCostDetail.costUsd || 0).toFixed(4)} USD</span>
+                    <span className="font-mono text-lg font-black text-blue-600">{formatUsd(viewingCostDetail.costUsd || 0, 4)}</span>
                   </div>
                 </div>
                 
@@ -1113,15 +1148,15 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                           <div key={idx} className="border border-gray-200 rounded-lg p-2 bg-white">
                             <div className="flex justify-between items-center text-[10px]">
                               <span className="text-black/60">{new Date(entry.date).toLocaleDateString('es-VE')}</span>
-                              <span className="font-mono font-bold text-blue-600">${newCost?.toFixed(4) || '0.0000'} USD</span>
+                              <span className="font-mono font-bold text-blue-600">{formatUsd(newCost || 0, 4)}</span>
                               <span className="text-[8px] text-black/40">x{entry.quantity} uds</span>
                             </div>
                             {previousCost !== undefined && (
                               <div className="flex justify-between items-center text-[9px] mt-1 pt-1 border-t border-gray-100">
                                 <span className="text-black/40">Costo anterior:</span>
-                                <span className="font-mono text-black/60">${previousCost.toFixed(4)} USD</span>
+                                <span className="font-mono text-black/60">{formatUsd(previousCost, 4)}</span>
                                 <span className="text-black/40">→</span>
-                                <span className="font-mono font-bold text-green-600">${newCost?.toFixed(4)} USD</span>
+                                <span className="font-mono font-bold text-green-600">{formatUsd(newCost || 0, 4)}</span>
                               </div>
                             )}
                             {idx === 0 && purchaseEntries.length > 1 && (
@@ -1163,111 +1198,205 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
         </Dialog>
       )}
       
-      {/* Modal de Kardex - CORREGIDO con scroll horizontal y botones de exportación */}
+                  {/* Modal de Kardex - MEJORADO: incluye DEVOLUCIONES */}
       {viewingKardex && (
         <Dialog open={true} onOpenChange={() => setViewingKardex(null)}>
-          <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-5xl p-0 overflow-hidden rounded-xl shadow-xl max-h-[85vh]">
-            <DialogHeader className="bg-[#1A2C4E] p-3 text-white sticky top-0">
+          <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-6xl w-[95vw] p-0 overflow-hidden rounded-xl shadow-xl max-h-[90vh] flex flex-col">
+            <DialogHeader className="bg-[#1A2C4E] p-4 text-white sticky top-0 z-10">
               <div className="flex justify-between items-center">
                 <div>
-                  <DialogTitle className="text-sm font-black flex items-center gap-2">
-                    <History size={14} /> Tarjeta Kardex
+                  <DialogTitle className="text-xl font-black flex items-center gap-2">
+                    <History size={20} /> Tarjeta Kardex
                   </DialogTitle>
-                  <p className="text-[10px] opacity-70">{viewingKardex.name}</p>
+                  <p className="text-sm font-bold opacity-90 mt-1">{viewingKardex.name}</p>
+                  <p className="text-[11px] opacity-70 font-mono">{viewingKardex.barcode}</p>
                 </div>
-                <div className="flex items-center gap-2">
-                  {/* Botón Exportar PDF */}
+                <div className="flex items-center gap-3">
                   <button 
                     onClick={() => exportKardexToPDF(viewingKardex)}
-                    className="text-white/60 hover:text-white p-1 transition-colors"
+                    className="text-white/70 hover:text-white p-2 transition-colors rounded-lg hover:bg-white/10"
                     title="Exportar a PDF"
                   >
-                    <Printer size={14} />
+                    <Printer size={18} />
                   </button>
-                  {/* Botón Compartir PDF */}
                   <button 
                     onClick={() => shareKardexPDF(viewingKardex)}
-                    className="text-white/60 hover:text-white p-1 transition-colors"
+                    className="text-white/70 hover:text-white p-2 transition-colors rounded-lg hover:bg-white/10"
                     title="Compartir PDF"
                   >
-                    <Share2 size={14} />
+                    <Share2 size={18} />
                   </button>
-                  {/* Botón Exportar Excel */}
                   <button 
                     onClick={() => exportKardexToExcel(viewingKardex)}
-                    className="text-white/60 hover:text-white p-1 transition-colors"
+                    className="text-white/70 hover:text-white p-2 transition-colors rounded-lg hover:bg-white/10"
                     title="Exportar a Excel"
                   >
-                    <FileSpreadsheet size={14} />
+                    <FileSpreadsheet size={18} />
                   </button>
-                  <button onClick={() => setViewingKardex(null)} className="text-white/60 hover:text-white p-1"><X size={16} /></button>
+                  <button onClick={() => setViewingKardex(null)} className="text-white/70 hover:text-white p-2 transition-colors rounded-lg hover:bg-white/10">
+                    <X size={20} />
+                  </button>
                 </div>
               </div>
             </DialogHeader>
-            <div className="p-3 overflow-y-auto flex-1">
-              <div className="bg-slate-50 p-2 rounded-lg mb-3 grid grid-cols-3 gap-2">
-                <div>
-                  <p className="text-[7px] font-black uppercase text-slate-500">Stock Actual</p>
-                  <p className={cn("text-lg font-black", viewingKardex.stock === 0 ? "text-red-600" : "text-green-600")}>
-                    {viewingKardex.stock} UDS
+            
+            <div className="p-5 overflow-y-auto flex-1 bg-gray-50">
+              {/* Tarjetas de resumen mejoradas - MÁS GRANDES */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl p-4 shadow-sm border border-green-200">
+                  <p className="text-[11px] font-black uppercase text-green-700 tracking-wider">📦 STOCK ACTUAL</p>
+                  <p className={cn("text-3xl font-black mt-1", viewingKardex.stock === 0 ? "text-red-600" : "text-green-700")}>
+                    {viewingKardex.stock.toLocaleString('es-VE')} <span className="text-base font-bold">UDS</span>
                   </p>
                 </div>
-                <div>
-                  <p className="text-[7px] font-black uppercase text-slate-500">Costo Actual</p>
-                  <p className="text-lg font-black text-secondary">${(viewingKardex.costUsd || 0).toFixed(4)}</p>
+                <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-4 shadow-sm border border-blue-200">
+                  <p className="text-[11px] font-black uppercase text-blue-700 tracking-wider">💰 COSTO ACTUAL</p>
+                  <p className="text-3xl font-black text-blue-700 mt-1">{formatUsd(viewingKardex.costUsd || 0, 4)}</p>
                 </div>
-                <div>
-                  <p className="text-[7px] font-black uppercase text-slate-500">Valor Inventario</p>
-                  <p className="text-lg font-black text-blue-600">${((viewingKardex.costUsd || 0) * viewingKardex.stock).toFixed(2)}</p>
+                <div className="bg-gradient-to-br from-amber-50 to-amber-100 rounded-xl p-4 shadow-sm border border-amber-200">
+                  <p className="text-[11px] font-black uppercase text-amber-700 tracking-wider">💵 VALOR INVENTARIO</p>
+                  <p className="text-3xl font-black text-amber-700 mt-1">{formatUsd((viewingKardex.costUsd || 0) * viewingKardex.stock)}</p>
                 </div>
               </div>
               
-              {/* ✅ Scroll horizontal para la tabla */}
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-[8px] min-w-[700px]">
-                  <thead className="bg-slate-100">
-                    <tr>
-                      <th className="p-1.5 whitespace-nowrap">FECHA</th>
-                      <th className="p-1.5 whitespace-nowrap">TIPO</th>
-                      <th className="p-1.5 text-right whitespace-nowrap">CANTIDAD</th>
-                      <th className="p-1.5 text-right whitespace-nowrap">COSTO $</th>
-                      <th className="p-1.5 text-right whitespace-nowrap">STOCK PREVIO</th>
-                      <th className="p-1.5 text-right whitespace-nowrap">STOCK NUEVO</th>
-                      <th className="p-1.5 whitespace-nowrap">MOTIVO</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {getKardexForProduct(viewingKardex.id).map((entry, idx) => (
-                      <tr key={`${entry.id}_${idx}`} className="hover:bg-slate-50">
-                        <td className="p-1 font-mono whitespace-nowrap">{entry.date}</td>
-                        <td className="p-1 whitespace-nowrap">
-                          <span className={cn(
-                            "px-1 py-0.5 rounded-full text-[7px] font-bold whitespace-nowrap",
-                            entry.type === 'venta' ? "bg-red-100 text-red-700" :
-                            entry.type === 'compra' ? "bg-green-100 text-green-700" :
-                            "bg-blue-100 text-blue-700"
-                          )}>
-                            {entry.type === 'venta' ? 'VENTA' : entry.type === 'compra' ? 'COMPRA' : 'AJUSTE'}
-                          </span>
-                        </td>
-                        <td className={cn("p-1 text-right font-mono font-bold whitespace-nowrap", entry.quantity < 0 ? "text-red-600" : "text-green-600")}>
-                          {entry.quantity > 0 ? `+${entry.quantity}` : entry.quantity}
-                        </td>
-                        <td className="p-1 text-right font-mono whitespace-nowrap">${entry.costUsd?.toFixed(4) || '-'}</td>
-                        <td className="p-1 text-right font-mono whitespace-nowrap">{entry.previousStock}</td>
-                        <td className="p-1 text-right font-mono font-bold whitespace-nowrap">{entry.newStock}</td>
-                        <td className="p-1 text-slate-500 max-w-[200px] truncate whitespace-nowrap">{entry.note || entry.reference}</td>
+              {/* Tabla con scroll horizontal - INCLUYE DEVOLUCIONES */}
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left min-w-[900px]">
+                    <thead className="bg-gray-100 border-b-2 border-gray-300">
+                      <tr>
+                        <th className="p-3 text-[12px] font-black uppercase text-gray-700 whitespace-nowrap">FECHA</th>
+                        <th className="p-3 text-[12px] font-black uppercase text-gray-700 whitespace-nowrap">TIPO</th>
+                        <th className="p-3 text-[12px] font-black uppercase text-gray-700 text-right whitespace-nowrap">CANTIDAD</th>
+                        <th className="p-3 text-[12px] font-black uppercase text-gray-700 text-right whitespace-nowrap">COSTO $</th>
+                        <th className="p-3 text-[12px] font-black uppercase text-gray-700 text-right whitespace-nowrap">STOCK PREVIO</th>
+                        <th className="p-3 text-[12px] font-black uppercase text-gray-700 text-right whitespace-nowrap">STOCK NUEVO</th>
+                        <th className="p-3 text-[12px] font-black uppercase text-gray-700 whitespace-nowrap">MOTIVO</th>
                       </tr>
-                    ))}
-                    {getKardexForProduct(viewingKardex.id).length === 0 && (
-                      <tr><td colSpan={7} className="text-center py-6 text-black/40 italic">No hay movimientos registrados</td></tr>
-                    )}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {(() => {
+                        const entries = getKardexForProduct(viewingKardex.id);
+                        const sortedEntries = [...entries].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+                        
+                        return sortedEntries.map((entry, idx) => {
+                          let quantityDisplay = '';
+                          let quantityClass = '';
+                          let displayType = '';
+                          let badgeColor = '';
+                          
+                          if (entry.type !== 'compra' && entry.type !== 'ajuste_inicial' && entry.type !== 'devolucion') {
+                            const absQty = Math.abs(entry.quantity);
+                            quantityDisplay = `-${absQty.toLocaleString('es-VE')}`;
+                            quantityClass = "text-red-600";
+                            displayType = 'VENTA';
+                            badgeColor = "bg-red-100 text-red-700";
+                          } else if (entry.type === 'compra') {
+                            const absQty = Math.abs(entry.quantity);
+                            quantityDisplay = `+${absQty.toLocaleString('es-VE')}`;
+                            quantityClass = "text-green-600";
+                            displayType = 'COMPRA';
+                            badgeColor = "bg-green-100 text-green-700";
+                          } else if (entry.type === 'ajuste_inicial') {
+                            const absQty = Math.abs(entry.quantity);
+                            quantityDisplay = `+${absQty.toLocaleString('es-VE')}`;
+                            quantityClass = "text-green-600";
+                            displayType = 'AJUSTE INICIAL';
+                            badgeColor = "bg-blue-100 text-blue-700";
+                          } else if (entry.type === 'devolucion') {
+                            const absQty = Math.abs(entry.quantity);
+                            quantityDisplay = `+${absQty.toLocaleString('es-VE')}`;
+                            quantityClass = "text-green-600";
+                            displayType = 'DEVOLUCIÓN';
+                            badgeColor = "bg-purple-100 text-purple-700";
+                          } else {
+                            // Ajustes manuales y otros tipos
+                            if (entry.quantity > 0) {
+                              quantityDisplay = `+${entry.quantity.toLocaleString('es-VE')}`;
+                              quantityClass = "text-green-600";
+                            } else if (entry.quantity < 0) {
+                              quantityDisplay = `${entry.quantity.toLocaleString('es-VE')}`;
+                              quantityClass = "text-red-600";
+                            } else {
+                              quantityDisplay = '0';
+                              quantityClass = "text-gray-500";
+                            }
+                            displayType = 'AJUSTE MANUAL';
+                            badgeColor = "bg-orange-100 text-orange-700";
+                          }
+                          
+                          let formattedDate = '';
+                          try {
+                            const dateObj = new Date(entry.date);
+                            if (!isNaN(dateObj.getTime())) {
+                              formattedDate = dateObj.toLocaleString('es-VE', {
+                                day: '2-digit',
+                                month: '2-digit',
+                                year: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              });
+                            } else {
+                              formattedDate = entry.date;
+                            }
+                          } catch(e) {
+                            formattedDate = entry.date;
+                          }
+                          
+                          return (
+                            <tr key={`${entry.id}_${idx}`} className="hover:bg-gray-50 transition-colors">
+                              <td className="p-3 font-mono text-[12px] font-semibold text-gray-700 whitespace-nowrap">
+                                {formattedDate}
+                              </td>
+                              <td className="p-3 whitespace-nowrap">
+                                <span className={cn("px-2 py-1 rounded-full text-[10px] font-black", badgeColor)}>
+                                  {displayType}
+                                </span>
+                              </td>
+                              <td className={cn(
+                                "p-3 text-right font-mono text-[13px] font-black whitespace-nowrap",
+                                quantityClass
+                              )}>
+                                {quantityDisplay}
+                              </td>
+                              <td className="p-3 text-right font-mono text-[12px] font-bold text-gray-800 whitespace-nowrap">
+                                {entry.costUsd ? formatUsd(entry.costUsd, 4) : '-'}
+                              </td>
+                              <td className="p-3 text-right font-mono text-[12px] font-semibold text-gray-600 whitespace-nowrap">
+                                {entry.previousStock.toLocaleString('es-VE')}
+                              </td>
+                              <td className="p-3 text-right font-mono text-[12px] font-black text-blue-700 whitespace-nowrap">
+                                {entry.newStock.toLocaleString('es-VE')}
+                              </td>
+                              <td className="p-3 text-[11px] text-gray-500 max-w-[250px] truncate whitespace-nowrap">
+                                {entry.note || entry.reference}
+                              </td>
+                            </tr>
+                          );
+                        });
+                      })()}
+                      {getKardexForProduct(viewingKardex.id).length === 0 && (
+                        <tr>
+                          <td colSpan={7} className="text-center py-10 text-gray-400 italic text-sm">
+                            No hay movimientos registrados
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              
+              {/* Leyenda informativa */}
+              <div className="mt-4 text-[10px] text-gray-400 text-center border-t pt-3">
+                Los movimientos reflejan el historial completo de inventario del producto
               </div>
             </div>
-            <div className="bg-slate-50 p-2 border-t flex justify-end">
-              <Button onClick={() => setViewingKardex(null)} variant="ghost" size="sm">CERRAR</Button>
+            
+            <div className="bg-gray-100 p-3 border-t flex justify-end">
+              <Button onClick={() => setViewingKardex(null)} variant="ghost" className="text-sm font-bold px-5">
+                CERRAR
+              </Button>
             </div>
           </DialogContent>
         </Dialog>
@@ -1625,7 +1754,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                                     }}
                                     className="w-full text-left px-2 py-1 text-[10px] hover:bg-primary/10"
                                   >
-                                    {p.name} (${p.priceUsd.toFixed(2)})
+                                    {p.name} ({formatUsd(p.priceUsd)})
                                   </button>
                                 ))}
                               </div>
@@ -1793,35 +1922,33 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                     <div className="flex justify-between text-[10px]">
                       <span className="text-black/60">Precio Base USD (sin IVA):</span>
                       <span className="font-black text-secondary">
-                        ${(() => {
+                        {formatUsd((() => {
                           const costVal = parseFloat(costUsdInput) || 0;
                           const profitVal = parseFloat(profitPercentInput) || DEFAULT_PROFIT_PERCENT;
-                          const priceUsd = calculatePriceUsdFromCostAndProfit(costVal, profitVal);
-                          return priceUsd.toFixed(2);
-                        })()}
+                          return calculatePriceUsdFromCostAndProfit(costVal, profitVal);
+                        })())}
                       </span>
                     </div>
                     {ivaType === 'con_iva' && (
                       <div className="flex justify-between text-[9px]">
                         <span className="text-black/60">+ IVA ({isNaN(ivaPercentage) ? 0 : ivaPercentage}%):</span>
                         <span className="text-black/70">
-                          ${(() => {
+                          {formatUsd((() => {
                             const costVal = parseFloat(costUsdInput) || 0;
                             const profitVal = parseFloat(profitPercentInput) || DEFAULT_PROFIT_PERCENT;
                             const priceUsd = calculatePriceUsdFromCostAndProfit(costVal, profitVal);
-                            const ivaAmount = priceUsd * (isNaN(ivaPercentage) ? 0 : ivaPercentage) / 100;
-                            return ivaAmount.toFixed(2);
-                          })()}
+                            return priceUsd * (isNaN(ivaPercentage) ? 0 : ivaPercentage) / 100;
+                          })())}
                         </span>
                       </div>
                     )}
                     <div className="flex justify-between text-[10px] pt-1 border-t mt-1">
                       <span className="text-black/60">Precio Mayor USD:</span>
-                      <span className="font-black text-secondary">${parseFloat(priceWholesaleInput) || 0}</span>
+                      <span className="font-black text-secondary">{formatUsd(parseFloat(priceWholesaleInput) || 0)}</span>
                     </div>
                     <div className="flex justify-between text-[10px]">
                       <span className="text-black/60">Precio Costo USD:</span>
-                      <span className="font-black text-secondary">${parseFloat(priceCostInput) || 0}</span>
+                      <span className="font-black text-secondary">{formatUsd(parseFloat(priceCostInput) || 0)}</span>
                     </div>
                   </div>
                 </div>

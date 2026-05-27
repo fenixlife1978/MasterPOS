@@ -104,16 +104,51 @@ export default function ReturnsModule() {
       originalSaleId: selectedTransaction.id
     };
 
-    const updates = products.map(p => {
-      const ret = returnItems.find(i => i.productId === p.id);
-      return ret && ret.returnQty > 0 ? { ...p, stock: p.stock + ret.returnQty } : null;
-    }).filter(Boolean);
+    // ✅ Guardar los productos actualizados y crear entradas de kardex
+    const updates = [];
+    const kardexEntries: any[] = [];
 
+    for (const ret of returnItems.filter(i => i.returnQty > 0)) {
+      const product = products.find(p => p.id === ret.productId);
+      if (!product) continue;
+
+      const previousStock = product.stock;
+      const newStock = previousStock + ret.returnQty;
+
+      updates.push({ ...product, stock: newStock });
+
+      // ✅ Crear entrada de kardex para la devolución
+      kardexEntries.push({
+        id: `${Date.now()}_${ret.productId}_${Math.random()}`,
+        productId: ret.productId,
+        date: new Date().toLocaleString('es-VE'),
+        type: 'devolucion',
+        quantity: ret.returnQty,
+        previousStock: previousStock,
+        newStock: newStock,
+        reference: `Devolución - Venta #${selectedTransaction.id}`,
+        note: `Devolución de ${ret.returnQty} unidades de ${ret.name}. Cliente: ${selectedTransaction.clientName || 'Cliente Final'}`,
+        costUsd: product.costUsd,
+      });
+    }
+
+    // ✅ Guardar transacción de devolución
     await syncService.saveTransaction(returnTransaction);
-    if (updates.length > 0) await syncService.saveProducts(updates as any[]);
+
+    // ✅ Actualizar productos (stock)
+    if (updates.length > 0) {
+      await syncService.saveProducts(updates as any[]);
+    }
+
+    // ✅ Guardar entradas de kardex
+    for (const entry of kardexEntries) {
+      await syncService.saveKardexEntry(entry);
+    }
+
+    // ✅ Registrar asiento contable de egreso por devolución
     await registerReturnEntry(returnTransaction as any, selectedTransaction.id);
 
-    setMessage({ type: 'success', text: 'Devolución sincronizada en tiempo real' });
+    setMessage({ type: 'success', text: 'Devolución procesada correctamente. Stock y Kardex actualizados.' });
     setTimeout(() => {
       setMessage(null);
       setShowReturnModal(false);

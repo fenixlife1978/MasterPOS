@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { syncService } from '@/services/syncService';
 import { Printer, Share2, X } from 'lucide-react';
+import { useAuth } from '@/context/AuthContext';
 
 interface CierreFinalFormProps {
   onClose: () => void;
@@ -15,37 +16,94 @@ interface CierreFinalFormProps {
 
 export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalFormProps) {
   const state = usePOSState();
+  const { user } = useAuth();
+  const terminalId = user?.terminalId || 'default';
   const [register, setRegister] = useState<any>(null);
   const [conteoFisico, setConteoFisico] = useState<Record<string, number>>({});
   const [isConciliado, setIsConciliado] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showResumenModal, setShowResumenModal] = useState(false);
   const [closeReportData, setCloseReportData] = useState<any>(null);
+  const [aperturaOriginalBs, setAperturaOriginalBs] = useState(0);
+  const [aperturaOriginalUsd, setAperturaOriginalUsd] = useState(0);
 
+  // ✅ Obtener el registro de caja actual
   useEffect(() => {
-    const cached = localStorage.getItem('pos_register');
-    if (cached) setRegister(JSON.parse(cached));
-  }, []);
+    if (state.register) {
+      setRegister(state.register);
+    } else {
+      const cached = localStorage.getItem(`pos_register_${terminalId}`);
+      if (cached) {
+        try {
+          setRegister(JSON.parse(cached));
+        } catch(e) {}
+      }
+    }
+  }, [state.register, terminalId]);
 
-  const corteParcial = useMemo(() => {
-    if (typeof window === 'undefined') return null;
-    const reports = [];
+  // ✅ Buscar la apertura ORIGINAL (primer corte parcial del día o el registro original)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    
+    // Buscar el primer corte parcial del día (más antiguo)
+    let firstCorte: any = null;
+    let earliestTimestamp = Infinity;
+    
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
       if (key?.startsWith('corte_parcial_')) {
         try {
           const data = JSON.parse(localStorage.getItem(key)!);
-          if (new Date(data.fecha).toDateString() === new Date().toDateString()) reports.push(data);
+          if (new Date(data.fecha).toDateString() === new Date().toDateString()) {
+            if (data.id < earliestTimestamp) {
+              earliestTimestamp = data.id;
+              firstCorte = data;
+            }
+          }
         } catch(e) {}
       }
     }
-    return reports.sort((a,b) => b.id - a.id)[0] || null;
+    
+    if (firstCorte?.apertura) {
+      // Usar la apertura del primer corte parcial
+      setAperturaOriginalBs(firstCorte.apertura.montoBs || 0);
+      setAperturaOriginalUsd(firstCorte.apertura.montoUsd || 0);
+    } else if (register) {
+      // Fallback al registro actual
+      setAperturaOriginalBs(register.openAmountBs || 0);
+      setAperturaOriginalUsd(register.openAmountUsd || 0);
+    }
+  }, [register]);
+
+  // ✅ Obtener el corte parcial más RECIENTE (para las ventas de la mañana)
+  const corteParcial = useMemo(() => {
+    if (typeof window === 'undefined') return null;
+    let latestCorte: any = null;
+    let latestTimestamp = -1;
+    
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key?.startsWith('corte_parcial_')) {
+        try {
+          const data = JSON.parse(localStorage.getItem(key)!);
+          if (new Date(data.fecha).toDateString() === new Date().toDateString()) {
+            if (data.id > latestTimestamp) {
+              latestTimestamp = data.id;
+              latestCorte = data;
+            }
+          }
+        } catch(e) {}
+      }
+    }
+    return latestCorte;
   }, []);
 
   const tasaP1 = corteParcial?.tasaBCV || tasaActual;
   const tasaP2 = tasaActual;
-  const fOpenBs = register?.openAmountBs ?? 0;
-  const fOpenUsd = register?.openAmountUsd ?? 0;
+  
+  // ✅ USAR APERTURA ORIGINAL (NO la del registro actual que ya fue modificada)
+  const aperturaBs = aperturaOriginalBs;
+  const aperturaUsd = aperturaOriginalUsd;
 
   const paymentMethods = [
     { id: 1, metodo: 'EFECTIVO BS', key: 'efectivo_bs', isUsd: false },
@@ -56,69 +114,94 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
     { id: 6, metodo: 'ZELLE', key: 'zelle', isUsd: true },
   ];
 
+  // ✅ Ventas TOTALES del día (CONTADO y COBRO DE DEUDA)
   const salesTotals = useMemo(() => {
     const totals: Record<string, number> = {};
     paymentMethods.forEach(m => totals[m.key] = 0);
-    if (register?.txs) {
+    if (register?.txs && Array.isArray(register.txs)) {
       register.txs.forEach((t: any) => {
-        if (t.type === 'contado' || t.type === 'cobro_deuda') {
+        const txDate = new Date(t.date);
+        const today = new Date();
+        const isToday = txDate.toDateString() === today.toDateString();
+        
+        if (!isToday) return;
+        
+        if (t.type === 'contado') {
           const method = t.payMethod || 'efectivo_bs';
-          totals[method] += (t.paidBs || t.total || 0);
+          let monto = t.total ?? 0;
+          monto = Math.round(monto * 100) / 100;
+          totals[method] = Math.round((totals[method] + monto) * 100) / 100;
+        } 
+        else if (t.type === 'cobro_deuda') {
+          const method = t.payMethod || 'efectivo_bs';
+          let monto = t.paidBs ?? 0;
+          monto = Math.round(monto * 100) / 100;
+          totals[method] = Math.round((totals[method] + monto) * 100) / 100;
         }
       });
     }
     return totals;
   }, [register]);
 
+  // ✅ Ventas de la MAÑANA (del corte parcial)
   const morningSales = useMemo(() => {
     const totals: Record<string, number> = {};
     paymentMethods.forEach(m => totals[m.key] = 0);
     if (corteParcial?.ventas?.porMetodo) {
-      Object.entries(corteParcial.ventas.porMetodo).forEach(([k, v]) => totals[k] = v as number);
+      Object.entries(corteParcial.ventas.porMetodo).forEach(([k, v]) => {
+        totals[k] = Math.round((v as number) * 100) / 100;
+      });
     }
     return totals;
   }, [corteParcial]);
 
+  // ✅ Ventas de la TARDE (totales - mañana)
+  const afternoonSales = useMemo(() => {
+    const totals: Record<string, number> = {};
+    paymentMethods.forEach(m => {
+      const total = salesTotals[m.key] || 0;
+      const morning = morningSales[m.key] || 0;
+      totals[m.key] = Math.max(0, total - morning);
+    });
+    return totals;
+  }, [salesTotals, morningSales]);
+
+  // ✅ Construir filas
   const rows = paymentMethods.map(pm => {
-    const vP1Bs = morningSales[pm.key] || 0;
-    const vTotalBs = salesTotals[pm.key] || 0;
-    const vP2Bs = Math.max(0, vTotalBs - vP1Bs);
+    const vMananaBs = morningSales[pm.key] || 0;
+    const vTardeBs = afternoonSales[pm.key] || 0;
     
-    let fIniVal = 0;
-    if (pm.key === 'efectivo_bs') fIniVal = fOpenBs;
-    if (pm.key === 'usd_efectivo') fIniVal = fOpenUsd;
+    let saldoInicialVal = 0;
+    if (pm.key === 'efectivo_bs') saldoInicialVal = aperturaBs;
+    if (pm.key === 'usd_efectivo') saldoInicialVal = aperturaUsd;
     
-    const sistBs = (pm.isUsd ? fIniVal * tasaP1 : fIniVal) + vP1Bs + vP2Bs;
-    const cFisico = conteoFisico[pm.key] || 0;
-    const cFisicoBs = pm.isUsd ? cFisico * tasaP2 : cFisico;
-    const diffBs = cFisicoBs - sistBs;
+    const saldoInicialBs = pm.isUsd ? saldoInicialVal * tasaP1 : saldoInicialVal;
+    
+    const sistBs = saldoInicialBs + vMananaBs + vTardeBs;
+    
+    const fisicoIngresado = conteoFisico[pm.key] || 0;
+    const fisicoBs = pm.isUsd ? fisicoIngresado * tasaP2 : fisicoIngresado;
+    const diffBs = Math.round((fisicoBs - sistBs) * 100) / 100;
 
     return {
       ...pm,
-      fIni: pm.isUsd ? `$ ${fIniVal.toFixed(2)}` : `Bs ${fIniVal.toFixed(2)}`,
-      fIniBs: pm.isUsd ? fIniVal * tasaP1 : fIniVal,
-      vP1: pm.isUsd ? `$ ${(vP1Bs / tasaP1).toFixed(2)}` : `Bs ${vP1Bs.toFixed(2)}`,
-      vP1Bs: vP1Bs,
-      vP2: pm.isUsd ? `$ ${(vP2Bs / tasaP2).toFixed(2)}` : `Bs ${vP2Bs.toFixed(2)}`,
-      vP2Bs: vP2Bs,
-      sistBs,
-      fisico: cFisico,
-      fisicoBs: cFisicoBs,
-      diffBs
+      saldoInicial: pm.isUsd ? `$ ${saldoInicialVal.toFixed(2)}` : `Bs ${saldoInicialVal.toFixed(2)}`,
+      vMananaBs: vMananaBs,
+      vTardeBs: vTardeBs,
+      sistBs: sistBs,
+      fisicoIngresado: fisicoIngresado,
+      fisicoBs: fisicoBs,
+      diffBs: diffBs
     };
   });
 
   const totalSistBs = rows.reduce((s, r) => s + r.sistBs, 0);
   const totalFisBs = rows.reduce((s, r) => s + r.fisicoBs, 0);
-  const diffNeta = totalFisBs - totalSistBs;
+  const diffNeta = Math.round((totalFisBs - totalSistBs) * 100) / 100;
 
-  // Generar reporte para el modal
   const generarReporte = () => {
-    const ventasContado = rows.reduce((acc, r) => acc + r.vP1Bs + r.vP2Bs, 0);
+    const ventasContado = rows.reduce((acc, r) => acc + r.vMananaBs + r.vTardeBs, 0);
     const ventasCredito = register?.txs?.filter((t: any) => t.type === 'credito').reduce((sum: number, t: any) => sum + (t.total || 0), 0) || 0;
-    const fondoInicialBs = fOpenBs;
-    const fondoInicialUsd = fOpenUsd;
-    const fondoPostCorte = corteParcial?.nuevoFondo?.bs || 0;
     
     return {
       id: Date.now(),
@@ -127,13 +210,12 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
       tipoCorte: 'cierre_total',
       tasaPeriodo1: tasaP1,
       tasaPeriodo2: tasaP2,
-      fondoPostCorte,
-      fondoInicial: { bs: fondoInicialBs, usd: fondoInicialUsd },
+      apertura: { bs: aperturaBs, usd: aperturaUsd },
       ventas: {
-        contado: ventasContado,
+        manana: morningSales,
+        tarde: afternoonSales,
+        totalContado: ventasContado,
         credito: ventasCredito,
-        totalSistema: totalSistBs,
-        totalReal: totalFisBs
       },
       cuadre: rows.map(r => ({
         metodo: r.metodo,
@@ -150,7 +232,6 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
     };
   };
 
-  // Acción al hacer clic en "CERRAR JORNADA" (antes de cerrar)
   const handleConfirmCierre = () => {
     if (!isConciliado) return;
     const report = generarReporte();
@@ -158,13 +239,10 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
     setShowResumenModal(true);
   };
 
-  // Cierre definitivo después de que el usuario ve el resumen
   const finalizarCierre = async () => {
     if (closeReportData) {
-      // Guardar reporte en localStorage (similar a cortes parciales)
       localStorage.setItem(`cierre_final_${Date.now()}`, JSON.stringify(closeReportData));
       
-      // Limpiar cortes parciales del día
       for (let i = localStorage.length - 1; i >= 0; i--) {
         const key = localStorage.key(i);
         if (key?.startsWith('corte_parcial_')) {
@@ -182,7 +260,6 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
     onClose();
   };
 
-  // Imprimir / PDF
   const handlePrint = () => {
     if (!closeReportData) return;
     const printWindow = window.open('', '_blank', 'width=800,height=600');
@@ -193,7 +270,6 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
     setTimeout(() => printWindow.print(), 300);
   };
 
-  // Compartir o copiar
   const handleShare = async () => {
     if (!closeReportData) return;
     const text = generarTextoResumen(closeReportData);
@@ -223,7 +299,6 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
       <style>
         body { font-family: 'Courier New', monospace; margin: 20px; font-size: 12px; }
         .center { text-align: center; }
-        .big { font-size: 32px; font-weight: bold; margin: 20px 0; }
         .line { border-top: 1px dashed #000; margin: 10px 0; }
         table { width: 100%; border-collapse: collapse; margin: 10px 0; }
         th, td { border: 1px solid #999; padding: 6px; text-align: left; }
@@ -237,8 +312,8 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
         <p>${data.fechaCierre}</p>
       </div>
       <div class="line"></div>
-      <p><strong>Fondo Inicial:</strong> Bs ${data.fondoInicial.bs.toFixed(2)} + $${data.fondoInicial.usd.toFixed(2)}</p>
-      <p><strong>Ventas Contado:</strong> Bs ${data.ventas.contado.toFixed(2)}</p>
+      <p><strong>Apertura:</strong> Bs ${data.apertura.bs.toFixed(2)} + $${data.apertura.usd.toFixed(2)}</p>
+      <p><strong>Ventas Contado:</strong> Bs ${data.ventas.totalContado.toFixed(2)}</p>
       <p><strong>Ventas Crédito:</strong> Bs ${data.ventas.credito.toFixed(2)}</p>
       <div class="line"></div>
       <div class="center">
@@ -250,7 +325,7 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
       <div class="line"></div>
       <h3>Detalle por método</h3>
       <table>
-        <thead><tr><th>Método</th><th>Sistema (Bs)</th><th>Real (Bs)</th><th>Diferencia</th><tr></thead>
+        <thead><tr><th>Método</th><th>Sistema (Bs)</th><th>Real (Bs)</th><th>Diferencia</th></tr></thead>
         <tbody>
           ${data.cuadre.map((r: any) => `<tr><td>${r.metodo}</td><td class="right">${r.sistema.toFixed(2)}</td><td class="right">${r.real.toFixed(2)}</td><td class="right">${r.diferencia.toFixed(2)}</td>`).join('')}
         </tbody>
@@ -265,7 +340,7 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
   const generarTextoResumen = (data: any) => {
     const diff = data.totales.diferencia;
     const estado = data.totales.estado;
-    return `MASTERPOS - Cierre de Jornada\nFecha: ${data.fechaCierre}\nFondo inicial: Bs ${data.fondoInicial.bs.toFixed(2)} + $${data.fondoInicial.usd.toFixed(2)}\nVentas Contado: Bs ${data.ventas.contado.toFixed(2)}\nVentas Crédito: Bs ${data.ventas.credito.toFixed(2)}\nRESULTADO: ${estado} por Bs ${Math.abs(diff).toFixed(2)}`;
+    return `MASTERPOS - Cierre de Jornada\nFecha: ${data.fechaCierre}\nApertura: Bs ${data.apertura.bs.toFixed(2)} + $${data.apertura.usd.toFixed(2)}\nVentas Contado: Bs ${data.ventas.totalContado.toFixed(2)}\nVentas Crédito: Bs ${data.ventas.credito.toFixed(2)}\nRESULTADO: ${estado} por Bs ${Math.abs(diff).toFixed(2)}`;
   };
 
   return (
@@ -281,108 +356,97 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
               <thead className="bg-[#2c3e50] text-white sticky top-0">
                 <tr>
                   <th className="p-2 text-left">MÉTODO</th>
-                  <th className="p-2 text-center">FONDO INICIAL</th>
-                  <th className="p-2 text-center">MAÑANA</th>
-                  <th className="p-2 text-center">TARDE</th>
+                  <th className="p-2 text-center">APERTURA</th>
+                  <th className="p-2 text-center">MAÑANA (Bs)</th>
+                  <th className="p-2 text-center">TARDE (Bs)</th>
                   <th className="p-2 text-center">SISTEMA (Bs)</th>
                   <th className="p-2 text-center">FÍSICO</th>
-                  <th className="p-2 text-center">DIF.</th>
+                  <th className="p-2 text-center">DIF. (Bs)</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
                 {rows.map(r => (
                   <tr key={r.id} className="hover:bg-slate-50">
                     <td className="p-2 font-bold">{r.metodo}</td>
-                    <td className="p-2 text-center">{r.fIni}</td>
-                    <td className="p-2 text-center text-slate-500">{r.vP1}</td>
-                    <td className="p-2 text-center text-slate-500">{r.vP2}</td>
+                    <td className="p-2 text-center">{r.saldoInicial}</td>
+                    <td className="p-2 text-center font-mono">Bs {r.vMananaBs.toFixed(2)}</td>
+                    <td className="p-2 text-center font-mono">Bs {r.vTardeBs.toFixed(2)}</td>
                     <td className="p-2 text-center font-bold text-blue-700">Bs {r.sistBs.toFixed(2)}</td>
                     <td className="p-2 text-center">
-                      <Input type="number" step="0.01" value={conteoFisico[r.key] || ''} onChange={e => setConteoFisico({...conteoFisico, [r.key]: parseFloat(e.target.value) || 0})} className="w-24 h-6 text-[10px] mx-auto text-center font-bold" />
+                      <div className="flex items-center justify-center gap-1">
+                        <Input 
+                          type="number" 
+                          step="0.01" 
+                          value={r.fisicoIngresado === 0 ? '' : r.fisicoIngresado} 
+                          onChange={e => setConteoFisico({...conteoFisico, [r.key]: parseFloat(e.target.value) || 0})} 
+                          className="w-24 h-7 text-xs text-center font-bold" 
+                          placeholder="0.00"
+                        />
+                        <span className="text-[9px] font-bold text-slate-500">{r.isUsd ? 'USD' : 'Bs'}</span>
+                      </div>
+                      {r.isUsd && r.fisicoIngresado > 0 && (
+                        <div className="text-[8px] text-slate-400 mt-0.5">
+                          ≈ Bs {(r.fisicoIngresado * tasaP2).toFixed(2)}
+                        </div>
+                      )}
                     </td>
-                    <td className={cn("p-2 text-center font-bold", r.diffBs < 0 ? "text-red-600" : "text-emerald-600")}>{r.diffBs.toFixed(2)}</td>
+                    <td className={cn("p-2 text-center font-bold", r.diffBs < 0 ? "text-red-600" : r.diffBs > 0 ? "text-emerald-600" : "text-slate-500")}>
+                      {r.diffBs === 0 ? '✓' : r.diffBs.toFixed(2)}
+                    </td>
                   </tr>
                 ))}
                 <tr className="bg-[#1E3A8A] text-white font-bold">
                   <td colSpan={4} className="p-2 text-right">TOTAL CONSOLIDADO:</td>
                   <td className="p-2 text-center">Bs {totalSistBs.toFixed(2)}</td>
                   <td className="p-2 text-center">Bs {totalFisBs.toFixed(2)}</td>
-                  <td className="p-2 text-center">Bs {diffNeta.toFixed(2)}</td>
+                  <td className="p-2 text-center">{diffNeta === 0 ? '✓' : diffNeta.toFixed(2)}</td>
                 </tr>
               </tbody>
             </table>
           </div>
 
           <div className="bg-white p-4 border-t flex flex-col gap-3">
-            <div className="flex justify-between items-center pt-3 border-t">
+            <div className="flex justify-between items-center pt-3 border-t flex-wrap gap-3">
               <label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" checked={isConciliado} onChange={e => setIsConciliado(e.target.checked)} className="rounded text-blue-600" />
+                <input type="checkbox" checked={isConciliado} onChange={e => setIsConciliado(e.target.checked)} className="rounded text-blue-600 w-4 h-4" />
                 <span className="text-[10px] font-bold uppercase">Confirmo el arqueo físico de la jornada completa</span>
               </label>
               <div className="flex gap-2">
-                <Button onClick={onClose} variant="ghost" className="text-red-600">Cancelar</Button>
-                <Button disabled={!isConciliado || isSubmitting} onClick={handleConfirmCierre} className="bg-emerald-600 text-white font-bold px-8">CERRAR JORNADA</Button>
+                <Button onClick={onClose} variant="ghost" className="text-red-600 font-bold text-xs h-8">Cancelar</Button>
+                <Button disabled={!isConciliado || isSubmitting} onClick={handleConfirmCierre} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs h-8 px-6">CERRAR JORNADA</Button>
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Modal de resumen final */}
       {showResumenModal && closeReportData && (
         <div className="fixed inset-0 bg-black/80 z-[200] flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
             <div className="bg-[#1E3A8A] text-white p-4 sticky top-0 flex justify-between items-center">
               <h2 className="text-lg font-black">RESUMEN DE CIERRE DE JORNADA</h2>
-              <button onClick={finalizarCierre} className="text-white/60 hover:text-white">
-                <X size={20} />
-              </button>
+              <button onClick={finalizarCierre} className="text-white/60 hover:text-white"><X size={20} /></button>
             </div>
             <div className="p-6 space-y-4">
-              <div className="text-center">
-                <p className="text-sm text-gray-500">Fecha y hora</p>
-                <p className="font-mono">{closeReportData.fechaCierre}</p>
-              </div>
+              <div className="text-center"><p className="text-sm text-gray-500">Fecha y hora</p><p className="font-mono">{closeReportData.fechaCierre}</p></div>
               <div className="grid grid-cols-2 gap-4 border-b pb-4">
-                <div>
-                  <p className="text-xs text-gray-500">Fondo Inicial</p>
-                  <p className="font-bold">Bs {closeReportData.fondoInicial.bs.toFixed(2)}</p>
-                  <p className="font-bold">$ {closeReportData.fondoInicial.usd.toFixed(2)}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-500">Ventas del día</p>
-                  <p className="font-bold">Contado: Bs {closeReportData.ventas.contado.toFixed(2)}</p>
-                  <p className="font-bold">Crédito: Bs {closeReportData.ventas.credito.toFixed(2)}</p>
-                </div>
+                <div><p className="text-xs text-gray-500">Apertura</p><p className="font-bold">Bs {closeReportData.apertura.bs.toFixed(2)}</p><p className="font-bold">$ {closeReportData.apertura.usd.toFixed(2)}</p></div>
+                <div><p className="text-xs text-gray-500">Ventas del día</p><p className="font-bold">Contado: Bs {closeReportData.ventas.totalContado.toFixed(2)}</p><p className="font-bold">Crédito: Bs {closeReportData.ventas.credito.toFixed(2)}</p></div>
               </div>
               <div className="text-center py-4 bg-gray-50 rounded-lg">
                 <p className="text-xs uppercase tracking-wider text-gray-500">RESULTADO DE LA JORNADA</p>
-                <p className={cn(
-                  "text-5xl font-black mt-2",
-                  closeReportData.totales.diferencia > 0 ? "text-emerald-600" : closeReportData.totales.diferencia < 0 ? "text-red-600" : "text-blue-600"
-                )}>
+                <p className={cn("text-5xl font-black mt-2", closeReportData.totales.diferencia > 0 ? "text-emerald-600" : closeReportData.totales.diferencia < 0 ? "text-red-600" : "text-blue-600")}>
                   {closeReportData.totales.diferencia > 0 ? '+' : ''}{closeReportData.totales.diferencia.toFixed(2)} Bs
                 </p>
-                <p className={cn(
-                  "text-sm font-bold mt-1",
-                  closeReportData.totales.diferencia > 0 ? "text-emerald-600" : closeReportData.totales.diferencia < 0 ? "text-red-600" : "text-blue-600"
-                )}>
+                <p className={cn("text-sm font-bold mt-1", closeReportData.totales.diferencia > 0 ? "text-emerald-600" : closeReportData.totales.diferencia < 0 ? "text-red-600" : "text-blue-600")}>
                   {closeReportData.totales.estado}
                 </p>
               </div>
               <div className="flex gap-3 pt-2">
-                <Button onClick={handlePrint} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white">
-                  <Printer size={16} className="mr-2" /> Imprimir / PDF
-                </Button>
-                <Button onClick={handleShare} variant="outline" className="flex-1 border-slate-300">
-                  <Share2 size={16} className="mr-2" /> Compartir
-                </Button>
+                <Button onClick={handlePrint} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"><Printer size={16} className="mr-2" /> Imprimir / PDF</Button>
+                <Button onClick={handleShare} variant="outline" className="flex-1 border-slate-300"><Share2 size={16} className="mr-2" /> Compartir</Button>
               </div>
-              <div className="text-center pt-4">
-                <Button onClick={finalizarCierre} className="bg-emerald-600 hover:bg-emerald-700 text-white px-6">
-                  CERRAR CAJA
-                </Button>
-              </div>
+              <div className="text-center pt-4"><Button onClick={finalizarCierre} className="bg-emerald-600 hover:bg-emerald-700 text-white px-6">CERRAR CAJA</Button></div>
             </div>
           </div>
         </div>

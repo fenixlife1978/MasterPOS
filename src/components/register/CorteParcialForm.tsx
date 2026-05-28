@@ -241,13 +241,12 @@ export default function CorteParcialForm({ onClose, onCorteConfirmado, tasaActua
     const fUsd = fisicos['usd_efectivo'] ?? 0;
     
     const report = {
-      id: Date.now(),
       fecha: new Date().toISOString(),
       tasaBCV: tasaActual,
       tasaNueva: nTasa,
       apertura: { montoBs: openAmountBs, montoUsd: openAmountUsd },
-      ventas: { porMetodo: salesByMethod },
-      devoluciones: { porMetodo: returnsByMethod },
+      ventas: { porMetodo: salesByMethod, totalContado: rows.reduce((acc, r) => acc + (r.isUsd ? r.ventas * tasaActual : r.ventas), 0) },
+      devoluciones: { porMetodo: returnsByMethod, total: rows.reduce((acc, r) => acc + (r.isUsd ? r.devoluciones * tasaActual : r.devoluciones), 0) },
       creditos: { total: creditTotal },
       usdEfectivo: totalCashUsd,
       usdZelle: totalZelleUsd,
@@ -258,10 +257,20 @@ export default function CorteParcialForm({ onClose, onCorteConfirmado, tasaActua
         diff: r.diff,
         moneda: r.isUsd ? 'USD' : 'Bs'
       })),
-      nuevoFondo: { bs: fBs, usd: fUsd, totalBs: fBs + (fUsd * nTasa) }
+      nuevoFondo: { bs: fBs, usd: fUsd, totalBs: fBs + (fUsd * nTasa) },
+      diferenciaNetaGlobal: diffNeta
     };
 
-    localStorage.setItem(`corte_parcial_${Date.now()}`, JSON.stringify(report));
+    const timestamp = Date.now();
+    // Guardar en localStorage
+    localStorage.setItem(`corte_parcial_${timestamp}`, JSON.stringify(report));
+    
+    // Guardar en Firestore (colección cash_closes)
+    await syncService.saveCashClose({
+      id: `parcial_${timestamp}`,
+      tipo: 'parcial',
+      ...report
+    });
     
     await state.setExchangeRate(nTasa);
     

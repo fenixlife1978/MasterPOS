@@ -103,6 +103,10 @@ const processQueue = async () => {
         case 'saveTerminal':
           await setDoc(doc(db, 'terminals', data.id.toString()), { ...data, updatedAt: Date.now() });
           break;
+        // ✅ NUEVO: Guardar cierre de caja en Firestore
+        case 'saveCashClose':
+          await setDoc(doc(db, 'cash_closes', data.id), { ...data, createdAt: Date.now() });
+          break;
       }
     } catch (error) {
       op.retries++;
@@ -591,6 +595,36 @@ export const syncService = {
       }
     }
     return null;
+  },
+
+  // ✅ NUEVO: Métodos para la colección cash_closes (historial de cierres)
+  async saveCashClose(closeData: any) {
+    if (!db) return;
+    if (!isOnline) return addToQueue('saveCashClose', closeData);
+    const cleaned = sanitizeForFirestore(closeData);
+    await setDoc(doc(db, 'cash_closes', cleaned.id), { ...cleaned, createdAt: Date.now() });
+  },
+
+  async getAllCashCloses(): Promise<any[]> {
+    if (!db) return [];
+    const snap = await getDocs(collection(db, 'cash_closes'));
+    return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  },
+
+  subscribeToCashCloses(callback: (data: any[]) => void) {
+    if (!db) return () => {};
+    return onSnapshot(query(collection(db, 'cash_closes'), orderBy('fecha', 'desc')), (snap) => {
+      callback(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+  },
+
+  async deleteAllCashCloses() {
+    if (!db) return;
+    const snap = await getDocs(collection(db, 'cash_closes'));
+    if (snap.empty) return;
+    const batch = writeBatch(db);
+    snap.docs.forEach(doc => batch.delete(doc.ref));
+    await batch.commit();
   },
 
   getPendingQueueLength() {

@@ -400,7 +400,6 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
     }, 0);
     const ventasCredito = creditTotals;
     return {
-      id: Date.now(),
       fecha: new Date().toISOString(),
       fechaCierre: new Date().toLocaleString('es-VE', { dateStyle: 'full', timeStyle: 'medium' }),
       tipoCorte: 'cierre_total',
@@ -429,7 +428,17 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
 
   const finalizarCierre = async () => {
     if (closeReportData) {
-      localStorage.setItem(`cierre_final_${Date.now()}`, JSON.stringify(closeReportData));
+      const timestamp = Date.now();
+      // Guardar en localStorage
+      localStorage.setItem(`cierre_final_${timestamp}`, JSON.stringify(closeReportData));
+      
+      // Guardar en Firestore (colección cash_closes)
+      await syncService.saveCashClose({
+        id: `final_${timestamp}`,
+        tipo: 'final',
+        ...closeReportData
+      });
+      
       for (let i = localStorage.length - 1; i >= 0; i--) {
         const key = localStorage.key(i);
         if (key?.startsWith('corte_parcial_')) {
@@ -506,7 +515,12 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
       <h3>Detalle por método</h3>
       <table>
         <thead><tr><th>Método</th><th>Sistema (Bs)</th><th>Real (Bs)</th><th>Diferencia</th></tr></thead>
-        <tbody>${data.cuadre.map((r: any) => `<tr><td>${r.metodo}</td><td class="right">${formatBsNumber(r.sistema)}</td><td class="right">${formatBsNumber(r.real)}</td><td class="right">${formatBsNumber(r.diferencia)}</td>`).join('')}</tbody>
+        <tbody>${data.cuadre.map((r: any) => `<tr>
+          <td>${r.metodo}</td>
+          <td class="right">${formatBsNumber(r.sistema)}</td>
+          <td class="right">${formatBsNumber(r.real)}</td>
+          <td class="right">${formatBsNumber(r.diferencia)}</td>
+        </tr>`).join('')}</tbody>
       </table>
       <div class="line"></div>
       <p class="center">Documento generado por MasterPOS</p>

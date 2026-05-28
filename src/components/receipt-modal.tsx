@@ -8,7 +8,7 @@ import { formatBs, formatUsd, formatBsNumber, formatUsdNumber } from '@/lib/curr
 interface ReceiptModalProps {
   transaction: Transaction;
   exchangeRate: number;
-  receiptNumber?: number; // ✅ RECIBE EL NÚMERO CORRELATIVO DESDE EL POS
+  receiptNumber?: number;
   onClose: () => void;
 }
 
@@ -38,7 +38,6 @@ function formatToVenezuelaTime(dateStr: string): string {
 export default function ReceiptModal({ transaction, exchangeRate, receiptNumber, onClose }: ReceiptModalProps) {
   const printRef = useRef<HTMLDivElement>(null);
 
-  // ✅ PRIORIZA EL NÚMERO CORRELATIVO GUARDADO EN LA TRANSACCIÓN O EL PASADO POR PROP
   const rawNumber = transaction?.receiptNumber || receiptNumber;
   const formattedReceiptNumber = rawNumber 
     ? rawNumber.toString().padStart(8, '0')
@@ -156,10 +155,7 @@ export default function ReceiptModal({ transaction, exchangeRate, receiptNumber,
     printWindow?.document.close();
   };
 
-  const handleExportPDF = () => {
-    handlePrint();
-  };
-
+  const handleExportPDF = () => handlePrint();
   const handleSharePDF = async () => {
     if (navigator.share) {
       try {
@@ -201,7 +197,7 @@ export default function ReceiptModal({ transaction, exchangeRate, receiptNumber,
   const getDocumentTitle = () => {
     if (isCredito) return 'DOCUMENTO DE CRÉDITO';
     if (isCobroDeuda) return 'RECIBO DE PAGO';
-    return 'FACTURA DE VENTA';
+    return 'RECIBO'; // ✅ Cambiado de 'FACTURA DE VENTA' a 'RECIBO'
   };
 
   return (
@@ -223,10 +219,9 @@ export default function ReceiptModal({ transaction, exchangeRate, receiptNumber,
             className="bg-white p-5 shadow-sm text-black font-mono select-none"
             style={{ width: '72mm', boxSizing: 'border-box', color: '#000' }}
           >
-            {/* ENCABEZADO - DATOS ACTUALIZADOS */}
             <div className="text-center" style={{ marginBottom: '6px', paddingBottom: '6px', borderBottom: '1px dashed #000' }}>
-              <h1 style={{ fontSize: '16px', fontWeight: 'bold', margin: '0 0 2px 0', letterSpacing: '1px' }}>MasterPOSv1</h1>
-              <p style={{ fontSize: '10px', margin: '2px 0', fontWeight: 'bold' }}>Licoreria Castillo</p>
+              <h1 style={{ fontSize: '16px', fontWeight: 'bold', margin: '0 0 2px 0', letterSpacing: '1px' }}>LICORERIA CASTILLO</h1>
+              <p style={{ fontSize: '10px', margin: '2px 0', fontWeight: 'bold' }}>Calle Ayacucho entre Calles Occidente y La Cruz, Sector La Playita</p>
               <p style={{ fontSize: '9px', margin: '2px 0' }}>RIF: V-11654282-6</p>
               <p style={{ fontSize: '9px', margin: '2px 0' }}>TEL: 0424-5397181</p>
               <p style={{ fontSize: '9px', margin: '2px 0' }}>Guama - Yaracuy</p>
@@ -247,7 +242,7 @@ export default function ReceiptModal({ transaction, exchangeRate, receiptNumber,
 
             <div style={{ margin: '6px 0', fontSize: '9px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span>{isCredito ? 'CRÉDITO N°:' : 'FACTURA N°:'} <span style={{ fontWeight: 'bold' }}>{formattedReceiptNumber}</span></span>
+                <span>{isCredito ? 'CRÉDITO N°:' : 'RECIBO N°:'} <span style={{ fontWeight: 'bold' }}>{formattedReceiptNumber}</span></span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', margin: '2px 0' }}>
                 <span>FECHA: {transactionDate}</span>
@@ -273,17 +268,17 @@ export default function ReceiptModal({ transaction, exchangeRate, receiptNumber,
                       <td style={{ padding: '4px 0', paddingLeft: '4px', fontSize: '9px' }}>
                         {item.name.toUpperCase().slice(0, 22)}
                         <div style={{ fontSize: '8px', color: '#555' }}>Ref: {formatBs(item.priceBs)}</div>
-                        </td>
+                      </td>
                       <td style={{ textAlign: 'right', padding: '4px 0', fontSize: '9px', fontWeight: 'bold' }}>
                         {formatBsNumber(item.priceBs * item.qty)}
-                        </td>
-                      </tr>
+                      </td>
+                    </tr>
                   ))
                 ) : (
                   <tr>
                     <td colSpan={3} style={{ textAlign: 'center', padding: '8px 0', color: '#666', fontStyle: 'italic' }}>
                       {isCobroDeuda ? '* Abono de cuenta aplicado *' : '* Operación de Pago *'}
-                      </td>
+                    </td>
                   </tr>
                 )}
               </tbody>

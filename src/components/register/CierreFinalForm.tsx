@@ -28,7 +28,6 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
   const [aperturaOriginalBs, setAperturaOriginalBs] = useState(0);
   const [aperturaOriginalUsd, setAperturaOriginalUsd] = useState(0);
 
-  // ✅ Obtener el registro de caja actual
   useEffect(() => {
     if (state.register) {
       setRegister(state.register);
@@ -42,11 +41,9 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
     }
   }, [state.register, terminalId]);
 
-  // ✅ Buscar la apertura ORIGINAL (primer corte parcial del día o el registro original)
   useEffect(() => {
     if (typeof window === 'undefined') return;
     
-    // Buscar el primer corte parcial del día (más antiguo)
     let firstCorte: any = null;
     let earliestTimestamp = Infinity;
     
@@ -66,17 +63,14 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
     }
     
     if (firstCorte?.apertura) {
-      // Usar la apertura del primer corte parcial
       setAperturaOriginalBs(firstCorte.apertura.montoBs || 0);
       setAperturaOriginalUsd(firstCorte.apertura.montoUsd || 0);
     } else if (register) {
-      // Fallback al registro actual
       setAperturaOriginalBs(register.openAmountBs || 0);
       setAperturaOriginalUsd(register.openAmountUsd || 0);
     }
   }, [register]);
 
-  // ✅ Obtener el corte parcial más RECIENTE (para las ventas de la mañana)
   const corteParcial = useMemo(() => {
     if (typeof window === 'undefined') return null;
     let latestCorte: any = null;
@@ -102,7 +96,6 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
   const tasaP1 = corteParcial?.tasaBCV || tasaActual;
   const tasaP2 = tasaActual;
   
-  // ✅ USAR APERTURA ORIGINAL (NO la del registro actual que ya fue modificada)
   const aperturaBs = aperturaOriginalBs;
   const aperturaUsd = aperturaOriginalUsd;
 
@@ -115,7 +108,7 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
     { id: 6, metodo: 'ZELLE', key: 'zelle', isUsd: true },
   ];
 
-  // ✅ Ventas TOTALES del día (CONTADO y COBRO DE DEUDA)
+  // ✅ Ventas TOTALES del día
   const salesTotals = useMemo(() => {
     const totals: Record<string, number> = {};
     paymentMethods.forEach(m => totals[m.key] = 0);
@@ -144,7 +137,46 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
     return totals;
   }, [register]);
 
-  // ✅ Ventas de la MAÑANA (del corte parcial)
+  // ✅ DEVOLUCIONES del día
+  const returnsTotals = useMemo(() => {
+    const totals: Record<string, number> = {};
+    paymentMethods.forEach(m => totals[m.key] = 0);
+    if (register?.txs && Array.isArray(register.txs)) {
+      register.txs.forEach((t: any) => {
+        const txDate = new Date(t.date);
+        const today = new Date();
+        const isToday = txDate.toDateString() === today.toDateString();
+        
+        if (!isToday) return;
+        
+        if (t.type === 'devolucion') {
+          const method = t.payMethod || 'efectivo_bs';
+          let monto = t.total ?? 0;
+          monto = Math.round(monto * 100) / 100;
+          totals[method] = Math.round((totals[method] + monto) * 100) / 100;
+        }
+      });
+    }
+    return totals;
+  }, [register]);
+
+  // ✅ Ventas a CRÉDITO del día (totales)
+  const creditTotals = useMemo(() => {
+    let total = 0;
+    if (register?.txs && Array.isArray(register.txs)) {
+      register.txs.forEach((t: any) => {
+        const txDate = new Date(t.date);
+        const today = new Date();
+        const isToday = txDate.toDateString() === today.toDateString();
+        if (isToday && t.type === 'credito') {
+          total += t.total || 0;
+        }
+      });
+    }
+    return total;
+  }, [register]);
+
+  // ✅ Ventas de la MAÑANA (contado)
   const morningSales = useMemo(() => {
     const totals: Record<string, number> = {};
     paymentMethods.forEach(m => totals[m.key] = 0);
@@ -156,7 +188,27 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
     return totals;
   }, [corteParcial]);
 
-  // ✅ Ventas de la TARDE (totales - mañana)
+  // ✅ Créditos de la MAÑANA (desde corte parcial)
+  const morningCredit = useMemo(() => {
+    if (corteParcial?.creditos?.total) {
+      return corteParcial.creditos.total;
+    }
+    return 0;
+  }, [corteParcial]);
+
+  // ✅ Devoluciones de la MAÑANA
+  const morningReturns = useMemo(() => {
+    const totals: Record<string, number> = {};
+    paymentMethods.forEach(m => totals[m.key] = 0);
+    if (corteParcial?.devoluciones?.porMetodo) {
+      Object.entries(corteParcial.devoluciones.porMetodo).forEach(([k, v]) => {
+        totals[k] = Math.round((v as number) * 100) / 100;
+      });
+    }
+    return totals;
+  }, [corteParcial]);
+
+  // ✅ Ventas de la TARDE (contado)
   const afternoonSales = useMemo(() => {
     const totals: Record<string, number> = {};
     paymentMethods.forEach(m => {
@@ -167,10 +219,28 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
     return totals;
   }, [salesTotals, morningSales]);
 
-  // ✅ Construir filas
+  // ✅ Créditos de la TARDE
+  const afternoonCredit = useMemo(() => {
+    return Math.max(0, creditTotals - morningCredit);
+  }, [creditTotals, morningCredit]);
+
+  // ✅ Devoluciones de la TARDE
+  const afternoonReturns = useMemo(() => {
+    const totals: Record<string, number> = {};
+    paymentMethods.forEach(m => {
+      const total = returnsTotals[m.key] || 0;
+      const morning = morningReturns[m.key] || 0;
+      totals[m.key] = Math.max(0, total - morning);
+    });
+    return totals;
+  }, [returnsTotals, morningReturns]);
+
+  // ✅ Construir filas (métodos de pago)
   const rows = paymentMethods.map(pm => {
     const vMananaBs = morningSales[pm.key] || 0;
     const vTardeBs = afternoonSales[pm.key] || 0;
+    const rMananaBs = morningReturns[pm.key] || 0;
+    const rTardeBs = afternoonReturns[pm.key] || 0;
     
     let saldoInicialVal = 0;
     if (pm.key === 'efectivo_bs') saldoInicialVal = aperturaBs;
@@ -178,23 +248,70 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
     
     const saldoInicialBs = pm.isUsd ? saldoInicialVal * tasaP1 : saldoInicialVal;
     
-    const sistBs = saldoInicialBs + vMananaBs + vTardeBs;
+    // ✅ FÓRMULA CORRECTA: SISTEMA = Saldo Inicial + Ventas - Devoluciones
+    const sistBs = saldoInicialBs + vMananaBs + vTardeBs - rMananaBs - rTardeBs;
     
     const fisicoIngresado = conteoFisico[pm.key] || 0;
     const fisicoBs = pm.isUsd ? fisicoIngresado * tasaP2 : fisicoIngresado;
     const diffBs = Math.round((fisicoBs - sistBs) * 100) / 100;
 
     return {
-      ...pm,
+      id: pm.id,
+      metodo: pm.metodo,
+      key: pm.key,
+      isUsd: pm.isUsd,
+      isCreditRow: false, // ✅ añadido para unificar tipo
       saldoInicial: pm.isUsd ? formatUsd(saldoInicialVal) : formatBs(saldoInicialVal),
-      vMananaBs: vMananaBs,
-      vTardeBs: vTardeBs,
-      sistBs: sistBs,
-      fisicoIngresado: fisicoIngresado,
-      fisicoBs: fisicoBs,
-      diffBs: diffBs
+      vMananaBs,
+      vTardeBs,
+      rMananaBs,
+      rTardeBs,
+      sistBs,
+      fisicoIngresado,
+      fisicoBs,
+      diffBs
     };
   });
+
+  // ✅ Filas adicionales para CRÉDITO (mañana y tarde)
+  const creditMorningRow = morningCredit > 0 ? {
+    id: 9991,
+    metodo: 'CRÉDITO (Mañana)',
+    key: 'credito_manana',
+    isUsd: false,
+    isCreditRow: true,
+    saldoInicial: '—',
+    vMananaBs: morningCredit,
+    vTardeBs: 0,
+    rMananaBs: 0,
+    rTardeBs: 0,
+    sistBs: morningCredit,
+    fisicoIngresado: morningCredit,
+    fisicoBs: morningCredit,
+    diffBs: 0
+  } : null;
+
+  const creditAfternoonRow = afternoonCredit > 0 ? {
+    id: 9992,
+    metodo: 'CRÉDITO (Tarde)',
+    key: 'credito_tarde',
+    isUsd: false,
+    isCreditRow: true,
+    saldoInicial: '—',
+    vMananaBs: 0,
+    vTardeBs: afternoonCredit,
+    rMananaBs: 0,
+    rTardeBs: 0,
+    sistBs: afternoonCredit,
+    fisicoIngresado: afternoonCredit,
+    fisicoBs: afternoonCredit,
+    diffBs: 0
+  } : null;
+
+  // Agregar filas de crédito a la lista para mostrar en la tabla
+  const allRows = [...rows];
+  if (creditMorningRow) allRows.push(creditMorningRow);
+  if (creditAfternoonRow) allRows.push(creditAfternoonRow);
 
   const totalSistBs = rows.reduce((s, r) => s + r.sistBs, 0);
   const totalFisBs = rows.reduce((s, r) => s + r.fisicoBs, 0);
@@ -202,7 +319,8 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
 
   const generarReporte = () => {
     const ventasContado = rows.reduce((acc, r) => acc + r.vMananaBs + r.vTardeBs, 0);
-    const ventasCredito = register?.txs?.filter((t: any) => t.type === 'credito').reduce((sum: number, t: any) => sum + (t.total || 0), 0) || 0;
+    const devoluciones = rows.reduce((acc, r) => acc + r.rMananaBs + r.rTardeBs, 0);
+    const ventasCredito = creditTotals;
     
     return {
       id: Date.now(),
@@ -217,8 +335,15 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
         tarde: afternoonSales,
         totalContado: ventasContado,
         credito: ventasCredito,
+        creditoManana: morningCredit,
+        creditoTarde: afternoonCredit,
       },
-      cuadre: rows.map(r => ({
+      devoluciones: {
+        manana: morningReturns,
+        tarde: afternoonReturns,
+        total: devoluciones,
+      },
+      cuadre: allRows.map(r => ({
         metodo: r.metodo,
         sistema: r.sistBs,
         real: r.fisicoBs,
@@ -315,6 +440,7 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
       <div class="line"></div>
       <p><strong>Apertura:</strong> ${formatBs(data.apertura.bs)} + ${formatUsd(data.apertura.usd)}</p>
       <p><strong>Ventas Contado:</strong> ${formatBs(data.ventas.totalContado)}</p>
+      <p><strong>Devoluciones:</strong> ${formatBs(data.devoluciones.total)}</p>
       <p><strong>Ventas Crédito:</strong> ${formatBs(data.ventas.credito)}</p>
       <div class="line"></div>
       <div class="center">
@@ -341,7 +467,7 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
   const generarTextoResumen = (data: any) => {
     const diff = data.totales.diferencia;
     const estado = data.totales.estado;
-    return `MASTERPOS - Cierre de Jornada\nFecha: ${data.fechaCierre}\nApertura: ${formatBs(data.apertura.bs)} + ${formatUsd(data.apertura.usd)}\nVentas Contado: ${formatBs(data.ventas.totalContado)}\nVentas Crédito: ${formatBs(data.ventas.credito)}\nRESULTADO: ${estado} por ${formatBs(Math.abs(diff))}`;
+    return `MASTERPOS - Cierre de Jornada\nFecha: ${data.fechaCierre}\nApertura: ${formatBs(data.apertura.bs)} + ${formatUsd(data.apertura.usd)}\nVentas Contado: ${formatBs(data.ventas.totalContado)}\nDevoluciones: ${formatBs(data.devoluciones.total)}\nVentas Crédito: ${formatBs(data.ventas.credito)}\nRESULTADO: ${estado} por ${formatBs(Math.abs(diff))}`;
   };
 
   return (
@@ -360,32 +486,40 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
                   <th className="p-2 text-center">APERTURA</th>
                   <th className="p-2 text-center">MAÑANA (Bs)</th>
                   <th className="p-2 text-center">TARDE (Bs)</th>
+                  <th className="p-2 text-center">DEV. MAÑANA (Bs)</th>
+                  <th className="p-2 text-center">DEV. TARDE (Bs)</th>
                   <th className="p-2 text-center">SISTEMA (Bs)</th>
                   <th className="p-2 text-center">FÍSICO</th>
                   <th className="p-2 text-center">DIF. (Bs)</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
-                {rows.map(r => (
+                {allRows.map(r => (
                   <tr key={r.id} className="hover:bg-slate-50">
                     <td className="p-2 font-bold">{r.metodo}</td>
                     <td className="p-2 text-center">{r.saldoInicial}</td>
                     <td className="p-2 text-center font-mono">{formatBs(r.vMananaBs)}</td>
                     <td className="p-2 text-center font-mono">{formatBs(r.vTardeBs)}</td>
+                    <td className="p-2 text-center font-mono text-red-600">-{formatBs(r.rMananaBs)}</td>
+                    <td className="p-2 text-center font-mono text-red-600">-{formatBs(r.rTardeBs)}</td>
                     <td className="p-2 text-center font-bold text-blue-700">{formatBs(r.sistBs)}</td>
                     <td className="p-2 text-center">
-                      <div className="flex items-center justify-center gap-1">
-                        <Input 
-                          type="number" 
-                          step="0.01" 
-                          value={r.fisicoIngresado === 0 ? '' : r.fisicoIngresado} 
-                          onChange={e => setConteoFisico({...conteoFisico, [r.key]: parseFloat(e.target.value) || 0})} 
-                          className="w-24 h-7 text-xs text-center font-bold" 
-                          placeholder="0.00"
-                        />
-                        <span className="text-[9px] font-bold text-slate-500">{r.isUsd ? 'USD' : 'Bs'}</span>
-                      </div>
-                      {r.isUsd && r.fisicoIngresado > 0 && (
+                      {r.isCreditRow ? (
+                        <span className="text-green-600 font-bold text-lg">✓</span>
+                      ) : (
+                        <div className="flex items-center justify-center gap-1">
+                          <Input 
+                            type="number" 
+                            step="0.01" 
+                            value={r.fisicoIngresado === 0 ? '' : r.fisicoIngresado} 
+                            onChange={e => setConteoFisico({...conteoFisico, [r.key]: parseFloat(e.target.value) || 0})} 
+                            className="w-24 h-7 text-xs text-center font-bold" 
+                            placeholder="0.00"
+                          />
+                          <span className="text-[9px] font-bold text-slate-500">{r.isUsd ? 'USD' : 'Bs'}</span>
+                        </div>
+                      )}
+                      {r.isUsd && r.fisicoIngresado > 0 && !r.isCreditRow && (
                         <div className="text-[8px] text-slate-400 mt-0.5">
                           ≈ {formatBs(r.fisicoIngresado * tasaP2)}
                         </div>
@@ -397,7 +531,7 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
                   </tr>
                 ))}
                 <tr className="bg-[#1E3A8A] text-white font-bold">
-                  <td colSpan={4} className="p-2 text-right">TOTAL CONSOLIDADO:</td>
+                  <td colSpan={6} className="p-2 text-right">TOTAL CONSOLIDADO:</td>
                   <td className="p-2 text-center">{formatBs(totalSistBs)}</td>
                   <td className="p-2 text-center">{formatBs(totalFisBs)}</td>
                   <td className="p-2 text-center">{diffNeta === 0 ? '✓' : formatBsNumber(Math.abs(diffNeta))}</td>
@@ -432,7 +566,7 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
               <div className="text-center"><p className="text-sm text-gray-500">Fecha y hora</p><p className="font-mono">{closeReportData.fechaCierre}</p></div>
               <div className="grid grid-cols-2 gap-4 border-b pb-4">
                 <div><p className="text-xs text-gray-500">Apertura</p><p className="font-bold">{formatBs(closeReportData.apertura.bs)}</p><p className="font-bold">{formatUsd(closeReportData.apertura.usd)}</p></div>
-                <div><p className="text-xs text-gray-500">Ventas del día</p><p className="font-bold">Contado: {formatBs(closeReportData.ventas.totalContado)}</p><p className="font-bold">Crédito: {formatBs(closeReportData.ventas.credito)}</p></div>
+                <div><p className="text-xs text-gray-500">Ventas del día</p><p className="font-bold">Contado: {formatBs(closeReportData.ventas.totalContado)}</p><p className="font-bold">Devoluciones: {formatBs(closeReportData.devoluciones.total)}</p><p className="font-bold">Crédito: {formatBs(closeReportData.ventas.credito)}</p></div>
               </div>
               <div className="text-center py-4 bg-gray-50 rounded-lg">
                 <p className="text-xs uppercase tracking-wider text-gray-500">RESULTADO DE LA JORNADA</p>

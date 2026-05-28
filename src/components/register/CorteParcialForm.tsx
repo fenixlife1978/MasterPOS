@@ -57,6 +57,7 @@ export default function CorteParcialForm({ onClose, onCorteConfirmado, tasaActua
     { id: 6, metodo: 'ZELLE', key: 'zelle', isUsd: true },
   ];
 
+  // ✅ Ventas CONTADO del día
   const salesByMethod = useMemo(() => {
     const totals: Record<string, number> = {};
     paymentMethods.forEach(m => totals[m.key] = 0);
@@ -86,15 +87,59 @@ export default function CorteParcialForm({ onClose, onCorteConfirmado, tasaActua
     return totals;
   }, [register]);
 
+  // ✅ DEVOLUCIONES del día (egresos por devolución)
+  const returnsByMethod = useMemo(() => {
+    const totals: Record<string, number> = {};
+    paymentMethods.forEach(m => totals[m.key] = 0);
+    
+    if (register?.txs && Array.isArray(register.txs)) {
+      register.txs.forEach((t: any) => {
+        const txDate = new Date(t.date);
+        const today = new Date();
+        const isToday = txDate.toDateString() === today.toDateString();
+        
+        if (!isToday) return;
+        
+        if (t.type === 'devolucion') {
+          const method = t.payMethod || 'efectivo_bs';
+          let monto = t.total ?? 0;
+          monto = Math.round(monto * 100) / 100;
+          totals[method] = Math.round((totals[method] + monto) * 100) / 100;
+        }
+      });
+    }
+    return totals;
+  }, [register]);
+
+  // ✅ Ventas a CRÉDITO del día (solo para información, no afecta el efectivo)
+  const creditTotal = useMemo(() => {
+    let total = 0;
+    if (register?.txs && Array.isArray(register.txs)) {
+      register.txs.forEach((t: any) => {
+        const txDate = new Date(t.date);
+        const today = new Date();
+        const isToday = txDate.toDateString() === today.toDateString();
+        if (isToday && t.type === 'credito') {
+          total += t.total || 0;
+        }
+      });
+    }
+    return total;
+  }, [register]);
+
   const rows = paymentMethods.map(pm => {
     let ventasBs = salesByMethod[pm.key] || 0;
     ventasBs = Math.round(ventasBs * 100) / 100;
+    
+    let devolucionesBs = returnsByMethod[pm.key] || 0;
+    devolucionesBs = Math.round(devolucionesBs * 100) / 100;
     
     let saldoInicialBs = 0;
     if (pm.key === 'efectivo_bs') saldoInicialBs = openAmountBs;
     if (pm.key === 'usd_efectivo') saldoInicialBs = openAmountUsdBs;
     
-    const teoricoBs = saldoInicialBs + ventasBs;
+    // ✅ FÓRMULA CORRECTA: SISTEMA = Saldo Inicial + Ventas Contado - DEVOLUCIONES
+    const teoricoBs = saldoInicialBs + ventasBs - devolucionesBs;
     
     const fisicoIngresado = fisicos[pm.key] ?? 0;
     let fisicoBs = fisicoIngresado;
@@ -107,6 +152,7 @@ export default function CorteParcialForm({ onClose, onCorteConfirmado, tasaActua
       ...pm,
       saldoInicialBs,
       ventasBs,
+      devolucionesBs,
       teoricoBs,
       fisicoBs,
       fisicoIngresado,
@@ -137,6 +183,8 @@ export default function CorteParcialForm({ onClose, onCorteConfirmado, tasaActua
       tasaNueva: nTasa,
       apertura: { montoBs: openAmountBs, montoUsd: openAmountUsd },
       ventas: { porMetodo: salesByMethod },
+      devoluciones: { porMetodo: returnsByMethod },
+      creditos: { total: creditTotal },
       cuadre: rows.map(r => ({ 
         metodo: r.metodo, 
         sistema: r.teoricoBs,
@@ -194,6 +242,7 @@ export default function CorteParcialForm({ onClose, onCorteConfirmado, tasaActua
                 <th className="p-2 text-left">MÉTODO</th>
                 <th className="p-2 text-center">SALDO INICIAL (Bs)</th>
                 <th className="p-2 text-center">VENTAS CONTADO (Bs)</th>
+                <th className="p-2 text-center">DEVOLUCIONES (Bs)</th>
                 <th className="p-2 text-center">SISTEMA (Bs)</th>
                 <th className="p-2 text-center">FÍSICO</th>
                 <th className="p-2 text-center">DIF. (Bs)</th>
@@ -205,6 +254,7 @@ export default function CorteParcialForm({ onClose, onCorteConfirmado, tasaActua
                   <td className="p-2 font-bold">{r.metodo}</td>
                   <td className="p-2 text-center font-mono">{formatBs(r.saldoInicialBs)}</td>
                   <td className="p-2 text-center font-mono">{formatBs(r.ventasBs)}</td>
+                  <td className="p-2 text-center font-mono text-red-600">-{formatBs(r.devolucionesBs)}</td>
                   <td className="p-2 text-center font-mono font-bold">{formatBs(r.teoricoBs)}</td>
                   <td className="p-2 text-center">
                     <div className="flex items-center justify-center gap-1">
@@ -226,13 +276,25 @@ export default function CorteParcialForm({ onClose, onCorteConfirmado, tasaActua
                   </td>
                   <td className={cn("p-2 text-center font-bold", r.diffBs < 0 ? "text-red-600" : r.diffBs > 0 ? "text-emerald-600" : "text-slate-500")}>
                     {r.diffBs === 0 ? '✓' : formatBsNumber(Math.abs(r.diffBs))}
-                   </td>
+                  </td>
                 </tr>
               ))}
+              {/* ✅ Fila adicional para VENTAS A CRÉDITO (no editable, conciliado automáticamente) */}
+              {creditTotal > 0 && (
+                <tr className="bg-blue-50 border-t-2 border-blue-200">
+                  <td className="p-2 font-bold text-blue-800">CRÉDITO</td>
+                  <td className="p-2 text-center">—</td>
+                  <td className="p-2 text-center">—</td>
+                  <td className="p-2 text-center">—</td>
+                  <td className="p-2 text-center font-bold text-blue-800">{formatBs(creditTotal)}</td>
+                  <td className="p-2 text-center text-green-600 font-bold text-lg">✓</td>
+                  <td className="p-2 text-center text-green-600">0.00</td>
+                </tr>
+              )}
             </tbody>
             <tfoot className="bg-slate-100 sticky bottom-0">
               <tr className="border-t-2 border-slate-300 font-black">
-                <td className="p-2 text-right" colSpan={3}>TOTALES:</td>
+                <td className="p-2 text-right" colSpan={4}>TOTALES:</td>
                 <td className="p-2 text-center font-mono">{formatBs(totalTeoricoBs)}</td>
                 <td className="p-2 text-center">—</td>
                 <td className="p-2 text-center">{diffNeta === 0 ? '✓' : formatBsNumber(Math.abs(diffNeta))}</td>

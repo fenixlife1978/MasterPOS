@@ -6,13 +6,13 @@ import { usePOSState } from '@/hooks/use-pos-state';
 import { UserCircle } from 'lucide-react';
 import ProductSearch from './product-search';
 import CartPanel from './cart-panel';
-import PaymentModal from './payment-modal';
+import FloatingPaymentModal from './FloatingPaymentModal'; // ✅ NUEVO modal flotante
 import SaleTypeModal from './sale-type-modal';
 import CreditModal from './credit-modal';
 import ReceiptModal from '@/components/receipt-modal';
-import AuthorizationModal from './AuthorizationModal'; // ✅ NUEVO
-import { syncService } from '@/services/syncService';   // ✅ Para validar PIN
-import { useAuth } from '@/context/AuthContext';        // ✅ Para obtener el usuario autorizante
+import AuthorizationModal from './AuthorizationModal';
+import { syncService } from '@/services/syncService';
+import { useAuth } from '@/context/AuthContext';
 
 // ✅ NUEVA FUNCIÓN DE FORMATEO (para usar en este archivo también)
 const formatBs = (amount: number): string => {
@@ -36,7 +36,7 @@ interface POSModuleProps {
 }
 
 export default function POSModule({ state }: POSModuleProps) {
-  const { user } = useAuth(); // ✅ Obtener usuario actual
+  const { user } = useAuth();
   const [showSaleType, setShowSaleType] = useState(false);
   const [showContado, setShowContado] = useState(false);
   const [showCredito, setShowCredito] = useState(false);
@@ -44,7 +44,6 @@ export default function POSModule({ state }: POSModuleProps) {
   const [lastTransaction, setLastTransaction] = useState<any>(null);
   const [nextReceiptNumber, setNextReceiptNumber] = useState(1);
   const lastReceiptNumberRef = useRef<number>(1);
-  // ✅ Estados para el modal de autorización
   const [showAuthorizationModal, setShowAuthorizationModal] = useState(false);
   const [pendingOperationType, setPendingOperationType] = useState<'colaboracion' | 'consumo_propio'>('colaboracion');
   const [isVerifying, setIsVerifying] = useState(false);
@@ -130,11 +129,9 @@ export default function POSModule({ state }: POSModuleProps) {
     }
   };
 
-  // ✅ Nueva función para manejar la autorización y posterior finalización
   const handleAuthorizationConfirm = async (type: 'colaboracion' | 'consumo_propio', motivo: string, pin: string) => {
     setIsVerifying(true);
     try {
-      // Validar PIN contra el código de administrador
       const adminCodeData = await syncService.getAdminCode();
       if (!adminCodeData || adminCodeData.code !== pin) {
         alert('PIN de autorización incorrecto');
@@ -194,7 +191,6 @@ export default function POSModule({ state }: POSModuleProps) {
             if (type === 'contado') setShowContado(true);
             else if (type === 'credito') setShowCredito(true);
             else {
-              // ✅ Para colaboración o consumo propio, abrir modal de autorización
               setPendingOperationType(type === 'colaboracion' ? 'colaboracion' : 'consumo_propio');
               setShowAuthorizationModal(true);
             }
@@ -203,7 +199,7 @@ export default function POSModule({ state }: POSModuleProps) {
       )}
 
       {showContado && (
-        <PaymentModal 
+        <FloatingPaymentModal
           total={totalWithIva}
           exchangeRate={state.exchangeRate}
           onClose={() => setShowContado(false)}
@@ -222,7 +218,6 @@ export default function POSModule({ state }: POSModuleProps) {
         />
       )}
 
-      {/* ✅ Nuevo modal de autorización */}
       {showAuthorizationModal && (
         <AuthorizationModal
           onClose={() => setShowAuthorizationModal(false)}

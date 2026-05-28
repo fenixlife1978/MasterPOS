@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Product, Client, Transaction, Account, CashRegister, Page, CartItem, KitComponent } from '@/lib/types';
 import { syncService } from '@/services/syncService';
-import { registerSaleEntry, registerCreditEntry, registerDebtPaymentEntry } from '@/services/accountingService';
+import { registerSaleEntry, registerCreditEntry, registerDebtPaymentEntry, registerReturnEntry } from '@/services/accountingService';
 import { useAuth } from '@/context/AuthContext';
 import { formatBs, formatUsd, formatBsNumber, formatUsdNumber } from '@/lib/currency-formatter';
 
@@ -542,6 +542,52 @@ export function usePOSState() {
     await registerDebtPaymentEntry(tx, client);
   }, [register, clients, accounts, exchangeRate, terminalId, saveRegisterToLocalStorage]);
 
+  // ✅ Registrar egreso de caja (para devoluciones en efectivo)
+  const registerCashEgress = useCallback(async (amount: number, reason: string, referenceId: number) => {
+    if (!register?.isOpen) {
+      throw new Error('Caja no abierta');
+    }
+
+    // Crear transacción de egreso (usando tipo 'devolucion' que ya existe en el tipo Transaction)
+    const egressTx: Transaction = {
+      id: getVenezuelaTimestamp(),
+      date: getVenezuelaISOString(),
+      type: 'devolucion',
+      items: [],
+      subtotal: amount,
+      iva: 0,
+      total: amount,
+      totalUsd: roundTo2(amount / exchangeRate),
+      payMethod: 'efectivo_bs',
+      paidBs: amount,
+      change: 0,
+      clientId: undefined,
+      clientName: 'DEVOLUCIÓN',
+      exchangeRate,
+      receiptNumber: undefined,
+      notes: reason,
+      authorizedBy: undefined,
+    };
+
+    // Guardar transacción de egreso
+    await syncService.saveTransaction(egressTx);
+
+    // Actualizar caja localmente
+    const updatedRegister = {
+      ...register,
+      txs: [...(register.txs || []), egressTx],
+    };
+    
+    await syncService.saveRegisterByTerminal(terminalId, updatedRegister);
+    setRegister(updatedRegister);
+    saveRegisterToLocalStorage(updatedRegister);
+    
+    // Registrar asiento contable de egreso
+    await registerReturnEntry(egressTx as any, referenceId);
+    
+    return egressTx;
+  }, [register, exchangeRate, terminalId, saveRegisterToLocalStorage]);
+
   const setExchangeRateProxy = useCallback(async (newRate: number) => {
     setExchangeRate(newRate);
     localStorage.setItem(STORAGE_KEYS.EXCHANGE_RATE, newRate.toString());
@@ -557,7 +603,8 @@ export function usePOSState() {
     exchangeRate, setExchangeRate: setExchangeRateProxy,
     cart, addToCart, removeFromCart, updateCartQty, updateCartItemPrice,
     isIvaEnabled, setIsIvaEnabled, currentPage, setCurrentPage,
-    finalizeSale, applyAbono, isHydrated,
+    finalizeSale, applyAbono, registerCashEgress,
+    isHydrated,
     globalIvaPercentage,
     adminCode,
     checkProductStock,

@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { syncService } from '@/services/syncService';
 import { useAuth } from '@/context/AuthContext';
-import { formatBs, formatUsd, formatBsNumber, formatUsdNumber } from '@/lib/currency-formatter';
+import { formatBs, formatUsd, formatBsNumber } from '@/lib/currency-formatter';
 
 interface CorteParcialFormProps {
   onClose: () => void;
@@ -57,7 +57,7 @@ export default function CorteParcialForm({ onClose, onCorteConfirmado, tasaActua
     { id: 6, metodo: 'ZELLE', key: 'zelle', isUsd: true },
   ];
 
-  // ✅ Ventas CONTADO del día
+  // Ventas CONTADO del día (en Bs)
   const salesByMethod = useMemo(() => {
     const totals: Record<string, number> = {};
     paymentMethods.forEach(m => totals[m.key] = 0);
@@ -67,7 +67,6 @@ export default function CorteParcialForm({ onClose, onCorteConfirmado, tasaActua
         const txDate = new Date(t.date);
         const today = new Date();
         const isToday = txDate.toDateString() === today.toDateString();
-        
         if (!isToday) return;
         
         if (t.type === 'contado') {
@@ -87,7 +86,7 @@ export default function CorteParcialForm({ onClose, onCorteConfirmado, tasaActua
     return totals;
   }, [register]);
 
-  // ✅ DEVOLUCIONES del día (egresos por devolución)
+  // DEVOLUCIONES del día (en Bs)
   const returnsByMethod = useMemo(() => {
     const totals: Record<string, number> = {};
     paymentMethods.forEach(m => totals[m.key] = 0);
@@ -97,7 +96,6 @@ export default function CorteParcialForm({ onClose, onCorteConfirmado, tasaActua
         const txDate = new Date(t.date);
         const today = new Date();
         const isToday = txDate.toDateString() === today.toDateString();
-        
         if (!isToday) return;
         
         if (t.type === 'devolucion') {
@@ -111,7 +109,52 @@ export default function CorteParcialForm({ onClose, onCorteConfirmado, tasaActua
     return totals;
   }, [register]);
 
-  // ✅ Ventas a CRÉDITO del día (solo para información, no afecta el efectivo)
+  // USD en efectivo recibidos (solo método 'usd_efectivo')
+  const usdCashReceived = useMemo(() => {
+    let totalUsd = 0;
+    if (register?.txs && Array.isArray(register.txs)) {
+      register.txs.forEach((t: any) => {
+        const txDate = new Date(t.date);
+        const today = new Date();
+        const isToday = txDate.toDateString() === today.toDateString();
+        if (!isToday) return;
+        if (t.type === 'contado' && t.payments) {
+          t.payments.forEach((p: any) => {
+            if (p.method === 'usd_efectivo' && p.usdAmount) {
+              totalUsd += p.usdAmount;
+            }
+          });
+        }
+      });
+    }
+    return totalUsd;
+  }, [register]);
+
+  // USD recibidos por Zelle (método 'zelle') - no afecta el efectivo físico
+  const usdZelleReceived = useMemo(() => {
+    let totalUsd = 0;
+    if (register?.txs && Array.isArray(register.txs)) {
+      register.txs.forEach((t: any) => {
+        const txDate = new Date(t.date);
+        const today = new Date();
+        const isToday = txDate.toDateString() === today.toDateString();
+        if (!isToday) return;
+        if (t.type === 'contado' && t.payments) {
+          t.payments.forEach((p: any) => {
+            if (p.method === 'zelle' && p.usdAmount) {
+              totalUsd += p.usdAmount;
+            }
+          });
+        }
+      });
+    }
+    return totalUsd;
+  }, [register]);
+
+  const totalCashUsd = openAmountUsd + usdCashReceived; // solo efectivo físico
+  const totalZelleUsd = usdZelleReceived; // solo para referencia
+
+  // Ventas a CRÉDITO del día
   const creditTotal = useMemo(() => {
     let total = 0;
     if (register?.txs && Array.isArray(register.txs)) {
@@ -137,16 +180,17 @@ export default function CorteParcialForm({ onClose, onCorteConfirmado, tasaActua
     let saldoInicialBs = 0;
     if (pm.key === 'efectivo_bs') saldoInicialBs = openAmountBs;
     if (pm.key === 'usd_efectivo') saldoInicialBs = openAmountUsdBs;
+    if (pm.key === 'zelle') saldoInicialBs = 0;
     
-    // ✅ FÓRMULA CORRECTA: SISTEMA = Saldo Inicial + Ventas Contado - DEVOLUCIONES
     const teoricoBs = saldoInicialBs + ventasBs - devolucionesBs;
     
-    const fisicoIngresado = fisicos[pm.key] ?? 0;
+    const isZelle = pm.key === 'zelle';
+    const fisicoIngresado = isZelle ? teoricoBs / tasaActual : (fisicos[pm.key] ?? 0);
     let fisicoBs = fisicoIngresado;
-    if (pm.isUsd) fisicoBs = fisicoIngresado * tasaActual;
-    fisicoBs = Math.round(fisicoBs * 100) / 100;
+    if (pm.isUsd && !isZelle) fisicoBs = fisicoIngresado * tasaActual;
+    if (isZelle) fisicoBs = teoricoBs;
     
-    const diffBs = fisicoBs - teoricoBs;
+    const diffBs = isZelle ? 0 : (fisicoBs - teoricoBs);
     
     return {
       ...pm,
@@ -157,6 +201,7 @@ export default function CorteParcialForm({ onClose, onCorteConfirmado, tasaActua
       fisicoBs,
       fisicoIngresado,
       diffBs,
+      isZelle,
       estado: Math.abs(diffBs) < 0.01 ? 'CUADRA' : (diffBs < 0 ? 'FALTANTE' : 'SOBRANTE')
     };
   });
@@ -185,6 +230,8 @@ export default function CorteParcialForm({ onClose, onCorteConfirmado, tasaActua
       ventas: { porMetodo: salesByMethod },
       devoluciones: { porMetodo: returnsByMethod },
       creditos: { total: creditTotal },
+      usdEfectivo: totalCashUsd,
+      usdZelle: totalZelleUsd,
       cuadre: rows.map(r => ({ 
         metodo: r.metodo, 
         sistema: r.teoricoBs,
@@ -244,42 +291,53 @@ export default function CorteParcialForm({ onClose, onCorteConfirmado, tasaActua
                 <th className="p-2 text-center">VENTAS CONTADO (Bs)</th>
                 <th className="p-2 text-center">DEVOLUCIONES (Bs)</th>
                 <th className="p-2 text-center">SISTEMA (Bs)</th>
+                <th className="p-2 text-center">EFECTIVO USD</th>
                 <th className="p-2 text-center">FÍSICO</th>
                 <th className="p-2 text-center">DIF. (Bs)</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
-              {rows.map(r => (
-                <tr key={r.id} className="hover:bg-slate-50">
-                  <td className="p-2 font-bold">{r.metodo}</td>
-                  <td className="p-2 text-center font-mono">{formatBs(r.saldoInicialBs)}</td>
-                  <td className="p-2 text-center font-mono">{formatBs(r.ventasBs)}</td>
-                  <td className="p-2 text-center font-mono text-red-600">-{formatBs(r.devolucionesBs)}</td>
-                  <td className="p-2 text-center font-mono font-bold">{formatBs(r.teoricoBs)}</td>
-                  <td className="p-2 text-center">
-                    <div className="flex items-center justify-center gap-1">
-                      <Input 
-                        type="number" 
-                        step="0.01" 
-                        value={r.fisicoIngresado === 0 ? '' : r.fisicoIngresado} 
-                        onChange={e => handleFisicoChange(r.key, parseFloat(e.target.value) || 0)} 
-                        className="w-28 h-7 text-xs text-center font-bold" 
-                        placeholder="0.00"
-                      />
-                      <span className="text-[9px] font-bold text-slate-500">{r.isUsd ? 'USD' : 'Bs'}</span>
-                    </div>
-                    {r.isUsd && r.fisicoIngresado > 0 && (
-                      <div className="text-[8px] text-slate-400 mt-0.5">
-                        ≈ {formatBs(r.fisicoIngresado * tasaActual)}
-                      </div>
-                    )}
-                  </td>
-                  <td className={cn("p-2 text-center font-bold", r.diffBs < 0 ? "text-red-600" : r.diffBs > 0 ? "text-emerald-600" : "text-slate-500")}>
-                    {r.diffBs === 0 ? '✓' : formatBsNumber(Math.abs(r.diffBs))}
-                  </td>
-                </tr>
-              ))}
-              {/* ✅ Fila adicional para VENTAS A CRÉDITO (no editable, conciliado automáticamente) */}
+              {rows.map(r => {
+                let usdDisplay = '—';
+                if (r.key === 'usd_efectivo') usdDisplay = formatUsd(totalCashUsd);
+                if (r.key === 'zelle') usdDisplay = '—'; // Zelle no se muestra en la columna de efectivo físico
+                return (
+                  <tr key={r.id} className="hover:bg-slate-50">
+                    <td className="p-2 font-bold">{r.metodo}</td>
+                    <td className="p-2 text-center font-mono">{formatBs(r.saldoInicialBs)}</td>
+                    <td className="p-2 text-center font-mono">{formatBs(r.ventasBs)}</td>
+                    <td className="p-2 text-center font-mono text-red-600">-{formatBs(r.devolucionesBs)}</td>
+                    <td className="p-2 text-center font-mono font-bold">{formatBs(r.teoricoBs)}</td>
+                    <td className="p-2 text-center font-mono font-bold text-blue-600">{usdDisplay}</td>
+                    <td className="p-2 text-center">
+                      {r.isZelle ? (
+                        <span className="text-green-600 font-bold text-lg">✓</span>
+                      ) : (
+                        <div className="flex items-center justify-center gap-1">
+                          <Input 
+                            type="number" 
+                            step="0.01" 
+                            value={r.fisicoIngresado === 0 ? '' : r.fisicoIngresado} 
+                            onChange={e => handleFisicoChange(r.key, parseFloat(e.target.value) || 0)} 
+                            className="w-28 h-7 text-xs text-center font-bold" 
+                            placeholder="0.00"
+                          />
+                          <span className="text-[9px] font-bold text-slate-500">{r.isUsd ? 'USD' : 'Bs'}</span>
+                        </div>
+                      )}
+                      {r.isUsd && !r.isZelle && r.fisicoIngresado > 0 && (
+                        <div className="text-[8px] text-slate-400 mt-0.5">
+                          ≈ {formatBs(r.fisicoIngresado * tasaActual)}
+                        </div>
+                      )}
+                    </td>
+                    <td className={cn("p-2 text-center font-bold", r.diffBs < 0 ? "text-red-600" : r.diffBs > 0 ? "text-emerald-600" : "text-slate-500")}>
+                      {r.diffBs === 0 ? '✓' : formatBsNumber(Math.abs(r.diffBs))}
+                    </td>
+                  </tr>
+                );
+              })}
+              {/* Fila adicional para VENTAS A CRÉDITO */}
               {creditTotal > 0 && (
                 <tr className="bg-blue-50 border-t-2 border-blue-200">
                   <td className="p-2 font-bold text-blue-800">CRÉDITO</td>
@@ -287,6 +345,7 @@ export default function CorteParcialForm({ onClose, onCorteConfirmado, tasaActua
                   <td className="p-2 text-center">—</td>
                   <td className="p-2 text-center">—</td>
                   <td className="p-2 text-center font-bold text-blue-800">{formatBs(creditTotal)}</td>
+                  <td className="p-2 text-center">—</td>
                   <td className="p-2 text-center text-green-600 font-bold text-lg">✓</td>
                   <td className="p-2 text-center text-green-600">0.00</td>
                 </tr>
@@ -294,8 +353,8 @@ export default function CorteParcialForm({ onClose, onCorteConfirmado, tasaActua
             </tbody>
             <tfoot className="bg-slate-100 sticky bottom-0">
               <tr className="border-t-2 border-slate-300 font-black">
-                <td className="p-2 text-right" colSpan={4}>TOTALES:</td>
-                <td className="p-2 text-center font-mono">{formatBs(totalTeoricoBs)}</td>
+                <td className="p-2 text-right" colSpan={5}>TOTALES:</td>
+                <td className="p-2 text-center font-mono">{formatUsd(totalCashUsd)}</td>
                 <td className="p-2 text-center">—</td>
                 <td className="p-2 text-center">{diffNeta === 0 ? '✓' : formatBsNumber(Math.abs(diffNeta))}</td>
               </tr>

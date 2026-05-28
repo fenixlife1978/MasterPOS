@@ -53,6 +53,14 @@ export interface CartItem {
   isKit?: boolean;
 }
 
+// ✅ Interfaz para un pago individual (usado en transacciones de contado)
+export interface PaymentDetail {
+  id: string;
+  method: string;
+  amount: number;   // monto en bolívares
+  usdAmount?: number; // monto original en USD (solo para métodos USD)
+}
+
 export interface Transaction {
   id: number;
   date: string;
@@ -73,6 +81,8 @@ export interface Transaction {
   costoTotalOperacion?: number;
   notes?: string;
   authorizedBy?: string;
+  // ✅ Detalle de pagos (para ventas de contado)
+  payments?: PaymentDetail[];
 }
 
 export interface Account {

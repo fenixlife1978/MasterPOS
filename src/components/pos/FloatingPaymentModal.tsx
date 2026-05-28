@@ -9,6 +9,7 @@ interface PaymentItem {
   id: string;
   method: string;
   amount: number; // siempre en bolívares (Bs)
+  usdAmount?: number; // para métodos USD, el monto original en USD
 }
 
 interface FloatingPaymentModalProps {
@@ -34,12 +35,6 @@ export default function FloatingPaymentModal({ total, exchangeRate, onClose, onC
   const [isProcessing, setIsProcessing] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Estado para arrastrar el modal
-  const [position, setPosition] = useState({ x: 0, y: 0 });
-  const [isDragging, setIsDragging] = useState(false);
-  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
-  const modalRef = useRef<HTMLDivElement>(null);
-
   const currentMethodObj = methods.find(m => m.id === currentMethod);
   const isUsd = currentMethodObj?.currency === 'USD';
 
@@ -49,11 +44,28 @@ export default function FloatingPaymentModal({ total, exchangeRate, onClose, onC
   const isFullyPaid = totalPaid >= total;
 
   const addPayment = () => {
-    let amount = parseFloat(inputValue);
-    if (isNaN(amount) || amount <= 0) return;
-    if (isUsd) amount = amount * exchangeRate;
-    const newPayment = { id: crypto.randomUUID(), method: currentMethod, amount };
-    setPayments([...payments, newPayment]);
+    let rawAmount = parseFloat(inputValue);
+    if (isNaN(rawAmount) || rawAmount <= 0) return;
+
+    if (isUsd) {
+      const usdAmount = rawAmount;
+      const bsAmount = usdAmount * exchangeRate;
+      const newPayment: PaymentItem = {
+        id: crypto.randomUUID(),
+        method: currentMethod,
+        amount: bsAmount,
+        usdAmount: usdAmount,
+      };
+      setPayments([...payments, newPayment]);
+    } else {
+      const bsAmount = rawAmount;
+      const newPayment: PaymentItem = {
+        id: crypto.randomUUID(),
+        method: currentMethod,
+        amount: bsAmount,
+      };
+      setPayments([...payments, newPayment]);
+    }
     setInputValue('');
     inputRef.current?.focus();
   };
@@ -88,7 +100,9 @@ export default function FloatingPaymentModal({ total, exchangeRate, onClose, onC
         e.preventDefault();
         addPayment();
       }
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        onClose();
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
@@ -96,52 +110,29 @@ export default function FloatingPaymentModal({ total, exchangeRate, onClose, onC
 
   useEffect(() => {
     inputRef.current?.focus();
-    setPosition({ x: window.innerWidth / 2 - 250, y: window.innerHeight / 3 });
   }, []);
-
-  // Arrastre manual
-  const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!modalRef.current) return;
-    setIsDragging(true);
-    const rect = modalRef.current.getBoundingClientRect();
-    setDragOffset({ x: e.clientX - rect.left, y: e.clientY - rect.top });
-  };
-
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!isDragging) return;
-      setPosition({ x: e.clientX - dragOffset.x, y: e.clientY - dragOffset.y });
-    };
-    const handleMouseUp = () => setIsDragging(false);
-    if (isDragging) {
-      window.addEventListener('mousemove', handleMouseMove);
-      window.addEventListener('mouseup', handleMouseUp);
-    }
-    return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, [isDragging, dragOffset]);
 
   const formatPaymentAmount = (payment: PaymentItem) => {
     const methodInfo = methods.find(m => m.id === payment.method);
     if (methodInfo?.currency === 'USD') {
-      return formatUsd(payment.amount / exchangeRate);
+      const usdValue = payment.usdAmount ?? payment.amount / exchangeRate;
+      return formatUsd(usdValue);
     }
     return formatBs(payment.amount);
   };
 
   return (
     <div
-      ref={modalRef}
       className="fixed z-[200] bg-white rounded-2xl shadow-2xl w-[500px] max-w-[90vw] border border-gray-200 overflow-hidden"
-      style={{ top: position.y, left: position.x, position: 'fixed' }}
+      style={{
+        top: '50%',
+        left: '50%',
+        transform: 'translate(-50%, -50%)',
+        position: 'fixed'
+      }}
     >
-      {/* Cabecera arrastrable - reducida de p-3 a p-2 */}
-      <div
-        className="bg-[#1A2C4E] p-2 text-white cursor-move flex justify-between items-center select-none"
-        onMouseDown={handleMouseDown}
-      >
+      {/* Cabecera (sin arrastre) */}
+      <div className="bg-[#1A2C4E] p-2 text-white flex justify-between items-center select-none">
         <div className="flex items-center gap-2">
           <Calculator size={18} />
           <h3 className="font-black text-sm">Pago / Cobro</h3>
@@ -151,9 +142,8 @@ export default function FloatingPaymentModal({ total, exchangeRate, onClose, onC
         </button>
       </div>
 
-      {/* Contenido principal: padding reducido de p-4 a p-3, espacios verticales reducidos */}
       <div className="p-3 space-y-3">
-        {/* Totales: gap reducido de gap-4 a gap-3, padding reducido en los cards */}
+        {/* Totales */}
         <div className="grid grid-cols-2 gap-3">
           <div className="bg-gradient-to-br from-gray-50 to-gray-100 p-3 rounded-xl text-center shadow-sm">
             <span className="text-[10px] font-black text-black/60 uppercase tracking-wider">Total a pagar</span>
@@ -166,7 +156,7 @@ export default function FloatingPaymentModal({ total, exchangeRate, onClose, onC
           </div>
         </div>
 
-        {/* Lista de pagos - altura máxima reducida ligeramente */}
+        {/* Lista de pagos realizados */}
         <div className="max-h-32 overflow-y-auto border rounded-lg divide-y">
           {payments.length === 0 ? (
             <div className="text-center py-3 text-xs text-black/40">No hay pagos registrados</div>
@@ -241,7 +231,7 @@ export default function FloatingPaymentModal({ total, exchangeRate, onClose, onC
           </button>
         </div>
 
-        {/* Faltante / Vuelto - más compacto pero igual de visible */}
+        {/* Faltante / Vuelto */}
         <div className="bg-red-50 rounded-xl p-2.5 text-center border border-red-200">
           {remaining > 0 ? (
             <>
@@ -260,7 +250,7 @@ export default function FloatingPaymentModal({ total, exchangeRate, onClose, onC
           )}
         </div>
 
-        {/* Botón finalizar - más compacto */}
+        {/* Botón finalizar */}
         <button
           onClick={confirmPayment}
           disabled={!isFullyPaid || isProcessing}

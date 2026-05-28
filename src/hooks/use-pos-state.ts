@@ -382,6 +382,11 @@ export function usePOSState() {
       authorizedBy: isSpecial ? paymentData.authorizedBy : undefined,
     };
 
+    // ✅ Guardar los detalles de los pagos (para ventas de contado)
+    if (type === 'contado' && paymentData.payments) {
+      tx.payments = paymentData.payments;
+    }
+
     const itemsToDiscount = getItemsToDiscount(cart);
     
     const stockUpdates: Map<number, { newStock: number }> = new Map();

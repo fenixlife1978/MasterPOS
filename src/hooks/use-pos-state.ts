@@ -38,7 +38,7 @@ const STORAGE_KEYS = {
 };
 
 export function usePOSState() {
-  const { user } = useAuth();
+  const { user, activeSession: authActiveSession, reloadActiveSession, setActiveSession } = useAuth();
   const terminalId = user?.terminalId || 'default';
   
   const [products, setProducts] = useState<Product[]>([]);
@@ -53,6 +53,11 @@ export function usePOSState() {
   const [isHydrated, setIsHydrated] = useState(false);
   const [globalIvaPercentage, setGlobalIvaPercentage] = useState(16);
   const [adminCode, setAdminCode] = useState<string>('');
+  
+  // ✅ Estado local para la sesión activa (sync con el contexto)
+  const [currentSession, setCurrentSession] = useState<any | null>(authActiveSession);
+  const [isSessionRequired, setIsSessionRequired] = useState(false);
+  const [pendingSessionCheck, setPendingSessionCheck] = useState(false);
 
   const saveRegisterToLocalStorage = useCallback((registerData: CashRegister | null) => {
     if (typeof window !== 'undefined') {
@@ -97,6 +102,21 @@ export function usePOSState() {
       if (!isNaN(rate)) setExchangeRate(rate);
     }
   }, [terminalId]);
+
+  // ✅ Sincronizar sesión desde el contexto
+  useEffect(() => {
+    setCurrentSession(authActiveSession);
+  }, [authActiveSession]);
+
+  // ✅ Suscripción a la sesión activa (por si cambia desde otro lado)
+  useEffect(() => {
+    if (!user?.terminalId) return;
+    const unsubscribe = syncService.subscribeToActiveSession(user.terminalId, (session) => {
+      setCurrentSession(session);
+      if (setActiveSession) setActiveSession(session);
+    });
+    return () => unsubscribe();
+  }, [user?.terminalId, setActiveSession]);
 
   useEffect(() => {
     if (!user) return;
@@ -249,6 +269,33 @@ export function usePOSState() {
     );
   }, []);
 
+  // ✅ Crear sesión de caja (al abrir caja)
+  const createCashSession = useCallback(async (initialAmountUsd: number): Promise<any> => {
+    if (!user) throw new Error('Usuario no autenticado');
+    if (!terminalId) throw new Error('Terminal no definido');
+    const session = await syncService.createCashSession(terminalId, user.uid, initialAmountUsd);
+    setCurrentSession(session);
+    if (setActiveSession) setActiveSession(session);
+    return session;
+  }, [user, terminalId, setActiveSession]);
+
+  // ✅ Cerrar sesión de caja (al cerrar caja o al hacer corte)
+  const closeCashSession = useCallback(async (finalAmountUsd: number): Promise<any> => {
+    if (!currentSession) throw new Error('No hay sesión activa');
+    const closed = await syncService.closeCashSession(currentSession.id, finalAmountUsd);
+    setCurrentSession(null);
+    if (setActiveSession) setActiveSession(null);
+    return closed;
+  }, [currentSession, setActiveSession]);
+
+  // ✅ Recargar sesión manualmente
+  const reloadSession = useCallback(async () => {
+    if (!terminalId) return;
+    const session = await syncService.getActiveSessionByTerminal(terminalId);
+    setCurrentSession(session);
+    if (setActiveSession) setActiveSession(session);
+  }, [terminalId, setActiveSession]);
+
   const openCashRegister = useCallback(async (bsAmount: number, usdAmount: number, rate: number) => {
     const registerData: CashRegister = {
       isOpen: true,
@@ -262,13 +309,26 @@ export function usePOSState() {
     await syncService.saveRegisterByTerminal(terminalId, registerData);
     setRegister(registerData);
     saveRegisterToLocalStorage(registerData);
-  }, [terminalId, saveRegisterToLocalStorage]);
+    
+    // ✅ Crear sesión de caja asociada
+    try {
+      await createCashSession(usdAmount);
+    } catch (error) {
+      console.error('Error al crear sesión de caja:', error);
+    }
+  }, [terminalId, saveRegisterToLocalStorage, createCashSession]);
 
   const closeCashRegister = useCallback(() => {
+    // ✅ Cerrar sesión de caja (si existe)
+    if (currentSession) {
+      // Nota: el monto final debería venir del arqueo, pero aquí lo dejamos temporalmente como 0
+      // El corte final o el cierre de sesión real deberá actualizar este valor
+      closeCashSession(0).catch(err => console.error('Error al cerrar sesión:', err));
+    }
     syncService.clearRegisterByTerminal(terminalId);
     setRegister(null);
     saveRegisterToLocalStorage(null);
-  }, [terminalId, saveRegisterToLocalStorage]);
+  }, [terminalId, saveRegisterToLocalStorage, currentSession, closeCashSession]);
 
   const getKitComponents = useCallback((product: Product, qty: number): { productId: number; quantity: number }[] => {
     if (!product.isKit || !product.kitComponents || product.kitComponents.length === 0) {
@@ -380,6 +440,8 @@ export function usePOSState() {
       costoTotalOperacion: isSpecial ? costoTotalOperacion : undefined,
       notes: isSpecial ? paymentData.notes : undefined,
       authorizedBy: isSpecial ? paymentData.authorizedBy : undefined,
+      // ✅ Asociar la transacción a la sesión activa
+      sessionId: currentSession?.id || null,
     };
 
     // ✅ Guardar los detalles de los pagos (para ventas de contado)
@@ -493,7 +555,7 @@ export function usePOSState() {
 
     if (type !== 'cobro_deuda') setCart([]);
     return tx;
-  }, [cart, register, exchangeRate, clients, products, terminalId, saveRegisterToLocalStorage, getItemsToDiscount]);
+  }, [cart, register, exchangeRate, clients, products, terminalId, saveRegisterToLocalStorage, getItemsToDiscount, currentSession]);
 
   const applyAbono = useCallback(async (clientId: number, amount: number) => {
     if (!register?.isOpen) return;
@@ -530,7 +592,8 @@ export function usePOSState() {
       change: 0, 
       clientId, 
       clientName: client.name,
-      exchangeRate
+      exchangeRate,
+      sessionId: currentSession?.id || null,
     };
     
     await syncService.saveTransaction(tx);
@@ -545,7 +608,7 @@ export function usePOSState() {
     
     await syncService.saveClient({ ...client, debt: Math.max(0, (client.debt || 0) - amount) });
     await registerDebtPaymentEntry(tx, client);
-  }, [register, clients, accounts, exchangeRate, terminalId, saveRegisterToLocalStorage]);
+  }, [register, clients, accounts, exchangeRate, terminalId, saveRegisterToLocalStorage, currentSession]);
 
   // ✅ Registrar egreso de caja (para devoluciones en efectivo)
   const registerCashEgress = useCallback(async (amount: number, reason: string, referenceId: number) => {
@@ -572,6 +635,7 @@ export function usePOSState() {
       receiptNumber: undefined,
       notes: reason,
       authorizedBy: undefined,
+      sessionId: currentSession?.id || null,
     };
 
     // Guardar transacción de egreso
@@ -591,7 +655,7 @@ export function usePOSState() {
     await registerReturnEntry(egressTx as any, referenceId);
     
     return egressTx;
-  }, [register, exchangeRate, terminalId, saveRegisterToLocalStorage]);
+  }, [register, exchangeRate, terminalId, saveRegisterToLocalStorage, currentSession]);
 
   const setExchangeRateProxy = useCallback(async (newRate: number) => {
     setExchangeRate(newRate);
@@ -613,6 +677,12 @@ export function usePOSState() {
     globalIvaPercentage,
     adminCode,
     checkProductStock,
-    refreshProducts
+    refreshProducts,
+    // ✅ Nuevos métodos para sesiones
+    currentSession,
+    setCurrentSession,
+    reloadSession,
+    createCashSession,
+    closeCashSession,
   };
 }

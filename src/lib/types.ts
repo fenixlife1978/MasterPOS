@@ -83,6 +83,8 @@ export interface Transaction {
   authorizedBy?: string;
   // ✅ Detalle de pagos (para ventas de contado)
   payments?: PaymentDetail[];
+  // ✅ ID de sesión de caja (aislamiento por terminal)
+  sessionId?: string | null;
 }
 
 export interface Account {
@@ -201,7 +203,7 @@ export interface AccountingEntry {
   description: string;
   amount: number;
   referenceId?: number;
-  referenceType?: 'sale' | 'supplier_payment' | 'expense' | 'return' | 'payment_reversal' | 'credit_sale' | 'debt_payment' | 'colaboracion' | 'consumo_propio';
+  referenceType?: 'sale' | 'supplier_payment' | 'expense' | 'return' | 'payment_reversal' | 'credit_sale' | 'debt_payment' | 'colaboracion' | 'consumo_propio' | 'inventory_adjustment';
   createdAt: string;
 }
 

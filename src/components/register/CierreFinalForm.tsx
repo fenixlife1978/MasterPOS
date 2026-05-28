@@ -28,6 +28,9 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
   const [aperturaOriginalBs, setAperturaOriginalBs] = useState(0);
   const [aperturaOriginalUsd, setAperturaOriginalUsd] = useState(0);
 
+  // ✅ Obtener sesión activa y método de cierre desde el estado global
+  const { currentSession, closeCashSession } = state;
+
   useEffect(() => {
     if (state.register) {
       setRegister(state.register);
@@ -439,6 +442,17 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
         ...closeReportData
       });
       
+      // ✅ Cerrar la sesión de caja activa con el monto final en USD
+      if (currentSession) {
+        try {
+          await closeCashSession(totalCashUsd);
+          console.log('Sesión de caja cerrada correctamente');
+        } catch (error) {
+          console.error('Error al cerrar sesión de caja:', error);
+        }
+      }
+      
+      // Limpiar cortes parciales del día
       for (let i = localStorage.length - 1; i >= 0; i--) {
         const key = localStorage.key(i);
         if (key?.startsWith('corte_parcial_')) {

@@ -7,7 +7,7 @@ import {
   Tag, Settings, History, RefreshCw, Save,
   FileText, Share2, Printer, Percent, AlertTriangle,
   DollarSign, Package, Layers, Boxes, PlusCircle,
-  FileSpreadsheet, TrendingUp, Calculator, Info
+  FileSpreadsheet, TrendingUp, Calculator, Info, Calendar
 } from 'lucide-react';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
@@ -15,7 +15,7 @@ import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
-import { Product, Category, AdminCode, KitComponent } from '@/lib/types';
+import { Product, Category, AdminCode, KitComponent, AccountingEntry } from '@/lib/types';
 import { syncService } from '@/services/syncService';
 import * as XLSX from 'xlsx';
 import { formatBs, formatUsd, formatBsNumber, formatUsdNumber } from '@/lib/currency-formatter';
@@ -56,7 +56,7 @@ interface KardexEntry {
 const DEFAULT_CATEGORIES: Category[] = ['Whisky', 'Ron', 'Cerveza', 'Vino', 'Vodka', 'Tequila', 'Licor', 'Gin', 'Otro'];
 const DEFAULT_DEPARTMENTS = ['Polar', 'Munchy', 'Otros'];
 
-type InventoryTab = 'catalogo' | 'reporte';
+type InventoryTab = 'catalogo' | 'reporte' | 'ajustes';
 
 export default function InventoryModule({ state }: { state: ReturnType<typeof usePOSState> }) {
   const { toast } = useToast();
@@ -72,11 +72,17 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
   const [viewingCostDetail, setViewingCostDetail] = useState<Product | null>(null);
   
   const [adjustingStock, setAdjustingStock] = useState<Product | null>(null);
-  const [adjustmentQuantity, setAdjustmentQuantity] = useState('');
+  // ✅ CAMBIO: ahora adjustmentDelta es la cantidad a ajustar (puede ser negativa)
+  const [adjustmentDelta, setAdjustmentDelta] = useState('');
   const [adjustmentReason, setAdjustmentReason] = useState('');
   const [showAuthCodeModal, setShowAuthCodeModal] = useState(false);
   const [authCodeInput, setAuthCodeInput] = useState('');
-  const [pendingAdjustment, setPendingAdjustment] = useState<{ product: Product; newQty: number; reason: string } | null>(null);
+  const [pendingAdjustment, setPendingAdjustment] = useState<{ product: Product; delta: number; reason: string } | null>(null);
+  
+  // ✅ Filtros para historial de ajustes
+  const [adjustmentStartDate, setAdjustmentStartDate] = useState('');
+  const [adjustmentEndDate, setAdjustmentEndDate] = useState('');
+  const [dateRangePreset, setDateRangePreset] = useState<'day' | 'month' | 'year' | 'custom'>('day');
   
   const [categories, setCategories] = useState<Category[]>(DEFAULT_CATEGORIES);
   const [departments, setDepartments] = useState<string[]>(DEFAULT_DEPARTMENTS);
@@ -507,18 +513,51 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
     return kardexEntries[productId] || [];
   };
   
+  // ✅ Función para registrar asiento contable por ajuste de inventario
+  const registerAdjustmentAccountingEntry = async (product: Product, delta: number, reason: string, exchangeRate: number) => {
+    const absDelta = Math.abs(delta);
+    const valorBs = absDelta * (product.costUsd || 0) * exchangeRate;
+    const entryType = delta > 0 ? 'ingreso' : 'egreso';
+    const category = 'Inventario';
+    const subcategory = delta > 0 ? 'Sobrante' : 'Merma / Rotura';
+    const concept = delta > 0 ? 'Ajuste positivo de inventario' : 'Ajuste negativo de inventario';
+    const description = `${reason} | Producto: ${product.name} (${product.barcode}) | Cantidad: ${absDelta} uds | Costo USD: ${formatUsd(product.costUsd || 0, 4)}`;
+    
+    const accountingEntry: AccountingEntry = {
+      id: Date.now(),
+      date: new Date().toISOString(),
+      type: entryType,
+      category,
+      subcategory,
+      concept,
+      description,
+      amount: roundTo2(valorBs),
+      referenceId: product.id,
+      referenceType: 'inventory_adjustment',
+      createdAt: new Date().toISOString(),
+    };
+    
+    await syncService.saveAccountingEntry(accountingEntry);
+    toast({ title: "Asiento contable registrado", description: `${entryType === 'ingreso' ? 'Ingreso' : 'Egreso'} por ${formatBs(valorBs)}` });
+  };
+  
   // ==================== AJUSTE DE STOCK CON CÓDIGO DE AUTORIZACIÓN ====================
   const requestStockAdjust = (product: Product) => {
     setAdjustingStock(product);
-    setAdjustmentQuantity('');
+    setAdjustmentDelta('');
     setAdjustmentReason('');
   };
   
   const confirmStockAdjustmentRequest = () => {
     if (!adjustingStock) return;
-    const newQty = parseInt(adjustmentQuantity);
-    if (isNaN(newQty) || newQty < 0) {
-      toast({ title: "Error", description: "Ingrese una cantidad válida", variant: "destructive" });
+    const delta = parseInt(adjustmentDelta);
+    if (isNaN(delta) || delta === 0) {
+      toast({ title: "Error", description: "Ingrese una cantidad válida (distinta de cero)", variant: "destructive" });
+      return;
+    }
+    const newQty = adjustingStock.stock + delta;
+    if (newQty < 0) {
+      toast({ title: "Error", description: "El stock no puede quedar negativo", variant: "destructive" });
       return;
     }
     if (!adjustmentReason.trim()) {
@@ -527,7 +566,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
     }
     setPendingAdjustment({
       product: adjustingStock,
-      newQty,
+      delta,
       reason: adjustmentReason
     });
     setShowAuthCodeModal(true);
@@ -537,9 +576,9 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
     const adminCodeData = await syncService.getAdminCode();
     if (adminCodeData && adminCodeData.code === authCodeInput) {
       if (pendingAdjustment) {
-        const { product, newQty, reason } = pendingAdjustment;
+        const { product, delta, reason } = pendingAdjustment;
         const previousStock = product.stock;
-        const quantityDiff = newQty - previousStock;
+        const newQty = previousStock + delta;
         const updatedProduct = { ...product, stock: newQty };
         
         // ✅ Actualizar el producto
@@ -551,7 +590,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
           productId: product.id,
           date: new Date().toLocaleString('es-VE'),
           type: 'ajuste_manual',
-          quantity: quantityDiff, // Positivo si aumentó stock, negativo si disminuyó
+          quantity: delta, // delta puede ser positivo o negativo
           previousStock: previousStock,
           newStock: newQty,
           reference: `Ajuste manual - ${reason}`,
@@ -562,7 +601,10 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
         await syncService.saveKardexEntry?.(kardexEntry);
         addKardexEntryLocal(product.id, kardexEntry);
         
-        toast({ title: "Ajuste Realizado", description: `Stock actualizado de ${previousStock} a ${newQty} unidades` });
+        // ✅ Registrar asiento contable (si delta != 0)
+        await registerAdjustmentAccountingEntry(product, delta, reason, state.exchangeRate);
+        
+        toast({ title: "Ajuste Realizado", description: `${delta > 0 ? 'Agregadas' : 'Quitadas'} ${Math.abs(delta)} unidades. Nuevo stock: ${newQty}` });
         setAdjustingStock(null);
         setPendingAdjustment(null);
         setAuthCodeInput('');
@@ -708,7 +750,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
             <span class="bold">RESUMEN:</span> ${pdfProducts.length} productos listados | 
             Total ítems en stock: ${pdfProducts.reduce((s, p) => s + p.stock, 0)}
           </div>
-          <table>
+          </table>
             <thead>
               <tr>
                 <th>CÓDIGO</th>
@@ -773,6 +815,68 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
     return filtered.sort((a, b) => a.name.localeCompare(b.name));
   }, [products, filterDepartment, filterCategory]);
   
+  // ==================== HISTORIAL DE AJUSTES ====================
+  const allAdjustments = useMemo(() => {
+    const adjustments: (KardexEntry & { productName: string; productBarcode: string; costBsValue: number })[] = [];
+    for (const product of products) {
+      const entries = getKardexForProduct(product.id);
+      const productAdjustments = entries.filter(e => e.type === 'ajuste_manual');
+      for (const entry of productAdjustments) {
+        adjustments.push({
+          ...entry,
+          productName: product.name,
+          productBarcode: product.barcode,
+          costBsValue: (entry.costUsd || 0) * state.exchangeRate,
+        });
+      }
+    }
+    adjustments.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    return adjustments;
+  }, [products, kardexEntries, state.exchangeRate]);
+  
+  const filteredAdjustments = useMemo(() => {
+    let start: Date | null = null;
+    let end: Date | null = null;
+    
+    const now = new Date();
+    switch (dateRangePreset) {
+      case 'day':
+        start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, -1);
+        break;
+      case 'month':
+        start = new Date(now.getFullYear(), now.getMonth(), 1);
+        end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+        break;
+      case 'year':
+        start = new Date(now.getFullYear(), 0, 1);
+        end = new Date(now.getFullYear(), 11, 31, 23, 59, 59);
+        break;
+      case 'custom':
+        if (adjustmentStartDate && adjustmentEndDate) {
+          start = new Date(adjustmentStartDate);
+          start.setHours(0,0,0,0);
+          end = new Date(adjustmentEndDate);
+          end.setHours(23,59,59,999);
+        }
+        break;
+    }
+    
+    if (!start) return allAdjustments;
+    
+    return allAdjustments.filter(adj => {
+      const adjDate = new Date(adj.date);
+      return adjDate >= start! && adjDate <= (end || new Date());
+    });
+  }, [allAdjustments, dateRangePreset, adjustmentStartDate, adjustmentEndDate]);
+  
+  const totalAdjustmentValue = useMemo(() => {
+    return filteredAdjustments.reduce((sum, adj) => {
+      const valorBs = Math.abs(adj.quantity) * (adj.costUsd || 0) * state.exchangeRate;
+      return sum + valorBs;
+    }, 0);
+  }, [filteredAdjustments, state.exchangeRate]);
+  
   // ==================== RENDERIZADO ====================
   return (
     <div className="h-full flex flex-col bg-background overflow-hidden">
@@ -821,6 +925,18 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
         >
           <FileSpreadsheet size={14} />
           Reporte General de Inventario
+        </button>
+        <button
+          onClick={() => setActiveTab('ajustes')}
+          className={cn(
+            "flex items-center gap-2 px-4 py-2 rounded-t-lg font-bold text-sm transition-all",
+            activeTab === 'ajustes'
+              ? "bg-white text-black border border-b-0 border-[#9E9E9E]"
+              : "text-black/60 hover:bg-white/50"
+          )}
+        >
+          <History size={14} />
+          Historial de Ajustes
         </button>
       </div>
       
@@ -962,7 +1078,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
             </div>
           </div>
         </div>
-      ) : (
+      ) : activeTab === 'reporte' ? (
         <div className="flex-1 flex flex-col overflow-hidden px-6 mt-4">
           <div className="flex justify-between items-center mb-3 gap-2 flex-wrap flex-shrink-0">
             <div className="relative flex-1 max-w-sm">
@@ -1098,6 +1214,100 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
             </div>
           </div>
         </div>
+      ) : (
+        // ==================== PESTAÑA HISTORIAL DE AJUSTES (CORREGIDA) ====================
+        <div className="flex-1 flex flex-col overflow-hidden px-6 mt-4">
+          <div className="flex justify-between items-center mb-3 gap-2 flex-wrap flex-shrink-0">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-bold uppercase text-black/60">Filtrar por:</span>
+              <div className="flex gap-1">
+                <button
+                  onClick={() => setDateRangePreset('day')}
+                  className={cn("px-2 py-1 text-[10px] font-bold rounded border", dateRangePreset === 'day' ? "bg-primary text-black" : "bg-white")}
+                >
+                  Hoy
+                </button>
+                <button
+                  onClick={() => setDateRangePreset('month')}
+                  className={cn("px-2 py-1 text-[10px] font-bold rounded border", dateRangePreset === 'month' ? "bg-primary text-black" : "bg-white")}
+                >
+                  Este Mes
+                </button>
+                <button
+                  onClick={() => setDateRangePreset('year')}
+                  className={cn("px-2 py-1 text-[10px] font-bold rounded border", dateRangePreset === 'year' ? "bg-primary text-black" : "bg-white")}
+                >
+                  Este Año
+                </button>
+                <button
+                  onClick={() => setDateRangePreset('custom')}
+                  className={cn("px-2 py-1 text-[10px] font-bold rounded border", dateRangePreset === 'custom' ? "bg-primary text-black" : "bg-white")}
+                >
+                  Personalizado
+                </button>
+              </div>
+            </div>
+            {dateRangePreset === 'custom' && (
+              <div className="flex items-center gap-2">
+                <Input type="date" value={adjustmentStartDate} onChange={e => setAdjustmentStartDate(e.target.value)} className="h-7 text-xs w-36" />
+                <span className="text-xs">-</span>
+                <Input type="date" value={adjustmentEndDate} onChange={e => setAdjustmentEndDate(e.target.value)} className="h-7 text-xs w-36" />
+              </div>
+            )}
+            <div className="ml-auto text-xs bg-gray-100 px-3 py-1 rounded-full">
+              Total ajustes: <span className="font-bold">{formatBs(totalAdjustmentValue)}</span>
+            </div>
+          </div>
+          
+          <div className="bg-white border border-[#9E9E9E] rounded-xl overflow-hidden shadow-sm flex-1 flex flex-col min-h-0">
+            <div className="overflow-x-auto flex-1">
+              <table className="w-full text-xs">
+                <thead className="bg-gray-100 sticky top-0">
+                  <tr>
+                    <th className="p-2 text-left">Fecha</th>
+                    <th className="p-2 text-left">Producto</th>
+                    <th className="p-2 text-center">Tipo</th>
+                    <th className="p-2 text-right">Cantidad</th>
+                    <th className="p-2 text-right">Costo USD</th>
+                    <th className="p-2 text-right">Valor Ajuste (Bs)</th>
+                    <th className="p-2 text-left">Motivo</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredAdjustments.map((adj, idx) => (
+                    <tr key={`${adj.id}_${idx}`} className="border-b border-gray-100 hover:bg-gray-50">
+                      <td className="p-2 whitespace-nowrap text-[11px] font-mono">{new Date(adj.date).toLocaleString('es-VE')}</td>
+                      <td className="p-2">
+                        <div className="font-bold">{adj.productName}</div>
+                        <div className="text-[9px] text-black/50">{adj.productBarcode}</div>
+                      </td>
+                      <td className="p-2 text-center">
+                        <span className={cn("px-2 py-0.5 rounded-full text-[9px] font-bold", adj.quantity > 0 ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700")}>
+                          {adj.quantity > 0 ? "INGRESO" : "EGRESO"}
+                        </span>
+                      </td>
+                      <td className="p-2 text-right font-mono">{Math.abs(adj.quantity)} uds</td>
+                      <td className="p-2 text-right font-mono">{formatUsd(adj.costUsd || 0, 4)}</td>
+                      <td className="p-2 text-right font-mono font-bold">{formatBs(Math.abs(adj.quantity) * (adj.costUsd || 0) * state.exchangeRate)}</td>
+                      <td className="p-2 text-left max-w-[200px] truncate" title={adj.note || adj.reference}>
+                        {adj.note || adj.reference}
+                      </td>
+                    </tr>
+                  ))}
+                  {filteredAdjustments.length === 0 && (
+                    <tr>
+                      <td colSpan={7} className="p-4 text-center text-black/40 italic">No hay ajustes manuales en el período seleccionado</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            <div className="bg-gray-50 p-2 border-t text-[10px] text-black/40 flex justify-between">
+              <span>{filteredAdjustments.length} registros</span>
+              <span>Los ajustes generan automáticamente asientos contables (ingresos/egresos)</span>
+            </div>
+          </div>
+        </div>
       )}
       
       {/* ==================== MODALES ==================== */}
@@ -1198,7 +1408,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
         </Dialog>
       )}
       
-                  {/* Modal de Kardex - MEJORADO: incluye DEVOLUCIONES */}
+      {/* Modal de Kardex - MEJORADO: incluye DEVOLUCIONES */}
       {viewingKardex && (
         <Dialog open={true} onOpenChange={() => setViewingKardex(null)}>
           <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-6xl w-[95vw] p-0 overflow-hidden rounded-xl shadow-xl max-h-[90vh] flex flex-col">
@@ -1402,7 +1612,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
         </Dialog>
       )}
       
-      {/* Modal de ajuste de stock */}
+      {/* Modal de ajuste de stock - MODIFICADO: ahora se ingresa delta (cantidad a ajustar) */}
       <Dialog open={!!adjustingStock} onOpenChange={() => setAdjustingStock(null)}>
         <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-md p-0 rounded-xl">
           <DialogHeader className="bg-amber-500 p-3 text-white rounded-t-xl">
@@ -1413,14 +1623,17 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
           </DialogHeader>
           <div className="p-4 space-y-3">
             <div>
-              <label className="text-[9px] font-black uppercase block mb-1">Nueva Cantidad</label>
+              <label className="text-[9px] font-black uppercase block mb-1">Cantidad a ajustar (negativa para quitar, positiva para agregar)</label>
               <Input 
                 type="number" 
-                value={adjustmentQuantity} 
-                onChange={(e) => setAdjustmentQuantity(e.target.value)} 
+                value={adjustmentDelta} 
+                onChange={(e) => setAdjustmentDelta(e.target.value)} 
                 className="text-sm" 
-                placeholder="Ingrese la nueva cantidad"
+                placeholder="Ej: +5 o -3"
               />
+              {adjustingStock && (
+                <p className="text-[8px] text-black/50 mt-1">Stock actual: {adjustingStock.stock} uds → Nuevo stock: {adjustingStock.stock + (parseInt(adjustmentDelta) || 0)} uds</p>
+              )}
             </div>
             <div>
               <label className="text-[9px] font-black uppercase block mb-1">Motivo del Ajuste</label>
@@ -1429,7 +1642,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                 onChange={(e) => setAdjustmentReason(e.target.value)} 
                 rows={2} 
                 className="w-full border rounded-lg px-2 py-1 text-xs resize-none" 
-                placeholder="Ej: Rotura, merma, inventario físico..."
+                placeholder="Ej: Rotura, merma, inventario físico, sobrante..."
               />
             </div>
             <div className="flex justify-end gap-2">

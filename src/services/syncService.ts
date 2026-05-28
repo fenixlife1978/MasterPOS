@@ -4,7 +4,7 @@ import { db } from '@/lib/firebase';
 import { 
   doc, setDoc, deleteDoc, 
   collection, query, onSnapshot, limit,
-  orderBy, writeBatch, getDoc, getDocs, runTransaction
+  orderBy, writeBatch, getDoc, getDocs, runTransaction, where
 } from 'firebase/firestore';
 
 interface PendingOperation {
@@ -106,6 +106,14 @@ const processQueue = async () => {
         // ✅ NUEVO: Guardar cierre de caja en Firestore
         case 'saveCashClose':
           await setDoc(doc(db, 'cash_closes', data.id), { ...data, createdAt: Date.now() });
+          break;
+        // ✅ NUEVO: Guardar sesión de caja
+        case 'saveCashSession':
+          await setDoc(doc(db, 'cash_sessions', data.id), { ...data, updatedAt: Date.now() });
+          break;
+        // ✅ NUEVO: Actualizar sesión de caja
+        case 'updateCashSession':
+          await setDoc(doc(db, 'cash_sessions', data.id), { ...data, updatedAt: Date.now() });
           break;
       }
     } catch (error) {
@@ -625,6 +633,161 @@ export const syncService = {
     const batch = writeBatch(db);
     snap.docs.forEach(doc => batch.delete(doc.ref));
     await batch.commit();
+  },
+
+  // ========== 🆕 MÉTODOS PARA SESIONES DE CAJA (Aislamiento de Terminales) ==========
+  
+  /**
+   * Crea una nueva sesión de caja para un terminal
+   * @param terminalId ID del terminal físico
+   * @param userId ID del usuario que abre la caja
+   * @param initialAmountUsd Monto inicial en USD
+   * @returns Objeto con id de sesión y datos
+   */
+  async createCashSession(terminalId: string, userId: string, initialAmountUsd: number): Promise<any> {
+    if (!db) throw new Error('Firebase no disponible');
+    const sessionId = `SES-${Date.now()}-${terminalId}`;
+    const sessionData = {
+      id: sessionId,
+      terminalId,
+      userId,
+      initialAmountUsd: roundTo2(initialAmountUsd),
+      currentAmountUsd: roundTo2(initialAmountUsd),
+      openTime: new Date().toISOString(),
+      status: 'abierta',
+      closeTime: null,
+      finalAmountUsd: 0,
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    };
+    const cleaned = sanitizeForFirestore(sessionData);
+    if (!isOnline) {
+      addToQueue('saveCashSession', cleaned);
+      return sessionData;
+    }
+    await setDoc(doc(db, 'cash_sessions', sessionId), cleaned);
+    return sessionData;
+  },
+
+  /**
+   * Obtiene la sesión activa (abierta) para un terminal específico
+   * @param terminalId ID del terminal
+   * @returns Sesión activa o null si no hay ninguna abierta
+   */
+  async getActiveSessionByTerminal(terminalId: string): Promise<any | null> {
+    if (!db) return null;
+    const q = query(collection(db, 'cash_sessions'), 
+      where('terminalId', '==', terminalId), 
+      where('status', '==', 'abierta'),
+      limit(1)
+    );
+    const snap = await getDocs(q);
+    if (snap.empty) return null;
+    return { id: snap.docs[0].id, ...snap.docs[0].data() };
+  },
+
+  /**
+   * Escucha en tiempo real la sesión activa de un terminal
+   * @param terminalId ID del terminal
+   * @param callback Función que recibe la sesión (null si no hay)
+   * @returns Función de unsubscribe
+   */
+  subscribeToActiveSession(terminalId: string, callback: (session: any | null) => void): () => void {
+    if (!db) return () => {};
+    const q = query(collection(db, 'cash_sessions'), 
+      where('terminalId', '==', terminalId), 
+      where('status', '==', 'abierta'),
+      limit(1)
+    );
+    return onSnapshot(q, (snap) => {
+      if (snap.empty) {
+        callback(null);
+      } else {
+        const doc = snap.docs[0];
+        callback({ id: doc.id, ...doc.data() });
+      }
+    });
+  },
+
+  /**
+   * Cierra una sesión de caja
+   * @param sessionId ID de la sesión
+   * @param finalAmountUsd Monto final real en USD (arqueo)
+   * @returns Datos de la sesión actualizada
+   */
+  async closeCashSession(sessionId: string, finalAmountUsd: number): Promise<any> {
+    if (!db) throw new Error('Firebase no disponible');
+    const sessionRef = doc(db, 'cash_sessions', sessionId);
+    const sessionSnap = await getDoc(sessionRef);
+    if (!sessionSnap.exists()) throw new Error('Sesión no encontrada');
+    
+    const updated = {
+      ...sessionSnap.data(),
+      status: 'cerrada',
+      closeTime: new Date().toISOString(),
+      finalAmountUsd: roundTo2(finalAmountUsd),
+      updatedAt: Date.now()
+    };
+    const cleaned = sanitizeForFirestore(updated);
+    if (!isOnline) {
+      addToQueue('updateCashSession', cleaned);
+      return updated;
+    }
+    await setDoc(sessionRef, cleaned);
+    return updated;
+  },
+
+  /**
+   * Obtiene todas las transacciones asociadas a una sesión específica (con filtros opcionales)
+   * @param sessionId ID de la sesión
+   * @param limitCount Límite de resultados (default 500)
+   * @returns Array de transacciones
+   */
+  async getTransactionsBySession(sessionId: string, limitCount: number = 500): Promise<any[]> {
+    if (!db) return [];
+    const q = query(collection(db, 'transactions'), 
+      where('sessionId', '==', sessionId),
+      orderBy('date', 'desc'),
+      limit(limitCount)
+    );
+    const snap = await getDocs(q);
+    return snap.docs.map(doc => ({ id: parseInt(doc.id), ...doc.data() }));
+  },
+
+  /**
+   * Escucha en tiempo real las transacciones de una sesión específica
+   * @param sessionId ID de la sesión
+   * @param callback Función que recibe el array de transacciones
+   * @returns Función de unsubscribe
+   */
+  subscribeToTransactionsBySession(sessionId: string, callback: (transactions: any[]) => void): () => void {
+    if (!db) return () => {};
+    const q = query(collection(db, 'transactions'), 
+      where('sessionId', '==', sessionId),
+      orderBy('date', 'desc'),
+      limit(500)
+    );
+    return onSnapshot(q, (snap) => {
+      callback(snap.docs.map(doc => ({ id: parseInt(doc.id), ...doc.data() })));
+    });
+  },
+
+  /**
+   * Guarda una transacción asociándola automáticamente a la sesión activa del terminal
+   * Si no hay sesión activa, la transacción se guarda sin sesión (comportamiento antiguo)
+   * @param tx Datos de la transacción (debe contener al menos id)
+   * @param terminalId ID del terminal (opcional, se intenta obtener sesión activa)
+   * @returns void
+   */
+  async saveTransactionWithCurrentSession(tx: any, terminalId?: string): Promise<void> {
+    if (!db) return;
+    let sessionId = tx.sessionId;
+    if (!sessionId && terminalId) {
+      const active = await this.getActiveSessionByTerminal(terminalId);
+      if (active) sessionId = active.id;
+    }
+    const txWithSession = { ...tx, sessionId: sessionId || null };
+    await this.saveTransaction(txWithSession);
   },
 
   getPendingQueueLength() {

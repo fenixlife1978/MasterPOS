@@ -31,6 +31,9 @@ export default function CorteParcialForm({ onClose, onCorteConfirmado, tasaActua
   const [fisicos, setFisicos] = useState<Record<string, number>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // ✅ Obtener sesión activa y métodos de gestión desde el estado global
+  const { currentSession, closeCashSession, createCashSession } = state;
+
   useEffect(() => {
     if (state.register) {
       setRegister(state.register);
@@ -239,6 +242,27 @@ export default function CorteParcialForm({ onClose, onCorteConfirmado, tasaActua
     const nTasa = parseFloat(nuevaTasa);
     const fBs = fisicos['efectivo_bs'] ?? 0;
     const fUsd = fisicos['usd_efectivo'] ?? 0;
+    
+    // ✅ Cerrar la sesión actual (si existe) con el monto final de efectivo USD contado
+    if (currentSession) {
+      try {
+        await closeCashSession(totalCashUsd);
+        console.log('Sesión cerrada correctamente');
+      } catch (error) {
+        console.error('Error al cerrar sesión:', error);
+        // Opcional: mostrar mensaje al usuario, pero continuamos
+      }
+    }
+    
+    // ✅ Crear nueva sesión con el nuevo fondo en USD (fUsd)
+    let newSession = null;
+    try {
+      newSession = await createCashSession(fUsd);
+      console.log('Nueva sesión creada:', newSession);
+    } catch (error) {
+      console.error('Error al crear nueva sesión:', error);
+      // Si falla la creación, no debería continuar? Por ahora sigue
+    }
     
     const report = {
       fecha: new Date().toISOString(),

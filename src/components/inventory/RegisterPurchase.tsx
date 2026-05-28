@@ -1,12 +1,12 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { usePOSState } from '@/hooks/use-pos-state';
 import { useSuppliers } from '@/hooks/use-suppliers';
-import { Search, Plus, Trash2, Package, Truck, Receipt, DollarSign, Loader2, Save, CalendarDays, HandCoins, X } from 'lucide-react';
+import { Search, Plus, Trash2, Package, Truck, Receipt, DollarSign, Loader2, Save, CalendarDays, HandCoins, X, PlusCircle, RefreshCw, Percent } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
-import { Product, SupplierInvoice, PurchaseInvoiceItem } from '@/lib/types';
+import { Product, SupplierInvoice, PurchaseInvoiceItem, Category, KitComponent } from '@/lib/types';
 import { syncService } from '@/services/syncService';
 import { formatBs, formatUsd, formatBsNumber, formatUsdNumber } from '@/lib/currency-formatter';
 
@@ -24,6 +24,13 @@ const roundTo2 = (num: number): number => Math.round(num * 100) / 100;
 // ✅ Redondeo a 4 decimales (para costos)
 const roundTo4 = (num: number): number => Math.round(num * 10000) / 10000;
 
+// ✅ Margen de ganancia por defecto
+const DEFAULT_PROFIT_PERCENT = 30;
+
+// ✅ Categorías por defecto (deben coincidir con las del sistema)
+const DEFAULT_CATEGORIES: Category[] = ['Whisky', 'Ron', 'Cerveza', 'Vino', 'Vodka', 'Tequila', 'Licor', 'Gin', 'Otro'];
+const DEFAULT_DEPARTMENTS = ['Polar', 'Munchy', 'Otros'];
+
 export default function RegisterPurchase() {
   const state = usePOSState();
   const { suppliers } = useSuppliers();
@@ -31,7 +38,6 @@ export default function RegisterPurchase() {
   // Datos de la factura
   const [selectedSupplierId, setSelectedSupplierId] = useState<string>('');
   const [invoiceNumber, setInvoiceNumber] = useState('');
-  // ✅ Usar la tasa actual del sistema en lugar de un valor fijo
   const [exchangeRate, setExchangeRate] = useState(state.exchangeRate.toFixed(2));
   
   // Items temporales
@@ -48,28 +54,115 @@ export default function RegisterPurchase() {
   const [creditTermDays, setCreditTermDays] = useState<number>(30);
   const [isProcessing, setIsProcessing] = useState(false);
 
+  // Estados para el modal de nuevo producto
+  const [showProductModal, setShowProductModal] = useState(false);
+  const [modalPosition, setModalPosition] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const modalRef = useRef<HTMLDivElement>(null);
+  const dragHandleRef = useRef<HTMLDivElement>(null);
+
+  // Estados para el formulario de producto (copiados de InventoryModule)
+  const [productForm, setProductForm] = useState({
+    barcode: '',
+    name: '',
+    department: 'Otros',
+    category: 'Otro' as Category,
+    stock: 0,
+    minStock: 5,
+    costUsd: 0,
+    priceWholesale: 0,
+    priceCost: 0,
+  });
+  const [costUsdInput, setCostUsdInput] = useState('');
+  const [priceWholesaleInput, setPriceWholesaleInput] = useState('');
+  const [priceCostInput, setPriceCostInput] = useState('');
+  const [stockInput, setStockInput] = useState('');
+  const [minStockInput, setMinStockInput] = useState('');
+  const [profitPercentInput, setProfitPercentInput] = useState(DEFAULT_PROFIT_PERCENT.toString());
+  const [priceRetailBs, setPriceRetailBs] = useState('');
+  const [isPriceFixed, setIsPriceFixed] = useState(false);
+  const [isUpdatingFromProfit, setIsUpdatingFromProfit] = useState(false);
+  const [isUpdatingFromPriceBs, setIsUpdatingFromPriceBs] = useState(false);
+  const [ivaType, setIvaType] = useState<'con_iva' | 'sin_iva'>('con_iva');
+  const [ivaPercentage, setIvaPercentage] = useState(16);
+  const [isKit, setIsKit] = useState(false);
+  const [kitHasOwnStock, setKitHasOwnStock] = useState(false);
+  const [kitComponents, setKitComponents] = useState<KitComponent[]>([]);
+  const [categories, setCategories] = useState<Category[]>(DEFAULT_CATEGORIES);
+  const [departments, setDepartments] = useState<string[]>(DEFAULT_DEPARTMENTS);
+  const [searchChildProduct, setSearchChildProduct] = useState('');
+  const [selectedChildProduct, setSelectedChildProduct] = useState<Product | null>(null);
+  const [childQuantity, setChildQuantity] = useState('1');
+  const [hideChildResults, setHideChildResults] = useState(false);
+  const [isSubmittingProduct, setIsSubmittingProduct] = useState(false);
+
   const searchRef = useRef<HTMLDivElement>(null);
 
-  // ✅ Actualizar la tasa cuando cambie en el sistema
+  // Actualizar tasa cuando cambie en el sistema
   useEffect(() => {
     setExchangeRate(state.exchangeRate.toFixed(2));
   }, [state.exchangeRate]);
+
+  // Cargar categorías y departamentos desde settings al iniciar
+  useEffect(() => {
+    const loadSettings = async () => {
+      const settings = await syncService.getGlobalSettings();
+      if (settings) {
+        if (settings.categories) setCategories(settings.categories as Category[]);
+        if (settings.departments) setDepartments(settings.departments);
+      }
+    };
+    loadSettings();
+  }, []);
 
   // Cerrar dropdown al hacer clic fuera
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
-        // Si el usuario hace clic fuera y no hay producto seleccionado, podemos limpiar resultados
-        // pero no forzamos el cierre para no interferir con la selección.
+        // no hacer nada, solo mantener el dropdown
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // Funciones de arrastre para el modal
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (!modalRef.current) return;
+    setIsDragging(true);
+    const rect = modalRef.current.getBoundingClientRect();
+    setDragOffset({
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top,
+    });
+  };
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isDragging || !modalRef.current) return;
+      const newX = e.clientX - dragOffset.x;
+      const newY = e.clientY - dragOffset.y;
+      setModalPosition({ x: newX, y: newY });
+      modalRef.current.style.left = `${newX}px`;
+      modalRef.current.style.top = `${newY}px`;
+    };
+    const handleMouseUp = () => {
+      setIsDragging(false);
+    };
+    if (isDragging) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+    }
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isDragging, dragOffset]);
+
   const productResults = useMemo(() => {
     if (!productQuery.trim()) return [];
-    if (selectedProduct) return []; // ✅ No mostrar resultados si ya hay un producto seleccionado
+    if (selectedProduct) return [];
     const q = productQuery.toLowerCase();
     return state.products.filter(p => 
       p.name.toLowerCase().includes(q) || 
@@ -79,10 +172,8 @@ export default function RegisterPurchase() {
 
   const handleSelectProduct = (product: Product) => {
     setSelectedProduct(product);
-    setProductQuery(product.name);   // Mostrar el nombre en el input
-    // ✅ Cambiado a 4 decimales
+    setProductQuery(product.name);
     setItemCostUsd(product.costUsd?.toFixed(4) || '');
-    // Forzar cierre del dropdown: ya que productResults está vacío por selectedProduct
   };
 
   const handleClearSelection = () => {
@@ -106,12 +197,10 @@ export default function RegisterPurchase() {
         productId: selectedProduct.id,
         name: selectedProduct.name,
         qty,
-        // ✅ Redondear a 4 decimales
         costUsd: roundTo4(cost)
       }
     ]);
 
-    // Limpiar selección después de agregar
     handleClearSelection();
   };
 
@@ -119,7 +208,6 @@ export default function RegisterPurchase() {
     setTempItems(prev => prev.filter((_, i) => i !== index));
   };
 
-  // ✅ Totales con 4 decimales para USD
   const totalInvoiceUsd = parseFloat(tempItems.reduce((sum, item) => sum + (item.qty * item.costUsd), 0).toFixed(4));
   const rateNum = parseFloat(parseFloat(exchangeRate).toFixed(2)) || state.exchangeRate;
   const totalInvoiceBs = roundTo2(totalInvoiceUsd * rateNum);
@@ -144,7 +232,6 @@ export default function RegisterPurchase() {
 
   const totalPaidUsd = paymentType === 'contado' ? totalInvoiceUsd : (paymentType === 'credito' ? 0 : paidUsd);
   const totalPaidBs = roundTo2(totalPaidUsd * rateNum);
-  // ✅ remainingUsd con 4 decimales
   const remainingUsd = parseFloat(Math.max(0, totalInvoiceUsd - totalPaidUsd).toFixed(4));
   const remainingBs = roundTo2(remainingUsd * rateNum);
 
@@ -205,7 +292,6 @@ export default function RegisterPurchase() {
       
       await syncService.savePurchaseInvoiceItems(invoiceId, items);
       
-      // ✅ Usar transacción atómica para actualizar cada producto con CPP
       for (const item of tempItems) {
         await syncService.updateProductWithWeightedAverageCost(
           item.productId,
@@ -223,7 +309,6 @@ export default function RegisterPurchase() {
         });
       }
       
-      // ✅ Refrescar el estado local de productos
       await state.refreshProducts?.();
       
       alert(`✅ Compra registrada exitosamente\nEstado: ${invoiceStatus()}\nTotal: ${formatUsd(totalInvoiceUsd, 4)}\nPagado: ${formatUsd(totalPaidUsd)}\nSaldo: ${formatUsd(remainingUsd, 4)}`);
@@ -240,6 +325,167 @@ export default function RegisterPurchase() {
     }
     
     setIsProcessing(false);
+  };
+
+  // ==================== Funciones para el formulario de producto ====================
+  const calculatePriceUsdFromCostAndProfit = (cost: number, profitPercent: number): number => {
+    if (cost <= 0) return 0;
+    const marginDecimal = profitPercent / 100;
+    const priceUsd = cost / (1 - marginDecimal);
+    return roundTo2(priceUsd);
+  };
+
+  const calculateProfitFromCostAndPriceUsd = (cost: number, priceUsd: number): number => {
+    if (cost <= 0 || priceUsd <= 0) return DEFAULT_PROFIT_PERCENT;
+    const profitPercent = (1 - (cost / priceUsd)) * 100;
+    return Math.min(roundTo2(profitPercent), 99.99);
+  };
+
+  const updatePricesFromProfit = (profitPercent: number, currentCost: number) => {
+    if (isUpdatingFromPriceBs) return;
+    setIsUpdatingFromProfit(true);
+    const priceUsd = calculatePriceUsdFromCostAndProfit(currentCost, profitPercent);
+    const priceBs = priceUsd * state.exchangeRate;
+    setPriceRetailBs(roundTo2(priceBs).toFixed(2));
+    setIsPriceFixed(false);
+    setIsUpdatingFromProfit(false);
+  };
+
+  const updateProfitFromPriceBs = (priceBsValue: number, currentCost: number) => {
+    if (isUpdatingFromProfit) return;
+    setIsUpdatingFromPriceBs(true);
+    const priceUsd = priceBsValue / state.exchangeRate;
+    const newProfitPercent = calculateProfitFromCostAndPriceUsd(currentCost, priceUsd);
+    setProfitPercentInput(roundTo2(newProfitPercent).toString());
+    setIsPriceFixed(true);
+    setIsUpdatingFromPriceBs(false);
+  };
+
+  const childProductResults = useMemo(() => {
+    if (!searchChildProduct.trim() || hideChildResults) return [];
+    const q = searchChildProduct.toLowerCase();
+    return state.products.filter(p => 
+      p.name.toLowerCase().includes(q) || p.barcode.includes(q)
+    ).slice(0, 5);
+  }, [searchChildProduct, state.products, hideChildResults]);
+
+  const addKitComponent = () => {
+    if (!selectedChildProduct) return;
+    const qty = parseInt(childQuantity);
+    if (isNaN(qty) || qty <= 0) {
+      alert('Cantidad no válida');
+      return;
+    }
+    if (kitComponents.some(c => c.productId === selectedChildProduct.id)) {
+      alert('El producto ya está en la lista');
+      return;
+    }
+    setKitComponents(prev => [...prev, { productId: selectedChildProduct.id, quantity: qty }]);
+    setSelectedChildProduct(null);
+    setSearchChildProduct('');
+    setChildQuantity('1');
+    setHideChildResults(false);
+  };
+
+  const removeKitComponent = (productId: number) => {
+    setKitComponents(prev => prev.filter(c => c.productId !== productId));
+  };
+
+  const resetProductForm = () => {
+    setProductForm({
+      barcode: '',
+      name: '',
+      department: 'Otros',
+      category: 'Otro',
+      stock: 0,
+      minStock: 5,
+      costUsd: 0,
+      priceWholesale: 0,
+      priceCost: 0,
+    });
+    setCostUsdInput('');
+    setPriceWholesaleInput('');
+    setPriceCostInput('');
+    setStockInput('');
+    setMinStockInput('');
+    setProfitPercentInput(DEFAULT_PROFIT_PERCENT.toString());
+    setIvaType('con_iva');
+    setIvaPercentage(16);
+    setIsKit(false);
+    setKitHasOwnStock(false);
+    setKitComponents([]);
+    setSearchChildProduct('');
+    setSelectedChildProduct(null);
+    setChildQuantity('1');
+    setHideChildResults(false);
+    setPriceRetailBs('');
+    setIsPriceFixed(false);
+  };
+
+  const handleSaveProduct = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cost = parseFloat(costUsdInput) || 0;
+    const profitPercent = parseFloat(profitPercentInput) || DEFAULT_PROFIT_PERCENT;
+    
+    let finalPriceUsd, finalPriceBs;
+    if (isPriceFixed && priceRetailBs !== '' && priceRetailBs !== 'NaN') {
+      finalPriceBs = parseFloat(priceRetailBs) || 0;
+      finalPriceUsd = finalPriceBs / state.exchangeRate;
+    } else {
+      finalPriceUsd = calculatePriceUsdFromCostAndProfit(cost, profitPercent);
+      finalPriceBs = finalPriceUsd * state.exchangeRate;
+    }
+    
+    const productData: Product = {
+      id: Date.now(),
+      barcode: productForm.barcode,
+      name: productForm.name,
+      department: productForm.department,
+      category: productForm.category,
+      stock: parseInt(stockInput) || 0,
+      minStock: parseInt(minStockInput) || 5,
+      costUsd: roundTo4(cost),
+      costBs: roundTo2(cost * state.exchangeRate),
+      profitPercent: profitPercent,
+      priceUsd: finalPriceUsd,
+      priceBs: roundTo2(finalPriceBs),
+      priceRetail: finalPriceUsd,
+      priceWholesale: roundTo2(parseFloat(priceWholesaleInput) || 0),
+      priceCost: roundTo2(parseFloat(priceCostInput) || 0),
+      ivaType: ivaType,
+      ivaPercentage: ivaType === 'con_iva' ? ivaPercentage : undefined,
+      isKit: isKit,
+      kitHasOwnStock: isKit ? kitHasOwnStock : undefined,
+      kitComponents: isKit && kitComponents.length > 0 ? kitComponents : undefined,
+    };
+    
+    setIsSubmittingProduct(true);
+    try {
+      await syncService.saveProduct(productData);
+      // Crear entrada de kardex inicial
+      const kardexEntry = {
+        id: `${Date.now()}_${Math.random()}`,
+        productId: productData.id,
+        date: new Date().toLocaleString('es-VE'),
+        type: 'ajuste_inicial',
+        quantity: productData.stock,
+        previousStock: 0,
+        newStock: productData.stock,
+        reference: 'Creación de producto',
+        note: 'Stock inicial',
+        costUsd: productData.costUsd,
+      };
+      await syncService.saveKardexEntry?.(kardexEntry);
+      await state.refreshProducts?.();
+      alert(`✅ Producto "${productData.name}" creado exitosamente`);
+      setShowProductModal(false);
+      resetProductForm();
+    } catch (error) {
+      console.error('Error al crear producto:', error);
+      alert('❌ Error al crear el producto');
+    } finally {
+      setIsSubmittingProduct(false);
+    }
   };
 
   return (
@@ -433,7 +679,14 @@ export default function RegisterPurchase() {
                       onChange={(e) => setProductQuery(e.target.value)}
                       className="pl-7 h-8 text-sm"
                     />
-                    {/* Mostrar dropdown solo si hay resultados y no hay producto seleccionado */}
+                    <Button
+                      type="button"
+                      onClick={() => setShowProductModal(true)}
+                      className="absolute right-1 top-1/2 -translate-y-1/2 h-6 w-6 p-0 bg-transparent hover:bg-primary/20 text-primary"
+                      title="Crear nuevo producto"
+                    >
+                      <PlusCircle size={14} />
+                    </Button>
                     {productResults.length > 0 && !selectedProduct && (
                       <div className="absolute top-full left-0 right-0 bg-white border border-[#9E9E9E] rounded-lg shadow-lg z-20 mt-1 overflow-hidden">
                         {productResults.map(p => (
@@ -545,6 +798,417 @@ export default function RegisterPurchase() {
           </div>
         </div>
       </div>
+
+      {/* Modal arrastrable para crear nuevo producto */}
+      {showProductModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowProductModal(false)}>
+          <div
+            ref={modalRef}
+            className="bg-white rounded-xl shadow-2xl w-full max-w-3xl flex flex-col max-h-[90vh]"
+            style={{ position: 'absolute', left: modalPosition.x || 'auto', top: modalPosition.y || 'auto' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header arrastrable */}
+            <div
+              ref={dragHandleRef}
+              onMouseDown={handleMouseDown}
+              className="bg-[#1A2C4E] p-3 text-white rounded-t-xl cursor-move flex justify-between items-center flex-shrink-0"
+            >
+              <div className="flex items-center gap-2">
+                <Package size={18} className="text-primary" />
+                <h3 className="text-sm font-black">Nuevo Producto</h3>
+              </div>
+              <button onClick={() => setShowProductModal(false)} className="text-white/60 hover:text-white">
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Formulario de producto */}
+            <form onSubmit={handleSaveProduct} className="flex-1 overflow-y-auto p-4">
+              <div className="grid grid-cols-2 gap-3">
+                {/* Columna izquierda */}
+                <div className="space-y-2">
+                  <div>
+                    <label className="text-[8px] font-black uppercase">Código de Barras</label>
+                    <Input 
+                      value={productForm.barcode} 
+                      onChange={e => setProductForm({...productForm, barcode: e.target.value})} 
+                      className="h-7 text-xs" 
+                      required 
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[8px] font-black uppercase">Nombre del Producto</label>
+                    <Input 
+                      value={productForm.name} 
+                      onChange={e => setProductForm({...productForm, name: e.target.value})} 
+                      className="h-7 text-xs" 
+                      required 
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[8px] font-black uppercase">Departamento</label>
+                      <select 
+                        value={productForm.department} 
+                        onChange={e => setProductForm({...productForm, department: e.target.value})} 
+                        className="w-full h-7 border rounded px-2 text-xs bg-white"
+                      >
+                        {departments.map(d => <option key={d}>{d}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[8px] font-black uppercase">Categoría</label>
+                      <select 
+                        value={productForm.category} 
+                        onChange={e => setProductForm({...productForm, category: e.target.value as Category})} 
+                        className="w-full h-7 border rounded px-2 text-xs bg-white"
+                      >
+                        {categories.map(c => <option key={c}>{c}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[8px] font-black uppercase">Stock Inicial</label>
+                      <Input 
+                        type="text"
+                        inputMode="numeric"
+                        value={stockInput}
+                        onChange={(e) => setStockInput(e.target.value)}
+                        className="h-7 text-xs" 
+                        placeholder="0"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[8px] font-black uppercase">Stock Mínimo</label>
+                      <Input 
+                        type="text"
+                        inputMode="numeric"
+                        value={minStockInput}
+                        onChange={(e) => setMinStockInput(e.target.value)}
+                        className="h-7 text-xs" 
+                        placeholder="5"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[8px] font-black uppercase">Precio Mayor (USD)</label>
+                      <Input 
+                        type="text"
+                        inputMode="decimal"
+                        value={priceWholesaleInput}
+                        onChange={(e) => setPriceWholesaleInput(e.target.value)}
+                        className="h-7 text-xs" 
+                        placeholder="0.00"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[8px] font-black uppercase">Precio Costo (USD)</label>
+                      <Input 
+                        type="text"
+                        inputMode="decimal"
+                        value={priceCostInput}
+                        onChange={(e) => setPriceCostInput(e.target.value)}
+                        className="h-7 text-xs" 
+                        placeholder="0.00"
+                      />
+                    </div>
+                  </div>
+                  
+                  <div className="border-t pt-2 mt-1">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input 
+                        type="checkbox" 
+                        checked={isKit} 
+                        onChange={e => setIsKit(e.target.checked)} 
+                        className="rounded text-primary" 
+                      />
+                      <span className="text-[9px] font-black uppercase">Es kit / compuesto</span>
+                    </label>
+                    <p className="text-[7px] text-black/40 mt-1">Al vender este producto, se descontarán las cantidades de sus componentes.</p>
+                  </div>
+                  
+                  {isKit && (
+                    <div className="border border-dashed border-blue-300 rounded-lg p-2 bg-blue-50/30 space-y-2">
+                      <div className="flex items-center justify-between bg-white/50 rounded p-1.5">
+                        <span className="text-[8px] font-bold uppercase">Stock del kit:</span>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setKitHasOwnStock(false)}
+                            className={cn(
+                              "px-2 py-0.5 rounded text-[9px] font-bold transition-all",
+                              !kitHasOwnStock ? "bg-primary text-black" : "bg-gray-200 text-gray-600"
+                            )}
+                          >
+                            Sin stock propio
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setKitHasOwnStock(true)}
+                            className={cn(
+                              "px-2 py-0.5 rounded text-[9px] font-bold transition-all",
+                              kitHasOwnStock ? "bg-primary text-black" : "bg-gray-200 text-gray-600"
+                            )}
+                          >
+                            Con stock propio
+                          </button>
+                        </div>
+                      </div>
+                      <p className="text-[7px] text-blue-700 bg-blue-100 rounded px-2 py-1">
+                        {!kitHasOwnStock 
+                          ? "📦 Sin stock propio: El kit siempre se puede vender si hay suficiente stock de sus componentes. Al vender, SOLO se descuentan los componentes."
+                          : "⚠️ Con stock propio: El kit tiene su propio inventario. Al vender, se descuenta 1 del kit + las cantidades de sus componentes."
+                        }
+                      </p>
+                      <p className="text-[8px] font-bold text-blue-800 mb-1 flex items-center gap-1"><Package size={10} /> Componentes del kit</p>
+                      <div className="space-y-2">
+                        {kitComponents.length > 0 && (
+                          <div className="max-h-24 overflow-y-auto space-y-1">
+                            {kitComponents.map(comp => {
+                              const childProd = state.products.find(p => p.id === comp.productId);
+                              return <div key={comp.productId} className="flex justify-between items-center bg-white rounded px-2 py-1 text-[10px]"><span>{childProd?.name || 'Producto'} x{comp.quantity}</span><button type="button" onClick={() => removeKitComponent(comp.productId)} className="text-red-500"><Trash2 size={10} /></button></div>;
+                            })}
+                          </div>
+                        )}
+                        <div className="flex flex-col gap-1">
+                          <div className="relative">
+                            <Input 
+                              type="text"
+                              placeholder="Buscar producto componente..."
+                              value={searchChildProduct}
+                              onChange={(e) => {
+                                setSearchChildProduct(e.target.value);
+                                setHideChildResults(false);
+                                if (selectedChildProduct && e.target.value !== selectedChildProduct.name) {
+                                  setSelectedChildProduct(null);
+                                }
+                              }}
+                              className="h-7 text-xs pr-7"
+                            />
+                            {!hideChildResults && searchChildProduct && childProductResults.length > 0 && (
+                              <div className="absolute top-full left-0 right-0 bg-white border rounded shadow z-20 mt-1 max-h-24 overflow-y-auto">
+                                {childProductResults.map(p => (
+                                  <button
+                                    key={p.id}
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedChildProduct(p);
+                                      setSearchChildProduct(p.name);
+                                      setHideChildResults(true);
+                                    }}
+                                    className="w-full text-left px-2 py-1 text-[10px] hover:bg-primary/10"
+                                  >
+                                    {p.name} ({formatUsd(p.priceUsd)})
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                          {selectedChildProduct && (
+                            <div className="flex gap-1 items-center">
+                              <Input type="text" inputMode="numeric" value={childQuantity} onChange={e => setChildQuantity(e.target.value)} className="h-7 text-xs w-20 text-center" placeholder="Cant." />
+                              <Button type="button" onClick={addKitComponent} size="sm" className="h-7 text-[9px] bg-primary text-black">Agregar</Button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                
+                {/* Columna derecha: costos y precios */}
+                <div className="bg-[#F5F5F5] rounded-lg p-3 space-y-2">
+                  <div className="w-3/4">
+                    <label className="text-[7px] font-bold uppercase">Costo Unitario USD</label>
+                    <Input 
+                      type="text" 
+                      inputMode="decimal" 
+                      value={costUsdInput} 
+                      onChange={(e) => {
+                        setCostUsdInput(e.target.value);
+                        const costVal = parseFloat(e.target.value) || 0;
+                        const profitVal = parseFloat(profitPercentInput) || DEFAULT_PROFIT_PERCENT;
+                        if (!isUpdatingFromPriceBs) {
+                          const newPriceUsd = calculatePriceUsdFromCostAndProfit(costVal, profitVal);
+                          const newPriceBs = newPriceUsd * state.exchangeRate;
+                          setPriceRetailBs(roundTo2(newPriceBs).toFixed(2));
+                          setIsPriceFixed(false);
+                        }
+                      }} 
+                      className="bg-white h-7 text-xs font-mono" 
+                      placeholder="0.0000" 
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="text-[7px] font-bold uppercase">% de Ganancia</label>
+                    <div className="flex items-center gap-2">
+                      <Input 
+                        type="text" 
+                        inputMode="decimal" 
+                        value={profitPercentInput} 
+                        onChange={(e) => {
+                          const newProfit = parseFloat(e.target.value) || 0;
+                          setProfitPercentInput(e.target.value);
+                          const costVal = parseFloat(costUsdInput) || 0;
+                          if (!isUpdatingFromPriceBs) {
+                            const newPriceUsd = calculatePriceUsdFromCostAndProfit(costVal, newProfit);
+                            const newPriceBs = newPriceUsd * state.exchangeRate;
+                            setPriceRetailBs(roundTo2(newPriceBs).toFixed(2));
+                            setIsPriceFixed(false);
+                          }
+                        }}
+                        className="bg-white h-7 text-xs font-mono w-24 text-right"
+                        placeholder="0"
+                      />
+                      <span className="text-[9px] text-black/60">%</span>
+                    </div>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[7px] font-bold uppercase">Precio Detal USD</label>
+                      <Input 
+                        type="text" 
+                        inputMode="decimal" 
+                        value={(() => {
+                          const costVal = parseFloat(costUsdInput) || 0;
+                          const profitVal = parseFloat(profitPercentInput) || DEFAULT_PROFIT_PERCENT;
+                          const priceUsd = calculatePriceUsdFromCostAndProfit(costVal, profitVal);
+                          return priceUsd.toFixed(2);
+                        })()}
+                        className="bg-white h-7 text-xs font-mono"
+                        readOnly
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[7px] font-bold uppercase">Precio Detal Bs (final)</label>
+                      <Input 
+                        type="text" 
+                        inputMode="decimal" 
+                        value={priceRetailBs === 'NaN' || isNaN(parseFloat(priceRetailBs)) ? '' : priceRetailBs}
+                        onChange={(e) => {
+                          const newValue = e.target.value;
+                          setPriceRetailBs(newValue);
+                          setIsPriceFixed(true);
+                          const bsValue = parseFloat(newValue) || 0;
+                          const costVal = parseFloat(costUsdInput) || 0;
+                          if (bsValue > 0 && costVal > 0) {
+                            const priceUsd = bsValue / state.exchangeRate;
+                            const newProfitPercent = calculateProfitFromCostAndPriceUsd(costVal, priceUsd);
+                            setProfitPercentInput(roundTo2(newProfitPercent).toString());
+                          }
+                        }}
+                        className="bg-white h-7 text-xs font-mono w-full"
+                      />
+                    </div>
+                  </div>
+                  
+                  <div className="flex justify-end">
+                    <Button
+                      type="button"
+                      onClick={() => {
+                        const costVal = parseFloat(costUsdInput) || 0;
+                        const profitVal = parseFloat(profitPercentInput) || DEFAULT_PROFIT_PERCENT;
+                        const priceUsd = calculatePriceUsdFromCostAndProfit(costVal, profitVal);
+                        const calculatedBs = priceUsd * state.exchangeRate;
+                        setPriceRetailBs(roundTo2(calculatedBs).toFixed(2));
+                        setIsPriceFixed(false);
+                      }}
+                      className="h-7 text-[9px] px-3 bg-primary text-black font-bold"
+                    >
+                      <RefreshCw size={12} className="mr-1" />
+                      Sincronizar
+                    </Button>
+                  </div>
+                  
+                  <div className="border-t pt-2 mt-1">
+                    <label className="text-[7px] font-bold uppercase text-black/60 block mb-1">Configuración de IVA</label>
+                    <div className="flex gap-2">
+                      <button 
+                        type="button"
+                        onClick={() => setIvaType('con_iva')}
+                        className={cn(
+                          "flex-1 py-1 text-[9px] font-bold rounded border transition-all",
+                          ivaType === 'con_iva' ? "bg-primary text-black border-primary" : "bg-white text-black/60 border-gray-300"
+                        )}
+                      >
+                        Con I.V.A.
+                      </button>
+                      <button 
+                        type="button"
+                        onClick={() => setIvaType('sin_iva')}
+                        className={cn(
+                          "flex-1 py-1 text-[9px] font-bold rounded border transition-all",
+                          ivaType === 'sin_iva' ? "bg-primary text-black border-primary" : "bg-white text-black/60 border-gray-300"
+                        )}
+                      >
+                        Sin I.V.A.
+                      </button>
+                    </div>
+                    {ivaType === 'con_iva' && (
+                      <div className="flex items-center gap-2 mt-2">
+                        <Percent size={10} className="text-black/40" />
+                        <Input 
+                          type="text"
+                          inputMode="decimal"
+                          value={isNaN(ivaPercentage) ? '' : ivaPercentage}
+                          onChange={(e) => setIvaPercentage(e.target.value === '' ? 0 : Number(e.target.value))}
+                          className="h-6 text-[9px] w-20 text-center"
+                        />
+                        <span className="text-[8px] text-black/60">% de I.V.A.</span>
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div className="bg-white rounded p-1.5 border mt-2">
+                    <div className="flex justify-between text-[10px]">
+                      <span className="text-black/60">Precio Base USD (sin IVA):</span>
+                      <span className="font-black text-secondary">
+                        {formatUsd((() => {
+                          const costVal = parseFloat(costUsdInput) || 0;
+                          const profitVal = parseFloat(profitPercentInput) || DEFAULT_PROFIT_PERCENT;
+                          return calculatePriceUsdFromCostAndProfit(costVal, profitVal);
+                        })())}
+                      </span>
+                    </div>
+                    {ivaType === 'con_iva' && (
+                      <div className="flex justify-between text-[9px]">
+                        <span className="text-black/60">+ IVA ({isNaN(ivaPercentage) ? 0 : ivaPercentage}%):</span>
+                        <span className="text-black/70">
+                          {formatUsd((() => {
+                            const costVal = parseFloat(costUsdInput) || 0;
+                            const profitVal = parseFloat(profitPercentInput) || DEFAULT_PROFIT_PERCENT;
+                            const priceUsd = calculatePriceUsdFromCostAndProfit(costVal, profitVal);
+                            return priceUsd * (isNaN(ivaPercentage) ? 0 : ivaPercentage) / 100;
+                          })())}
+                        </span>
+                      </div>
+                    )}
+                    <div className="flex justify-between text-[10px] pt-1 border-t mt-1">
+                      <span className="text-black/60">Precio Mayor USD:</span>
+                      <span className="font-black text-secondary">{formatUsd(parseFloat(priceWholesaleInput) || 0)}</span>
+                    </div>
+                    <div className="flex justify-between text-[10px]">
+                      <span className="text-black/60">Precio Costo USD:</span>
+                      <span className="font-black text-secondary">{formatUsd(parseFloat(priceCostInput) || 0)}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="bg-[#F5F5F5] p-3 border-t flex justify-end gap-2 mt-4">
+                <Button type="submit" disabled={isSubmittingProduct} className="bg-primary text-black font-black px-6 h-8 text-xs">
+                  {isSubmittingProduct ? <Loader2 size={14} className="animate-spin" /> : 'GUARDAR PRODUCTO'}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

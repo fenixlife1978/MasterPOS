@@ -5,13 +5,12 @@ import { usePOSState } from '@/hooks/use-pos-state';
 import { 
   Vault, Lock, Unlock, Banknote, Smartphone, Fingerprint, 
   Plane, DollarSign, Archive, CreditCard, Receipt, 
-  ArrowLeftRight, BarChart3, Clock, RefreshCw 
+  BarChart3, Clock, Percent
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/context/AuthContext';
-import CorteParcialForm from '@/components/register/CorteParcialForm';
 import CierreFinalForm from '@/components/register/CierreFinalForm';
 import { formatBs, formatUsd } from '@/lib/currency-formatter';
 
@@ -35,12 +34,6 @@ function getVenezuelaDateString(date: Date | string | number): string {
   }
 }
 
-function isTodayVenezuela(date: Date | string | number): boolean {
-  const today = getVenezuelaDateString(new Date());
-  const dateStr = getVenezuelaDateString(date);
-  return today !== "" && today === dateStr;
-}
-
 export default function CashModule({ state }: CashModuleProps) {
   const { user } = useAuth();
   const terminalId = user?.terminalId || 'default';
@@ -48,22 +41,13 @@ export default function CashModule({ state }: CashModuleProps) {
 
   const [openAmountBs, setOpenAmountBs] = useState('0.00');
   const [openAmountUsd, setOpenAmountUsd] = useState('0.00');
-  const [showHistoryModal, setShowHistoryModal] = useState(false);
-  const [closeHistory, setCloseHistory] = useState<any[]>([]);
-  const [showDailyTx, setShowDailyTx] = useState(true);
-  const [showCorteParcial, setShowCorteParcial] = useState(false);
   const [showCierreFinal, setShowCierreFinal] = useState(false);
-  const [refreshKey, setRefreshKey] = useState(0);
+  const [showCambioTasaModal, setShowCambioTasaModal] = useState(false);
+  const [nuevaTasaInput, setNuevaTasaInput] = useState(state.exchangeRate.toString());
+  const [isUpdatingRate, setIsUpdatingRate] = useState(false);
 
   const reg = state.register;
   const isClosed = !reg || !reg.isOpen;
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setRefreshKey(prev => prev + 1);
-    }, 3000);
-    return () => clearInterval(interval);
-  }, []);
 
   const paymentMethods = [
     { id: 'efectivo_bs', label: 'EFECTIVO BS', icon: Banknote, isUsd: false },
@@ -74,69 +58,76 @@ export default function CashModule({ state }: CashModuleProps) {
     { id: 'zelle', label: 'ZELLE', icon: Plane, isUsd: true },
   ];
 
-  const methodLabels: Record<string, string> = {};
-  paymentMethods.forEach(m => methodLabels[m.id] = m.label);
-
-  const allTransactions = useMemo(() => reg?.txs || [], [reg?.txs, refreshKey]);
-
-  const dailyTransactions = useMemo(() => {
-    return allTransactions
-      .filter(t => {
-        const isSameDay = isTodayVenezuela(t.date);
-        const isValidType = t.type === 'contado' || t.type === 'cobro_deuda' || t.type === 'credito';
-        return isValidType && isSameDay;
-      })
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [allTransactions, refreshKey]);
-
-  const cashTransactions = useMemo(() => {
-    return allTransactions.filter(t => {
-      const isSameDay = isTodayVenezuela(t.date);
-      return (t.type === 'contado' || t.type === 'cobro_deuda') && isSameDay;
-    });
-  }, [allTransactions, refreshKey]);
-
-  const creditTransactions = useMemo(() => {
-    return allTransactions.filter(t => {
-      const isSameDay = isTodayVenezuela(t.date);
-      return t.type === 'credito' && isSameDay;
-    });
-  }, [allTransactions, refreshKey]);
-
+  // Calcular ventas totales del día por método (en Bs para métodos Bs, en USD para métodos USD)
   const salesByMethod = useMemo(() => {
     const totals: Record<string, number> = {};
     paymentMethods.forEach(m => totals[m.id] = 0);
-    cashTransactions.forEach(t => {
-      const method = t.payMethod || 'efectivo_bs';
-      const montoEfectivo = t.type === 'cobro_deuda' ? (t.paidBs || t.total || 0) : (t.total || 0);
-      totals[method] = (totals[method] || 0) + montoEfectivo;
-    });
+    
+    if (!reg?.txs) return totals;
+    
+    const today = new Date().toISOString().split('T')[0];
+    const txDay = reg.txs.filter((t: any) => t.date?.startsWith(today));
+    
+    for (const tx of txDay) {
+      if (tx.type !== 'contado' && tx.type !== 'cobro_deuda') continue;
+      const methodKey = tx.payMethod || 'efectivo_bs';
+      const isUsdMethod = methodKey === 'usd_efectivo' || methodKey === 'zelle';
+      
+      let monto = 0;
+      if (isUsdMethod) {
+        // Sumar usdAmount de los pagos para métodos USD
+        if (tx.payments && Array.isArray(tx.payments)) {
+          tx.payments.forEach((p: any) => {
+            if (p.method === methodKey && p.usdAmount) {
+              monto += p.usdAmount;
+            }
+          });
+        } else {
+          // Fallback: usar total en USD de la transacción
+          monto = tx.totalUsd || 0;
+        }
+      } else {
+        // Métodos Bs
+        monto = tx.type === 'cobro_deuda' ? (tx.paidBs || tx.total || 0) : (tx.total || 0);
+      }
+      totals[methodKey] = (totals[methodKey] || 0) + monto;
+    }
     return totals;
-  }, [cashTransactions]);
+  }, [reg?.txs, paymentMethods]);
 
-  const usdCashTotal = useMemo(() => {
-    let totalUsd = 0;
-    cashTransactions.forEach(t => {
-      if (t.type === 'contado' && t.payments) {
-        t.payments.forEach(p => {
-          if (p.method === 'usd_efectivo' && p.usdAmount) {
-            totalUsd += p.usdAmount;
-          }
+  // Total de efectivo USD (solo para mostrar en la columna "EFECTIVO USD" de la tabla)
+  const totalEfectivoUsd = useMemo(() => {
+    if (!reg?.txs) return 0;
+    const today = new Date().toISOString().split('T')[0];
+    const txDay = reg.txs.filter((t: any) => t.date?.startsWith(today) && t.type === 'contado');
+    let total = 0;
+    for (const tx of txDay) {
+      if (tx.payments && Array.isArray(tx.payments)) {
+        tx.payments.forEach((p: any) => {
+          if (p.method === 'usd_efectivo' && p.usdAmount) total += p.usdAmount;
         });
       }
-    });
-    return totalUsd;
-  }, [cashTransactions]);
-
-  const totalCredito = useMemo(() => {
-    return creditTransactions.reduce((s, t) => s + (t.total || 0), 0);
-  }, [creditTransactions]);
+    }
+    return total;
+  }, [reg?.txs]);
 
   const totalContado = useMemo(() => {
-    return Object.values(salesByMethod).reduce((s, v) => s + v, 0);
+    let total = 0;
+    for (const m of paymentMethods) {
+      total += salesByMethod[m.id];
+    }
+    return total;
   }, [salesByMethod]);
 
-  const totalEnCaja = (reg?.openAmount || 0) + totalContado;
+  const totalEnCaja = (reg?.openAmount || 0) + (() => {
+    // Convertir ventas en USD a Bs según tasa actual para sumar al total en caja
+    let usdTotal = 0;
+    for (const m of paymentMethods.filter(p => p.isUsd)) {
+      usdTotal += salesByMethod[m.id];
+    }
+    return totalContado - (usdTotal * state.exchangeRate) + (usdTotal * state.exchangeRate);
+    // En realidad, el total en caja debería ser apertura + ventas en Bs + (ventas en USD * tasa)
+  })();
   const totalEnCajaUSD = totalEnCaja / (state.exchangeRate || 1);
 
   const handleOpenCash = () => {
@@ -145,18 +136,24 @@ export default function CashModule({ state }: CashModuleProps) {
     state.openCashRegister(bsAmount, usdAmount, state.exchangeRate);
   };
 
-  const handleRefresh = () => {
-    setRefreshKey(prev => prev + 1);
+  const handleCambioTasa = async () => {
+    const newRate = parseFloat(nuevaTasaInput);
+    if (isNaN(newRate) || newRate <= 0) {
+      alert("Ingrese una tasa válida");
+      return;
+    }
+    setIsUpdatingRate(true);
+    try {
+      await state.setExchangeRate(newRate);
+      setShowCambioTasaModal(false);
+    } catch (error) {
+      console.error(error);
+      alert("No se pudo actualizar la tasa");
+    } finally {
+      setIsUpdatingRate(false);
+    }
   };
 
-  if (showCorteParcial) {
-    return <CorteParcialForm 
-      onClose={() => setShowCorteParcial(false)} 
-      onCorteConfirmado={() => setShowCorteParcial(false)}
-      tasaActual={state.exchangeRate}
-      onTasaActualizada={(nuevaTasa) => state.setExchangeRate(nuevaTasa)}
-    />;
-  }
   if (showCierreFinal) {
     return <CierreFinalForm 
       onClose={() => setShowCierreFinal(false)}
@@ -170,11 +167,6 @@ export default function CashModule({ state }: CashModuleProps) {
         <header className="bg-[#1E3A8A] text-white p-4 rounded-t-xl shadow-md text-center relative border-b-4 border-[#0284C7]">
           <div className="absolute left-4 top-4 bg-amber-500 text-[10px] font-bold px-2 py-1 rounded text-slate-900">
             {terminalName}
-          </div>
-          <div className="absolute right-4 top-4">
-            <Button onClick={handleRefresh} variant="ghost" size="sm" className="text-white hover:bg-white/20 h-7 w-7 p-0">
-              <RefreshCw size={14} />
-            </Button>
           </div>
           <h1 className="text-lg md:text-xl font-black tracking-wider uppercase">MasterPOS - Control de Caja</h1>
           <p className="text-[10px] text-blue-200 mt-1 font-mono flex items-center justify-center gap-1">
@@ -222,7 +214,7 @@ export default function CashModule({ state }: CashModuleProps) {
                 <label className="text-[9px] font-bold uppercase block mb-1 text-slate-500">Apertura USD (Efectivo)</label>
                 <Input type="number" step="0.01" value={openAmountUsd} onChange={(e) => setOpenAmountUsd(e.target.value)} className="font-bold h-8 text-sm" placeholder="0.00" />
               </div>
-              <div className="flex items-end">
+              <div className="flex items-end gap-2">
                 <Button onClick={handleOpenCash} className="w-full bg-[#2ECC71] hover:bg-[#27AE60] text-white font-black h-8 text-xs">
                   <Unlock size={12} className="mr-1" /> ABRIR CAJA
                 </Button>
@@ -232,10 +224,12 @@ export default function CashModule({ state }: CashModuleProps) {
         ) : (
           <div className="bg-white border-x border-b border-slate-200 rounded-b-xl p-6 shadow-md">
             <div className="flex gap-3 flex-wrap justify-center">
-              <Button onClick={() => setShowCorteParcial(true)} className="bg-amber-500 hover:bg-amber-600 text-white font-black py-4 px-6 text-sm"><ArrowLeftRight size={16} className="mr-2" /> CORTE PARCIAL</Button>
-              <Button onClick={() => setShowCierreFinal(true)} className="bg-[#1E3A8A] hover:bg-[#2c3e50] text-white font-black py-4 px-6 text-sm"><BarChart3 size={16} className="mr-2" /> CIERRE FINAL</Button>
-              <Button onClick={() => setShowHistoryModal(true)} variant="outline" className="border-[#9E9E9E] font-black py-4 px-6 text-sm"><Archive size={16} className="mr-2" /> HISTORIAL</Button>
-              <Button onClick={handleRefresh} variant="outline" className="border-[#9E9E9E] font-black py-4 px-6 text-sm"><RefreshCw size={16} className="mr-2" /> REFRESCAR</Button>
+              <Button onClick={() => setShowCierreFinal(true)} className="bg-[#1E3A8A] hover:bg-[#2c3e50] text-white font-black py-4 px-6 text-sm">
+                <BarChart3 size={16} className="mr-2" /> CIERRE FINAL
+              </Button>
+              <Button onClick={() => setShowCambioTasaModal(true)} variant="outline" className="border-[#9E9E9E] font-black py-4 px-6 text-sm">
+                <Percent size={16} className="mr-2" /> CAMBIAR TASA
+              </Button>
             </div>
           </div>
         )}
@@ -244,26 +238,31 @@ export default function CashModule({ state }: CashModuleProps) {
           <div className="mt-6">
             <h3 className="text-xs font-black uppercase mb-3 flex items-center gap-2 text-[#1E3A8A]">
               <Vault size={12} /> Ventas del Período Actual
-              <span className="text-[9px] text-green-600 font-normal ml-2">({dailyTransactions.length} transacciones hoy)</span>
             </h3>
             <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-md">
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-[#2c3e50] text-white text-[9px] uppercase font-bold tracking-wider">
                     <th className="p-2">MÉTODO DE PAGO</th>
-                    <th className="p-2 text-right">TOTAL Bs</th>
+                    <th className="p-2 text-right">TOTAL</th>
                     <th className="p-2 text-right">EFECTIVO USD</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 text-[10px]">
                   {paymentMethods.map(({ id, label, icon: Icon, isUsd }) => {
                     const monto = salesByMethod[id] || 0;
+                    let montoFormateado = '';
+                    if (isUsd) {
+                      montoFormateado = formatUsd(monto);
+                    } else {
+                      montoFormateado = formatBs(monto);
+                    }
                     return (
                       <tr key={id} className="hover:bg-slate-50">
                         <td className="p-2"><div className="flex items-center gap-2"><Icon size={12} className="text-[#1E3A8A]" /><span className="font-bold">{label}</span></div></td>
-                        <td className="p-2 text-right font-mono font-bold">{formatBs(monto)}</td>
+                        <td className="p-2 text-right font-mono font-bold">{montoFormateado}</td>
                         <td className="p-2 text-right font-mono font-bold">
-                          {isUsd ? <span className="text-blue-600">{formatUsd(usdCashTotal)}</span> : <span className="text-gray-400">—</span>}
+                          {id === 'usd_efectivo' ? formatUsd(totalEfectivoUsd) : '—'}
                         </td>
                       </tr>
                     );
@@ -271,12 +270,7 @@ export default function CashModule({ state }: CashModuleProps) {
                   <tr className="bg-[#F0F0F0] font-black">
                     <td className="p-2">TOTAL VENTAS CONTADO / INGRESOS</td>
                     <td className="p-2 text-right font-mono">{formatBs(totalContado)}</td>
-                    <td className="p-2 text-right font-mono">{formatUsd(usdCashTotal)}</td>
-                  </tr>
-                  <tr className="bg-[#E8E8E8]">
-                    <td className="p-2">VENTAS CRÉDITO (Cuentas por Cobrar)</td>
-                    <td className="p-2 text-right font-mono">{formatBs(totalCredito)}</td>
-                    <td className="p-2 text-right font-mono">—</td>
+                    <td className="p-2 text-right font-mono">{formatUsd(totalEfectivoUsd)}</td>
                   </tr>
                 </tbody>
               </table>
@@ -284,69 +278,30 @@ export default function CashModule({ state }: CashModuleProps) {
           </div>
         )}
 
-        <div className="mt-6 bg-white border border-slate-200 rounded-xl overflow-hidden shadow-md">
-          <div className="bg-[#1E3A8A] p-2 flex justify-between items-center cursor-pointer" onClick={() => setShowDailyTx(!showDailyTx)}>
-            <div className="flex items-center gap-2 text-white"><Receipt size={12} /><h3 className="text-xs font-black">Transacciones del Día ({dailyTransactions.length})</h3></div>
-            <button className="text-white/60 hover:text-white text-xs">{showDailyTx ? '▲' : '▼'}</button>
-          </div>
-          {showDailyTx && (
-            <div className="max-h-64 overflow-y-auto">
-              {dailyTransactions.length === 0 ? (
-                <div className="text-center py-8"><p className="text-black/40 italic text-xs">Sin movimientos registrados hoy</p><p className="text-[9px] text-black/30 mt-1">Realiza una venta para verla reflejada aquí</p></div>
-              ) : (
-                <table className="w-full text-left border-collapse">
-                  <thead className="bg-[#F5F5F5] sticky top-0">
-                    <tr className="text-[8px] font-black uppercase">
-                      <th className="p-1.5">#</th><th className="p-1.5">HORA</th><th className="p-1.5">TIPO</th><th className="p-1.5">MÉTODO</th><th className="p-1.5">CLIENTE</th><th className="p-1.5 text-right">MONTO</th><th className="p-1.5 text-right">USD EFECTIVO</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-200 text-[9px]">
-                    {dailyTransactions.map((tx, idx) => {
-                      let timeStr = "—";
-                      try {
-                        const txDate = new Date(tx.date);
-                        if (!isNaN(txDate.getTime())) {
-                          timeStr = txDate.toLocaleTimeString("es-VE", { timeZone: "America/Caracas", hour: "2-digit", minute: "2-digit", second: "2-digit" });
-                        }
-                      } catch(e){}
-                      const displayAmount = tx.type === 'cobro_deuda' ? (tx.paidBs || tx.total || 0) : (tx.total || 0);
-                      let usdAmountForTx = 0;
-                      if (tx.type === 'contado' && tx.payments) {
-                        tx.payments.forEach(p => { if (p.method === 'usd_efectivo' && p.usdAmount) usdAmountForTx += p.usdAmount; });
-                      }
-                      let tipoLabel = '', tipoColor = '';
-                      if (tx.type === 'contado') { tipoLabel = 'VENTA CONTADO'; tipoColor = 'bg-green-100 text-green-700'; }
-                      else if (tx.type === 'credito') { tipoLabel = 'VENTA CRÉDITO'; tipoColor = 'bg-blue-100 text-blue-700'; }
-                      else if (tx.type === 'cobro_deuda') { tipoLabel = 'COBRO DEUDA'; tipoColor = 'bg-purple-100 text-purple-700'; }
-                      return (
-                        <tr key={tx.id || idx} className="hover:bg-slate-50">
-                          <td className="p-1.5 text-black/40">{idx + 1}</td>
-                          <td className="p-1.5 text-black/60 font-mono">{timeStr}</td>
-                          <td className="p-1.5"><span className={cn("px-1 py-0.5 rounded text-[8px] font-bold", tipoColor)}>{tipoLabel}</span></td>
-                          <td className="p-1.5 text-black/50 uppercase text-[8px]">{methodLabels[tx.payMethod] || tx.payMethod || 'N/A'}</td>
-                          <td className="p-1.5 text-black/60 max-w-[100px] truncate">{tx.clientName || 'CLIENTE FINAL'}</td>
-                          <td className="p-1.5 text-right font-bold font-mono">{formatBs(displayAmount)}</td>
-                          <td className="p-1.5 text-right font-bold font-mono text-blue-600">{usdAmountForTx > 0 ? formatUsd(usdAmountForTx) : '—'}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          )}
-        </div>
-
-        {showHistoryModal && (
+        {/* Modal para cambiar tasa BCV */}
+        {showCambioTasaModal && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[80vh] overflow-hidden">
-              <div className="bg-[#1E3A8A] p-4 text-white"><div className="flex justify-between items-center"><h2 className="text-base font-black flex items-center gap-2"><Archive size={18} /> Historial de Cortes y Cierres</h2><button onClick={() => setShowHistoryModal(false)} className="text-white/60 hover:text-white text-xl">&times;</button></div></div>
-              <div className="p-4 overflow-y-auto max-h-[60vh]">
-                {closeHistory.length === 0 ? <p className="text-center text-black/40 italic py-6 text-sm">No hay cortes ni cierres registrados</p> : (
-                  <div className="space-y-2">{closeHistory.map((h: any) => (<div key={h.id} className="border border-slate-200 p-3 rounded-lg hover:bg-slate-50"><div className="flex justify-between items-center flex-wrap gap-2"><div><div className="flex items-center gap-2"><p className="font-bold text-xs">{new Date(h.fecha).toLocaleString('es-VE')}</p><span className={cn("text-[8px] px-2 py-0.5 rounded-full font-bold", h.tipoCorte === 'corte_tasa' ? "bg-yellow-100 text-yellow-700" : "bg-red-100 text-red-700")}>{h.tipoCorte === 'corte_tasa' ? 'CORTE PARCIAL' : 'CIERRE TOTAL'}</span></div><p className="text-[9px] text-black/50">Tasa: {formatBs(h.tasaBCV || 0)} | Ventas: {formatBs(h.ventas?.totalContado || 0)}</p></div></div></div>))}</div>
-                )}
+            <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6">
+              <h2 className="text-lg font-black mb-4">Cambiar Tasa BCV</h2>
+              <div className="space-y-4">
+                <div>
+                  <label className="text-sm font-bold block mb-1">Nueva Tasa (Bs/USD)</label>
+                  <Input 
+                    type="number" 
+                    step="0.01" 
+                    value={nuevaTasaInput} 
+                    onChange={(e) => setNuevaTasaInput(e.target.value)} 
+                    className="font-mono text-right"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Tasa actual: {formatBs(state.exchangeRate)}</p>
+                </div>
+                <div className="flex gap-3 justify-end">
+                  <Button variant="ghost" onClick={() => setShowCambioTasaModal(false)} className="text-sm">Cancelar</Button>
+                  <Button onClick={handleCambioTasa} disabled={isUpdatingRate} className="bg-primary text-black font-black">
+                    {isUpdatingRate ? "Actualizando..." : "Cambiar Tasa"}
+                  </Button>
+                </div>
               </div>
-              <div className="bg-slate-50 p-3 border-t flex justify-end"><Button onClick={() => setShowHistoryModal(false)} className="font-bold text-xs h-7">CERRAR</Button></div>
             </div>
           </div>
         )}

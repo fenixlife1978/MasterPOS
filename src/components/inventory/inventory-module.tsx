@@ -240,16 +240,21 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
       
       const grouped: Record<number, KardexEntry[]> = {};
       uniqueEntries.forEach(entry => {
-        if (!grouped[entry.productId]) grouped[entry.productId] = [];
+        const productIdNum = Number(entry.productId);
+        if (!grouped[productIdNum]) grouped[productIdNum] = [];
         // ✅ Verificar que no exista ya una entrada con el mismo ID
-        if (!grouped[entry.productId].some(e => e.id === entry.id)) {
-          grouped[entry.productId].push(entry);
+        if (!grouped[productIdNum].some(e => e.id === entry.id)) {
+          grouped[productIdNum].push(entry);
         }
       });
       
-      // ✅ Ordenar cada grupo por fecha
-      Object.keys(grouped).forEach(productId => {
-        grouped[Number(productId)].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      // ✅ Ordenar cada grupo por fecha (con verificación de existencia)
+      Object.keys(grouped).forEach(productIdKey => {
+        const pid = Number(productIdKey);
+        const arr = grouped[pid];
+        if (arr && Array.isArray(arr)) {
+          arr.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        }
       });
       
       setKardexEntries(grouped);
@@ -271,7 +276,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
   
   const getProductMinStock = (product: Product) => product.minStock || 5;
   
-  // ✅ Función para exportar Kardex a PDF
+  // ✅ Función para exportar Kardex a PDF (actualizada al nuevo formato)
   const exportKardexToPDF = (product: Product) => {
     const entries = getKardexForProduct(product.id);
     const printWindow = window.open('', '_blank');
@@ -303,7 +308,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
             <p><strong>Código:</strong> ${product.barcode}</p>
             <p><strong>Categoría:</strong> ${product.category}</p>
             <p><strong>Stock Actual:</strong> ${product.stock} UDS</p>
-            <p><strong>Costo Actual:</strong> ${formatUsd(product.costUsd || 0, 4)}</p>
+            <p><strong>Costo Promedio Actual:</strong> ${formatUsd(product.costUsd || 0, 4)}</p>
             <p><strong>Fecha:</strong> ${new Date().toLocaleString('es-VE')}</p>
           </div>
           <table>
@@ -311,25 +316,42 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
               <tr>
                 <th>FECHA</th>
                 <th>TIPO</th>
-                <th class="text-right">CANTIDAD</th>
-                <th class="text-right">COSTO $</th>
-                <th class="text-right">STOCK PREVIO</th>
-                <th class="text-right">STOCK NUEVO</th>
-                <th>MOTIVO</th>
+                <th>DETALLE</th>
+                <th class="text-right">ENTRADA</th>
+                <th class="text-right">SALIDA</th>
+                <th class="text-right">SALDO</th>
+                <th class="text-right">COSTO PROM.</th>
               </tr>
             </thead>
             <tbody>
-              ${entries.map(entry => `
-                <tr>
-                  <td>${entry.date}</td>
-                  <td>${entry.type !== 'compra' && entry.type !== 'ajuste_inicial' && entry.type !== 'devolucion' ? 'VENTA' : entry.type === 'compra' ? 'COMPRA' : entry.type === 'devolucion' ? 'DEVOLUCIÓN' : 'AJUSTE'}</td>
-                  <td class="text-right">${entry.quantity > 0 ? `+${entry.quantity}` : entry.quantity}</td>
-                  <td class="text-right">${entry.costUsd ? formatUsd(entry.costUsd, 4) : '-'}</td>
-                  <td class="text-right">${entry.previousStock}</td>
-                  <td class="text-right">${entry.newStock}</td>
-                  <td>${entry.note || entry.reference}</td>
-                </tr>
-              `).join('')}
+              ${entries.map(entry => {
+                let entrada = 0;
+                let salida = 0;
+                const absQty = Math.abs(entry.quantity);
+                if (entry.type !== 'compra' && entry.type !== 'ajuste_inicial' && entry.type !== 'devolucion') {
+                  salida = absQty;
+                } else {
+                  entrada = absQty;
+                }
+                let displayType = '';
+                if (entry.type !== 'compra' && entry.type !== 'ajuste_inicial' && entry.type !== 'devolucion') displayType = 'VENTA';
+                else if (entry.type === 'compra') displayType = 'COMPRA';
+                else if (entry.type === 'ajuste_inicial') displayType = 'INICIAL';
+                else if (entry.type === 'devolucion') displayType = 'DEVOLUCIÓN';
+                else displayType = 'AJUSTE';
+                let detalle = entry.reference || entry.note || '';
+                return `
+                  <tr>
+                    <td>${entry.date}</td>
+                    <td>${displayType}</td>
+                    <td>${detalle}</td>
+                    <td class="text-right">${entrada > 0 ? entrada : '-'}</td>
+                    <td class="text-right">${salida > 0 ? salida : '-'}</td>
+                    <td class="text-right">${entry.newStock}</td>
+                    <td class="text-right">${entry.costUsd ? formatUsdNumber(entry.costUsd, 4) : '-'}</td>
+                  </tr>
+                `;
+              }).join('')}
               ${entries.length === 0 ? '<tr><td colspan="7" class="text-center">No hay movimientos registrados</td></tr>' : ''}
             </tbody>
           </table>
@@ -342,11 +364,11 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
     setTimeout(() => { printWindow.print(); printWindow.close(); }, 500);
   };
   
-  // ✅ Función para compartir Kardex como PDF
+  // ✅ Función para compartir Kardex como PDF (actualizada)
   const shareKardexPDF = (product: Product) => {
     if (navigator.share) {
       const entries = getKardexForProduct(product.id);
-      const content = `Kardex - ${product.name}\nStock Actual: ${product.stock} UDS\nCosto Actual: ${formatUsd(product.costUsd || 0, 4)}\n\nMovimientos:\n${entries.map(e => `${e.date} - ${e.type}: ${e.quantity} uds (Stock: ${e.previousStock} → ${e.newStock})`).join('\n')}`;
+      const content = `Kardex - ${product.name}\nStock Actual: ${product.stock} UDS\nCosto Promedio Actual: ${formatUsd(product.costUsd || 0, 4)}\n\nMovimientos:\n${entries.map(e => `${e.date} - ${e.type}: cantidad ${e.quantity} uds (Saldo: ${e.newStock})`).join('\n')}`;
       navigator.share({
         title: `Kardex - ${product.name}`,
         text: content,
@@ -356,24 +378,34 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
     }
   };
   
-  // ✅ Función para exportar Kardex a Excel
+  // ✅ Función para exportar Kardex a Excel (actualizada al nuevo formato)
   const exportKardexToExcel = (product: Product) => {
     const entries = getKardexForProduct(product.id);
-    const data = entries.map(entry => ({
-      FECHA: entry.date,
-      TIPO: entry.type !== 'compra' && entry.type !== 'ajuste_inicial' && entry.type !== 'devolucion' ? 'VENTA' : entry.type === 'compra' ? 'COMPRA' : entry.type === 'devolucion' ? 'DEVOLUCIÓN' : 'AJUSTE',
-      CANTIDAD: entry.quantity,
-      COSTO_USD: entry.costUsd || 0,
-      STOCK_PREVIO: entry.previousStock,
-      STOCK_NUEVO: entry.newStock,
-      MOTIVO: entry.note || entry.reference,
-    }));
-    
+    const data = entries.map(entry => {
+      let entrada = 0, salida = 0;
+      const absQty = Math.abs(entry.quantity);
+      if (entry.type !== 'compra' && entry.type !== 'ajuste_inicial' && entry.type !== 'devolucion') salida = absQty;
+      else entrada = absQty;
+      let displayType = '';
+      if (entry.type !== 'compra' && entry.type !== 'ajuste_inicial' && entry.type !== 'devolucion') displayType = 'VENTA';
+      else if (entry.type === 'compra') displayType = 'COMPRA';
+      else if (entry.type === 'ajuste_inicial') displayType = 'INICIAL';
+      else if (entry.type === 'devolucion') displayType = 'DEVOLUCIÓN';
+      else displayType = 'AJUSTE';
+      return {
+        FECHA: entry.date,
+        TIPO: displayType,
+        DETALLE: entry.reference || entry.note || '',
+        ENTRADA: entrada > 0 ? entrada : '-',
+        SALIDA: salida > 0 ? salida : '-',
+        SALDO: entry.newStock,
+        COSTO_PROMEDIO: entry.costUsd ? entry.costUsd : '-',
+      };
+    });
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, `Kardex_${product.name}`);
     XLSX.writeFile(wb, `Kardex_${product.name}_${new Date().toISOString().split('T')[0]}.xlsx`);
-    
     toast({ title: "Exportado", description: "Kardex exportado a Excel correctamente" });
   };
   
@@ -750,7 +782,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
             <span class="bold">RESUMEN:</span> ${pdfProducts.length} productos listados | 
             Total ítems en stock: ${pdfProducts.reduce((s, p) => s + p.stock, 0)}
           </div>
-          </table>
+          <table>
             <thead>
               <tr>
                 <th>CÓDIGO</th>
@@ -1274,26 +1306,28 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredAdjustments.map((adj, idx) => (
-                    <tr key={`${adj.id}_${idx}`} className="border-b border-gray-100 hover:bg-gray-50">
-                      <td className="p-2 whitespace-nowrap text-[11px] font-mono">{new Date(adj.date).toLocaleString('es-VE')}</td>
-                      <td className="p-2">
-                        <div className="font-bold">{adj.productName}</div>
-                        <div className="text-[9px] text-black/50">{adj.productBarcode}</div>
-                      </td>
-                      <td className="p-2 text-center">
-                        <span className={cn("px-2 py-0.5 rounded-full text-[9px] font-bold", adj.quantity > 0 ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700")}>
-                          {adj.quantity > 0 ? "INGRESO" : "EGRESO"}
-                        </span>
-                      </td>
-                      <td className="p-2 text-right font-mono">{Math.abs(adj.quantity)} uds</td>
-                      <td className="p-2 text-right font-mono">{formatUsd(adj.costUsd || 0, 4)}</td>
-                      <td className="p-2 text-right font-mono font-bold">{formatBs(Math.abs(adj.quantity) * (adj.costUsd || 0) * state.exchangeRate)}</td>
-                      <td className="p-2 text-left max-w-[200px] truncate" title={adj.note || adj.reference}>
-                        {adj.note || adj.reference}
-                      </td>
-                    </tr>
-                  ))}
+                  {filteredAdjustments.map((adj, idx) => {
+                    return (
+                      <tr key={`${adj.id}_${idx}`} className="border-b border-gray-100 hover:bg-gray-50">
+                        <td className="p-2 whitespace-nowrap text-[11px] font-mono">{new Date(adj.date).toLocaleString('es-VE')}</td>
+                        <td className="p-2">
+                          <div className="font-bold">{adj.productName}</div>
+                          <div className="text-[9px] text-black/50">{adj.productBarcode}</div>
+                        </td>
+                        <td className="p-2 text-center">
+                          <span className={cn("px-2 py-0.5 rounded-full text-[9px] font-bold", adj.quantity > 0 ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700")}>
+                            {adj.quantity > 0 ? "INGRESO" : "EGRESO"}
+                          </span>
+                        </td>
+                        <td className="p-2 text-right font-mono">{Math.abs(adj.quantity)} uds</td>
+                        <td className="p-2 text-right font-mono">{formatUsd(adj.costUsd || 0, 4)}</td>
+                        <td className="p-2 text-right font-mono font-bold">{formatBs(Math.abs(adj.quantity) * (adj.costUsd || 0) * state.exchangeRate)}</td>
+                        <td className="p-2 text-left max-w-[200px] truncate" title={adj.note || adj.reference}>
+                          {adj.note || adj.reference}
+                        </td>
+                      </tr>
+                    );
+                  })}
                   {filteredAdjustments.length === 0 && (
                     <tr>
                       <td colSpan={7} className="p-4 text-center text-black/40 italic">No hay ajustes manuales en el período seleccionado</td>
@@ -1408,7 +1442,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
         </Dialog>
       )}
       
-      {/* Modal de Kardex - MEJORADO: incluye DEVOLUCIONES */}
+      {/* ✅ MODAL DE KARDEX - NUEVO FORMATO (FECHA, TIPO, DETALLE, ENTRADA, SALIDA, SALDO, COSTO PROM.) */}
       {viewingKardex && (
         <Dialog open={true} onOpenChange={() => setViewingKardex(null)}>
           <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-6xl w-[95vw] p-0 overflow-hidden rounded-xl shadow-xl max-h-[90vh] flex flex-col">
@@ -1449,9 +1483,8 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                 </div>
               </div>
             </DialogHeader>
-            
             <div className="p-5 overflow-y-auto flex-1 bg-gray-50">
-              {/* Tarjetas de resumen mejoradas - MÁS GRANDES */}
+              {/* Tarjetas de resumen */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                 <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl p-4 shadow-sm border border-green-200">
                   <p className="text-[11px] font-black uppercase text-green-700 tracking-wider">📦 STOCK ACTUAL</p>
@@ -1460,7 +1493,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                   </p>
                 </div>
                 <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-4 shadow-sm border border-blue-200">
-                  <p className="text-[11px] font-black uppercase text-blue-700 tracking-wider">💰 COSTO ACTUAL</p>
+                  <p className="text-[11px] font-black uppercase text-blue-700 tracking-wider">💰 COSTO PROMEDIO ACTUAL</p>
                   <p className="text-3xl font-black text-blue-700 mt-1">{formatUsd(viewingKardex.costUsd || 0, 4)}</p>
                 </div>
                 <div className="bg-gradient-to-br from-amber-50 to-amber-100 rounded-xl p-4 shadow-sm border border-amber-200">
@@ -1469,7 +1502,6 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                 </div>
               </div>
               
-              {/* Tabla con scroll horizontal - INCLUYE DEVOLUCIONES */}
               <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
                 <div className="overflow-x-auto">
                   <table className="w-full text-left min-w-[900px]">
@@ -1477,64 +1509,46 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                       <tr>
                         <th className="p-3 text-[12px] font-black uppercase text-gray-700 whitespace-nowrap">FECHA</th>
                         <th className="p-3 text-[12px] font-black uppercase text-gray-700 whitespace-nowrap">TIPO</th>
-                        <th className="p-3 text-[12px] font-black uppercase text-gray-700 text-right whitespace-nowrap">CANTIDAD</th>
-                        <th className="p-3 text-[12px] font-black uppercase text-gray-700 text-right whitespace-nowrap">COSTO $</th>
-                        <th className="p-3 text-[12px] font-black uppercase text-gray-700 text-right whitespace-nowrap">STOCK PREVIO</th>
-                        <th className="p-3 text-[12px] font-black uppercase text-gray-700 text-right whitespace-nowrap">STOCK NUEVO</th>
-                        <th className="p-3 text-[12px] font-black uppercase text-gray-700 whitespace-nowrap">MOTIVO</th>
+                        <th className="p-3 text-[12px] font-black uppercase text-gray-700 whitespace-nowrap">DETALLE</th>
+                        <th className="p-3 text-[12px] font-black uppercase text-gray-700 text-right whitespace-nowrap">ENTRADA</th>
+                        <th className="p-3 text-[12px] font-black uppercase text-gray-700 text-right whitespace-nowrap">SALIDA</th>
+                        <th className="p-3 text-[12px] font-black uppercase text-gray-700 text-right whitespace-nowrap">SALDO</th>
+                        <th className="p-3 text-[12px] font-black uppercase text-gray-700 text-right whitespace-nowrap">COSTO PROM.</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                       {(() => {
                         const entries = getKardexForProduct(viewingKardex.id);
-                        const sortedEntries = [...entries].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+                        // Orden cronológico ascendente para mostrar secuencia
+                        const sortedEntries = [...entries].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
                         
                         return sortedEntries.map((entry, idx) => {
-                          let quantityDisplay = '';
-                          let quantityClass = '';
+                          let entrada = 0, salida = 0;
+                          const absQty = Math.abs(entry.quantity);
+                          if (entry.type !== 'compra' && entry.type !== 'ajuste_inicial' && entry.type !== 'devolucion') {
+                            salida = absQty;
+                          } else {
+                            entrada = absQty;
+                          }
                           let displayType = '';
                           let badgeColor = '';
-                          
                           if (entry.type !== 'compra' && entry.type !== 'ajuste_inicial' && entry.type !== 'devolucion') {
-                            const absQty = Math.abs(entry.quantity);
-                            quantityDisplay = `-${absQty.toLocaleString('es-VE')}`;
-                            quantityClass = "text-red-600";
                             displayType = 'VENTA';
                             badgeColor = "bg-red-100 text-red-700";
                           } else if (entry.type === 'compra') {
-                            const absQty = Math.abs(entry.quantity);
-                            quantityDisplay = `+${absQty.toLocaleString('es-VE')}`;
-                            quantityClass = "text-green-600";
                             displayType = 'COMPRA';
                             badgeColor = "bg-green-100 text-green-700";
                           } else if (entry.type === 'ajuste_inicial') {
-                            const absQty = Math.abs(entry.quantity);
-                            quantityDisplay = `+${absQty.toLocaleString('es-VE')}`;
-                            quantityClass = "text-green-600";
-                            displayType = 'AJUSTE INICIAL';
+                            displayType = 'INICIAL';
                             badgeColor = "bg-blue-100 text-blue-700";
                           } else if (entry.type === 'devolucion') {
-                            const absQty = Math.abs(entry.quantity);
-                            quantityDisplay = `+${absQty.toLocaleString('es-VE')}`;
-                            quantityClass = "text-green-600";
                             displayType = 'DEVOLUCIÓN';
                             badgeColor = "bg-purple-100 text-purple-700";
                           } else {
-                            // Ajustes manuales y otros tipos
-                            if (entry.quantity > 0) {
-                              quantityDisplay = `+${entry.quantity.toLocaleString('es-VE')}`;
-                              quantityClass = "text-green-600";
-                            } else if (entry.quantity < 0) {
-                              quantityDisplay = `${entry.quantity.toLocaleString('es-VE')}`;
-                              quantityClass = "text-red-600";
-                            } else {
-                              quantityDisplay = '0';
-                              quantityClass = "text-gray-500";
-                            }
-                            displayType = 'AJUSTE MANUAL';
+                            displayType = entry.quantity > 0 ? 'AJUSTE (+)': 'AJUSTE (-)';
                             badgeColor = "bg-orange-100 text-orange-700";
                           }
-                          
+                          let detalle = entry.reference || entry.note || '';
                           let formattedDate = '';
                           try {
                             const dateObj = new Date(entry.date);
@@ -1563,23 +1577,20 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                                   {displayType}
                                 </span>
                               </td>
-                              <td className={cn(
-                                "p-3 text-right font-mono text-[13px] font-black whitespace-nowrap",
-                                quantityClass
-                              )}>
-                                {quantityDisplay}
+                              <td className="p-3 text-[11px] text-gray-600 max-w-[250px] truncate whitespace-nowrap">
+                                {detalle}
+                              </td>
+                              <td className="p-3 text-right font-mono text-[13px] font-black text-green-600 whitespace-nowrap">
+                                {entrada > 0 ? entrada.toLocaleString('es-VE') : '-'}
+                              </td>
+                              <td className="p-3 text-right font-mono text-[13px] font-black text-red-600 whitespace-nowrap">
+                                {salida > 0 ? salida.toLocaleString('es-VE') : '-'}
+                              </td>
+                              <td className="p-3 text-right font-mono text-[13px] font-black text-blue-700 whitespace-nowrap">
+                                {entry.newStock.toLocaleString('es-VE')}
                               </td>
                               <td className="p-3 text-right font-mono text-[12px] font-bold text-gray-800 whitespace-nowrap">
                                 {entry.costUsd ? formatUsd(entry.costUsd, 4) : '-'}
-                              </td>
-                              <td className="p-3 text-right font-mono text-[12px] font-semibold text-gray-600 whitespace-nowrap">
-                                {entry.previousStock.toLocaleString('es-VE')}
-                              </td>
-                              <td className="p-3 text-right font-mono text-[12px] font-black text-blue-700 whitespace-nowrap">
-                                {entry.newStock.toLocaleString('es-VE')}
-                              </td>
-                              <td className="p-3 text-[11px] text-gray-500 max-w-[250px] truncate whitespace-nowrap">
-                                {entry.note || entry.reference}
                               </td>
                             </tr>
                           );
@@ -1596,13 +1607,10 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                   </table>
                 </div>
               </div>
-              
-              {/* Leyenda informativa */}
               <div className="mt-4 text-[10px] text-gray-400 text-center border-t pt-3">
                 Los movimientos reflejan el historial completo de inventario del producto
               </div>
             </div>
-            
             <div className="bg-gray-100 p-3 border-t flex justify-end">
               <Button onClick={() => setViewingKardex(null)} variant="ghost" className="text-sm font-bold px-5">
                 CERRAR

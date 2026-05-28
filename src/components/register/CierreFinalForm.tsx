@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { usePOSState } from '@/hooks/use-pos-state';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,6 +15,29 @@ interface CierreFinalFormProps {
   tasaActual: number;
 }
 
+function getVenezuelaHour(dateStr: string): number {
+  try {
+    const d = new Date(dateStr);
+    const formatter = new Intl.DateTimeFormat('es-VE', {
+      timeZone: 'America/Caracas',
+      hour: '2-digit',
+      hour12: false
+    });
+    return parseInt(formatter.format(d));
+  } catch {
+    return 12;
+  }
+}
+
+function getVenezuelaTimeString(dateStr: string): string {
+  try {
+    const d = new Date(dateStr);
+    return d.toLocaleTimeString('es-VE', { timeZone: 'America/Caracas', hour: '2-digit', minute: '2-digit' });
+  } catch {
+    return '';
+  }
+}
+
 export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalFormProps) {
   const state = usePOSState();
   const { user } = useAuth();
@@ -25,11 +48,17 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showResumenModal, setShowResumenModal] = useState(false);
   const [closeReportData, setCloseReportData] = useState<any>(null);
-  const [aperturaOriginalBs, setAperturaOriginalBs] = useState(0);
-  const [aperturaOriginalUsd, setAperturaOriginalUsd] = useState(0);
-
-  // ✅ Obtener sesión activa y método de cierre desde el estado global
   const { currentSession, closeCashSession } = state;
+
+  // Estados para los dos bloques: MAÑANA y TARDE
+  const [morningRate, setMorningRate] = useState<number | null>(null);
+  const [eveningRate, setEveningRate] = useState<number | null>(null);
+  const [morningFirstTxTime, setMorningFirstTxTime] = useState<string>('');
+  const [eveningFirstTxTime, setEveningFirstTxTime] = useState<string>('');
+  const [ventasManana, setVentasManana] = useState<Record<string, number>>({});
+  const [vueltosManana, setVueltosManana] = useState<Record<string, number>>({});
+  const [ventasTarde, setVentasTarde] = useState<Record<string, number>>({});
+  const [vueltosTarde, setVueltosTarde] = useState<Record<string, number>>({});
 
   useEffect(() => {
     if (state.register) {
@@ -37,389 +66,229 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
     } else {
       const cached = localStorage.getItem(`pos_register_${terminalId}`);
       if (cached) {
-        try {
-          setRegister(JSON.parse(cached));
-        } catch(e) {}
+        try { setRegister(JSON.parse(cached)); } catch(e) {}
       }
     }
   }, [state.register, terminalId]);
 
+  // Procesar transacciones del día, separar por mañana/tarde y detectar tasas
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    let firstCorte: any = null;
-    let earliestTimestamp = Infinity;
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key?.startsWith('corte_parcial_')) {
-        try {
-          const data = JSON.parse(localStorage.getItem(key)!);
-          if (new Date(data.fecha).toDateString() === new Date().toDateString()) {
-            if (data.id < earliestTimestamp) {
-              earliestTimestamp = data.id;
-              firstCorte = data;
-            }
+    if (!register?.txs) return;
+    const today = new Date().toISOString().split('T')[0];
+    const txDay = register.txs.filter((t: any) => t.date?.startsWith(today));
+    
+    // Encontrar la primera tasa del día (mañana) y la última tasa (tarde)
+    // Además, registrar la hora de la primera transacción de cada período
+    let firstRate: number | null = null;
+    let lastRate: number | null = null;
+    let firstRateTime = '';
+    let lastRateTime = '';
+    
+    // Acumular ventas y vueltos por período
+    const ventasAM: Record<string, number> = {};
+    const vueltosAM: Record<string, number> = {};
+    const ventasPM: Record<string, number> = {};
+    const vueltosPM: Record<string, number> = {};
+    
+    const methods = ['efectivo_bs', 'usd_efectivo', 'tarjeta', 'biopago', 'pago_movil', 'zelle'];
+    methods.forEach(m => {
+      ventasAM[m] = 0;
+      vueltosAM[m] = 0;
+      ventasPM[m] = 0;
+      vueltosPM[m] = 0;
+    });
+
+    // Ordenar transacciones por fecha para obtener la primera y la última tasa
+    const sortedByDate = [...txDay].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    
+    for (const tx of sortedByDate) {
+      if (tx.type !== 'contado' && tx.type !== 'cobro_deuda') continue;
+      const rate = tx.exchangeRate || tasaActual;
+      if (firstRate === null) {
+        firstRate = rate;
+        firstRateTime = tx.date;
+      }
+      lastRate = rate;
+      lastRateTime = tx.date;
+    }
+    
+    if (firstRate !== null) setMorningRate(firstRate);
+    if (lastRate !== null) setEveningRate(lastRate);
+    setMorningFirstTxTime(firstRateTime);
+    setEveningFirstTxTime(lastRateTime);
+    
+    // Ahora asignar cada transacción a mañana (hora < 12:00) o tarde (hora >= 12:00)
+    for (const tx of txDay) {
+      if (tx.type !== 'contado' && tx.type !== 'cobro_deuda') continue;
+      const hour = getVenezuelaHour(tx.date);
+      const isMorning = hour < 12;
+      
+      const methodKey = tx.payMethod || 'efectivo_bs';
+      const isUsdMethod = methodKey === 'usd_efectivo' || methodKey === 'zelle';
+      
+      // Calcular ventas
+      let ventaMonto = 0;
+      if (isUsdMethod) {
+        if (tx.payments && Array.isArray(tx.payments)) {
+          tx.payments.forEach((p: any) => {
+            if (p.method === methodKey && p.usdAmount) ventaMonto += p.usdAmount;
+          });
+        } else {
+          ventaMonto = tx.totalUsd || 0;
+        }
+      } else {
+        ventaMonto = tx.type === 'cobro_deuda' ? (tx.paidBs || tx.total || 0) : (tx.total || 0);
+      }
+      
+      // Calcular vueltos
+      const change = tx.change || 0;
+      if (isMorning) {
+        ventasAM[methodKey] += ventaMonto;
+        if (change > 0) {
+          if (isUsdMethod) {
+            // Vuelto en Bs afecta a efectivo_bs
+            vueltosAM['efectivo_bs'] += change;
+          } else {
+            vueltosAM[methodKey] += change;
           }
-        } catch(e) {}
+        }
+      } else {
+        ventasPM[methodKey] += ventaMonto;
+        if (change > 0) {
+          if (isUsdMethod) {
+            vueltosPM['efectivo_bs'] += change;
+          } else {
+            vueltosPM[methodKey] += change;
+          }
+        }
+      }
+      
+      // También revisar pagos negativos
+      if (tx.payments && Array.isArray(tx.payments)) {
+        tx.payments.forEach((p: any) => {
+          if (p.amount && p.amount < 0) {
+            const absAmount = Math.abs(p.amount);
+            if (isMorning) vueltosAM[p.method] = (vueltosAM[p.method] || 0) + absAmount;
+            else vueltosPM[p.method] = (vueltosPM[p.method] || 0) + absAmount;
+          }
+          if (p.usdAmount && p.usdAmount < 0) {
+            const absUsd = Math.abs(p.usdAmount);
+            if (isMorning) vueltosAM[p.method] = (vueltosAM[p.method] || 0) + absUsd;
+            else vueltosPM[p.method] = (vueltosPM[p.method] || 0) + absUsd;
+          }
+        });
       }
     }
-    if (firstCorte?.apertura) {
-      setAperturaOriginalBs(firstCorte.apertura.montoBs || 0);
-      setAperturaOriginalUsd(firstCorte.apertura.montoUsd || 0);
-    } else if (register) {
-      setAperturaOriginalBs(register.openAmountBs || 0);
-      setAperturaOriginalUsd(register.openAmountUsd || 0);
-    }
-  }, [register]);
+    
+    setVentasManana(ventasAM);
+    setVueltosManana(vueltosAM);
+    setVentasTarde(ventasPM);
+    setVueltosTarde(vueltosPM);
+  }, [register, tasaActual]);
 
-  const corteParcial = useMemo(() => {
-    if (typeof window === 'undefined') return null;
-    let latestCorte: any = null;
-    let latestTimestamp = -1;
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key?.startsWith('corte_parcial_')) {
-        try {
-          const data = JSON.parse(localStorage.getItem(key)!);
-          if (new Date(data.fecha).toDateString() === new Date().toDateString()) {
-            if (data.id > latestTimestamp) {
-              latestTimestamp = data.id;
-              latestCorte = data;
-            }
-          }
-        } catch(e) {}
-      }
-    }
-    return latestCorte;
-  }, []);
-
-  const tasaP1 = corteParcial?.tasaBCV || tasaActual;
-  const tasaP2 = tasaActual;
-  const aperturaBs = aperturaOriginalBs;
-  const aperturaUsd = aperturaOriginalUsd;
-
-  const paymentMethods = [
-    { id: 1, metodo: 'EFECTIVO BS', key: 'efectivo_bs', isUsd: false },
-    { id: 2, metodo: 'EFECTIVO USD', key: 'usd_efectivo', isUsd: true },
-    { id: 3, metodo: 'TARJETA', key: 'tarjeta', isUsd: false },
-    { id: 4, metodo: 'BIOPAGO', key: 'biopago', isUsd: false },
-    { id: 5, metodo: 'PAGO MÓVIL', key: 'pago_movil', isUsd: false },
-    { id: 6, metodo: 'ZELLE', key: 'zelle', isUsd: true },
-  ];
-
-  // Ventas TOTALES del día (contado + cobro deuda) en Bs
-  const salesTotals = useMemo(() => {
-    const totals: Record<string, number> = {};
-    paymentMethods.forEach(m => totals[m.key] = 0);
-    if (register?.txs && Array.isArray(register.txs)) {
-      register.txs.forEach((t: any) => {
-        const txDate = new Date(t.date);
-        const today = new Date();
-        const isToday = txDate.toDateString() === today.toDateString();
-        if (!isToday) return;
-        if (t.type === 'contado') {
-          const method = t.payMethod || 'efectivo_bs';
-          let monto = t.total ?? 0;
-          monto = Math.round(monto * 100) / 100;
-          totals[method] = Math.round((totals[method] + monto) * 100) / 100;
-        } 
-        else if (t.type === 'cobro_deuda') {
-          const method = t.payMethod || 'efectivo_bs';
-          let monto = t.paidBs ?? 0;
-          monto = Math.round(monto * 100) / 100;
-          totals[method] = Math.round((totals[method] + monto) * 100) / 100;
-        }
-      });
-    }
-    return totals;
-  }, [register]);
-
-  // DEVOLUCIONES del día (en Bs)
-  const returnsTotals = useMemo(() => {
-    const totals: Record<string, number> = {};
-    paymentMethods.forEach(m => totals[m.key] = 0);
-    if (register?.txs && Array.isArray(register.txs)) {
-      register.txs.forEach((t: any) => {
-        const txDate = new Date(t.date);
-        const today = new Date();
-        const isToday = txDate.toDateString() === today.toDateString();
-        if (!isToday) return;
-        if (t.type === 'devolucion') {
-          const method = t.payMethod || 'efectivo_bs';
-          let monto = t.total ?? 0;
-          monto = Math.round(monto * 100) / 100;
-          totals[method] = Math.round((totals[method] + monto) * 100) / 100;
-        }
-      });
-    }
-    return totals;
-  }, [register]);
-
-  // USD en efectivo recibidos (solo método 'usd_efectivo')
-  const usdCashReceived = useMemo(() => {
-    let totalUsd = 0;
-    if (register?.txs && Array.isArray(register.txs)) {
-      register.txs.forEach((t: any) => {
-        const txDate = new Date(t.date);
-        const today = new Date();
-        const isToday = txDate.toDateString() === today.toDateString();
-        if (!isToday) return;
-        if (t.type === 'contado' && t.payments) {
-          t.payments.forEach((p: any) => {
-            if (p.method === 'usd_efectivo' && p.usdAmount) {
-              totalUsd += p.usdAmount;
-            }
-          });
-        }
-      });
-    }
-    return totalUsd;
-  }, [register]);
-
-  // USD recibidos por Zelle
-  const usdZelleReceived = useMemo(() => {
-    let totalUsd = 0;
-    if (register?.txs && Array.isArray(register.txs)) {
-      register.txs.forEach((t: any) => {
-        const txDate = new Date(t.date);
-        const today = new Date();
-        const isToday = txDate.toDateString() === today.toDateString();
-        if (!isToday) return;
-        if (t.type === 'contado' && t.payments) {
-          t.payments.forEach((p: any) => {
-            if (p.method === 'zelle' && p.usdAmount) {
-              totalUsd += p.usdAmount;
-            }
-          });
-        }
-      });
-    }
-    return totalUsd;
-  }, [register]);
-
-  const totalCashUsd = aperturaUsd + usdCashReceived; // efectivo físico
-  const totalZelleUsd = usdZelleReceived;
-
-  // Ventas a CRÉDITO totales
-  const creditTotals = useMemo(() => {
+  const aperturaBs = register?.openAmountBs ?? 0;
+  const aperturaUsd = register?.openAmountUsd ?? 0;
+  const totalCashUsd = aperturaUsd + (() => {
     let total = 0;
     if (register?.txs && Array.isArray(register.txs)) {
       register.txs.forEach((t: any) => {
         const txDate = new Date(t.date);
         const today = new Date();
         const isToday = txDate.toDateString() === today.toDateString();
-        if (isToday && t.type === 'credito') {
-          total += t.total || 0;
+        if (!isToday) return;
+        if (t.type === 'contado' && t.payments) {
+          t.payments.forEach((p: any) => {
+            if (p.method === 'usd_efectivo' && p.usdAmount && p.usdAmount > 0) total += p.usdAmount;
+          });
         }
       });
     }
     return total;
-  }, [register]);
+  })();
 
-  // --- Cálculo de ventas en USD por período (mañana/tarde) ---
-  const usdCashMorning = useMemo(() => {
-    if (!corteParcial?.usdEfectivo) return 0;
-    return (corteParcial.usdEfectivo || 0) - aperturaUsd;
-  }, [corteParcial, aperturaUsd]);
+  const paymentMethods = [
+    { metodo: 'EFECTIVO BS', key: 'efectivo_bs', isUsd: false, saldoInicialVal: aperturaBs },
+    { metodo: 'EFECTIVO USD', key: 'usd_efectivo', isUsd: true, saldoInicialVal: aperturaUsd },
+    { metodo: 'TARJETA', key: 'tarjeta', isUsd: false, saldoInicialVal: 0 },
+    { metodo: 'BIOPAGO', key: 'biopago', isUsd: false, saldoInicialVal: 0 },
+    { metodo: 'PAGO MÓVIL', key: 'pago_movil', isUsd: false, saldoInicialVal: 0 },
+    { metodo: 'ZELLE', key: 'zelle', isUsd: true, saldoInicialVal: 0 },
+  ];
 
-  const usdCashAfternoon = useMemo(() => totalCashUsd - (corteParcial?.usdEfectivo || 0), [totalCashUsd, corteParcial]);
-
-  const usdZelleMorning = useMemo(() => corteParcial?.usdZelle || 0, [corteParcial]);
-  const usdZelleAfternoon = useMemo(() => totalZelleUsd - usdZelleMorning, [totalZelleUsd, usdZelleMorning]);
-
-  // Devoluciones en USD por período (convertidas a USD con la tasa respectiva)
-  const returnsUsdMorning = useMemo(() => {
-    const returns: Record<string, number> = {};
-    paymentMethods.forEach(m => {
-      if (!m.isUsd) return;
-      const bsAmount = corteParcial?.devoluciones?.porMetodo?.[m.key] || 0;
-      returns[m.key] = bsAmount / tasaP1;
-    });
-    return returns;
-  }, [corteParcial, tasaP1]);
-
-  const returnsUsdAfternoon = useMemo(() => {
-    const returns: Record<string, number> = {};
-    paymentMethods.forEach(m => {
-      if (!m.isUsd) return;
-      const totalBs = returnsTotals[m.key] || 0;
-      const morningBs = corteParcial?.devoluciones?.porMetodo?.[m.key] || 0;
-      const afternoonBs = Math.max(0, totalBs - morningBs);
-      returns[m.key] = afternoonBs / tasaP2;
-    });
-    return returns;
-  }, [returnsTotals, corteParcial, tasaP2]);
-
-  // Ventas de la MAÑANA (contado) en Bs para métodos no USD, y en USD para métodos USD
-  const morningSalesBs = useMemo(() => {
-    const totals: Record<string, number> = {};
-    paymentMethods.forEach(m => totals[m.key] = 0);
-    if (corteParcial?.ventas?.porMetodo) {
-      Object.entries(corteParcial.ventas.porMetodo).forEach(([k, v]) => {
-        totals[k] = Math.round((v as number) * 100) / 100;
-      });
-    }
-    return totals;
-  }, [corteParcial]);
-
-  const afternoonSalesBs = useMemo(() => {
-    const totals: Record<string, number> = {};
-    paymentMethods.forEach(m => {
-      const total = salesTotals[m.key] || 0;
-      const morning = morningSalesBs[m.key] || 0;
-      totals[m.key] = Math.max(0, total - morning);
-    });
-    return totals;
-  }, [salesTotals, morningSalesBs]);
-
-  // Créditos de la MAÑANA / TARDE
-  const morningCredit = useMemo(() => corteParcial?.creditos?.total || 0, [corteParcial]);
-  const afternoonCredit = useMemo(() => Math.max(0, creditTotals - morningCredit), [creditTotals, morningCredit]);
-
-  // Construir filas (métodos de pago)
+  // Construcción de filas
   const rows = paymentMethods.map(pm => {
     const isUsd = pm.isUsd;
-    const isZelle = pm.key === 'zelle';
-
-    let saldoInicialVal = 0;
-    if (pm.key === 'efectivo_bs') saldoInicialVal = aperturaBs;
-    if (pm.key === 'usd_efectivo') saldoInicialVal = aperturaUsd;
-    if (pm.key === 'zelle') saldoInicialVal = 0;
-
-    let vManana: number;
-    let vTarde: number;
-    let rManana: number;
-    let rTarde: number;
-    let sist: number;
-
-    if (isUsd) {
-      // valores en USD
-      if (pm.key === 'usd_efectivo') {
-        vManana = usdCashMorning;
-        vTarde = usdCashAfternoon;
-        rManana = returnsUsdMorning[pm.key] || 0;
-        rTarde = returnsUsdAfternoon[pm.key] || 0;
-      } else { // Zelle
-        vManana = usdZelleMorning;
-        vTarde = usdZelleAfternoon;
-        rManana = returnsUsdMorning[pm.key] || 0;
-        rTarde = returnsUsdAfternoon[pm.key] || 0;
-      }
-      sist = saldoInicialVal + vManana + vTarde - rManana - rTarde;
-    } else {
-      // valores en Bs
-      vManana = morningSalesBs[pm.key] || 0;
-      vTarde = afternoonSalesBs[pm.key] || 0;
-      rManana = corteParcial?.devoluciones?.porMetodo?.[pm.key] || 0;
-      rTarde = Math.max(0, (returnsTotals[pm.key] || 0) - rManana);
-      const saldoInicialBs = pm.key === 'efectivo_bs' ? aperturaBs : 0;
-      sist = saldoInicialBs + vManana + vTarde - rManana - rTarde;
-    }
-
-    const fisicoIngresado = isZelle ? sist : (conteoFisico[pm.key] ?? 0);
-    let fisicoVal = fisicoIngresado;
-    if (isUsd && !isZelle) fisicoVal = fisicoIngresado; // ya en USD
-    if (isZelle) fisicoVal = sist;
-    const diff = Math.round((fisicoVal - sist) * 100) / 100;
-
+    const saldoInicial = pm.saldoInicialVal;
+    const ventasMananaVal = ventasManana[pm.key] || 0;
+    const vueltosMananaVal = vueltosManana[pm.key] || 0;
+    const ventasTardeVal = ventasTarde[pm.key] || 0;
+    const vueltosTardeVal = vueltosTarde[pm.key] || 0;
+    
+    const sistema = saldoInicial + ventasMananaVal + ventasTardeVal - vueltosMananaVal - vueltosTardeVal;
+    const fisicoIngresado = conteoFisico[pm.key] ?? 0;
+    let fisico = fisicoIngresado;
+    let diff = fisico - sistema;
+    
     return {
-      id: pm.id,
-      metodo: pm.metodo,
-      key: pm.key,
-      isUsd,
-      isZelle,
-      isCreditRow: false,
-      saldoInicial: isUsd ? formatUsd(saldoInicialVal) : formatBs(saldoInicialVal),
-      vManana,
-      vTarde,
-      rManana,
-      rTarde,
-      sist,
+      ...pm,
+      saldoInicial,
+      ventasMananaVal,
+      vueltosMananaVal,
+      ventasTardeVal,
+      vueltosTardeVal,
+      sistema,
       fisicoIngresado,
-      fisicoVal,
+      fisico,
       diff,
     };
   });
 
-  // Filas adicionales para CRÉDITO (mañana y tarde) - siempre en Bs
-  const creditMorningRow = morningCredit > 0 ? {
-    id: 9991,
-    metodo: 'CRÉDITO (Mañana)',
-    key: 'credito_manana',
-    isUsd: false,
-    isZelle: false,
-    isCreditRow: true,
-    saldoInicial: '—',
-    vManana: morningCredit,
-    vTarde: 0,
-    rManana: 0,
-    rTarde: 0,
-    sist: morningCredit,
-    fisicoIngresado: morningCredit,
-    fisicoVal: morningCredit,
-    diff: 0
-  } : null;
-
-  const creditAfternoonRow = afternoonCredit > 0 ? {
-    id: 9992,
-    metodo: 'CRÉDITO (Tarde)',
-    key: 'credito_tarde',
-    isUsd: false,
-    isZelle: false,
-    isCreditRow: true,
-    saldoInicial: '—',
-    vManana: 0,
-    vTarde: afternoonCredit,
-    rManana: 0,
-    rTarde: 0,
-    sist: afternoonCredit,
-    fisicoIngresado: afternoonCredit,
-    fisicoVal: afternoonCredit,
-    diff: 0
-  } : null;
-
-  const allRows = [...rows];
-  if (creditMorningRow) allRows.push(creditMorningRow);
-  if (creditAfternoonRow) allRows.push(creditAfternoonRow);
-
-  // Totales en Bs (convertir USD a Bs con tasaP2 para sumar)
+  const tasaManana = morningRate || tasaActual;
+  const tasaTarde = eveningRate || tasaActual;
+  const tasaCierre = tasaActual;
+  
   const totalSistBs = rows.reduce((sum, r) => {
-    if (r.isUsd) return sum + (r.sist * tasaP2);
-    return sum + r.sist;
+    if (r.isUsd) return sum + (r.sistema * tasaCierre);
+    return sum + r.sistema;
   }, 0);
   const totalFisBs = rows.reduce((sum, r) => {
-    if (r.isUsd) return sum + (r.fisicoVal * tasaP2);
-    return sum + r.fisicoVal;
+    if (r.isUsd) return sum + (r.fisico * tasaCierre);
+    return sum + r.fisico;
   }, 0);
   const diffNeta = Math.round((totalFisBs - totalSistBs) * 100) / 100;
 
+  const hayCambioTasa = morningRate !== eveningRate && eveningRate !== null && morningRate !== null;
+
   const generarReporte = () => {
-    const ventasContadoBs = rows.reduce((acc, r) => {
-      const ventas = r.vManana + r.vTarde;
-      return acc + (r.isUsd ? ventas * tasaP2 : ventas);
-    }, 0);
-    const devolucionesBs = rows.reduce((acc, r) => {
-      const dev = r.rManana + r.rTarde;
-      return acc + (r.isUsd ? dev * tasaP2 : dev);
-    }, 0);
-    const ventasCredito = creditTotals;
-    return {
+    const report = {
       fecha: new Date().toISOString(),
       fechaCierre: new Date().toLocaleString('es-VE', { dateStyle: 'full', timeStyle: 'medium' }),
-      tipoCorte: 'cierre_total',
-      tasaPeriodo1: tasaP1,
-      tasaPeriodo2: tasaP2,
+      tasaCierre,
+      tasaManana,
+      tasaTarde,
+      horaManana: morningFirstTxTime,
+      horaTarde: eveningFirstTxTime,
       apertura: { bs: aperturaBs, usd: aperturaUsd },
-      ventas: { totalContado: ventasContadoBs, credito: ventasCredito, creditoManana: morningCredit, creditoTarde: afternoonCredit },
-      devoluciones: { total: devolucionesBs },
-      usdEfectivo: totalCashUsd,
-      cuadre: allRows.map(r => ({
+      ventasManana: ventasManana,
+      vueltosManana: vueltosManana,
+      ventasTarde: ventasTarde,
+      vueltosTarde: vueltosTarde,
+      cuadre: rows.map(r => ({
         metodo: r.metodo,
-        sistema: r.isUsd ? r.sist * tasaP2 : r.sist,
-        real: r.isUsd ? r.fisicoVal * tasaP2 : r.fisicoVal,
-        diferencia: r.isUsd ? r.diff * tasaP2 : r.diff
+        saldoInicial: r.saldoInicial,
+        ventasMananaVal: r.ventasMananaVal,
+        vueltosMananaVal: r.vueltosMananaVal,
+        ventasTardeVal: r.ventasTardeVal,
+        vueltosTardeVal: r.vueltosTardeVal,
+        sistema: r.sistema,
+        real: r.fisico,
+        diferencia: r.diff,
+        moneda: r.isUsd ? 'USD' : 'Bs',
       })),
-      totales: { sistema: totalSistBs, real: totalFisBs, diferencia: diffNeta, estado: Math.abs(diffNeta) < 0.01 ? "CONCILIADO" : (diffNeta > 0 ? "SOBRANTE" : "FALTANTE") }
+      totales: { sistema: totalSistBs, real: totalFisBs, diferencia: diffNeta, estado: Math.abs(diffNeta) < 0.01 ? "CONCILIADO" : (diffNeta > 0 ? "SOBRANTE" : "FALTANTE") },
+      usdEfectivo: totalCashUsd,
     };
+    return report;
   };
 
   const handleConfirmCierre = () => {
@@ -432,37 +301,12 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
   const finalizarCierre = async () => {
     if (closeReportData) {
       const timestamp = Date.now();
-      // Guardar en localStorage
       localStorage.setItem(`cierre_final_${timestamp}`, JSON.stringify(closeReportData));
-      
-      // Guardar en Firestore (colección cash_closes)
-      await syncService.saveCashClose({
-        id: `final_${timestamp}`,
-        tipo: 'final',
-        ...closeReportData
-      });
-      
-      // ✅ Cerrar la sesión de caja activa con el monto final en USD
-      if (currentSession) {
-        try {
-          await closeCashSession(totalCashUsd);
-          console.log('Sesión de caja cerrada correctamente');
-        } catch (error) {
-          console.error('Error al cerrar sesión de caja:', error);
-        }
-      }
-      
-      // Limpiar cortes parciales del día
+      await syncService.saveCashClose({ id: `final_${timestamp}`, tipo: 'final', ...closeReportData });
+      if (currentSession) await closeCashSession(totalCashUsd).catch(console.error);
       for (let i = localStorage.length - 1; i >= 0; i--) {
         const key = localStorage.key(i);
-        if (key?.startsWith('corte_parcial_')) {
-          try {
-            const data = JSON.parse(localStorage.getItem(key)!);
-            if (new Date(data.fecha).toDateString() === new Date().toDateString()) {
-              localStorage.removeItem(key);
-            }
-          } catch(e) {}
-        }
+        if (key?.startsWith('corte_parcial_')) localStorage.removeItem(key);
       }
       state.closeCashRegister();
     }
@@ -516,9 +360,8 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
       </div>
       <div class="line"></div>
       <p><strong>Apertura:</strong> ${formatBs(data.apertura.bs)} + ${formatUsd(data.apertura.usd)}</p>
-      <p><strong>Ventas Contado:</strong> ${formatBs(data.ventas.totalContado)}</p>
-      <p><strong>Devoluciones:</strong> ${formatBs(data.devoluciones.total)}</p>
-      <p><strong>Ventas Crédito:</strong> ${formatBs(data.ventas.credito)}</p>
+      <p><strong>Mañana:</strong> Tasa ${formatBs(data.tasaManana)} (desde ${new Date(data.horaManana).toLocaleTimeString('es-VE')})</p>
+      <p><strong>Tarde:</strong> Tasa ${formatBs(data.tasaTarde)} (desde ${new Date(data.horaTarde).toLocaleTimeString('es-VE')})</p>
       <p><strong>USD en Caja:</strong> ${formatUsd(data.usdEfectivo)}</p>
       <div class="line"></div>
       <div class="center">
@@ -528,13 +371,36 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
       <div class="line"></div>
       <h3>Detalle por método</h3>
       <table>
-        <thead><tr><th>Método</th><th>Sistema (Bs)</th><th>Real (Bs)</th><th>Diferencia</th></tr></thead>
-        <tbody>${data.cuadre.map((r: any) => `<tr>
-          <td>${r.metodo}</td>
-          <td class="right">${formatBsNumber(r.sistema)}</td>
-          <td class="right">${formatBsNumber(r.real)}</td>
-          <td class="right">${formatBsNumber(r.diferencia)}</td>
-        </tr>`).join('')}</tbody>
+        <thead>
+          <tr>
+            <th rowSpan={2}>Método</th>
+            <th rowSpan={2}>Fondo Inicial</th>
+            <th colSpan={2}>MAÑANA (${formatBs(data.tasaManana)})</th>
+            <th colSpan={2}>TARDE (${formatBs(data.tasaTarde)})</th>
+            <th rowSpan={2}>Sistema</th>
+            <th rowSpan={2}>Real</th>
+            <th rowSpan={2}>Diferencia</th>
+          </tr>
+          <tr>
+            <th>Ventas</th><th>Vueltos</th>
+            <th>Ventas</th><th>Vueltos</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${data.cuadre.map((r: any) => `
+            <tr>
+              <td>${r.metodo}</td>
+              <td class="right">${r.moneda === 'USD' ? formatUsd(r.saldoInicial) : formatBs(r.saldoInicial)}</td>
+              <td class="right">${r.moneda === 'USD' ? formatUsd(r.ventasMananaVal) : formatBs(r.ventasMananaVal)}</td>
+              <td class="right">${r.moneda === 'USD' ? formatUsd(r.vueltosMananaVal) : formatBs(r.vueltosMananaVal)}</td>
+              <td class="right">${r.moneda === 'USD' ? formatUsd(r.ventasTardeVal) : formatBs(r.ventasTardeVal)}</td>
+              <td class="right">${r.moneda === 'USD' ? formatUsd(r.vueltosTardeVal) : formatBs(r.vueltosTardeVal)}</td>
+              <td class="right">${r.moneda === 'USD' ? formatUsd(r.sistema) : formatBs(r.sistema)}</td>
+              <td class="right">${r.moneda === 'USD' ? formatUsd(r.real) : formatBs(r.real)}</td>
+              <td class="right">${r.moneda === 'USD' ? formatUsd(r.diferencia) : formatBs(r.diferencia)}</td>
+            </tr>
+          `).join('')}
+        </tbody>
       </table>
       <div class="line"></div>
       <p class="center">Documento generado por MasterPOS</p>
@@ -545,88 +411,91 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
   const generarTextoResumen = (data: any) => {
     const diff = data.totales.diferencia;
     const estado = data.totales.estado;
-    return `MASTERPOS - Cierre de Jornada\nFecha: ${data.fechaCierre}\nApertura: ${formatBs(data.apertura.bs)} + ${formatUsd(data.apertura.usd)}\nVentas Contado: ${formatBs(data.ventas.totalContado)}\nDevoluciones: ${formatBs(data.devoluciones.total)}\nVentas Crédito: ${formatBs(data.ventas.credito)}\nUSD en Caja: ${formatUsd(data.usdEfectivo)}\nRESULTADO: ${estado} por ${formatBs(Math.abs(diff))}`;
+    return `MASTERPOS - Cierre de Jornada\nFecha: ${data.fechaCierre}\nApertura: ${formatBs(data.apertura.bs)} + ${formatUsd(data.apertura.usd)}\nMañana: Tasa ${formatBs(data.tasaManana)}\nTarde: Tasa ${formatBs(data.tasaTarde)}\nUSD Efectivo: ${formatUsd(data.usdEfectivo)}\nRESULTADO: ${estado} por ${formatBs(Math.abs(diff))}`;
   };
 
   return (
     <>
       <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-2">
-        <div className="bg-[#F9F4E1] w-full max-w-6xl rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[98vh]">
-          <div className="bg-[#1E3A8A] text-white p-3 border-b-4 border-[#0284C7]">
+        <div className="bg-[#F9F4E1] w-full max-w-full overflow-x-auto rounded-xl shadow-2xl flex flex-col max-h-[98vh]">
+          <div className="bg-[#1E3A8A] text-white p-3 border-b-4 border-[#0284C7] sticky left-0">
             <h1 className="text-center font-black uppercase text-base">CIERRE FINAL CONSOLIDADO</h1>
           </div>
 
           <div className="overflow-auto flex-1">
-            <table className="w-full text-[10px]">
-              <thead className="bg-[#2c3e50] text-white sticky top-0">
+            <table className="w-full text-[10px] min-w-[800px]">
+              <thead className="bg-[#2c3e50] text-white sticky top-0 z-10">
                 <tr>
-                  <th className="p-2 text-left">MÉTODO</th>
-                  <th className="p-2 text-center">APERTURA</th>
-                  <th className="p-2 text-center">MAÑANA</th>
-                  <th className="p-2 text-center">TARDE</th>
-                  <th className="p-2 text-center">DEV. MAÑANA</th>
-                  <th className="p-2 text-center">DEV. TARDE</th>
-                  <th className="p-2 text-center">SISTEMA</th>
-                  <th className="p-2 text-center">EFECTIVO USD</th>
-                  <th className="p-2 text-center">FÍSICO</th>
-                  <th className="p-2 text-center">DIF.</th>
+                  <th rowSpan={2} className="p-2 text-left">MÉTODO</th>
+                  <th rowSpan={2} className="p-2 text-center">FONDO INICIAL</th>
+                  <th colSpan={2} className="p-2 text-center" title={`Tasa de Mañana: ${formatBs(tasaManana)} (desde ${morningFirstTxTime ? getVenezuelaTimeString(morningFirstTxTime) : 'inicio'})`}>
+                    MAÑANA ({formatBs(tasaManana)})
+                  </th>
+                  <th colSpan={2} className="p-2 text-center" title={`Tasa de Tarde: ${formatBs(tasaTarde)} (desde ${eveningFirstTxTime ? getVenezuelaTimeString(eveningFirstTxTime) : 'inicio'})`}>
+                    TARDE ({formatBs(tasaTarde)})
+                  </th>
+                  <th rowSpan={2} className="p-2 text-center">EN SISTEMA</th>
+                  <th rowSpan={2} className="p-2 text-center">EFECTIVO USD</th>
+                  <th rowSpan={2} className="p-2 text-center">FÍSICO</th>
+                  <th rowSpan={2} className="p-2 text-center">DIF.</th>
+                </tr>
+                <tr>
+                  <th className="p-1 text-center text-[9px] bg-[#3a5a7a]">Ventas</th>
+                  <th className="p-1 text-center text-[9px] bg-[#3a5a7a]">Vueltos</th>
+                  <th className="p-1 text-center text-[9px] bg-[#3a5a7a]">Ventas</th>
+                  <th className="p-1 text-center text-[9px] bg-[#3a5a7a]">Vueltos</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
-                {allRows.map(r => {
-                  let usdDisplay = '—';
-                  if (r.key === 'usd_efectivo') usdDisplay = formatUsd(totalCashUsd);
-                  if (r.key === 'zelle') usdDisplay = '—';
-                  const isUsdRow = r.isUsd;
-                  return (
-                    <tr key={r.id} className="hover:bg-slate-50">
-                      <td className="p-2 font-bold">{r.metodo}</td>
-                      <td className="p-2 text-center">{r.saldoInicial}</td>
-                      <td className="p-2 text-center font-mono">
-                        {isUsdRow ? formatUsd(r.vManana) : formatBs(r.vManana)}
-                      </td>
-                      <td className="p-2 text-center font-mono">
-                        {isUsdRow ? formatUsd(r.vTarde) : formatBs(r.vTarde)}
-                      </td>
-                      <td className="p-2 text-center font-mono text-red-600">
-                        {isUsdRow ? `-${formatUsd(r.rManana)}` : `-${formatBs(r.rManana)}`}
-                      </td>
-                      <td className="p-2 text-center font-mono text-red-600">
-                        {isUsdRow ? `-${formatUsd(r.rTarde)}` : `-${formatBs(r.rTarde)}`}
-                      </td>
-                      <td className="p-2 text-center font-bold text-blue-700">
-                        {isUsdRow ? formatUsd(r.sist) : formatBs(r.sist)}
-                      </td>
-                      <td className="p-2 text-center font-mono font-bold text-blue-600">{usdDisplay}</td>
-                      <td className="p-2 text-center">
-                        {r.isZelle ? (
-                          <span className="text-green-600 font-bold text-lg">✓</span>
-                        ) : (
-                          <div className="flex items-center justify-center gap-1">
-                            <Input
-                              type="number"
-                              step="0.01"
-                              value={r.fisicoIngresado === 0 ? '' : r.fisicoIngresado}
-                              onChange={e => setConteoFisico({...conteoFisico, [r.key]: parseFloat(e.target.value) || 0})}
-                              className="w-24 h-7 text-xs text-center font-bold"
-                              placeholder="0.00"
-                            />
-                            <span className="text-[9px] font-bold text-slate-500">{isUsdRow ? 'USD' : 'Bs'}</span>
-                          </div>
-                        )}
-                        {isUsdRow && !r.isZelle && r.fisicoIngresado > 0 && (
-                          <div className="text-[8px] text-slate-400 mt-0.5">≈ {formatBs(r.fisicoIngresado * tasaP2)}</div>
-                        )}
-                      </td>
-                      <td className={cn("p-2 text-center font-bold", r.diff < 0 ? "text-red-600" : r.diff > 0 ? "text-emerald-600" : "text-slate-500")}>
-                        {r.diff === 0 ? '✓' : (isUsdRow ? formatUsd(Math.abs(r.diff)) : formatBsNumber(Math.abs(r.diff)))}
-                      </td>
-                    </tr>
-                  );
-                })}
+                {rows.map(r => (
+                  <tr key={r.key} className="hover:bg-slate-50">
+                    <td className="p-2 font-bold">{r.metodo}</td>
+                    <td className="p-2 text-center font-mono">
+                      {r.isUsd ? formatUsd(r.saldoInicial) : formatBs(r.saldoInicial)}
+                    </td>
+                    <td className="p-2 text-center font-mono">
+                      {r.isUsd ? formatUsd(r.ventasMananaVal) : formatBs(r.ventasMananaVal)}
+                    </td>
+                    <td className="p-2 text-center font-mono text-red-600">
+                      {r.isUsd ? formatUsd(r.vueltosMananaVal) : formatBs(r.vueltosMananaVal)}
+                    </td>
+                    <td className="p-2 text-center font-mono">
+                      {r.isUsd ? formatUsd(r.ventasTardeVal) : formatBs(r.ventasTardeVal)}
+                    </td>
+                    <td className="p-2 text-center font-mono text-red-600">
+                      {r.isUsd ? formatUsd(r.vueltosTardeVal) : formatBs(r.vueltosTardeVal)}
+                    </td>
+                    <td className="p-2 text-center font-bold font-mono">
+                      {r.isUsd ? formatUsd(r.sistema) : formatBs(r.sistema)}
+                    </td>
+                    <td className="p-2 text-center font-mono text-blue-600">
+                      {r.key === 'usd_efectivo' ? formatUsd(totalCashUsd) : '—'}
+                    </td>
+                    <td className="p-2 text-center">
+                      <div className="flex items-center justify-center gap-1">
+                        <Input
+                          type="number"
+                          step="0.01"
+                          value={r.fisicoIngresado === 0 ? '' : r.fisicoIngresado}
+                          onChange={e => setConteoFisico({...conteoFisico, [r.key]: parseFloat(e.target.value) || 0})}
+                          className="w-24 h-7 text-xs text-center font-bold"
+                          placeholder="0.00"
+                        />
+                        <span className="text-[9px] font-bold text-slate-500">{r.isUsd ? 'USD' : 'Bs'}</span>
+                      </div>
+                      {r.isUsd && r.fisicoIngresado > 0 && (
+                        <div className="text-[8px] text-slate-400 mt-0.5">≈ {formatBs(r.fisicoIngresado * tasaCierre)}</div>
+                      )}
+                    </td>
+                    <td className={cn("p-2 text-center font-bold", r.diff < 0 ? "text-red-600" : r.diff > 0 ? "text-emerald-600" : "text-slate-500")}>
+                      {r.diff === 0 ? '✓' : (r.isUsd ? formatUsd(Math.abs(r.diff)) : formatBsNumber(Math.abs(r.diff)))}
+                    </td>
+                  </tr>
+                ))}
                 <tr className="bg-[#1E3A8A] text-white font-bold">
-                  <td colSpan={7} className="p-2 text-right">TOTAL CONSOLIDADO:</td>
-                  <td className="p-2 text-center font-bold text-blue-600">{formatUsd(totalCashUsd)}</td>
+                  <td colSpan={6} className="p-2 text-right">TOTAL CONSOLIDADO (Bs):</td>
+                  <td className="p-2 text-center font-bold">{formatBs(totalSistBs)}</td>
+                  <td className="p-2 text-center font-bold">{formatUsd(totalCashUsd)}</td>
                   <td className="p-2 text-center">{formatBs(totalFisBs)}</td>
                   <td className="p-2 text-center">{diffNeta === 0 ? '✓' : formatBsNumber(Math.abs(diffNeta))}</td>
                 </tr>
@@ -651,7 +520,7 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
 
       {showResumenModal && closeReportData && (
         <div className="fixed inset-0 bg-black/80 z-[200] flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
             <div className="bg-[#1E3A8A] text-white p-4 sticky top-0 flex justify-between items-center">
               <h2 className="text-lg font-black">RESUMEN DE CIERRE DE JORNADA</h2>
               <button onClick={finalizarCierre} className="text-white/60 hover:text-white"><X size={20} /></button>
@@ -660,7 +529,9 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
               <div className="text-center"><p className="text-sm text-gray-500">Fecha y hora</p><p className="font-mono">{closeReportData.fechaCierre}</p></div>
               <div className="grid grid-cols-2 gap-4 border-b pb-4">
                 <div><p className="text-xs text-gray-500">Apertura</p><p className="font-bold">{formatBs(closeReportData.apertura.bs)}</p><p className="font-bold">{formatUsd(closeReportData.apertura.usd)}</p></div>
-                <div><p className="text-xs text-gray-500">Ventas del día</p><p className="font-bold">Contado: {formatBs(closeReportData.ventas.totalContado)}</p><p className="font-bold">Devoluciones: {formatBs(closeReportData.devoluciones.total)}</p><p className="font-bold">Crédito: {formatBs(closeReportData.ventas.credito)}</p><p className="font-bold">USD Efectivo Total: {formatUsd(closeReportData.usdEfectivo)}</p></div>
+                <div><p className="text-xs text-gray-500">Tasa Mañana</p><p className="font-bold">{formatBs(closeReportData.tasaManana)}</p></div>
+                <div><p className="text-xs text-gray-500">Tasa Tarde</p><p className="font-bold">{formatBs(closeReportData.tasaTarde)}</p></div>
+                <div><p className="text-xs text-gray-500">USD Efectivo</p><p className="font-bold">{formatUsd(closeReportData.usdEfectivo)}</p></div>
               </div>
               <div className="text-center py-4 bg-gray-50 rounded-lg">
                 <p className="text-xs uppercase tracking-wider text-gray-500">RESULTADO DE LA JORNADA</p>

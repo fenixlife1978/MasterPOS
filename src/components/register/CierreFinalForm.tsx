@@ -172,7 +172,7 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
     return totalUsd;
   }, [register]);
 
-  // USD recibidos por Zelle (solo referencia)
+  // USD recibidos por Zelle
   const usdZelleReceived = useMemo(() => {
     let totalUsd = 0;
     if (register?.txs && Array.isArray(register.txs)) {
@@ -194,7 +194,7 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
   }, [register]);
 
   const totalCashUsd = aperturaUsd + usdCashReceived; // efectivo físico
-  // const totalZelleUsd = usdZelleReceived; // no usado en la tabla
+  const totalZelleUsd = usdZelleReceived;
 
   // Ventas a CRÉDITO totales
   const creditTotals = useMemo(() => {
@@ -212,8 +212,42 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
     return total;
   }, [register]);
 
-  // Ventas de la MAÑANA (contado)
-  const morningSales = useMemo(() => {
+  // --- Cálculo de ventas en USD por período (mañana/tarde) ---
+  const usdCashMorning = useMemo(() => {
+    if (!corteParcial?.usdEfectivo) return 0;
+    return (corteParcial.usdEfectivo || 0) - aperturaUsd;
+  }, [corteParcial, aperturaUsd]);
+
+  const usdCashAfternoon = useMemo(() => totalCashUsd - (corteParcial?.usdEfectivo || 0), [totalCashUsd, corteParcial]);
+
+  const usdZelleMorning = useMemo(() => corteParcial?.usdZelle || 0, [corteParcial]);
+  const usdZelleAfternoon = useMemo(() => totalZelleUsd - usdZelleMorning, [totalZelleUsd, usdZelleMorning]);
+
+  // Devoluciones en USD por período (convertidas a USD con la tasa respectiva)
+  const returnsUsdMorning = useMemo(() => {
+    const returns: Record<string, number> = {};
+    paymentMethods.forEach(m => {
+      if (!m.isUsd) return;
+      const bsAmount = corteParcial?.devoluciones?.porMetodo?.[m.key] || 0;
+      returns[m.key] = bsAmount / tasaP1;
+    });
+    return returns;
+  }, [corteParcial, tasaP1]);
+
+  const returnsUsdAfternoon = useMemo(() => {
+    const returns: Record<string, number> = {};
+    paymentMethods.forEach(m => {
+      if (!m.isUsd) return;
+      const totalBs = returnsTotals[m.key] || 0;
+      const morningBs = corteParcial?.devoluciones?.porMetodo?.[m.key] || 0;
+      const afternoonBs = Math.max(0, totalBs - morningBs);
+      returns[m.key] = afternoonBs / tasaP2;
+    });
+    return returns;
+  }, [returnsTotals, corteParcial, tasaP2]);
+
+  // Ventas de la MAÑANA (contado) en Bs para métodos no USD, y en USD para métodos USD
+  const morningSalesBs = useMemo(() => {
     const totals: Record<string, number> = {};
     paymentMethods.forEach(m => totals[m.key] = 0);
     if (corteParcial?.ventas?.porMetodo) {
@@ -224,87 +258,86 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
     return totals;
   }, [corteParcial]);
 
-  // Créditos de la MAÑANA (desde corte parcial)
-  const morningCredit = useMemo(() => {
-    if (corteParcial?.creditos?.total) return corteParcial.creditos.total;
-    return 0;
-  }, [corteParcial]);
-
-  // Devoluciones de la MAÑANA
-  const morningReturns = useMemo(() => {
-    const totals: Record<string, number> = {};
-    paymentMethods.forEach(m => totals[m.key] = 0);
-    if (corteParcial?.devoluciones?.porMetodo) {
-      Object.entries(corteParcial.devoluciones.porMetodo).forEach(([k, v]) => {
-        totals[k] = Math.round((v as number) * 100) / 100;
-      });
-    }
-    return totals;
-  }, [corteParcial]);
-
-  // Ventas de la TARDE (contado)
-  const afternoonSales = useMemo(() => {
+  const afternoonSalesBs = useMemo(() => {
     const totals: Record<string, number> = {};
     paymentMethods.forEach(m => {
       const total = salesTotals[m.key] || 0;
-      const morning = morningSales[m.key] || 0;
+      const morning = morningSalesBs[m.key] || 0;
       totals[m.key] = Math.max(0, total - morning);
     });
     return totals;
-  }, [salesTotals, morningSales]);
+  }, [salesTotals, morningSalesBs]);
 
-  // Créditos de la TARDE
+  // Créditos de la MAÑANA / TARDE
+  const morningCredit = useMemo(() => corteParcial?.creditos?.total || 0, [corteParcial]);
   const afternoonCredit = useMemo(() => Math.max(0, creditTotals - morningCredit), [creditTotals, morningCredit]);
-
-  // Devoluciones de la TARDE
-  const afternoonReturns = useMemo(() => {
-    const totals: Record<string, number> = {};
-    paymentMethods.forEach(m => {
-      const total = returnsTotals[m.key] || 0;
-      const morning = morningReturns[m.key] || 0;
-      totals[m.key] = Math.max(0, total - morning);
-    });
-    return totals;
-  }, [returnsTotals, morningReturns]);
 
   // Construir filas (métodos de pago)
   const rows = paymentMethods.map(pm => {
-    const vMananaBs = morningSales[pm.key] || 0;
-    const vTardeBs = afternoonSales[pm.key] || 0;
-    const rMananaBs = morningReturns[pm.key] || 0;
-    const rTardeBs = afternoonReturns[pm.key] || 0;
+    const isUsd = pm.isUsd;
+    const isZelle = pm.key === 'zelle';
+
     let saldoInicialVal = 0;
     if (pm.key === 'efectivo_bs') saldoInicialVal = aperturaBs;
     if (pm.key === 'usd_efectivo') saldoInicialVal = aperturaUsd;
     if (pm.key === 'zelle') saldoInicialVal = 0;
-    const saldoInicialBs = pm.isUsd ? saldoInicialVal * tasaP1 : saldoInicialVal;
-    const sistBs = saldoInicialBs + vMananaBs + vTardeBs - rMananaBs - rTardeBs;
-    const isZelle = pm.key === 'zelle';
-    const fisicoIngresado = isZelle ? sistBs / tasaP2 : (conteoFisico[pm.key] ?? 0);
-    let fisicoBs = fisicoIngresado;
-    if (pm.isUsd && !isZelle) fisicoBs = fisicoIngresado * tasaP2;
-    if (isZelle) fisicoBs = sistBs;
-    const diffBs = isZelle ? 0 : Math.round((fisicoBs - sistBs) * 100) / 100;
+
+    let vManana: number;
+    let vTarde: number;
+    let rManana: number;
+    let rTarde: number;
+    let sist: number;
+
+    if (isUsd) {
+      // valores en USD
+      if (pm.key === 'usd_efectivo') {
+        vManana = usdCashMorning;
+        vTarde = usdCashAfternoon;
+        rManana = returnsUsdMorning[pm.key] || 0;
+        rTarde = returnsUsdAfternoon[pm.key] || 0;
+      } else { // Zelle
+        vManana = usdZelleMorning;
+        vTarde = usdZelleAfternoon;
+        rManana = returnsUsdMorning[pm.key] || 0;
+        rTarde = returnsUsdAfternoon[pm.key] || 0;
+      }
+      sist = saldoInicialVal + vManana + vTarde - rManana - rTarde;
+    } else {
+      // valores en Bs
+      vManana = morningSalesBs[pm.key] || 0;
+      vTarde = afternoonSalesBs[pm.key] || 0;
+      rManana = corteParcial?.devoluciones?.porMetodo?.[pm.key] || 0;
+      rTarde = Math.max(0, (returnsTotals[pm.key] || 0) - rManana);
+      const saldoInicialBs = pm.key === 'efectivo_bs' ? aperturaBs : 0;
+      sist = saldoInicialBs + vManana + vTarde - rManana - rTarde;
+    }
+
+    const fisicoIngresado = isZelle ? sist : (conteoFisico[pm.key] ?? 0);
+    let fisicoVal = fisicoIngresado;
+    if (isUsd && !isZelle) fisicoVal = fisicoIngresado; // ya en USD
+    if (isZelle) fisicoVal = sist;
+    const diff = Math.round((fisicoVal - sist) * 100) / 100;
+
     return {
       id: pm.id,
       metodo: pm.metodo,
       key: pm.key,
-      isUsd: pm.isUsd,
+      isUsd,
       isZelle,
       isCreditRow: false,
-      saldoInicial: pm.isUsd ? formatUsd(saldoInicialVal) : formatBs(saldoInicialVal),
-      vMananaBs,
-      vTardeBs,
-      rMananaBs,
-      rTardeBs,
-      sistBs,
+      saldoInicial: isUsd ? formatUsd(saldoInicialVal) : formatBs(saldoInicialVal),
+      vManana,
+      vTarde,
+      rManana,
+      rTarde,
+      sist,
       fisicoIngresado,
-      fisicoBs,
-      diffBs
+      fisicoVal,
+      diff,
     };
   });
 
-  // Filas adicionales para CRÉDITO (mañana y tarde)
+  // Filas adicionales para CRÉDITO (mañana y tarde) - siempre en Bs
   const creditMorningRow = morningCredit > 0 ? {
     id: 9991,
     metodo: 'CRÉDITO (Mañana)',
@@ -313,14 +346,14 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
     isZelle: false,
     isCreditRow: true,
     saldoInicial: '—',
-    vMananaBs: morningCredit,
-    vTardeBs: 0,
-    rMananaBs: 0,
-    rTardeBs: 0,
-    sistBs: morningCredit,
+    vManana: morningCredit,
+    vTarde: 0,
+    rManana: 0,
+    rTarde: 0,
+    sist: morningCredit,
     fisicoIngresado: morningCredit,
-    fisicoBs: morningCredit,
-    diffBs: 0
+    fisicoVal: morningCredit,
+    diff: 0
   } : null;
 
   const creditAfternoonRow = afternoonCredit > 0 ? {
@@ -331,27 +364,40 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
     isZelle: false,
     isCreditRow: true,
     saldoInicial: '—',
-    vMananaBs: 0,
-    vTardeBs: afternoonCredit,
-    rMananaBs: 0,
-    rTardeBs: 0,
-    sistBs: afternoonCredit,
+    vManana: 0,
+    vTarde: afternoonCredit,
+    rManana: 0,
+    rTarde: 0,
+    sist: afternoonCredit,
     fisicoIngresado: afternoonCredit,
-    fisicoBs: afternoonCredit,
-    diffBs: 0
+    fisicoVal: afternoonCredit,
+    diff: 0
   } : null;
 
   const allRows = [...rows];
   if (creditMorningRow) allRows.push(creditMorningRow);
   if (creditAfternoonRow) allRows.push(creditAfternoonRow);
 
-  const totalSistBs = rows.reduce((s, r) => s + r.sistBs, 0);
-  const totalFisBs = rows.reduce((s, r) => s + r.fisicoBs, 0);
+  // Totales en Bs (convertir USD a Bs con tasaP2 para sumar)
+  const totalSistBs = rows.reduce((sum, r) => {
+    if (r.isUsd) return sum + (r.sist * tasaP2);
+    return sum + r.sist;
+  }, 0);
+  const totalFisBs = rows.reduce((sum, r) => {
+    if (r.isUsd) return sum + (r.fisicoVal * tasaP2);
+    return sum + r.fisicoVal;
+  }, 0);
   const diffNeta = Math.round((totalFisBs - totalSistBs) * 100) / 100;
 
   const generarReporte = () => {
-    const ventasContado = rows.reduce((acc, r) => acc + r.vMananaBs + r.vTardeBs, 0);
-    const devoluciones = rows.reduce((acc, r) => acc + r.rMananaBs + r.rTardeBs, 0);
+    const ventasContadoBs = rows.reduce((acc, r) => {
+      const ventas = r.vManana + r.vTarde;
+      return acc + (r.isUsd ? ventas * tasaP2 : ventas);
+    }, 0);
+    const devolucionesBs = rows.reduce((acc, r) => {
+      const dev = r.rManana + r.rTarde;
+      return acc + (r.isUsd ? dev * tasaP2 : dev);
+    }, 0);
     const ventasCredito = creditTotals;
     return {
       id: Date.now(),
@@ -361,10 +407,15 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
       tasaPeriodo1: tasaP1,
       tasaPeriodo2: tasaP2,
       apertura: { bs: aperturaBs, usd: aperturaUsd },
-      ventas: { manana: morningSales, tarde: afternoonSales, totalContado: ventasContado, credito: ventasCredito, creditoManana: morningCredit, creditoTarde: afternoonCredit },
-      devoluciones: { manana: morningReturns, tarde: afternoonReturns, total: devoluciones },
+      ventas: { totalContado: ventasContadoBs, credito: ventasCredito, creditoManana: morningCredit, creditoTarde: afternoonCredit },
+      devoluciones: { total: devolucionesBs },
       usdEfectivo: totalCashUsd,
-      cuadre: allRows.map(r => ({ metodo: r.metodo, sistema: r.sistBs, real: r.fisicoBs, diferencia: r.diffBs })),
+      cuadre: allRows.map(r => ({
+        metodo: r.metodo,
+        sistema: r.isUsd ? r.sist * tasaP2 : r.sist,
+        real: r.isUsd ? r.fisicoVal * tasaP2 : r.fisicoVal,
+        diferencia: r.isUsd ? r.diff * tasaP2 : r.diff
+      })),
       totales: { sistema: totalSistBs, real: totalFisBs, diferencia: diffNeta, estado: Math.abs(diffNeta) < 0.01 ? "CONCILIADO" : (diffNeta > 0 ? "SOBRANTE" : "FALTANTE") }
     };
   };
@@ -455,7 +506,7 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
       <h3>Detalle por método</h3>
       <table>
         <thead><tr><th>Método</th><th>Sistema (Bs)</th><th>Real (Bs)</th><th>Diferencia</th></tr></thead>
-        <tbody>${data.cuadre.map((r: any) => `<tr><td>${r.metodo}</td><td class="right">${formatBsNumber(r.sistema)}</td><td class="right">${formatBsNumber(r.real)}</td><td class="right">${formatBsNumber(r.diferencia)}</td></tr>`).join('')}</tbody>
+        <tbody>${data.cuadre.map((r: any) => `<tr><td>${r.metodo}</td><td class="right">${formatBsNumber(r.sistema)}</td><td class="right">${formatBsNumber(r.real)}</td><td class="right">${formatBsNumber(r.diferencia)}</td>`).join('')}</tbody>
       </table>
       <div class="line"></div>
       <p class="center">Documento generado por MasterPOS</p>
@@ -483,14 +534,14 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
                 <tr>
                   <th className="p-2 text-left">MÉTODO</th>
                   <th className="p-2 text-center">APERTURA</th>
-                  <th className="p-2 text-center">MAÑANA (Bs)</th>
-                  <th className="p-2 text-center">TARDE (Bs)</th>
-                  <th className="p-2 text-center">DEV. MAÑANA (Bs)</th>
-                  <th className="p-2 text-center">DEV. TARDE (Bs)</th>
-                  <th className="p-2 text-center">SISTEMA (Bs)</th>
+                  <th className="p-2 text-center">MAÑANA</th>
+                  <th className="p-2 text-center">TARDE</th>
+                  <th className="p-2 text-center">DEV. MAÑANA</th>
+                  <th className="p-2 text-center">DEV. TARDE</th>
+                  <th className="p-2 text-center">SISTEMA</th>
                   <th className="p-2 text-center">EFECTIVO USD</th>
                   <th className="p-2 text-center">FÍSICO</th>
-                  <th className="p-2 text-center">DIF. (Bs)</th>
+                  <th className="p-2 text-center">DIF.</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
@@ -498,31 +549,49 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
                   let usdDisplay = '—';
                   if (r.key === 'usd_efectivo') usdDisplay = formatUsd(totalCashUsd);
                   if (r.key === 'zelle') usdDisplay = '—';
+                  const isUsdRow = r.isUsd;
                   return (
                     <tr key={r.id} className="hover:bg-slate-50">
                       <td className="p-2 font-bold">{r.metodo}</td>
                       <td className="p-2 text-center">{r.saldoInicial}</td>
-                      <td className="p-2 text-center font-mono">{formatBs(r.vMananaBs)}</td>
-                      <td className="p-2 text-center font-mono">{formatBs(r.vTardeBs)}</td>
-                      <td className="p-2 text-center font-mono text-red-600">-{formatBs(r.rMananaBs)}</td>
-                      <td className="p-2 text-center font-mono text-red-600">-{formatBs(r.rTardeBs)}</td>
-                      <td className="p-2 text-center font-bold text-blue-700">{formatBs(r.sistBs)}</td>
+                      <td className="p-2 text-center font-mono">
+                        {isUsdRow ? formatUsd(r.vManana) : formatBs(r.vManana)}
+                      </td>
+                      <td className="p-2 text-center font-mono">
+                        {isUsdRow ? formatUsd(r.vTarde) : formatBs(r.vTarde)}
+                      </td>
+                      <td className="p-2 text-center font-mono text-red-600">
+                        {isUsdRow ? `-${formatUsd(r.rManana)}` : `-${formatBs(r.rManana)}`}
+                      </td>
+                      <td className="p-2 text-center font-mono text-red-600">
+                        {isUsdRow ? `-${formatUsd(r.rTarde)}` : `-${formatBs(r.rTarde)}`}
+                      </td>
+                      <td className="p-2 text-center font-bold text-blue-700">
+                        {isUsdRow ? formatUsd(r.sist) : formatBs(r.sist)}
+                      </td>
                       <td className="p-2 text-center font-mono font-bold text-blue-600">{usdDisplay}</td>
                       <td className="p-2 text-center">
                         {r.isZelle ? (
                           <span className="text-green-600 font-bold text-lg">✓</span>
                         ) : (
                           <div className="flex items-center justify-center gap-1">
-                            <Input type="number" step="0.01" value={r.fisicoIngresado === 0 ? '' : r.fisicoIngresado} onChange={e => setConteoFisico({...conteoFisico, [r.key]: parseFloat(e.target.value) || 0})} className="w-24 h-7 text-xs text-center font-bold" placeholder="0.00" />
-                            <span className="text-[9px] font-bold text-slate-500">{r.isUsd ? 'USD' : 'Bs'}</span>
+                            <Input
+                              type="number"
+                              step="0.01"
+                              value={r.fisicoIngresado === 0 ? '' : r.fisicoIngresado}
+                              onChange={e => setConteoFisico({...conteoFisico, [r.key]: parseFloat(e.target.value) || 0})}
+                              className="w-24 h-7 text-xs text-center font-bold"
+                              placeholder="0.00"
+                            />
+                            <span className="text-[9px] font-bold text-slate-500">{isUsdRow ? 'USD' : 'Bs'}</span>
                           </div>
                         )}
-                        {r.isUsd && !r.isZelle && r.fisicoIngresado > 0 && (
+                        {isUsdRow && !r.isZelle && r.fisicoIngresado > 0 && (
                           <div className="text-[8px] text-slate-400 mt-0.5">≈ {formatBs(r.fisicoIngresado * tasaP2)}</div>
                         )}
                       </td>
-                      <td className={cn("p-2 text-center font-bold", r.diffBs < 0 ? "text-red-600" : r.diffBs > 0 ? "text-emerald-600" : "text-slate-500")}>
-                        {r.diffBs === 0 ? '✓' : formatBsNumber(Math.abs(r.diffBs))}
+                      <td className={cn("p-2 text-center font-bold", r.diff < 0 ? "text-red-600" : r.diff > 0 ? "text-emerald-600" : "text-slate-500")}>
+                        {r.diff === 0 ? '✓' : (isUsdRow ? formatUsd(Math.abs(r.diff)) : formatBsNumber(Math.abs(r.diff)))}
                       </td>
                     </tr>
                   );

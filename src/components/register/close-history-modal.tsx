@@ -1,121 +1,223 @@
 "use client";
 
-import { useState, useEffect } from 'react';
-import { Dialog, DialogContent } from '@/components/ui/dialog';
+import { useState, useEffect, useMemo } from 'react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { FileText, X, Archive, Printer, Download } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { FileText, X, Archive, Calendar, Eye, Eraser } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { formatBs, formatUsd, formatBsNumber } from '@/lib/currency-formatter';
 
 interface CloseHistoryModalProps {
   open: boolean;
   onClose: () => void;
 }
 
-interface CloseHistory {
+type CloseType = 'parcial' | 'final';
+type FilterType = 'day' | 'month' | 'year';
+
+interface UnifiedCloseRecord {
   id: string;
   fecha: string;
-  fechaCierre: string;
-  apertura: {
-    montoBs: number;
-    tasaUsd: number;
-    montoUsd: number;
-  };
-  ventas: {
-    totalContado: number;
-    totalCredito: number;
-    totalEnCaja: number;
-    porMetodo: Record<string, number>;
-  };
-  cuadre: Array<{
-    metodo: string;
-    sistema: number;
-    real: number;
-    diferencia: number;
-  }>;
-  totales: {
-    sistema: number;
-    real: number;
-    diferencia: number;
-    estado: string;
-  };
+  tipo: CloseType;
+  fechaDisplay: string;
+  apertura: { bs: number; usd: number; tasa?: number };
+  ventasContado: number;
+  devoluciones: number;
+  creditos: number;
+  usdEfectivo: number;
+  cuadre: Array<{ metodo: string; sistema: number; real: number; diferencia: number }>;
+  totalSistema: number;
+  totalReal: number;
+  diferencia: number;
+  estado: string;
+  rawData: any;
 }
 
 export default function CloseHistoryModal({ open, onClose }: CloseHistoryModalProps) {
-  const [closeHistory, setCloseHistory] = useState<CloseHistory[]>([]);
+  const [records, setRecords] = useState<UnifiedCloseRecord[]>([]);
+  const [filterType, setFilterType] = useState<FilterType>('day');
+  const [dateFilter, setDateFilter] = useState<string>(() => new Date().toISOString().split('T')[0]);
+  const [monthFilter, setMonthFilter] = useState<string>(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  });
+  const [yearFilter, setYearFilter] = useState<string>(() => new Date().getFullYear().toString());
+  const [selectedRecord, setSelectedRecord] = useState<UnifiedCloseRecord | null>(null);
+  const [showDetailModal, setShowDetailModal] = useState(false);
 
+  // Cargar cierres al abrir
   useEffect(() => {
-    if (open) {
-      const history: CloseHistory[] = [];
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key && key.startsWith('cierre_caja_')) {
-          try {
-            const data = JSON.parse(localStorage.getItem(key) || '');
-            history.push({ ...data, id: key });
-          } catch (e) {}
-        }
+    if (!open) return;
+    const loadedRecords: UnifiedCloseRecord[] = [];
+
+    const processParcial = (key: string, data: any): UnifiedCloseRecord => {
+      const diff = data.diferenciaNetaGlobal ?? (data.cuadre?.reduce((sum: number, r: any) => sum + (r.diff ?? r.diferencia), 0) ?? 0);
+      const totalSistema = data.cuadre?.reduce((sum: number, r: any) => sum + (r.sistema ?? r.sistBs ?? 0), 0) ?? 0;
+      const totalReal = data.cuadre?.reduce((sum: number, r: any) => sum + (r.real ?? r.fisicoBs ?? 0), 0) ?? 0;
+      const estado = Math.abs(diff) < 0.01 ? 'CONCILIADO' : (diff > 0 ? 'SOBRANTE' : 'FALTANTE');
+      const cuadre = (data.cuadre || []).map((c: any) => ({
+        metodo: c.metodo,
+        sistema: c.sistema ?? c.sistBs ?? 0,
+        real: c.real ?? c.fisicoBs ?? 0,
+        diferencia: c.diff ?? c.diferencia ?? 0,
+      }));
+      return {
+        id: key,
+        fecha: data.fecha,
+        tipo: 'parcial',
+        fechaDisplay: new Date(data.fecha).toLocaleString('es-VE', { dateStyle: 'full', timeStyle: 'medium' }),
+        apertura: { bs: data.apertura?.montoBs ?? 0, usd: data.apertura?.montoUsd ?? 0, tasa: data.tasaBCV },
+        ventasContado: data.ventas?.totalContado ?? 0,
+        devoluciones: data.devoluciones?.total ?? 0,
+        creditos: data.creditos?.total ?? 0,
+        usdEfectivo: data.usdEfectivo ?? 0,
+        cuadre,
+        totalSistema,
+        totalReal,
+        diferencia: diff,
+        estado,
+        rawData: data,
+      };
+    };
+
+    const processFinal = (key: string, data: any): UnifiedCloseRecord => {
+      const diff = data.totales?.diferencia ?? 0;
+      const estado = data.totales?.estado ?? (Math.abs(diff) < 0.01 ? 'CONCILIADO' : (diff > 0 ? 'SOBRANTE' : 'FALTANTE'));
+      const cuadre = (data.cuadre || []).map((c: any) => ({
+        metodo: c.metodo,
+        sistema: c.sistema,
+        real: c.real,
+        diferencia: c.diferencia,
+      }));
+      return {
+        id: key,
+        fecha: data.fecha,
+        tipo: 'final',
+        fechaDisplay: new Date(data.fecha).toLocaleString('es-VE', { dateStyle: 'full', timeStyle: 'medium' }),
+        apertura: { bs: data.apertura?.bs ?? 0, usd: data.apertura?.usd ?? 0, tasa: data.tasaPeriodo2 },
+        ventasContado: data.ventas?.totalContado ?? 0,
+        devoluciones: data.devoluciones?.total ?? 0,
+        creditos: data.ventas?.credito ?? 0,
+        usdEfectivo: data.usdEfectivo ?? 0,
+        cuadre,
+        totalSistema: data.totales?.sistema ?? 0,
+        totalReal: data.totales?.real ?? 0,
+        diferencia: diff,
+        estado,
+        rawData: data,
+      };
+    };
+
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key?.startsWith('corte_parcial_')) {
+        try {
+          const data = JSON.parse(localStorage.getItem(key)!);
+          loadedRecords.push(processParcial(key, data));
+        } catch (e) {}
       }
-      setCloseHistory(history.sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime()));
+      if (key?.startsWith('cierre_final_')) {
+        try {
+          const data = JSON.parse(localStorage.getItem(key)!);
+          loadedRecords.push(processFinal(key, data));
+        } catch (e) {}
+      }
     }
+    loadedRecords.sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
+    setRecords(loadedRecords);
   }, [open]);
 
-  const exportToPDF = (history: CloseHistory) => {
+  // Filtrar registros
+  const filteredRecords = useMemo(() => {
+    return records.filter(record => {
+      const recordDate = new Date(record.fecha);
+      switch (filterType) {
+        case 'day':
+          if (!dateFilter) return true;
+          const filterDay = new Date(dateFilter);
+          return recordDate.toDateString() === filterDay.toDateString();
+        case 'month':
+          if (!monthFilter) return true;
+          const [year, month] = monthFilter.split('-').map(Number);
+          return recordDate.getFullYear() === year && recordDate.getMonth() + 1 === month;
+        case 'year':
+          if (!yearFilter) return true;
+          return recordDate.getFullYear() === parseInt(yearFilter);
+        default:
+          return true;
+      }
+    });
+  }, [records, filterType, dateFilter, monthFilter, yearFilter]);
+
+  // Limpiar filtros (restablecer a vista de día actual)
+  const handleClearFilters = () => {
+    setFilterType('day');
+    setDateFilter(new Date().toISOString().split('T')[0]);
+    setMonthFilter(`${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`);
+    setYearFilter(new Date().getFullYear().toString());
+  };
+
+  const exportToPDF = (record: UnifiedCloseRecord) => {
     const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
     const content = `
       <html>
-        <head>
-          <title>Reporte de Cierre - MasterPOS</title>
-          <style>
-            body { font-family: Arial, sans-serif; margin: 40px; }
-            h1 { color: #D4A017; text-align: center; }
-            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-            th { background-color: #D4A017; color: black; }
-            .footer { margin-top: 30px; text-align: center; font-size: 12px; color: #666; }
-            .success { color: green; font-weight: bold; }
-            .warning { color: orange; font-weight: bold; }
-            .error { color: red; font-weight: bold; }
-          </style>
+        <head><title>Reporte de Cierre - MasterPOS</title>
+        <style>
+          body { font-family: Arial, sans-serif; margin: 40px; }
+          h1 { color: #D4A017; text-align: center; }
+          table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+          th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+          th { background-color: #D4A017; color: black; }
+          .right { text-align: right; }
+          .success { color: green; }
+          .warning { color: orange; }
+          .error { color: red; }
+          .footer { margin-top: 30px; text-align: center; font-size: 12px; color: #666; }
+        </style>
         </head>
         <body>
           <h1>MasterPOS - Reporte de Cierre</h1>
-          <p><strong>Fecha de cierre:</strong> ${new Date(history.fecha).toLocaleString()}</p>
-          <p><strong>Apertura:</strong> BS ${history.apertura.montoBs.toFixed(2)} (≈ $${history.apertura.montoUsd.toFixed(2)})</p>
-          <p><strong>Tasa BCV:</strong> BS ${history.apertura.tasaUsd.toFixed(2)} / USD</p>
-          <p><strong>Total Ventas:</strong> BS ${history.ventas.totalContado.toFixed(2)}</p>
-          <p><strong>Total Crédito:</strong> BS ${history.ventas.totalCredito.toFixed(2)}</p>
+          <p><strong>Fecha:</strong> ${record.fechaDisplay}</p>
+          <p><strong>Tipo:</strong> ${record.tipo === 'parcial' ? 'CORTE PARCIAL' : 'CIERRE FINAL'}</p>
+          <p><strong>Apertura:</strong> ${formatBs(record.apertura.bs)} + ${formatUsd(record.apertura.usd)}</p>
+          ${record.apertura.tasa ? `<p><strong>Tasa BCV:</strong> ${formatBs(record.apertura.tasa)}</p>` : ''}
+          <p><strong>Ventas Contado:</strong> ${formatBs(record.ventasContado)}</p>
+          <p><strong>Devoluciones:</strong> ${formatBs(record.devoluciones)}</p>
+          <p><strong>Créditos:</strong> ${formatBs(record.creditos)}</p>
+          <p><strong>USD en efectivo:</strong> ${formatUsd(record.usdEfectivo)}</p>
           <h3>Cuadre por Método</h3>
-          <tr>
-            <thead><tr><th>Método</th><th>Sistema (BS)</th><th>Real (BS)</th><th>Diferencia</th></tr></thead>
-            <tbody>
-              ${history.cuadre.map(c => `
-                <tr>
-                  <td>${c.metodo}</td>
-                  <td>BS ${c.sistema.toFixed(2)}</td>
-                  <td>BS ${c.real.toFixed(2)}</td>
-                  <td class="${c.diferencia > 0 ? 'warning' : c.diferencia < 0 ? 'error' : 'success'}">${c.diferencia > 0 ? '+' : ''}${c.diferencia.toFixed(2)}</td>
-                </tr>
-              `).join('')}
-            </tbody>
-          </table>
+          <table><thead><tr><th>Método</th><th>Sistema (Bs)</th><th>Real (Bs)</th><th>Diferencia</th></tr></thead>
+          <tbody>${record.cuadre.map(c => `
+            <tr>
+              <td>${c.metodo}</td>
+              <td class="right">${formatBsNumber(c.sistema)}</td>
+              <td class="right">${formatBsNumber(c.real)}</td>
+              <td class="right ${c.diferencia > 0 ? 'warning' : c.diferencia < 0 ? 'error' : 'success'}">${c.diferencia > 0 ? '+' : ''}${formatBsNumber(c.diferencia)}</td>
+            </tr>`).join('')}
+          </tbody></table>
           <h3>Resumen Final</h3>
-          <p><strong>Total Sistema:</strong> BS ${history.totales.sistema.toFixed(2)}</p>
-          <p><strong>Total Real:</strong> BS ${history.totales.real.toFixed(2)}</p>
-          <p><strong>Diferencia:</strong> <span class="${history.totales.diferencia > 0 ? 'warning' : history.totales.diferencia < 0 ? 'error' : 'success'}">${history.totales.diferencia > 0 ? '+' : ''}${history.totales.diferencia.toFixed(2)}</span></p>
-          <p><strong>Estado:</strong> ${history.totales.estado}</p>
-          <div class="footer">Reporte generado por MasterPOS</div>
+          <p><strong>Total Sistema:</strong> ${formatBs(record.totalSistema)}</p>
+          <p><strong>Total Real:</strong> ${formatBs(record.totalReal)}</p>
+          <p><strong>Diferencia Neta:</strong> <span class="${record.diferencia > 0 ? 'warning' : record.diferencia < 0 ? 'error' : 'success'}">${record.diferencia > 0 ? '+' : ''}${formatBs(record.diferencia)}</span></p>
+          <p><strong>Estado:</strong> ${record.estado}</p>
+          <div class="footer">Reporte generado por MasterPOS el ${new Date().toLocaleString()}</div>
         </body>
       </html>
     `;
-    printWindow?.document.write(content);
-    printWindow?.document.close();
-    printWindow?.print();
+    printWindow.document.write(content);
+    printWindow.document.close();
+    printWindow.print();
   };
 
   return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-4xl p-0 overflow-hidden rounded-2xl shadow-xl max-h-[80vh] overflow-y-auto">
-        <div className="flex flex-col">
+    <>
+      <Dialog open={open} onOpenChange={onClose}>
+        <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-5xl p-0 overflow-hidden rounded-2xl shadow-xl flex flex-col max-h-[90vh]">
+          <DialogHeader className="sr-only">
+            <DialogTitle>Historial de Cierres de Caja</DialogTitle>
+          </DialogHeader>
           <div className="bg-[#1A2C4E] p-5 text-white sticky top-0 z-10">
             <div className="flex justify-between items-center">
               <div className="flex items-center gap-2">
@@ -125,38 +227,136 @@ export default function CloseHistoryModal({ open, onClose }: CloseHistoryModalPr
               <button onClick={onClose} className="text-white/60 hover:text-white"><X size={20} /></button>
             </div>
           </div>
-          <div className="p-6">
-            {closeHistory.length === 0 ? (
-              <div className="text-center py-10 text-black/50 italic">No hay cierres registrados</div>
+          <div className="p-5 border-b border-gray-200">
+            <div className="flex flex-wrap gap-4 items-end">
+              <div><label className="text-[10px] font-bold uppercase text-black/60 block mb-1">Filtrar por</label>
+                <div className="flex gap-2">
+                  <button onClick={() => setFilterType('day')} className={cn("px-3 py-1 rounded-lg text-xs font-bold transition", filterType === 'day' ? "bg-primary text-black" : "bg-gray-100 text-black/60")}>Día</button>
+                  <button onClick={() => setFilterType('month')} className={cn("px-3 py-1 rounded-lg text-xs font-bold transition", filterType === 'month' ? "bg-primary text-black" : "bg-gray-100 text-black/60")}>Mes</button>
+                  <button onClick={() => setFilterType('year')} className={cn("px-3 py-1 rounded-lg text-xs font-bold transition", filterType === 'year' ? "bg-primary text-black" : "bg-gray-100 text-black/60")}>Año</button>
+                </div>
+              </div>
+              {filterType === 'day' && (
+                <div className="flex-1 min-w-[200px]"><label className="text-[10px] font-bold uppercase text-black/60 block mb-1">Fecha</label><Input type="date" value={dateFilter} onChange={e => setDateFilter(e.target.value)} className="h-8 text-sm" /></div>
+              )}
+              {filterType === 'month' && (
+                <div className="flex-1 min-w-[200px]"><label className="text-[10px] font-bold uppercase text-black/60 block mb-1">Mes</label><Input type="month" value={monthFilter} onChange={e => setMonthFilter(e.target.value)} className="h-8 text-sm" /></div>
+              )}
+              {filterType === 'year' && (
+                <div className="flex-1 min-w-[200px]"><label className="text-[10px] font-bold uppercase text-black/60 block mb-1">Año</label><Input type="number" value={yearFilter} onChange={e => setYearFilter(e.target.value)} className="h-8 text-sm" placeholder="2024" /></div>
+              )}
+              <div className="flex gap-2">
+                <Button onClick={handleClearFilters} variant="outline" className="h-8 text-xs border-gray-300">
+                  <Eraser size={12} className="mr-1" /> Limpiar Filtros
+                </Button>
+                <Button onClick={() => { setFilterType('day'); setDateFilter(new Date().toISOString().split('T')[0]); }} variant="outline" className="h-8 text-xs border-gray-300">
+                  <Calendar size={12} className="mr-1" /> Hoy
+                </Button>
+              </div>
+            </div>
+            <p className="text-[10px] text-black/40 mt-3">Mostrando {filteredRecords.length} de {records.length} cierres</p>
+          </div>
+          <div className="flex-1 overflow-y-auto p-5">
+            {filteredRecords.length === 0 ? (
+              <div className="text-center py-10 text-black/50 italic">No hay cierres para el período seleccionado</div>
             ) : (
               <div className="space-y-3">
-                {closeHistory.map((history) => (
-                  <div key={history.id} className="bg-white border border-[#9E9E9E] rounded-xl p-4 hover:shadow-md transition-all">
-                    <div className="flex justify-between items-center flex-wrap gap-3">
-                      <div>
-                        <p className="text-sm font-bold text-black">{new Date(history.fecha).toLocaleString()}</p>
-                        <p className="text-[10px] text-black/50">Apertura: BS {history.apertura.montoBs.toFixed(2)} | Ventas: BS {history.ventas.totalContado.toFixed(2)}</p>
-                        <p className={cn("text-[10px] font-bold mt-1", 
-                          history.totales.estado === 'CONCILIADO' ? "text-green-600" : 
-                          history.totales.estado === 'SOBRANTE' ? "text-yellow-600" : "text-red-600"
-                        )}>
-                          {history.totales.estado} {history.totales.diferencia !== 0 && `(${history.totales.diferencia > 0 ? '+' : ''}${history.totales.diferencia.toFixed(2)})`}
-                        </p>
+                {filteredRecords.map(record => (
+                  <div key={record.id} className="bg-white border border-gray-200 rounded-xl p-4 hover:shadow-md transition-all">
+                    <div className="flex justify-between items-start flex-wrap gap-3">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className={cn("text-[9px] font-black px-2 py-0.5 rounded-full", record.tipo === 'parcial' ? "bg-blue-100 text-blue-700" : "bg-purple-100 text-purple-700")}>
+                            {record.tipo === 'parcial' ? 'CORTE PARCIAL' : 'CIERRE FINAL'}
+                          </span>
+                          <p className="text-xs font-mono text-black/50">{record.id}</p>
+                        </div>
+                        <p className="text-sm font-bold text-black mt-1">{record.fechaDisplay}</p>
+                        <p className="text-[10px] text-black/50 mt-1">Apertura: {formatBs(record.apertura.bs)} + {formatUsd(record.apertura.usd)} | Ventas: {formatBs(record.ventasContado)} | Créditos: {formatBs(record.creditos)}</p>
+                        <div className="flex items-center gap-2 mt-2">
+                          <div className={cn("text-[10px] font-bold px-2 py-0.5 rounded-full", record.estado === 'CONCILIADO' ? "bg-green-100 text-green-700" : record.estado === 'SOBRANTE' ? "bg-yellow-100 text-yellow-700" : "bg-red-100 text-red-700")}>
+                            {record.estado} {record.diferencia !== 0 && `(${record.diferencia > 0 ? '+' : ''}${formatBsNumber(Math.abs(record.diferencia))})`}
+                          </div>
+                          <span className="text-[9px] text-black/40">USD en caja: {formatUsd(record.usdEfectivo)}</span>
+                        </div>
                       </div>
-                      <Button onClick={() => exportToPDF(history)} className="bg-[#D4A017] hover:brightness-110 text-black font-black">
-                        <FileText size={14} className="mr-2" /> EXPORTAR PDF
-                      </Button>
+                      <div className="flex gap-2">
+                        <Button onClick={() => { setSelectedRecord(record); setShowDetailModal(true); }} variant="outline" className="h-8 text-xs border-gray-300"><Eye size={12} className="mr-1" /> Detalle</Button>
+                        <Button onClick={() => exportToPDF(record)} className="h-8 text-xs bg-[#D4A017] hover:bg-[#b8890f] text-black font-bold"><FileText size={12} className="mr-1" /> PDF</Button>
+                      </div>
                     </div>
                   </div>
                 ))}
               </div>
             )}
           </div>
-          <div className="bg-[#F5F5F5] p-4 border-t border-[#9E9E9E] flex justify-end">
-            <Button onClick={onClose} className="bg-[#E8E8E8] text-black font-bold hover:bg-[#D4A017]">CERRAR</Button>
+          <div className="bg-gray-50 p-4 border-t border-gray-200 flex justify-between items-center">
+            <p className="text-[9px] text-black/40">Los cierres se almacenan localmente en el navegador</p>
+            <Button onClick={onClose} variant="ghost" className="text-black/60 hover:text-black text-xs">Cerrar</Button>
           </div>
-        </div>
-      </DialogContent>
-    </Dialog>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showDetailModal} onOpenChange={setShowDetailModal}>
+        <DialogContent className="bg-white max-w-3xl max-h-[80vh] overflow-y-auto rounded-xl p-0">
+          <DialogHeader className="sr-only">
+            <DialogTitle>Detalle del Cierre</DialogTitle>
+          </DialogHeader>
+          {selectedRecord && (
+            <>
+              <div className="bg-[#1A2C4E] p-4 text-white sticky top-0">
+                <div className="flex justify-between items-center">
+                  <h4 className="font-black">Detalle del Cierre</h4>
+                  <button onClick={() => setShowDetailModal(false)} className="text-white/60 hover:text-white"><X size={18} /></button>
+                </div>
+              </div>
+              <div className="p-5 space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div><p className="text-[9px] text-black/50">Fecha</p><p className="font-bold text-sm">{selectedRecord.fechaDisplay}</p></div>
+                  <div><p className="text-[9px] text-black/50">Tipo</p><p className="font-bold text-sm">{selectedRecord.tipo === 'parcial' ? 'Corte Parcial' : 'Cierre Final'}</p></div>
+                  <div><p className="text-[9px] text-black/50">Apertura</p><p className="font-bold text-sm">{formatBs(selectedRecord.apertura.bs)} + {formatUsd(selectedRecord.apertura.usd)}</p></div>
+                  {selectedRecord.apertura.tasa && <div><p className="text-[9px] text-black/50">Tasa BCV</p><p className="font-bold text-sm">{formatBs(selectedRecord.apertura.tasa)}</p></div>}
+                  <div><p className="text-[9px] text-black/50">Ventas Contado</p><p className="font-bold text-sm">{formatBs(selectedRecord.ventasContado)}</p></div>
+                  <div><p className="text-[9px] text-black/50">Devoluciones</p><p className="font-bold text-sm text-red-600">{formatBs(selectedRecord.devoluciones)}</p></div>
+                  <div><p className="text-[9px] text-black/50">Créditos</p><p className="font-bold text-sm">{formatBs(selectedRecord.creditos)}</p></div>
+                  <div><p className="text-[9px] text-black/50">USD Efectivo</p><p className="font-bold text-sm">{formatUsd(selectedRecord.usdEfectivo)}</p></div>
+                </div>
+                <div className="border-t pt-3">
+                  <p className="text-xs font-bold mb-2">Cuadre por método</p>
+                  <table className="w-full text-xs">
+                    <thead className="bg-gray-100">
+                      <tr><th className="p-2 text-left">Método</th><th className="p-2 text-right">Sistema (Bs)</th><th className="p-2 text-right">Real (Bs)</th><th className="p-2 text-right">Diferencia</th></tr>
+                    </thead>
+                    <tbody>
+                      {selectedRecord.cuadre.map((row, idx) => (
+                        <tr key={idx} className="border-b">
+                          <td className="p-2">{row.metodo}</td>
+                          <td className="p-2 text-right">{formatBsNumber(row.sistema)}</td>
+                          <td className="p-2 text-right">{formatBsNumber(row.real)}</td>
+                          <td className={cn("p-2 text-right", row.diferencia < 0 ? "text-red-600" : row.diferencia > 0 ? "text-emerald-600" : "")}>
+                            {row.diferencia === 0 ? '✓' : formatBsNumber(Math.abs(row.diferencia))}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="border-t pt-3">
+                  <p className="text-xs text-black/50">Resultado Global</p>
+                  <p className={cn("text-xl font-black", selectedRecord.diferencia > 0 ? "text-emerald-600" : selectedRecord.diferencia < 0 ? "text-red-600" : "text-slate-500")}>
+                    {selectedRecord.diferencia > 0 ? '+' : ''}{formatBs(selectedRecord.diferencia)} ({selectedRecord.estado})
+                  </p>
+                </div>
+              </div>
+              <div className="bg-gray-50 p-4 border-t flex justify-end">
+                <Button onClick={() => exportToPDF(selectedRecord)} className="bg-[#D4A017] hover:bg-[#b8890f] text-black font-bold text-xs">
+                  <FileText size={12} className="mr-1" /> Exportar PDF
+                </Button>
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

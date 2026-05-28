@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
+import CloseHistoryModal from '@/components/register/close-history-modal';
 import { usePOSState } from '@/hooks/use-pos-state';
 import { useSuppliers } from '@/hooks/use-suppliers';
 import InvoiceNotifications from '@/components/ui/InvoiceNotifications';
@@ -10,7 +11,7 @@ import {
   CreditCard, ShoppingBag, Computer, FileText,
   Calendar, ArrowUp, ArrowDown, Truck, Eye,
   RefreshCw, Lock, KeyRound, Save, AlertTriangle,
-  Trash2, XCircle
+  Trash2, XCircle, Archive
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import TerminalManager from '@/components/admin/TerminalManager';
@@ -53,6 +54,9 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
   const [showResetModal, setShowResetModal] = useState(false);
   const [resetPinInput, setResetPinInput] = useState('');
   const [isResetting, setIsResetting] = useState(false);
+
+  // ✅ Estado para el modal de historial de cierres
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
 
   // Cargar PIN actual al inicio
   useEffect(() => {
@@ -143,7 +147,7 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
     }
   };
 
-  // ✅ Función para resetear el sistema completo
+  // ✅ Función para resetear el sistema completo (CORREGIDA)
   const handleResetSystem = async () => {
     if (!resetPinInput) {
       toast({ title: "Error", description: "Ingrese el PIN de autorización", variant: "destructive" });
@@ -169,12 +173,10 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
         await syncService.deleteClient(client.id);
       }
       
-      // 3. Eliminar todas las transacciones
-      for (const tx of state.transactions) {
-        await syncService.deleteTransaction(tx.id);
-      }
+      // 3. Eliminar TODAS las transacciones (Firestore)
+      await syncService.deleteAllTransactions();
       
-      // 4. Eliminar todas las cuentas por cobrar
+      // 4. Eliminar todas las cuentas por cobrar (marcar como pagadas)
       for (const acc of state.accounts) {
         await syncService.saveAccount({ ...acc, status: 'pagada', paidAmount: acc.amountBs });
       }
@@ -185,10 +187,13 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
         await syncService.deletePurchaseInvoice?.(inv.id);
       }
       
-      // 6. Eliminar todas las entradas de kardex
-      // (Las entradas de kardex se eliminarán automáticamente al eliminar productos asociados)
+      // 6. Eliminar TODAS las entradas contables (accounting_entries)
+      await syncService.deleteAllAccountingEntries();
       
-      // 7. Cerrar todas las cajas abiertas
+      // 7. Eliminar TODAS las entradas de kardex (kardex_entries)
+      await syncService.deleteAllKardexEntries();
+      
+      // 8. Cerrar todas las cajas abiertas
       await syncService.clearRegisterByTerminal('default');
       
       toast({ 
@@ -246,7 +251,7 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
               <p className="text-sm text-black/50 mt-1">Gestiona tu negocio desde un solo lugar</p>
             </div>
             
-            {/* ✅ Tarjeta de Tasa BCV editable + Botón RESET */}
+            {/* ✅ Tarjeta de Tasa BCV editable + Botones */}
             <div className="flex items-center gap-3">
               <div className="bg-[#1A2C4E] rounded-xl p-3 flex items-center gap-3 shadow-md">
                 <div className="bg-primary/20 rounded-lg p-2">
@@ -275,6 +280,16 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
                   </div>
                 </div>
               </div>
+              
+              {/* ✅ Botón HISTORIAL CIERRES */}
+              <Button
+                onClick={() => setShowHistoryModal(true)}
+                variant="outline"
+                className="h-10 px-4 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs border-blue-500"
+              >
+                <Archive size={14} className="mr-2" />
+                HISTORIAL CIERRES
+              </Button>
               
               {/* ✅ Botón RESET */}
               <Button
@@ -531,6 +546,9 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* ✅ Modal de historial de cierres */}
+      <CloseHistoryModal open={showHistoryModal} onClose={() => setShowHistoryModal(false)} />
     </>
   );
 }

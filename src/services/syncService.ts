@@ -185,6 +185,23 @@ export const syncService = {
     });
   },
 
+  // ✅ NUEVO: Obtener todas las transacciones
+  async getAllTransactions(): Promise<any[]> {
+    if (!db) return [];
+    const snap = await getDocs(collection(db, 'transactions'));
+    return snap.docs.map(doc => ({ id: parseInt(doc.id), ...doc.data() }));
+  },
+
+  // ✅ NUEVO: Eliminar todas las transacciones (batch)
+  async deleteAllTransactions() {
+    if (!db) return;
+    const snap = await getDocs(collection(db, 'transactions'));
+    if (snap.empty) return;
+    const batch = writeBatch(db);
+    snap.docs.forEach(doc => batch.delete(doc.ref));
+    await batch.commit();
+  },
+
   // CUENTAS POR COBRAR (sin cambios)
   async saveAccount(acc: any) {
     if (!db) return;
@@ -209,6 +226,23 @@ export const syncService = {
     return onSnapshot(query(collection(db, 'accounting_entries'), orderBy('date', 'desc'), limit(1000)), (snap) => {
       callback(snap.docs.map(d => d.data()));
     });
+  },
+
+  // ✅ NUEVO: Obtener todas las entradas contables
+  async getAllAccountingEntries(): Promise<any[]> {
+    if (!db) return [];
+    const snap = await getDocs(collection(db, 'accounting_entries'));
+    return snap.docs.map(doc => ({ id: parseInt(doc.id), ...doc.data() }));
+  },
+
+  // ✅ NUEVO: Eliminar todas las entradas contables (batch)
+  async deleteAllAccountingEntries() {
+    if (!db) return;
+    const snap = await getDocs(collection(db, 'accounting_entries'));
+    if (snap.empty) return;
+    const batch = writeBatch(db);
+    snap.docs.forEach(doc => batch.delete(doc.ref));
+    await batch.commit();
   },
 
   // CAJA (métodos antiguos para compatibilidad global)
@@ -492,6 +526,23 @@ export const syncService = {
     return onSnapshot(query(collection(db, 'kardex_entries'), orderBy('createdAt', 'desc'), limit(1000)), (snap) => {
       callback(snap.docs.map(d => d.data()));
     });
+  },
+
+  // ✅ NUEVO: Obtener todas las entradas de kardex
+  async getAllKardexEntries(): Promise<any[]> {
+    if (!db) return [];
+    const snap = await getDocs(collection(db, 'kardex_entries'));
+    return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  },
+
+  // ✅ NUEVO: Eliminar todas las entradas de kardex (batch)
+  async deleteAllKardexEntries() {
+    if (!db) return;
+    const snap = await getDocs(collection(db, 'kardex_entries'));
+    if (snap.empty) return;
+    const batch = writeBatch(db);
+    snap.docs.forEach(doc => batch.delete(doc.ref));
+    await batch.commit();
   },
 
   async saveTerminal(terminal: any) {

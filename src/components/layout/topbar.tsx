@@ -21,15 +21,15 @@ export default function Topbar({ register, rate, onRateChange }: TopbarProps) {
   const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
   const [pendingSync, setPendingSync] = useState(0);
   
-  // Verificar si es admin (por rol o por email)
-  const isAdmin = user?.role === 'admin' || user?.email === 'admin@licopos.com';
+  // Verificar si es admin
+  const isAdmin = user?.role === 'admin';
   
   // Determinar si debe mostrar el badge de caja (solo si NO es admin Y la caja existe)
   const showRegisterBadge = !loading && !isAdmin && register !== undefined;
   
-  // ✅ Mostrar número de terminal solo para cajeros y si tiene terminalId
-  const showTerminalBadge = !loading && !isAdmin && user?.terminalId;
-  const terminalDisplay = showTerminalBadge ? `Terminal ${user.terminalId}` : null;
+  // ✅ Identificación de terminal (ID real de Firestore)
+  const currentTerminalId = user?.terminalId;
+  const showTerminalBadge = !loading && !isAdmin && currentTerminalId;
 
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 1000);
@@ -79,11 +79,11 @@ export default function Topbar({ register, rate, onRateChange }: TopbarProps) {
           <span className="text-white">POS</span>
         </div>
         
-        {/* ✅ Recuadro rojo con número de terminal (solo para cajeros) */}
-        {terminalDisplay && (
-          <div className="bg-red-600 rounded-lg px-3 py-1 shadow-md">
-            <span className="text-white font-black text-sm tracking-wide">
-              {terminalDisplay}
+        {/* ✅ Identificación visual de la Terminal asignada */}
+        {showTerminalBadge && (
+          <div className="bg-red-600 rounded-lg px-3 py-1 shadow-md animate-in fade-in duration-500">
+            <span className="text-white font-black text-xs tracking-wider uppercase">
+              Terminal {currentTerminalId}
             </span>
           </div>
         )}

@@ -778,6 +778,11 @@ export default function RegisterPurchase() {
                       <span className="text-[8px] block text-gray-500 uppercase">Total en Bolívares</span>
                       <span className="text-xs font-black text-secondary">{formatBs(totalInvoiceBs)}</span>
                     </div>
+                    {/* ✅ TOTAL EN USD - NUEVO */}
+                    <div className="bg-white border border-gray-300 rounded px-2 py-1">
+                      <span className="text-[8px] block text-gray-500 uppercase">Total USD</span>
+                      <span className="text-xs font-black text-secondary">{formatUsd(totalInvoiceUsd, 4)}</span>
+                    </div>
                     {paymentType !== 'contado' && remainingUsd > 0 && (
                       <div className="bg-yellow-50 border border-yellow-200 rounded px-2 py-1">
                         <span className="text-[8px] block text-yellow-700 uppercase">Crédito pendiente</span>

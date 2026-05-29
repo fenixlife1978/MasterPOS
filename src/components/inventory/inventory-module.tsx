@@ -38,12 +38,12 @@ const CACHE_KEYS = {
   IVA_PERCENTAGE: 'product_iva_percentage',
 };
 
-// ✅ Tipos locales (incluye 'devolucion')
+// ✅ Tipos locales (incluye 'devolucion', 'colaboracion', 'consumo')
 interface KardexEntry {
   id: string;
   productId: number;
   date: string;
-  type: 'venta' | 'compra' | 'ajuste_inicial' | 'ajuste_manual' | 'devolucion';
+  type: 'venta' | 'compra' | 'ajuste_inicial' | 'ajuste_manual' | 'devolucion' | 'colaboracion' | 'consumo';
   quantity: number;
   previousStock: number;
   newStock: number;
@@ -295,17 +295,24 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                 let entrada = 0;
                 let salida = 0;
                 const absQty = Math.abs(entry.quantity);
-                if (entry.type !== 'compra' && entry.type !== 'ajuste_inicial' && entry.type !== 'devolucion') {
-                  salida = absQty;
-                } else {
+                // Determinar si es entrada o salida según tipo
+                if (entry.type === 'compra' || entry.type === 'ajuste_inicial' || entry.type === 'devolucion') {
                   entrada = absQty;
+                } else if (entry.type === 'ajuste_manual' || entry.type === 'colaboracion' || entry.type === 'consumo') {
+                  // Para ajustes, colaboraciones y consumos: entrada si quantity > 0, salida si quantity < 0
+                  if (entry.quantity > 0) entrada = absQty;
+                  else salida = absQty;
+                } else {
+                  salida = absQty;
                 }
                 let displayType = '';
-                if (entry.type !== 'compra' && entry.type !== 'ajuste_inicial' && entry.type !== 'devolucion') displayType = 'VENTA';
-                else if (entry.type === 'compra') displayType = 'COMPRA';
+                if (entry.type === 'compra') displayType = 'COMPRA';
                 else if (entry.type === 'ajuste_inicial') displayType = 'INICIAL';
                 else if (entry.type === 'devolucion') displayType = 'DEVOLUCIÓN';
-                else displayType = 'AJUSTE';
+                else if (entry.type === 'ajuste_manual') displayType = 'AJUSTE';
+                else if (entry.type === 'colaboracion') displayType = 'COLABORACIÓN';
+                else if (entry.type === 'consumo') displayType = 'CONSUMO';
+                else displayType = 'VENTA';
                 let detalle = entry.reference || entry.note || '';
                 return `
                   <tr>
@@ -349,14 +356,22 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
     const data = entries.map(entry => {
       let entrada = 0, salida = 0;
       const absQty = Math.abs(entry.quantity);
-      if (entry.type !== 'compra' && entry.type !== 'ajuste_inicial' && entry.type !== 'devolucion') salida = absQty;
-      else entrada = absQty;
+      if (entry.type === 'compra' || entry.type === 'ajuste_inicial' || entry.type === 'devolucion') {
+        entrada = absQty;
+      } else if (entry.type === 'ajuste_manual' || entry.type === 'colaboracion' || entry.type === 'consumo') {
+        if (entry.quantity > 0) entrada = absQty;
+        else salida = absQty;
+      } else {
+        salida = absQty;
+      }
       let displayType = '';
-      if (entry.type !== 'compra' && entry.type !== 'ajuste_inicial' && entry.type !== 'devolucion') displayType = 'VENTA';
-      else if (entry.type === 'compra') displayType = 'COMPRA';
+      if (entry.type === 'compra') displayType = 'COMPRA';
       else if (entry.type === 'ajuste_inicial') displayType = 'INICIAL';
       else if (entry.type === 'devolucion') displayType = 'DEVOLUCIÓN';
-      else displayType = 'AJUSTE';
+      else if (entry.type === 'ajuste_manual') displayType = 'AJUSTE';
+      else if (entry.type === 'colaboracion') displayType = 'COLABORACIÓN';
+      else if (entry.type === 'consumo') displayType = 'CONSUMO';
+      else displayType = 'VENTA';
       return {
         FECHA: entry.date,
         TIPO: displayType,
@@ -590,7 +605,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
           id: `${Date.now()}_${Math.random()}`,
           productId: product.id,
           date: new Date().toLocaleString('es-VE'),
-          type: 'ajuste_manual',
+          type: 'ajuste_manual', // ✅ Ya estaba bien
           quantity: delta,
           previousStock: previousStock,
           newStock: newQty,
@@ -1111,9 +1126,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                     </tr>
                   ))}
                   {filteredAdjustments.length === 0 && (
-                    <tr>
-                      <td colSpan={7} className="p-4 text-center text-black/40 italic">No hay ajustes manuales en el período seleccionado</td>
-                    </tr>
+                    <tr><td colSpan={7} className="p-4 text-center text-black/40 italic">No hay ajustes manuales en el período seleccionado</td></tr>
                   )}
                 </tbody>
               </table>
@@ -1217,14 +1230,45 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                         return sortedEntries.map((entry, idx) => {
                           let entrada = 0, salida = 0;
                           const absQty = Math.abs(entry.quantity);
-                          if (entry.type !== 'compra' && entry.type !== 'ajuste_inicial' && entry.type !== 'devolucion') salida = absQty;
-                          else entrada = absQty;
+                          // Lógica de entrada/salida según tipo
+                          if (entry.type === 'compra' || entry.type === 'ajuste_inicial' || entry.type === 'devolucion') {
+                            entrada = absQty;
+                          } else if (entry.type === 'ajuste_manual' || entry.type === 'colaboracion' || entry.type === 'consumo') {
+                            if (entry.quantity > 0) entrada = absQty;
+                            else salida = absQty;
+                          } else {
+                            salida = absQty;
+                          }
                           let displayType = '', badgeColor = '';
-                          if (entry.type !== 'compra' && entry.type !== 'ajuste_inicial' && entry.type !== 'devolucion') { displayType = 'VENTA'; badgeColor = "bg-red-100 text-red-700"; }
-                          else if (entry.type === 'compra') { displayType = 'COMPRA'; badgeColor = "bg-green-100 text-green-700"; }
-                          else if (entry.type === 'ajuste_inicial') { displayType = 'INICIAL'; badgeColor = "bg-blue-100 text-blue-700"; }
-                          else if (entry.type === 'devolucion') { displayType = 'DEVOLUCIÓN'; badgeColor = "bg-purple-100 text-purple-700"; }
-                          else { displayType = entry.quantity > 0 ? 'AJUSTE (+)' : 'AJUSTE (-)'; badgeColor = "bg-orange-100 text-orange-700"; }
+                          switch (entry.type) {
+                            case 'compra':
+                              displayType = 'COMPRA';
+                              badgeColor = "bg-green-100 text-green-700";
+                              break;
+                            case 'ajuste_inicial':
+                              displayType = 'INICIAL';
+                              badgeColor = "bg-blue-100 text-blue-700";
+                              break;
+                            case 'devolucion':
+                              displayType = 'DEVOLUCIÓN';
+                              badgeColor = "bg-purple-100 text-purple-700";
+                              break;
+                            case 'ajuste_manual':
+                              displayType = 'AJUSTE';
+                              badgeColor = "bg-orange-100 text-orange-700";
+                              break;
+                            case 'colaboracion':
+                              displayType = 'COLABORACIÓN';
+                              badgeColor = "bg-indigo-100 text-indigo-700";
+                              break;
+                            case 'consumo':
+                              displayType = 'CONSUMO';
+                              badgeColor = "bg-pink-100 text-pink-700";
+                              break;
+                            default:
+                              displayType = 'VENTA';
+                              badgeColor = "bg-red-100 text-red-700";
+                          }
                           let detalle = entry.reference || entry.note || '';
                           let formattedDate = '';
                           try {
@@ -1246,9 +1290,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                         });
                       })()}
                       {getKardexForProduct(viewingKardex.id).length === 0 && (
-                        <tr>
-                          <td colSpan={7} className="text-center py-10 text-gray-400 italic text-sm">No hay movimientos registrados</td>
-                        </tr>
+                        <tr><td colSpan={7} className="text-center py-10 text-gray-400 italic text-sm">No hay movimientos registrados</td></tr>
                       )}
                     </tbody>
                   </table>

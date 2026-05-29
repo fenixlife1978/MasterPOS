@@ -424,7 +424,7 @@ export const syncService = {
         id: `${Date.now()}_${productId}_${Math.random()}`,
         productId: productId,
         date: new Date().toISOString(),
-        type: 'entrada_compra',
+        type: 'compra', // ✅ CORREGIDO: antes era 'entrada_compra'
         quantity: newQty,
         previousStock: currentStock,
         newStock: newStock,

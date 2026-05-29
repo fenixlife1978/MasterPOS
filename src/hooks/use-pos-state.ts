@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
@@ -328,11 +327,26 @@ export function usePOSState() {
         if (!product) continue;
         const newStock = product.stock - discountItem.quantity;
         stockUpdates.set(product.id, { newStock });
+        
+        // ✅ CORRECCIÓN: Guardar tipo específico para colaboración y consumo propio
+        let kardexType: string = 'venta';
+        if (isSpecial) {
+          if (type === 'colaboracion') kardexType = 'colaboracion';
+          else if (type === 'consumo_propio') kardexType = 'consumo';
+          else kardexType = 'ajuste_manual';
+        }
+        
         kardexEntries.push({
-          id: `${Date.now()}_${Math.random()}`, productId: product.id, date: tx.date,
-          type: isSpecial ? 'ajuste_negativo' : 'venta', quantity: -discountItem.quantity, previousStock: product.stock,
-          newStock, reference: isSpecial ? `[${type}] ${paymentData.notes}` : `Venta #${tx.id}`,
-          note: isSpecial ? paymentData.notes : `Venta #${tx.id}`, costUsd: product.costUsd,
+          id: `${Date.now()}_${Math.random()}`,
+          productId: product.id,
+          date: tx.date,
+          type: kardexType,
+          quantity: -discountItem.quantity,
+          previousStock: product.stock,
+          newStock,
+          reference: isSpecial ? `[${type}] ${paymentData.notes || 'Sin motivo'}` : `Venta #${tx.id}`,
+          note: isSpecial ? paymentData.notes || 'Sin motivo' : `Venta #${tx.id}`,
+          costUsd: product.costUsd,
         });
       }
     }
@@ -365,7 +379,6 @@ export function usePOSState() {
     const newTxs = [...(register.txs || []), tx];
     
     // Ejecutamos la sincronización (ya sea online u offline a través de la cola)
-    // No bloqueamos el flujo principal si falla la red, ya que runAtomicSale ahora maneja el fallback
     try {
       await syncService.runAtomicSale(terminalId, tx, { 
         products: stockUpdates, 

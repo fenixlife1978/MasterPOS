@@ -182,6 +182,8 @@ export default function ReceiptModal({ transaction, exchangeRate, receiptNumber,
 
   const isCredito = transaction?.type === 'credito';
   const isCobroDeuda = transaction?.type === 'cobro_deuda';
+  const isColaboracion = transaction?.type === 'colaboracion';
+  const isConsumoPropio = transaction?.type === 'consumo_propio';
 
   const transactionDate = transaction?.date ? formatToVenezuelaTime(transaction.date) : '';
   const transactionClientName = transaction?.clientName || 'CONSUMIDOR FINAL';
@@ -194,11 +196,46 @@ export default function ReceiptModal({ transaction, exchangeRate, receiptNumber,
   const transactionItems = transaction?.items || [];
   const transactionExchangeRate = transaction?.exchangeRate || exchangeRate;
 
+  // ✅ Determinar título según tipo de transacción
   const getDocumentTitle = () => {
     if (isCredito) return 'DOCUMENTO DE CRÉDITO';
     if (isCobroDeuda) return 'RECIBO DE PAGO';
-    return 'RECIBO'; // ✅ Cambiado de 'FACTURA DE VENTA' a 'RECIBO'
+    if (isColaboracion) return 'COLABORACIÓN';
+    if (isConsumoPropio) return 'CONSUMO PROPIO';
+    return 'RECIBO';
   };
+
+  // ✅ Color de fondo del título
+  const getTitleBgColor = () => {
+    if (isCredito) return '#e74c3c';
+    if (isCobroDeuda) return '#27ae60';
+    if (isColaboracion) return '#9b59b6';
+    if (isConsumoPropio) return '#f39c12';
+    return '#2c3e50';
+  };
+
+  // ✅ Mensaje especial para colaboración/consumo
+  const getSpecialMessage = () => {
+    if (isColaboracion) {
+      return {
+        title: '🎁 COLABORACIÓN',
+        description: 'Salida de inventario por colaboración / donación',
+        note: transaction.notes || 'Sin motivo especificado',
+        showPrice: false
+      };
+    }
+    if (isConsumoPropio) {
+      return {
+        title: '🍽️ CONSUMO PROPIO',
+        description: 'Salida de inventario por consumo interno',
+        note: transaction.notes || 'Sin motivo especificado',
+        showPrice: false
+      };
+    }
+    return null;
+  };
+
+  const special = getSpecialMessage();
 
   return (
     <div className="fixed inset-0 z-[300] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
@@ -229,7 +266,7 @@ export default function ReceiptModal({ transaction, exchangeRate, receiptNumber,
 
             <div style={{ textAlign: 'center', marginBottom: '6px' }}>
               <span style={{ 
-                background: isCredito ? '#e74c3c' : (isCobroDeuda ? '#27ae60' : '#2c3e50'),
+                background: getTitleBgColor(), 
                 color: 'white', 
                 padding: '2px 8px', 
                 fontSize: '9px', 
@@ -251,6 +288,25 @@ export default function ReceiptModal({ transaction, exchangeRate, receiptNumber,
                 <span>CLIENTE: {transactionClientName.toUpperCase()}</span>
               </div>
             </div>
+
+            {special && (
+              <div style={{ 
+                border: '1px dashed #9b59b6', 
+                padding: '6px', 
+                margin: '8px 0', 
+                textAlign: 'center', 
+                fontSize: '9px', 
+                background: '#f9f0ff',
+                borderRadius: '4px'
+              }}>
+                <p style={{ margin: '2px 0', fontWeight: 'bold', color: '#8e44ad' }}>{special.title}</p>
+                <p style={{ margin: '2px 0' }}>{special.description}</p>
+                <p style={{ margin: '2px 0', fontStyle: 'italic', fontSize: '8px' }}>Motivo: {special.note}</p>
+                {special.showPrice && (
+                  <p style={{ margin: '2px 0', fontWeight: 'bold' }}>Costo operación: {formatUsd(transaction.costoTotalOperacion || 0)}</p>
+                )}
+              </div>
+            )}
 
             <table style={{ width: '100%', borderCollapse: 'collapse', margin: '6px 0' }}>
               <thead>
@@ -284,51 +340,54 @@ export default function ReceiptModal({ transaction, exchangeRate, receiptNumber,
               </tbody>
             </table>
 
-            <div style={{ borderTop: '1px dashed #000', paddingTop: '4px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', margin: '2px 0' }}>
-                <span>SUBTOTAL:</span>
-                <span>{formatBs(transactionSubtotal)}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', margin: '2px 0' }}>
-                <span>IVA (16.00%):</span>
-                <span>{formatBs(transactionIva)}</span>
-              </div>
-              
-              <div style={{ fontSize: '13px', fontWeight: 'bold', margin: '5px 0', padding: '3px 0', borderTop: '1px solid #000', borderBottom: '1px solid #000' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
-                  <span>{isCredito ? 'TOTAL ADEUDADO:' : 'TOTAL A PAGAR:'}</span>
-                  <span>{formatBs(transactionTotal)}</span>
+            {/* Mostrar solo subtotal/IVA si no es colaboración/consumo (estos tienen total 0) */}
+            {!isColaboracion && !isConsumoPropio && (
+              <div style={{ borderTop: '1px dashed #000', paddingTop: '4px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', margin: '2px 0' }}>
+                  <span>SUBTOTAL:</span>
+                  <span>{formatBs(transactionSubtotal)}</span>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#333', fontWeight: 'normal', marginTop: '2px' }}>
-                  <span>REF. DIVISAS:</span>
-                  <span>{formatUsd(transactionTotal / transactionExchangeRate)}</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', margin: '2px 0' }}>
+                  <span>IVA (16.00%):</span>
+                  <span>{formatBs(transactionIva)}</span>
                 </div>
-              </div>
-
-              {isCredito && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '8px', margin: '2px 0', color: '#e67e22' }}>
-                  <span>TASA BCV APLICADA:</span>
-                  <span>1 USD = {formatBsNumber(transactionExchangeRate)}</span>
-                </div>
-              )}
-
-              {!isCredito && (
-                <>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', margin: '2px 0' }}>
-                    <span>MONTO RECIBIDO:</span>
-                    <span>{formatBs(transactionPaidBs)}</span>
+                
+                <div style={{ fontSize: '13px', fontWeight: 'bold', margin: '5px 0', padding: '3px 0', borderTop: '1px solid #000', borderBottom: '1px solid #000' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+                    <span>{isCredito ? 'TOTAL ADEUDADO:' : 'TOTAL A PAGAR:'}</span>
+                    <span>{formatBs(transactionTotal)}</span>
                   </div>
-                  {transactionChange > 0 && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', margin: '2px 0', fontWeight: 'bold' }}>
-                      <span>SU CAMBIO (VUELTO):</span>
-                      <span>{formatBs(transactionChange)}</span>
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#333', fontWeight: 'normal', marginTop: '2px' }}>
+                    <span>REF. DIVISAS:</span>
+                    <span>{formatUsd(transactionTotal / transactionExchangeRate)}</span>
+                  </div>
+                </div>
 
-            {!isCredito && (
+                {isCredito && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '8px', margin: '2px 0', color: '#e67e22' }}>
+                    <span>TASA BCV APLICADA:</span>
+                    <span>1 USD = {formatBsNumber(transactionExchangeRate)}</span>
+                  </div>
+                )}
+
+                {!isCredito && (
+                  <>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', margin: '2px 0' }}>
+                      <span>MONTO RECIBIDO:</span>
+                      <span>{formatBs(transactionPaidBs)}</span>
+                    </div>
+                    {transactionChange > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', margin: '2px 0', fontWeight: 'bold' }}>
+                        <span>SU CAMBIO (VUELTO):</span>
+                        <span>{formatBs(transactionChange)}</span>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+
+            {!isCredito && !isColaboracion && !isConsumoPropio && (
               <div style={{ border: '1px solid #000', padding: '3px', margin: '8px 0', textAlign: 'center', fontWeight: 'bold', fontSize: '10px' }}>
                 FORMA DE PAGO: {paymentMethodLabels[transactionPayMethod] || transactionPayMethod.toUpperCase()}
               </div>
@@ -355,6 +414,16 @@ export default function ReceiptModal({ transaction, exchangeRate, receiptNumber,
                 <>
                   <p style={{ margin: '2px 0', fontWeight: 'bold' }}>CONDICIONES DE CRÉDITO</p>
                   <p style={{ margin: '2px 0' }}>El pago debe realizarse en la fecha acordada</p>
+                </>
+              ) : isColaboracion ? (
+                <>
+                  <p style={{ margin: '2px 0', fontWeight: 'bold' }}>🎁 SALIDA POR COLABORACIÓN</p>
+                  <p style={{ margin: '2px 0' }}>Este movimiento no genera ingreso en caja</p>
+                </>
+              ) : isConsumoPropio ? (
+                <>
+                  <p style={{ margin: '2px 0', fontWeight: 'bold' }}>🍽️ SALIDA POR CONSUMO PROPIO</p>
+                  <p style={{ margin: '2px 0' }}>Este movimiento no genera ingreso en caja</p>
                 </>
               ) : (
                 <p style={{ margin: '2px 0', fontWeight: 'bold' }}>¡GRACIAS POR SU PREFERENCIA!</p>

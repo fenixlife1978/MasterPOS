@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect } from 'react';
@@ -21,8 +20,7 @@ import InventoryModule from '@/components/inventory/inventory-module';
 import SuppliersModule from '@/components/suppliers/suppliers-module';
 import { Toaster } from '@/components/ui/toaster';
 import { syncService } from '@/services/syncService';
-import { Button } from '@/components/ui/button';
-import { Lock, RefreshCw } from 'lucide-react';
+import { Lock } from 'lucide-react';
 
 export default function LicoPOSApp() {
   const { user, loading: authLoading } = useAuth();
@@ -128,13 +126,6 @@ export default function LicoPOSApp() {
           <p className="text-sm opacity-60 mb-8">
             Para desbloquear, comuníquese con su supervisor o administrador.
           </p>
-          <Button
-            onClick={() => window.location.reload()}
-            className="bg-primary text-black font-bold hover:bg-primary/90"
-          >
-            <RefreshCw size={16} className="mr-2" />
-            Reintentar
-          </Button>
         </div>
       </div>
     );

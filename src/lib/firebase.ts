@@ -1,6 +1,6 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getFirestore } from 'firebase/firestore';
-import { getAuth } from 'firebase/auth';
+import { getAuth, setPersistence, browserSessionPersistence } from 'firebase/auth';
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || 'dummy-key',
@@ -17,6 +17,13 @@ const isClient = typeof window !== 'undefined';
 
 const db = isClient ? getFirestore(app) : null as any;
 const auth = isClient ? getAuth(app) : null as any;
+
+// Configurar persistencia por pestaña (sessionStorage) solo en el cliente
+if (isClient && auth) {
+  setPersistence(auth, browserSessionPersistence).catch((error) => {
+    console.error("Error al configurar persistencia de autenticación:", error);
+  });
+}
 
 export { db, auth };
 export default app;

@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { X, DollarSign, CreditCard, Banknote, Smartphone, Fingerprint, Plane, Plus, Trash2, Calculator } from 'lucide-react';
+import { X, DollarSign, Image as ImageIcon, CreditCard, Banknote, Smartphone, Fingerprint, Plane, Plus, Trash2, Calculator } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { formatBs, formatUsd } from '@/lib/currency-formatter';
+import { formatBs, formatUsd, formatUsdNumber } from '@/lib/currency-formatter';
 
 interface PaymentItem {
   id: string;

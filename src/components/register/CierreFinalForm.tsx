@@ -97,7 +97,7 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
       vueltosPM[m] = 0;
     });
 
-    const sortedByDate = [...txDay].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    const sortedByDate = [...txDay].sort((a, b) => new Date(a.date).getTime() - new Date(a.date).getTime());
     
     for (const tx of sortedByDate) {
       if (tx.type !== 'contado' && tx.type !== 'cobro_deuda') continue;
@@ -290,9 +290,14 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
         }
 
         // ✅ BLOQUEAR TERMINAL Y CERRAR SESIÓN DE FORMA ATÓMICA
-        // Se actualiza el estado en Firestore para que la terminal quede bloqueada
-        if (terminalId && terminalId !== 'default') {
-          await syncService.updateTerminalBlockStatus(terminalId, true);
+        // Se actualiza el estado en Firestore para que la terminal quede bloqueada.
+        // Se envuelve en try-catch para evitar que errores de permiso bloqueen el flujo de salida.
+        try {
+          if (terminalId && terminalId !== 'default') {
+            await syncService.updateTerminalBlockStatus(terminalId, true);
+          }
+        } catch (permError) {
+          console.error("No se pudo actualizar el estado de bloqueo de la terminal por falta de permisos. Por favor, revise las reglas de seguridad de Firestore.", permError);
         }
 
         // Limpiar estado de caja local

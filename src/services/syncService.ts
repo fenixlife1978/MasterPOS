@@ -112,7 +112,7 @@ const processQueue = async () => {
           await setDoc(doc(db, 'cash_sessions', data.id), { ...data, updatedAt: Date.now() });
           break;
         case 'updateTerminal':
-          await updateDoc(doc(db, 'terminals', data.id), { ...data.updates, updatedAt: Date.now() });
+          await setDoc(doc(db, 'terminals', data.id), { ...data.updates, updatedAt: Date.now() }, { merge: true });
           break;
         case 'updateUserTerminalId':
           await updateDoc(doc(db, 'users', data.userId), { terminalId: data.terminalId, updatedAt: Date.now() });
@@ -628,7 +628,8 @@ export const syncService = {
       addToQueue('updateTerminal', { id: terminalId, updates: { isBlocked } });
       return;
     }
-    await updateDoc(ref, { isBlocked, updatedAt: Date.now() });
+    // Se usa setDoc con merge: true para mayor robustez en permisos de escritura
+    await setDoc(ref, { isBlocked, updatedAt: Date.now() }, { merge: true });
   },
 
   async updateTerminal(terminalId: string, updates: Record<string, any>): Promise<void> {
@@ -638,7 +639,7 @@ export const syncService = {
       addToQueue('updateTerminal', { id: terminalId, updates });
       return;
     }
-    await updateDoc(ref, { ...updates, updatedAt: Date.now() });
+    await setDoc(ref, { ...updates, updatedAt: Date.now() }, { merge: true });
   },
 
   async updateUserTerminalId(userId: string, terminalId: string | null): Promise<void> {
@@ -743,7 +744,7 @@ export const syncService = {
       limit(500)
     );
     return onSnapshot(q, 
-      (snap) => callback(snap.docs.map(doc => ({ id: parseInt(doc.id), ...doc.data() }))),
+      (snap) => callback(snap.empty ? null : snap.docs.map(doc => ({ id: parseInt(doc.id), ...doc.data() }))),
       (err) => console.warn(`Suscripción restringida: session_txs/${sessionId}`, err.message)
     );
   },

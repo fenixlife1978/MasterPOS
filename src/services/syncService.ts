@@ -1,3 +1,4 @@
+
 "use client";
 
 import { db } from '@/lib/firebase';
@@ -628,7 +629,7 @@ export const syncService = {
       addToQueue('updateTerminal', { id: terminalId, updates: { isBlocked } });
       return;
     }
-    // Se usa setDoc con merge: true para mayor robustez en permisos de escritura
+    // Usar setDoc con merge: true para asegurar la compatibilidad con las reglas allow update
     await setDoc(ref, { isBlocked, updatedAt: Date.now() }, { merge: true });
   },
 

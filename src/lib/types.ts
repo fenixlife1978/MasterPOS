@@ -137,6 +137,7 @@ export interface Terminal {
   location: string;
   status: 'active' | 'inactive' | 'maintenance';
   assignedTo: string | null;
+  isBlocked?: boolean; // ✅ Nueva propiedad para bloqueo de terminal
   createdAt: string;
   updatedAt: string;
 }

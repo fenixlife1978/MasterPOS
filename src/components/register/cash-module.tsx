@@ -13,6 +13,7 @@ import { cn } from '@/lib/utils';
 import { useAuth } from '@/context/AuthContext';
 import CierreFinalForm from '@/components/register/CierreFinalForm';
 import { formatBs, formatUsd } from '@/lib/currency-formatter';
+import { syncService } from '@/services/syncService';
 
 interface CashModuleProps {
   state: ReturnType<typeof usePOSState>;
@@ -45,6 +46,30 @@ export default function CashModule({ state }: CashModuleProps) {
   const [showCambioTasaModal, setShowCambioTasaModal] = useState(false);
   const [nuevaTasaInput, setNuevaTasaInput] = useState(state.exchangeRate.toString());
   const [isUpdatingRate, setIsUpdatingRate] = useState(false);
+  
+  // Estados para bloqueo de terminal
+  const [isTerminalBlocked, setIsTerminalBlocked] = useState(false);
+  const [checkingBlock, setCheckingBlock] = useState(true);
+
+  // Verificar si la terminal está bloqueada
+  useEffect(() => {
+    const checkTerminalBlock = async () => {
+      if (!user || user.role === 'admin' || !user.terminalId) {
+        setCheckingBlock(false);
+        return;
+      }
+      try {
+        const terminal = await syncService.getTerminal(user.terminalId);
+        setIsTerminalBlocked(terminal?.isBlocked === true);
+      } catch (error) {
+        console.error('Error al verificar bloqueo de terminal:', error);
+        setIsTerminalBlocked(false);
+      } finally {
+        setCheckingBlock(false);
+      }
+    };
+    checkTerminalBlock();
+  }, [user]);
 
   const reg = state.register;
   const isClosed = !reg || !reg.isOpen;
@@ -75,7 +100,6 @@ export default function CashModule({ state }: CashModuleProps) {
       
       let monto = 0;
       if (isUsdMethod) {
-        // Sumar usdAmount de los pagos para métodos USD
         if (tx.payments && Array.isArray(tx.payments)) {
           tx.payments.forEach((p: any) => {
             if (p.method === methodKey && p.usdAmount) {
@@ -83,11 +107,9 @@ export default function CashModule({ state }: CashModuleProps) {
             }
           });
         } else {
-          // Fallback: usar total en USD de la transacción
           monto = tx.totalUsd || 0;
         }
       } else {
-        // Métodos Bs
         monto = tx.type === 'cobro_deuda' ? (tx.paidBs || tx.total || 0) : (tx.total || 0);
       }
       totals[methodKey] = (totals[methodKey] || 0) + monto;
@@ -95,7 +117,6 @@ export default function CashModule({ state }: CashModuleProps) {
     return totals;
   }, [reg?.txs, paymentMethods]);
 
-  // Total de efectivo USD (solo para mostrar en la columna "EFECTIVO USD" de la tabla)
   const totalEfectivoUsd = useMemo(() => {
     if (!reg?.txs) return 0;
     const today = new Date().toISOString().split('T')[0];
@@ -120,23 +141,29 @@ export default function CashModule({ state }: CashModuleProps) {
   }, [salesByMethod]);
 
   const totalEnCaja = (reg?.openAmount || 0) + (() => {
-    // Convertir ventas en USD a Bs según tasa actual para sumar al total en caja
     let usdTotal = 0;
     for (const m of paymentMethods.filter(p => p.isUsd)) {
       usdTotal += salesByMethod[m.id];
     }
     return totalContado - (usdTotal * state.exchangeRate) + (usdTotal * state.exchangeRate);
-    // En realidad, el total en caja debería ser apertura + ventas en Bs + (ventas en USD * tasa)
   })();
   const totalEnCajaUSD = totalEnCaja / (state.exchangeRate || 1);
 
   const handleOpenCash = () => {
+    if (isTerminalBlocked) {
+      alert('Terminal bloqueada. No se puede abrir la caja.');
+      return;
+    }
     const bsAmount = parseFloat(openAmountBs) || 0;
     const usdAmount = parseFloat(openAmountUsd) || 0;
     state.openCashRegister(bsAmount, usdAmount, state.exchangeRate);
   };
 
   const handleCambioTasa = async () => {
+    if (isTerminalBlocked) {
+      alert('Terminal bloqueada. No se puede cambiar la tasa.');
+      return;
+    }
     const newRate = parseFloat(nuevaTasaInput);
     if (isNaN(newRate) || newRate <= 0) {
       alert("Ingrese una tasa válida");
@@ -153,6 +180,38 @@ export default function CashModule({ state }: CashModuleProps) {
       setIsUpdatingRate(false);
     }
   };
+
+  // Mostrar pantalla de carga mientras se verifica bloqueo
+  if (checkingBlock) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="text-center">
+          <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-2" />
+          <p className="text-xs text-black/50">Verificando terminal...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Pantalla de bloqueo si la terminal está bloqueada
+  if (isTerminalBlocked) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full bg-gray-50 p-6">
+        <div className="bg-red-50 border-2 border-red-300 rounded-2xl p-8 text-center max-w-md">
+          <div className="bg-red-100 rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-4">
+            <Lock size={32} className="text-red-600" />
+          </div>
+          <h2 className="text-xl font-black text-red-700 mb-2">TERMINAL BLOQUEADA</h2>
+          <p className="text-sm text-red-600 mb-4">
+            Esta estación de trabajo ha sido bloqueada por el administrador.
+          </p>
+          <p className="text-xs text-red-500">
+            Para desbloquear, comuníquese con su supervisor.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   if (showCierreFinal) {
     return <CierreFinalForm 

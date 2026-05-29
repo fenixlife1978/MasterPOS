@@ -4,7 +4,7 @@ import { db } from '@/lib/firebase';
 import { 
   doc, setDoc, deleteDoc, 
   collection, query, onSnapshot, limit,
-  orderBy, writeBatch, getDoc, getDocs, runTransaction, where
+  orderBy, writeBatch, getDoc, getDocs, runTransaction, where, updateDoc
 } from 'firebase/firestore';
 
 interface PendingOperation {
@@ -114,6 +114,10 @@ const processQueue = async () => {
         // ✅ NUEVO: Actualizar sesión de caja
         case 'updateCashSession':
           await setDoc(doc(db, 'cash_sessions', data.id), { ...data, updatedAt: Date.now() });
+          break;
+        // ✅ NUEVO: Actualizar terminal (para bloqueo u otros campos)
+        case 'updateTerminal':
+          await updateDoc(doc(db, 'terminals', data.id.toString()), { ...data.updates, updatedAt: Date.now() });
           break;
       }
     } catch (error) {
@@ -633,6 +637,59 @@ export const syncService = {
     const batch = writeBatch(db);
     snap.docs.forEach(doc => batch.delete(doc.ref));
     await batch.commit();
+  },
+
+  // ========== 🆕 MÉTODOS PARA TERMINALES (BLOQUEO Y CONSULTA) ==========
+  
+  /**
+   * Obtiene un terminal por su ID
+   * @param id ID numérico del terminal
+   * @returns Datos del terminal o null
+   */
+  async getTerminal(id: number | string): Promise<any | null> {
+    if (!db) return null;
+    const snap = await getDoc(doc(db, 'terminals', id.toString()));
+    return snap.exists() ? { id: parseInt(snap.id), ...snap.data() } : null;
+  },
+
+  /**
+   * Obtiene todos los terminales
+   * @returns Array con todos los terminales
+   */
+  async getAllTerminals(): Promise<any[]> {
+    if (!db) return [];
+    const snap = await getDocs(collection(db, 'terminals'));
+    return snap.docs.map(doc => ({ id: parseInt(doc.id), ...doc.data() }));
+  },
+
+  /**
+   * Actualiza el estado de bloqueo de un terminal
+   * @param terminalId ID del terminal
+   * @param isBlocked true para bloquear, false para desbloquear
+   */
+  async updateTerminalBlockStatus(terminalId: number, isBlocked: boolean): Promise<void> {
+    if (!db) return;
+    const ref = doc(db, 'terminals', terminalId.toString());
+    if (!isOnline) {
+      addToQueue('updateTerminal', { id: terminalId, updates: { isBlocked } });
+      return;
+    }
+    await updateDoc(ref, { isBlocked, updatedAt: Date.now() });
+  },
+
+  /**
+   * Actualiza cualquier campo de un terminal (genérico)
+   * @param terminalId ID del terminal
+   * @param updates Objeto con los campos a actualizar
+   */
+  async updateTerminal(terminalId: number, updates: Record<string, any>): Promise<void> {
+    if (!db) return;
+    const ref = doc(db, 'terminals', terminalId.toString());
+    if (!isOnline) {
+      addToQueue('updateTerminal', { id: terminalId, updates });
+      return;
+    }
+    await updateDoc(ref, { ...updates, updatedAt: Date.now() });
   },
 
   // ========== 🆕 MÉTODOS PARA SESIONES DE CAJA (Aislamiento de Terminales) ==========

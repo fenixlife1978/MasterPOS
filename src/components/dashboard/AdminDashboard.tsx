@@ -1,17 +1,17 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import CloseHistoryModal from '@/components/register/close-history-modal';
 import { usePOSState } from '@/hooks/use-pos-state';
 import { useSuppliers } from '@/hooks/use-suppliers';
 import InvoiceNotifications from '@/components/ui/InvoiceNotifications';
 import InvoiceReminderModal from '@/components/ui/InvoiceReminderModal';
+import CloseHistoryModal from '@/components/register/close-history-modal';
 import { 
   TrendingUp, DollarSign, Users, Package, 
   CreditCard, ShoppingBag, Computer, FileText,
   Calendar, ArrowUp, ArrowDown, Truck, Eye,
   RefreshCw, Lock, KeyRound, Save, AlertTriangle,
-  Trash2, XCircle, Archive
+  Trash2, XCircle, Archive, Unlock
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import TerminalManager from '@/components/admin/TerminalManager';
@@ -24,6 +24,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { formatBs, formatUsd, formatBsNumber, formatUsdNumber } from '@/lib/currency-formatter';
+import { Switch } from '@/components/ui/switch';
 
 interface AdminDashboardProps {
   state: ReturnType<typeof usePOSState>;
@@ -43,7 +44,7 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
   const [exchangeRateInput, setExchangeRateInput] = useState(state.exchangeRate.toString());
   const [isUpdatingRate, setIsUpdatingRate] = useState(false);
   
-  // ✅ Estado para el PIN de autorización
+  // ✅ Estado para el PIN de autorización (código de administrador)
   const [adminPin, setAdminPin] = useState('');
   const [newAdminPin, setNewAdminPin] = useState('');
   const [confirmAdminPin, setConfirmAdminPin] = useState('');
@@ -57,6 +58,44 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
 
   // ✅ Estado para el modal de historial de cierres
   const [showHistoryModal, setShowHistoryModal] = useState(false);
+
+  // ✅ Estado para la lista de terminales y su estado de bloqueo
+  const [terminals, setTerminals] = useState<any[]>([]);
+  const [isLoadingTerminals, setIsLoadingTerminals] = useState(false);
+
+  // Cargar terminales al montar el componente
+  useEffect(() => {
+    loadTerminals();
+  }, []);
+
+  const loadTerminals = async () => {
+    setIsLoadingTerminals(true);
+    try {
+      const allTerminals = await syncService.getAllTerminals();
+      setTerminals(allTerminals);
+    } catch (error) {
+      console.error('Error al cargar terminales:', error);
+    } finally {
+      setIsLoadingTerminals(false);
+    }
+  };
+
+  // Función para cambiar el estado de bloqueo de un terminal
+  const handleToggleBlock = async (terminalId: number, currentBlocked: boolean) => {
+    try {
+      await syncService.updateTerminalBlockStatus(terminalId, !currentBlocked);
+      toast({ 
+        title: !currentBlocked ? "Terminal bloqueado" : "Terminal desbloqueado", 
+        description: `La terminal ha sido ${!currentBlocked ? 'bloqueada' : 'desbloqueada'} correctamente.`,
+        variant: "default"
+      });
+      // Recargar lista
+      loadTerminals();
+    } catch (error) {
+      console.error('Error al cambiar estado de bloqueo:', error);
+      toast({ title: "Error", description: "No se pudo cambiar el estado del terminal", variant: "destructive" });
+    }
+  };
 
   // Cargar PIN actual al inicio
   useEffect(() => {
@@ -388,6 +427,66 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
                   PIN actual: {adminPin.split('').map(() => '•').join('')}
                 </p>
               )}
+            </div>
+          )}
+          
+          {/* ✅ Sección de bloqueo/desbloqueo de terminales */}
+          {activeTab === 'terminals' && (
+            <div className="mt-6">
+              <h3 className="text-sm font-black mb-3 flex items-center gap-2">
+                <Lock size={16} /> Control de Bloqueo de Terminales
+              </h3>
+              <div className="bg-white border border-[#9E9E9E] rounded-xl overflow-hidden shadow-sm">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead className="bg-gray-100">
+                      <tr>
+                        <th className="p-2 text-left">Terminal</th>
+                        <th className="p-2 text-left">Ubicación</th>
+                        <th className="p-2 text-left">Usuario Asignado</th>
+                        <th className="p-2 text-center">Estado</th>
+                        <th className="p-2 text-center">Bloqueado</th>
+                        <th className="p-2 text-center">Acción</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {isLoadingTerminals ? (
+                        <tr><td colSpan={6} className="text-center p-4">Cargando terminales...</td></tr>
+                      ) : terminals.length === 0 ? (
+                        <tr><td colSpan={6} className="text-center p-4">No hay terminales registradas</td></tr>
+                      ) : (
+                        terminals.map(term => (
+                          <tr key={term.id} className="border-t">
+                            <td className="p-2 font-bold">{term.name}</td>
+                            <td className="p-2">{term.location || '—'}</td>
+                            <td className="p-2">{term.assignedTo || '—'}</td>
+                            <td className="p-2 text-center">
+                              <span className={cn("px-2 py-0.5 rounded-full text-[9px] font-bold", term.status === 'active' ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700")}>
+                                {term.status === 'active' ? 'Activa' : 'Inactiva'}
+                              </span>
+                            </td>
+                            <td className="p-2 text-center">
+                              <span className={cn("px-2 py-0.5 rounded-full text-[9px] font-bold", term.isBlocked ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700")}>
+                                {term.isBlocked ? 'BLOQUEADA' : 'DESBLOQUEADA'}
+                              </span>
+                            </td>
+                            <td className="p-2 text-center">
+                              <Switch
+                                checked={!!term.isBlocked}
+                                onCheckedChange={() => handleToggleBlock(term.id, term.isBlocked)}
+                                className="data-[state=checked]:bg-red-500 data-[state=unchecked]:bg-green-500"
+                              />
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="bg-gray-50 p-3 text-[9px] text-black/40">
+                  <p>⚠️ Al bloquear una terminal, ningún cajero podrá acceder a ella hasta que el administrador la desbloquee.</p>
+                </div>
+              </div>
             </div>
           )}
         </div>

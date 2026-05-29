@@ -3,10 +3,10 @@
 import { useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
 import { usePOSState } from '@/hooks/use-pos-state';
-import { UserCircle } from 'lucide-react';
+import { UserCircle, Lock } from 'lucide-react';
 import ProductSearch from './product-search';
 import CartPanel from './cart-panel';
-import FloatingPaymentModal from './FloatingPaymentModal'; // ✅ NUEVO modal flotante
+import FloatingPaymentModal from './FloatingPaymentModal';
 import SaleTypeModal from './sale-type-modal';
 import CreditModal from './credit-modal';
 import ReceiptModal from '@/components/receipt-modal';
@@ -14,7 +14,6 @@ import AuthorizationModal from './AuthorizationModal';
 import { syncService } from '@/services/syncService';
 import { useAuth } from '@/context/AuthContext';
 
-// ✅ NUEVA FUNCIÓN DE FORMATEO (para usar en este archivo también)
 const formatBs = (amount: number): string => {
   if (isNaN(amount)) return 'Bs. 0,00';
   return 'Bs. ' + amount.toLocaleString('es-VE', {
@@ -47,6 +46,28 @@ export default function POSModule({ state }: POSModuleProps) {
   const [showAuthorizationModal, setShowAuthorizationModal] = useState(false);
   const [pendingOperationType, setPendingOperationType] = useState<'colaboracion' | 'consumo_propio'>('colaboracion');
   const [isVerifying, setIsVerifying] = useState(false);
+  const [isTerminalBlocked, setIsTerminalBlocked] = useState(false);
+  const [checkingBlock, setCheckingBlock] = useState(true);
+
+  // Verificar si la terminal está bloqueada
+  useEffect(() => {
+    const checkTerminalBlock = async () => {
+      if (!user || user.role === 'admin' || !user.terminalId) {
+        setCheckingBlock(false);
+        return;
+      }
+      try {
+        const terminal = await syncService.getTerminal(user.terminalId);
+        setIsTerminalBlocked(terminal?.isBlocked === true);
+      } catch (error) {
+        console.error('Error al verificar bloqueo de terminal:', error);
+        setIsTerminalBlocked(false);
+      } finally {
+        setCheckingBlock(false);
+      }
+    };
+    checkTerminalBlock();
+  }, [user]);
 
   useEffect(() => {
     const storedUser = localStorage.getItem('user');
@@ -83,6 +104,10 @@ export default function POSModule({ state }: POSModuleProps) {
   const totalForCredit = totalWithIva;
 
   const handlePaymentConfirm = async (data: any) => {
+    if (isTerminalBlocked) {
+      alert('Terminal bloqueada. No se pueden procesar ventas.');
+      return;
+    }
     try {
       const receiptNum = nextReceiptNumber;
       const tx = await state.finalizeSale('contado', { ...data, receiptNumber: receiptNum });
@@ -101,6 +126,10 @@ export default function POSModule({ state }: POSModuleProps) {
   };
 
   const handleCreditConfirm = async (data: any) => {
+    if (isTerminalBlocked) {
+      alert('Terminal bloqueada. No se pueden procesar ventas.');
+      return;
+    }
     try {
       const receiptNum = nextReceiptNumber;
       const tx = await state.finalizeSale('credito', {
@@ -130,6 +159,10 @@ export default function POSModule({ state }: POSModuleProps) {
   };
 
   const handleAuthorizationConfirm = async (type: 'colaboracion' | 'consumo_propio', motivo: string, pin: string) => {
+    if (isTerminalBlocked) {
+      alert('Terminal bloqueada. No se pueden realizar esta acción.');
+      return;
+    }
     setIsVerifying(true);
     try {
       const adminCodeData = await syncService.getAdminCode();
@@ -160,6 +193,36 @@ export default function POSModule({ state }: POSModuleProps) {
       setShowAuthorizationModal(false);
     }
   };
+
+  if (checkingBlock) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="text-center">
+          <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-2" />
+          <p className="text-xs text-black/50">Verificando terminal...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (isTerminalBlocked) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full bg-gray-50 p-6">
+        <div className="bg-red-50 border-2 border-red-300 rounded-2xl p-8 text-center max-w-md">
+          <div className="bg-red-100 rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-4">
+            <Lock size={32} className="text-red-600" />
+          </div>
+          <h2 className="text-xl font-black text-red-700 mb-2">TERMINAL BLOQUEADA</h2>
+          <p className="text-sm text-red-600 mb-4">
+            Esta estación de trabajo ha sido bloqueada por el administrador.
+          </p>
+          <p className="text-xs text-red-500">
+            Para desbloquear, comuníquese con su supervisor.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 h-full overflow-hidden">

@@ -103,21 +103,21 @@ const processQueue = async () => {
         case 'saveTerminal':
           await setDoc(doc(db, 'terminals', data.id.toString()), { ...data, updatedAt: Date.now() });
           break;
-        // ✅ NUEVO: Guardar cierre de caja en Firestore
         case 'saveCashClose':
           await setDoc(doc(db, 'cash_closes', data.id), { ...data, createdAt: Date.now() });
           break;
-        // ✅ NUEVO: Guardar sesión de caja
         case 'saveCashSession':
           await setDoc(doc(db, 'cash_sessions', data.id), { ...data, updatedAt: Date.now() });
           break;
-        // ✅ NUEVO: Actualizar sesión de caja
         case 'updateCashSession':
           await setDoc(doc(db, 'cash_sessions', data.id), { ...data, updatedAt: Date.now() });
           break;
-        // ✅ NUEVO: Actualizar terminal (para bloqueo u otros campos)
         case 'updateTerminal':
           await updateDoc(doc(db, 'terminals', data.id.toString()), { ...data.updates, updatedAt: Date.now() });
+          break;
+        // ✅ NUEVO: Actualizar terminalId de un usuario (offline)
+        case 'updateUserTerminalId':
+          await updateDoc(doc(db, 'users', data.userId), { terminalId: data.terminalId, updatedAt: Date.now() });
           break;
       }
     } catch (error) {
@@ -690,6 +690,24 @@ export const syncService = {
       return;
     }
     await updateDoc(ref, { ...updates, updatedAt: Date.now() });
+  },
+
+  // ========== 🆕 MÉTODO PARA ACTUALIZAR terminalId DEL USUARIO ==========
+  /**
+   * Actualiza el campo terminalId de un usuario en Firestore.
+   * Útil para asignar o desasignar una terminal a un cajero.
+   * @param userId ID del usuario (documento en Firestore)
+   * @param terminalId ID de la terminal (string) o null para desasignar
+   */
+  async updateUserTerminalId(userId: string, terminalId: string | null): Promise<void> {
+    if (!db) return;
+    const userRef = doc(db, 'users', userId);
+    const data = { terminalId: terminalId || null, updatedAt: Date.now() };
+    if (!isOnline) {
+      addToQueue('updateUserTerminalId', { userId, terminalId: terminalId || null });
+      return;
+    }
+    await updateDoc(userRef, data);
   },
 
   // ========== 🆕 MÉTODOS PARA SESIONES DE CAJA (Aislamiento de Terminales) ==========

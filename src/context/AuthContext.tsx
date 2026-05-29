@@ -4,7 +4,7 @@ import { createContext, useContext, useState, useEffect, ReactNode } from 'react
 import { useRouter, usePathname } from 'next/navigation';
 import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { syncService } from '@/services/syncService';
 
@@ -61,9 +61,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser: FirebaseUser | null) => {
+    const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser: FirebaseUser | null) => {
       if (firebaseUser) {
-        // Obtener datos del usuario desde Firestore (colección 'users')
+        // Obtener datos iniciales del usuario desde Firestore
         let terminalId: string | undefined;
         let userRole: 'admin' | 'cashier' = 'cashier';
         let userName = firebaseUser.displayName || 'Usuario';
@@ -101,7 +101,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
         setUser(appUser);
         
-        // Cargar sesión activa si tiene terminalId
+        // Cargar sesión activa inicial
         if (appUser.terminalId) {
           try {
             const session = await syncService.getActiveSessionByTerminal(appUser.terminalId);
@@ -118,10 +118,50 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(false);
     });
 
-    return () => unsubscribe();
+    return () => unsubscribeAuth();
   }, []);
 
-  // Recargar sesión cuando cambia el terminalId del usuario
+  // ✅ Suscripción en tiempo real a los cambios del usuario (Firestore)
+  useEffect(() => {
+    if (!user?.uid) return;
+
+    const unsubscribeSnapshot = onSnapshot(
+      doc(db, 'users', user.uid),
+      (docSnap) => {
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          setUser((prevUser) => {
+            if (!prevUser) return prevUser;
+            // Solo actualizar si hubo cambios relevantes
+            const newTerminalId = data.terminalId;
+            const newRole = data.role === 'admin' ? 'admin' : 'cashier';
+            const newName = data.name || prevUser.name;
+            
+            if (
+              prevUser.terminalId !== newTerminalId ||
+              prevUser.role !== newRole ||
+              prevUser.name !== newName
+            ) {
+              return {
+                ...prevUser,
+                terminalId: newTerminalId,
+                role: newRole,
+                name: newName,
+              };
+            }
+            return prevUser;
+          });
+        }
+      },
+      (error) => {
+        console.error('Error en snapshot del usuario:', error);
+      }
+    );
+
+    return () => unsubscribeSnapshot();
+  }, [user?.uid]);
+
+  // Recargar sesión activa cuando cambia el terminalId del usuario (después de actualización en tiempo real)
   useEffect(() => {
     if (user?.terminalId) {
       reloadActiveSession();

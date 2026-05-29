@@ -2,16 +2,15 @@
 
 import { useState, useEffect } from 'react';
 import { 
-  Plus, Edit, Trash2, X, 
-  Computer, Users, MapPin, Power, 
-  PowerOff, AlertTriangle, Search, Loader2, Lock, Unlock
+  Plus, Edit, Trash2, Computer, Users, MapPin, Power, 
+  PowerOff, Search, Lock, Unlock
 } from 'lucide-react';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, query, where } from 'firebase/firestore';
+import { collection, getDocs, query } from 'firebase/firestore';
 import { syncService } from '@/services/syncService';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/context/AuthContext';
@@ -28,17 +27,18 @@ interface Terminal {
   updatedAt: string;
 }
 
-interface Cashier {
+interface User {
   id: string;
   name: string;
   email: string;
   role: string;
+  terminalId?: string | null;
 }
 
 export default function TerminalManager() {
   const { user } = useAuth();
   const [terminals, setTerminals] = useState<Terminal[]>([]);
-  const [cashiers, setCashiers] = useState<Cashier[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
   const [showModal, setShowModal] = useState(false);
   const [editingTerminal, setEditingTerminal] = useState<Terminal | null>(null);
   const [search, setSearch] = useState('');
@@ -56,33 +56,42 @@ export default function TerminalManager() {
     if (!user) return;
 
     const unsub = syncService.subscribeToTerminals((data: any[]) => {
-      // Asegurar que cada terminal tenga isBlocked (por defecto false)
       const terminalsWithBlock = data.map(t => ({ ...t, isBlocked: t.isBlocked ?? false }));
       setTerminals(terminalsWithBlock);
     });
     
-    const loadCashiers = async () => {
+    const loadUsers = async () => {
       setIsLoadingUsers(true);
       try {
-        const q = query(collection(db, 'users'), where('role', '==', 'cashier'));
+        const q = query(collection(db, 'users'));
         const querySnapshot = await getDocs(q);
-        const cashiersList = querySnapshot.docs.map(doc => ({
+        const usersList = querySnapshot.docs.map(doc => ({
           id: doc.id,
           name: doc.data().name,
           email: doc.data().email,
-          role: doc.data().role
-        })) as Cashier[];
-        setCashiers(cashiersList);
+          role: doc.data().role,
+          terminalId: doc.data().terminalId,
+        })) as User[];
+        setUsers(usersList);
       } catch (error) {
-        console.error('Error loading cashiers:', error);
+        console.error('Error loading users:', error);
       } finally {
         setIsLoadingUsers(false);
       }
     };
 
-    loadCashiers();
+    loadUsers();
     return () => unsub();
   }, [user]);
+
+  const updateUserTerminalAssignment = async (userId: string | null, terminalId: number | null) => {
+    if (!userId) return;
+    try {
+      await syncService.updateUserTerminalId(userId, terminalId ? terminalId.toString() : null);
+    } catch (error) {
+      console.error('Error al actualizar terminalId del usuario:', error);
+    }
+  };
 
   const handleSubmit = async () => {
     if (!formData.name) {
@@ -90,12 +99,16 @@ export default function TerminalManager() {
       return;
     }
 
+    const oldAssignedTo = editingTerminal ? editingTerminal.assignedTo : null;
+    const newAssignedTo = formData.assignedTo || null;
+    const terminalId = editingTerminal ? editingTerminal.id : Date.now();
+
     const terminalData = {
-      id: editingTerminal ? editingTerminal.id : Date.now(),
+      id: terminalId,
       name: formData.name,
       description: formData.description,
       location: formData.location,
-      assignedTo: formData.assignedTo || null,
+      assignedTo: newAssignedTo,
       status: editingTerminal ? editingTerminal.status : 'active',
       isBlocked: editingTerminal ? (editingTerminal.isBlocked ?? false) : false,
       updatedAt: new Date().toISOString(),
@@ -103,13 +116,26 @@ export default function TerminalManager() {
     };
 
     await syncService.saveTerminal(terminalData);
+
+    if (oldAssignedTo !== newAssignedTo) {
+      if (oldAssignedTo) {
+        await updateUserTerminalAssignment(oldAssignedTo, null);
+      }
+      if (newAssignedTo) {
+        await updateUserTerminalAssignment(newAssignedTo, terminalId);
+      }
+    }
+
     resetForm();
     setShowModal(false);
   };
 
-  const handleDelete = async (id: number) => {
+  const handleDelete = async (terminal: Terminal) => {
     if (confirm('¿Está seguro de eliminar esta terminal?')) {
-      await syncService.deleteTerminal(id);
+      if (terminal.assignedTo) {
+        await updateUserTerminalAssignment(terminal.assignedTo, null);
+      }
+      await syncService.deleteTerminal(terminal.id);
     }
   };
 
@@ -127,7 +153,6 @@ export default function TerminalManager() {
     try {
       const newBlocked = !terminal.isBlocked;
       await syncService.updateTerminalBlockStatus(terminal.id, newBlocked);
-      // Actualizar localmente para mejor UX
       setTerminals(prev => prev.map(t => 
         t.id === terminal.id ? { ...t, isBlocked: newBlocked, updatedAt: new Date().toISOString() } : t
       ));
@@ -157,14 +182,16 @@ export default function TerminalManager() {
 
   const getAssignedUserName = (userId: string | null) => {
     if (!userId) return 'Sin asignar';
-    const cashier = cashiers.find(c => c.id === userId);
-    return cashier ? cashier.name : 'Usuario no encontrado';
+    const found = users.find(u => u.id === userId);
+    return found ? found.name : 'Usuario no encontrado';
   };
 
   const filteredTerminals = terminals.filter(t => 
     t.name.toLowerCase().includes(search.toLowerCase()) ||
     t.location.toLowerCase().includes(search.toLowerCase())
   );
+
+  const cashiers = users.filter(u => u.role === 'cashier');
 
   return (
     <div className="bg-white border border-[#9E9E9E] rounded-xl p-5 shadow-md">
@@ -257,7 +284,7 @@ export default function TerminalManager() {
                     <button onClick={() => handleEdit(terminal)} className="p-1.5 rounded-lg hover:bg-gray-100" title="Editar">
                       <Edit size={14} className="text-blue-500" />
                     </button>
-                    <button onClick={() => handleDelete(terminal.id)} className="p-1.5 rounded-lg hover:bg-gray-100" title="Eliminar">
+                    <button onClick={() => handleDelete(terminal)} className="p-1.5 rounded-lg hover:bg-gray-100" title="Eliminar">
                       <Trash2 size={14} className="text-red-500" />
                     </button>
                   </div>

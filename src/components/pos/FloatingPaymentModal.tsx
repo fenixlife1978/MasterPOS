@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { X, DollarSign, Image as ImageIcon, CreditCard, Banknote, Smartphone, Fingerprint, Plane, Plus, Trash2, Calculator } from 'lucide-react';
+import { X, DollarSign, CreditCard, Banknote, Smartphone, Fingerprint, Plane, Plus, Trash2, Calculator } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatBs, formatUsd, formatUsdNumber } from '@/lib/currency-formatter';
 
@@ -56,6 +56,9 @@ export default function FloatingPaymentModal({ total, exchangeRate, onClose, onC
   // Si está pagado por USD pero faltan céntimos en Bs, calculamos el ajuste
   const ajusteRedondeoBs = (isPaidByUsd && totalPaid < total) ? Math.round((total - totalPaid) * 100) / 100 : 0;
 
+  // BLINDAJE VISUAL: Si ya se pagó exacto en USD, forzamos a la interfaz a mostrar que se pagó el 100% en Bs
+  const displayedTotalPaidBs = (isPaidByUsd && ajusteRedondeoBs > 0) ? total : totalPaid;
+
   const addPayment = () => {
     let rawAmount = parseFloat(inputValue);
     if (isNaN(rawAmount) || rawAmount <= 0) return;
@@ -93,8 +96,12 @@ export default function FloatingPaymentModal({ total, exchangeRate, onClose, onC
     
     let amountToAdd = currentRemainingBs;
     if (isUsd) {
-      // Calculamos cuánto USD se necesita para cubrir los Bs restantes
-      amountToAdd = Math.round((currentRemainingBs / exchangeRate) * 100) / 100;
+      // Si no hay pagos cargados, usamos directamente el total en USD calculado
+      if (payments.length === 0) {
+        amountToAdd = totalUsd;
+      } else {
+        amountToAdd = Math.round((currentRemainingBs / exchangeRate) * 100) / 100;
+      }
     }
     setInputValue(amountToAdd.toFixed(2));
   };
@@ -174,7 +181,8 @@ export default function FloatingPaymentModal({ total, exchangeRate, onClose, onC
           </div>
           <div className="bg-gradient-to-br from-green-50 to-green-100 p-3 rounded-xl text-center shadow-sm">
             <span className="text-[10px] font-black text-green-700 uppercase tracking-wider">Pagado</span>
-            <p className="text-3xl font-black mt-1 text-green-700">{formatBs(totalPaid)}</p>
+            {/* Aquí usamos el monto blindado para que coincida perfectamente en pantalla */}
+            <p className="text-3xl font-black mt-1 text-green-700">{formatBs(displayedTotalPaidBs)}</p>
             {totalPaidUsd > 0 && <p className="text-xs font-bold text-green-600 mt-0.5">USD {formatUsdNumber(totalPaidUsd)}</p>}
           </div>
         </div>
@@ -183,23 +191,25 @@ export default function FloatingPaymentModal({ total, exchangeRate, onClose, onC
           {payments.length === 0 ? (
             <div className="text-center py-3 text-xs text-black/40">No hay pagos registrados</div>
           ) : (
-            payments.map(p => {
-              const methodInfo = methods.find(m => m.id === p.method);
-              return (
-                <div key={p.id} className="flex justify-between items-center p-1.5 text-xs">
-                  <div className="flex items-center gap-2">
-                    {methodInfo?.icon && <methodInfo.icon size={14} />}
-                    <span className="font-bold">{methodInfo?.label}</span>
+            <div className="divide-y">
+              {payments.map(p => {
+                const methodInfo = methods.find(m => m.id === p.method);
+                return (
+                  <div key={p.id} className="flex justify-between items-center p-1.5 text-xs">
+                    <div className="flex items-center gap-2">
+                      {methodInfo?.icon && <methodInfo.icon size={14} />}
+                      <span className="font-bold">{methodInfo?.label}</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="font-mono">{formatPaymentAmount(p)}</span>
+                      <button onClick={() => removePayment(p.id)} className="text-red-500 hover:text-red-700">
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <span className="font-mono">{formatPaymentAmount(p)}</span>
-                    <button onClick={() => removePayment(p.id)} className="text-red-500 hover:text-red-700">
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-                </div>
-              );
-            })
+                );
+              })}
+            </div>
           )}
         </div>
 
@@ -251,7 +261,11 @@ export default function FloatingPaymentModal({ total, exchangeRate, onClose, onC
           </button>
         </div>
 
-        <div className="bg-red-50 rounded-xl p-2.5 text-center border border-red-200">
+        {/* Banner de respuesta dinámica con cn() para alternar colores según el estado de la cuenta */}
+        <div className={cn(
+          "rounded-xl p-2.5 text-center border transition-colors",
+          remaining > 0 ? "bg-red-50 border-red-200" : "bg-green-50 border-green-200"
+        )}>
           {remaining > 0 ? (
             <>
               <p className="text-[9px] font-black text-red-700 uppercase tracking-wider">Faltante</p>
@@ -264,14 +278,8 @@ export default function FloatingPaymentModal({ total, exchangeRate, onClose, onC
               <p className="text-3xl font-black text-green-700 mt-0.5">{formatBs(change)}</p>
               <p className="text-sm font-bold text-green-600 mt-0.5">≈ {formatUsd(change / exchangeRate)}</p>
             </>
-          ) : isPaidByUsd && ajusteRedondeoBs > 0 ? (
-             <>
-               <p className="text-[9px] font-black text-blue-700 uppercase tracking-wider">Ajuste por Redondeo</p>
-               <p className="text-xl font-black text-blue-700 mt-0.5">{formatBs(ajusteRedondeoBs)}</p>
-               <p className="text-[8px] text-blue-600">Diferencia de centavos condonada</p>
-             </>
           ) : (
-            <p className="text-sm font-black text-green-700">Pago cubierto</p>
+            <p className="text-sm font-black text-green-700 py-1">Pago cubierto</p>
           )}
         </div>
 

@@ -25,5 +25,5 @@ if (isClient && auth) {
   });
 }
 
-export { db, auth };
+export { db, auth, firebaseConfig };
 export default app;

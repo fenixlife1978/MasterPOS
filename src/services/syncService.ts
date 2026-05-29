@@ -1,4 +1,3 @@
-
 "use client";
 
 import { db } from '@/lib/firebase';
@@ -771,7 +770,7 @@ export const syncService = {
       limit(500)
     );
     return onSnapshot(q, 
-      (snap) => callback(snap.empty ? null : snap.docs.map(doc => ({ id: parseInt(doc.id), ...doc.data() }))),
+      (snap) => callback(snap.empty ? [] : snap.docs.map(doc => ({ id: parseInt(doc.id), ...doc.data() }))),
       (err) => console.warn(`Suscripción restringida: session_txs/${sessionId}`, err.message)
     );
   },

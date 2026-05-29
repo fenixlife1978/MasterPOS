@@ -4,7 +4,7 @@ import { createContext, useContext, useState, useEffect, ReactNode } from 'react
 import { useRouter, usePathname } from 'next/navigation';
 import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
-import { doc, getDoc, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc, setDoc, getDocs, collection, onSnapshot } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { syncService } from '@/services/syncService';
 
@@ -41,6 +41,185 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
 
+  // Restaurar sesión desde sessionStorage al iniciar (síncrono)
+  useEffect(() => {
+    const stored = sessionStorage.getItem('user');
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored);
+        setUser(parsed);
+        setLoading(false);
+      } catch (e) {
+        console.error('Error parsing sessionStorage user', e);
+      }
+    } else {
+      setLoading(true); // Esperamos a Firebase
+    }
+  }, []);
+
+  // Manejo de autenticación con Firebase
+  useEffect(() => {
+    if (!auth) {
+      setLoading(false);
+      return;
+    }
+
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      // Si ya tenemos usuario en sessionStorage y coincide con el UID, no hacemos nada
+      const storedUser = sessionStorage.getItem('user');
+      if (storedUser && firebaseUser) {
+        try {
+          const parsed = JSON.parse(storedUser);
+          if (parsed.uid === firebaseUser.uid) {
+            // Usuario ya está en sessionStorage, no actualizamos
+            setLoading(false);
+            return;
+          }
+        } catch (e) {}
+      }
+
+      if (firebaseUser) {
+        // Buscar el documento del usuario en Firestore
+        const userRef = doc(db, 'users', firebaseUser.uid);
+        const userSnap = await getDoc(userRef);
+
+        if (userSnap.exists()) {
+          // Documento existe: cargar datos
+          const data = userSnap.data();
+          const appUser: AppUser = {
+            uid: firebaseUser.uid,
+            email: firebaseUser.email,
+            name: data.name || firebaseUser.displayName || 'Usuario',
+            role: data.role === 'admin' ? 'admin' : 'cashier',
+            terminalId: data.terminalId,
+          };
+          sessionStorage.setItem('user', JSON.stringify(appUser));
+          setUser(appUser);
+          setLoading(false);
+        } else {
+          // Documento no existe: solo se permite crear si es el primer usuario del sistema
+          const allUsersSnap = await getDocs(collection(db, 'users'));
+          const isFirstUser = allUsersSnap.empty;
+
+          if (isFirstUser) {
+            // Primer usuario: se crea como administrador
+            const name = firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'Administrador';
+            const newUser: AppUser = {
+              uid: firebaseUser.uid,
+              email: firebaseUser.email,
+              name,
+              role: 'admin',
+              terminalId: undefined,
+            };
+            await setDoc(userRef, {
+              ...newUser,
+              createdAt: new Date().toISOString(),
+              updatedAt: Date.now(),
+            });
+            sessionStorage.setItem('user', JSON.stringify(newUser));
+            setUser(newUser);
+            setLoading(false);
+          } else {
+            // No es primer usuario y no tiene documento → acceso denegado
+            console.error('Usuario sin documento en Firestore:', firebaseUser.email);
+            await auth.signOut(); // Cerrar sesión forzadamente
+            sessionStorage.removeItem('user');
+            setUser(null);
+            setLoading(false);
+            // Redirigir al login con mensaje de error
+            router.replace('/login?error=no_account');
+          }
+        }
+      } else {
+        // Usuario no autenticado
+        sessionStorage.removeItem('user');
+        setUser(null);
+        setLoading(false);
+      }
+    });
+
+    return () => unsubscribe();
+  }, [router]);
+
+  // Suscripción en tiempo real a cambios del usuario en Firestore (solo si existe)
+  useEffect(() => {
+    if (!user?.uid) return;
+
+    const unsubscribeSnapshot = onSnapshot(
+      doc(db, 'users', user.uid),
+      (docSnap: any) => {
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          setUser((prevUser) => {
+            if (!prevUser) return prevUser;
+            const newTerminalId = data.terminalId;
+            const newRole: 'admin' | 'cashier' = data.role === 'admin' ? 'admin' : 'cashier';
+            const newName = data.name || prevUser.name;
+            
+            if (
+              prevUser.terminalId !== newTerminalId ||
+              prevUser.role !== newRole ||
+              prevUser.name !== newName
+            ) {
+              const updated = { ...prevUser, terminalId: newTerminalId, role: newRole, name: newName };
+              sessionStorage.setItem('user', JSON.stringify(updated));
+              return updated;
+            }
+            return prevUser;
+          });
+        }
+      },
+      (error: any) => {
+        console.error('Error en snapshot del usuario:', error);
+      }
+    );
+
+    return () => unsubscribeSnapshot();
+  }, [user?.uid]);
+
+  // Cargar sesión activa de caja cuando el usuario tiene terminalId
+  useEffect(() => {
+    if (!user?.terminalId) {
+      setActiveSession(null);
+      return;
+    }
+    let mounted = true;
+    (async () => {
+      try {
+        const session = await syncService.getActiveSessionByTerminal(user.terminalId!);
+        if (mounted) setActiveSession(session);
+      } catch (error) {
+        console.error('Error al cargar sesión activa:', error);
+        if (mounted) setActiveSession(null);
+      }
+    })();
+    return () => { mounted = false; };
+  }, [user?.terminalId]);
+
+  // Protección de rutas (evita bucle)
+  useEffect(() => {
+    const isLoginPage = pathname === '/login';
+    const isErrorPage = pathname?.includes('error');
+    
+    if (!loading) {
+      if (!user && !isLoginPage && !isErrorPage) {
+        router.replace('/login');
+      } else if (user && isLoginPage) {
+        router.replace('/');
+      }
+    }
+  }, [user, loading, pathname, router]);
+
+  const logout = async () => {
+    if (auth) {
+      await auth.signOut();
+    }
+    sessionStorage.removeItem('user');
+    setUser(null);
+    setActiveSession(null);
+    router.replace('/login');
+  };
+
   const reloadActiveSession = async () => {
     if (!user?.terminalId) {
       setActiveSession(null);
@@ -50,141 +229,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const session = await syncService.getActiveSessionByTerminal(user.terminalId);
       setActiveSession(session);
     } catch (error) {
-      console.error('Error al cargar sesión activa:', error);
+      console.error('Error al recargar sesión activa:', error);
       setActiveSession(null);
     }
-  };
-
-  useEffect(() => {
-    if (!auth) {
-      setLoading(false);
-      return;
-    }
-
-    const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser: FirebaseUser | null) => {
-      if (firebaseUser) {
-        // Obtener datos iniciales del usuario desde Firestore
-        let terminalId: string | undefined;
-        let userRole: 'admin' | 'cashier' = 'cashier';
-        let userName = firebaseUser.displayName || 'Usuario';
-        try {
-          const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
-          if (userDoc.exists()) {
-            const data = userDoc.data();
-            terminalId = data.terminalId;
-            userRole = data.role === 'admin' ? 'admin' : 'cashier';
-            userName = data.name || firebaseUser.displayName || 'Usuario';
-          }
-        } catch (error) {
-          console.error('Error al cargar datos del usuario:', error);
-        }
-
-        const stored = localStorage.getItem('user');
-        let appUser: AppUser;
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          appUser = {
-            uid: firebaseUser.uid,
-            email: firebaseUser.email,
-            name: parsed.name || userName,
-            role: parsed.role || userRole,
-            terminalId: terminalId || parsed.terminalId,
-          };
-        } else {
-          appUser = {
-            uid: firebaseUser.uid,
-            email: firebaseUser.email,
-            name: userName,
-            role: userRole,
-            terminalId: terminalId,
-          };
-        }
-        setUser(appUser);
-        
-        // Cargar sesión activa inicial
-        if (appUser.terminalId) {
-          try {
-            const session = await syncService.getActiveSessionByTerminal(appUser.terminalId);
-            setActiveSession(session);
-          } catch (error) {
-            console.error('Error al cargar sesión activa inicial:', error);
-          }
-        }
-      } else {
-        setUser(null);
-        setActiveSession(null);
-        localStorage.removeItem('user');
-      }
-      setLoading(false);
-    });
-
-    return () => unsubscribeAuth();
-  }, []);
-
-  // ✅ Suscripción en tiempo real a los cambios del usuario (Firestore)
-  useEffect(() => {
-    if (!user?.uid) return;
-
-    const unsubscribeSnapshot = onSnapshot(
-      doc(db, 'users', user.uid),
-      (docSnap) => {
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          setUser((prevUser) => {
-            if (!prevUser) return prevUser;
-            // Solo actualizar si hubo cambios relevantes
-            const newTerminalId = data.terminalId;
-            const newRole = data.role === 'admin' ? 'admin' : 'cashier';
-            const newName = data.name || prevUser.name;
-            
-            if (
-              prevUser.terminalId !== newTerminalId ||
-              prevUser.role !== newRole ||
-              prevUser.name !== newName
-            ) {
-              return {
-                ...prevUser,
-                terminalId: newTerminalId,
-                role: newRole,
-                name: newName,
-              };
-            }
-            return prevUser;
-          });
-        }
-      },
-      (error) => {
-        console.error('Error en snapshot del usuario:', error);
-      }
-    );
-
-    return () => unsubscribeSnapshot();
-  }, [user?.uid]);
-
-  // Recargar sesión activa cuando cambia el terminalId del usuario (después de actualización en tiempo real)
-  useEffect(() => {
-    if (user?.terminalId) {
-      reloadActiveSession();
-    } else {
-      setActiveSession(null);
-    }
-  }, [user?.terminalId]);
-
-  useEffect(() => {
-    const isLoginPage = pathname?.includes('/login');
-    if (!loading && !user && !isLoginPage) {
-      router.replace('/login');
-    }
-  }, [user, loading, pathname, router]);
-
-  const logout = () => {
-    if (auth) {
-      auth.signOut();
-    }
-    localStorage.removeItem('user');
-    setUser(null);
-    setActiveSession(null);
-    router.replace('/login');
   };
 
   return (

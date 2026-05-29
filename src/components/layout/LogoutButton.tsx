@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from 'next/navigation';
+import { useAuth } from '@/context/AuthContext';
 import { DoorOpen } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -11,10 +11,10 @@ interface LogoutButtonProps {
 }
 
 export default function LogoutButton({ className, variant = 'sidebar', collapsed = false }: LogoutButtonProps) {
-  const router = useRouter();
+  const { logout } = useAuth();
 
-  const handleLogout = () => {
-    localStorage.removeItem('user');
+  const handleLogout = async () => {
+    // Limpiamos memorias locales específicas de la app antes del logout global
     localStorage.removeItem('masterpos_users');
     localStorage.removeItem('masterpos_terminals');
     localStorage.removeItem('licopos_products');
@@ -23,14 +23,14 @@ export default function LogoutButton({ className, variant = 'sidebar', collapsed
     localStorage.removeItem('licopos_accounts');
     localStorage.removeItem('licopos_register');
     localStorage.removeItem('licopos_rate');
-    localStorage.removeItem('firebase_pending_queue');
     localStorage.removeItem('cache_products');
     localStorage.removeItem('cache_clients');
     localStorage.removeItem('cache_transactions');
     localStorage.removeItem('cache_accounts');
     localStorage.removeItem('cache_register');
     
-    router.push('/login');
+    // Ejecutar el logout del contexto que maneja Firebase y el estado global
+    await logout();
   };
 
   if (variant === 'topbar') {

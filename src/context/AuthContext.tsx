@@ -215,6 +215,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await auth.signOut();
     }
     sessionStorage.removeItem('user');
+    localStorage.removeItem('user');
     setUser(null);
     setActiveSession(null);
     router.replace('/login');

@@ -21,7 +21,8 @@ export default function LoginPage() {
   const router = useRouter();
 
   useEffect(() => {
-    const storedUser = localStorage.getItem('user');
+    // Usamos sessionStorage para ser coherentes con el AuthContext
+    const storedUser = sessionStorage.getItem('user');
     if (storedUser) {
       router.replace('/');
     }
@@ -64,22 +65,23 @@ export default function LoginPage() {
         return;
       }
       
-      localStorage.setItem('user', JSON.stringify({ 
+      // Guardamos en sessionStorage para hidratación rápida
+      const appUser = { 
         name: userName, 
         role: userRole, 
         email: firebaseUser.email,
         uid: firebaseUser.uid
-      }));
+      };
+      
+      sessionStorage.setItem('user', JSON.stringify(appUser));
       
       router.replace('/');
     } catch (firebaseError: any) {
       console.error('Login error:', firebaseError);
-      if (firebaseError.code === 'auth/user-not-found') {
-        setError('Usuario no encontrado');
+      if (firebaseError.code === 'auth/user-not-found' || firebaseError.code === 'auth/invalid-credential') {
+        setError('Credenciales inválidas o usuario no encontrado');
       } else if (firebaseError.code === 'auth/wrong-password') {
         setError('Contraseña incorrecta');
-      } else if (firebaseError.code === 'auth/invalid-credential') {
-        setError('Credenciales inválidas');
       } else {
         setError(firebaseError.message || 'Error al iniciar sesión');
       }
@@ -163,6 +165,7 @@ export default function LoginPage() {
                 setShowReset(false);
                 setResetMessage(null);
                 setResetEmail('');
+                setIsLoading(false);
               }}
               className="w-full mt-3 py-2 text-xs text-primary font-bold hover:underline flex items-center justify-center gap-1"
             >
@@ -176,7 +179,7 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen bg-[#D9D9D9] flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-sm overflow-hidden">
         <div className="bg-[#1A2C4E] p-5 text-center">
           <div className="w-14 h-14 rounded-xl overflow-hidden mx-auto mb-2">
             <Image 

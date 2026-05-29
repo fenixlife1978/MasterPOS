@@ -41,7 +41,6 @@ const deepClean = (obj: any): any => {
     });
     return Object.keys(cleaned).length > 0 ? cleaned : null;
   }
-  // ✅ Evitar NaN e Infinity
   if (typeof obj === 'number' && (isNaN(obj) || !isFinite(obj))) return 0;
   return obj;
 };
@@ -83,9 +82,9 @@ const processQueue = async () => {
           break;
         case 'saveRegister':
           if (data.terminalId) {
-            await setDoc(doc(db, 'registers', data.terminalId), { ...data.reg, updatedAt: Date.now() });
+            await setDoc(doc(db, 'registers', data.terminalId), { ...data.reg, updatedAt: Date.now() }, { merge: true });
           } else {
-            await setDoc(doc(db, 'register', 'current'), { ...data, updatedAt: Date.now() });
+            await setDoc(doc(db, 'register', 'current'), { ...data, updatedAt: Date.now() }, { merge: true });
           }
           break;
         case 'saveClient':
@@ -100,7 +99,6 @@ const processQueue = async () => {
         case 'saveKardexEntry':
           await setDoc(doc(db, 'kardex_entries', data.id), { ...data, createdAt: Date.now() });
           break;
-        // ✅ CORREGIDO: usar el nombre como ID del documento
         case 'saveTerminal':
           await setDoc(doc(db, 'terminals', data.name), { ...data, updatedAt: Date.now() });
           break;
@@ -113,11 +111,9 @@ const processQueue = async () => {
         case 'updateCashSession':
           await setDoc(doc(db, 'cash_sessions', data.id), { ...data, updatedAt: Date.now() });
           break;
-        // ✅ CORREGIDO: data.id ya es string (el nombre)
         case 'updateTerminal':
           await updateDoc(doc(db, 'terminals', data.id), { ...data.updates, updatedAt: Date.now() });
           break;
-        // ✅ NUEVO: Actualizar terminalId de un usuario (offline)
         case 'updateUserTerminalId':
           await updateDoc(doc(db, 'users', data.userId), { terminalId: data.terminalId, updatedAt: Date.now() });
           break;
@@ -138,13 +134,10 @@ const addToQueue = (type: string, data: any) => {
   if (isOnline) processQueue();
 };
 
-// ✅ Redondeo a 2 decimales (comercial)
 const roundTo2 = (num: number): number => Math.round(num * 100) / 100;
-// ✅ Redondeo a 4 decimales (para costos)
 const roundTo4 = (num: number): number => Math.round(num * 10000) / 10000;
 
 export const syncService = {
-  // PRODUCTOS (sin cambios)
   async saveProduct(product: any) {
     if (!db) return;
     if (!isOnline) return addToQueue('saveProducts', [product]);
@@ -163,12 +156,12 @@ export const syncService = {
   },
   subscribeToProducts(callback: (data: any[]) => void) {
     if (!db) return () => {};
-    return onSnapshot(query(collection(db, 'products'), limit(500)), (snap) => {
-      callback(snap.docs.map(d => ({ id: parseInt(d.id), ...d.data() })));
-    });
+    return onSnapshot(query(collection(db, 'products'), limit(500)), 
+      (snap) => callback(snap.docs.map(d => ({ id: parseInt(d.id), ...d.data() }))),
+      (err) => console.warn("Suscripción restringida: products", err.message)
+    );
   },
 
-  // CLIENTES (sin cambios)
   async saveClient(client: any) {
     if (!db) return;
     if (!isOnline) return addToQueue('saveClient', client);
@@ -180,12 +173,12 @@ export const syncService = {
   },
   subscribeToClients(callback: (data: any[]) => void) {
     if (!db) return () => {};
-    return onSnapshot(collection(db, 'clients'), (snap) => {
-      callback(snap.docs.map(d => ({ id: parseInt(d.id), ...d.data() })));
-    });
+    return onSnapshot(collection(db, 'clients'), 
+      (snap) => callback(snap.docs.map(d => ({ id: parseInt(d.id), ...d.data() }))),
+      (err) => console.warn("Suscripción restringida: clients", err.message)
+    );
   },
 
-  // TRANSACCIONES (sin cambios)
   async saveTransaction(tx: any) {
     if (!db) return;
     if (!isOnline) return addToQueue('saveTransaction', tx);
@@ -198,19 +191,18 @@ export const syncService = {
   },
   subscribeToTransactions(callback: (data: any[]) => void) {
     if (!db) return () => {};
-    return onSnapshot(query(collection(db, 'transactions'), orderBy('date', 'desc'), limit(500)), (snap) => {
-      callback(snap.docs.map(d => d.data()));
-    });
+    return onSnapshot(query(collection(db, 'transactions'), orderBy('date', 'desc'), limit(500)), 
+      (snap) => callback(snap.docs.map(d => d.data())),
+      (err) => console.warn("Suscripción restringida: transactions", err.message)
+    );
   },
 
-  // ✅ NUEVO: Obtener todas las transacciones
   async getAllTransactions(): Promise<any[]> {
     if (!db) return [];
     const snap = await getDocs(collection(db, 'transactions'));
     return snap.docs.map(doc => ({ id: parseInt(doc.id), ...doc.data() }));
   },
 
-  // ✅ NUEVO: Eliminar todas las transacciones (batch)
   async deleteAllTransactions() {
     if (!db) return;
     const snap = await getDocs(collection(db, 'transactions'));
@@ -220,7 +212,6 @@ export const syncService = {
     await batch.commit();
   },
 
-  // CUENTAS POR COBRAR (sin cambios)
   async saveAccount(acc: any) {
     if (!db) return;
     if (!isOnline) return addToQueue('saveAccount', acc);
@@ -228,12 +219,12 @@ export const syncService = {
   },
   subscribeToAccounts(callback: (data: any[]) => void) {
     if (!db) return () => {};
-    return onSnapshot(collection(db, 'accounts'), (snap) => {
-      callback(snap.docs.map(d => d.data()));
-    });
+    return onSnapshot(collection(db, 'accounts'), 
+      (snap) => callback(snap.docs.map(d => d.data())),
+      (err) => console.warn("Suscripción restringida: accounts", err.message)
+    );
   },
 
-  // CONTABILIDAD (sin cambios)
   async saveAccountingEntry(entry: any) {
     if (!db) return;
     if (!isOnline) return addToQueue('saveAccountingEntry', entry);
@@ -241,19 +232,18 @@ export const syncService = {
   },
   subscribeToAccounting(callback: (data: any[]) => void) {
     if (!db) return () => {};
-    return onSnapshot(query(collection(db, 'accounting_entries'), orderBy('date', 'desc'), limit(1000)), (snap) => {
-      callback(snap.docs.map(d => d.data()));
-    });
+    return onSnapshot(query(collection(db, 'accounting_entries'), orderBy('date', 'desc'), limit(1000)), 
+      (snap) => callback(snap.docs.map(d => d.data())),
+      (err) => console.warn("Suscripción restringida: accounting", err.message)
+    );
   },
 
-  // ✅ NUEVO: Obtener todas las entradas contables
   async getAllAccountingEntries(): Promise<any[]> {
     if (!db) return [];
     const snap = await getDocs(collection(db, 'accounting_entries'));
     return snap.docs.map(doc => ({ id: parseInt(doc.id), ...doc.data() }));
   },
 
-  // ✅ NUEVO: Eliminar todas las entradas contables (batch)
   async deleteAllAccountingEntries() {
     if (!db) return;
     const snap = await getDocs(collection(db, 'accounting_entries'));
@@ -263,7 +253,6 @@ export const syncService = {
     await batch.commit();
   },
 
-  // CAJA (métodos antiguos para compatibilidad global)
   async saveRegister(reg: any) {
     if (!db) return;
     if (!isOnline) return addToQueue('saveRegister', reg);
@@ -277,7 +266,7 @@ export const syncService = {
       txs: reg.txs || [],
       updatedAt: Date.now()
     });
-    await setDoc(doc(db, 'register', 'current'), cleaned);
+    await setDoc(doc(db, 'register', 'current'), cleaned, { merge: true });
   },
   async clearRegister() {
     if (!db) return;
@@ -285,14 +274,14 @@ export const syncService = {
   },
   subscribeToRegister(callback: (data: any) => void) {
     if (!db) return () => {};
-    return onSnapshot(doc(db, 'register', 'current'), (snap) => {
-      callback(snap.exists() ? snap.data() : null);
-    });
+    return onSnapshot(doc(db, 'register', 'current'), 
+      (snap) => callback(snap.exists() ? snap.data() : null),
+      (err) => console.warn("Suscripción restringida: register", err.message)
+    );
   },
 
-  // === NUEVOS MÉTODOS PARA CAJA POR TERMINAL ===
   async saveRegisterByTerminal(terminalId: string, reg: any) {
-    if (!db) return;
+    if (!db || !terminalId) return;
     if (!isOnline) return addToQueue('saveRegister', { terminalId, reg });
     const cleaned = sanitizeForFirestore({
       isOpen: reg.isOpen === true,
@@ -304,20 +293,20 @@ export const syncService = {
       txs: reg.txs || [],
       updatedAt: Date.now()
     });
-    await setDoc(doc(db, 'registers', terminalId), cleaned);
+    await setDoc(doc(db, 'registers', terminalId), cleaned, { merge: true });
   },
   async clearRegisterByTerminal(terminalId: string) {
-    if (!db) return;
+    if (!db || !terminalId) return;
     await deleteDoc(doc(db, 'registers', terminalId));
   },
   subscribeToRegisterByTerminal(terminalId: string, callback: (data: any) => void) {
-    if (!db) return () => {};
-    return onSnapshot(doc(db, 'registers', terminalId), (snap) => {
-      callback(snap.exists() ? snap.data() : null);
-    });
+    if (!db || !terminalId) return () => {};
+    return onSnapshot(doc(db, 'registers', terminalId), 
+      (snap) => callback(snap.exists() ? snap.data() : null),
+      (err) => console.warn(`Suscripción restringida: registers/${terminalId}`, err.message)
+    );
   },
 
-  // === NUEVA TRANSACCIÓN ATÓMICA PARA VENTA (CORREGIDA) ===
   async runAtomicSale(terminalId: string, txData: any, updates: {
     products: Map<number, { newStock: number }>;
     kardexEntries: any[];
@@ -325,8 +314,8 @@ export const syncService = {
     registerUpdate: { txs: any[] };
   }) {
     if (!db) throw new Error('Firebase no disponible');
+    if (!terminalId) throw new Error('ID de Terminal no proporcionado');
     
-    // ✅ Sanitizar todos los datos antes de la transacción
     const cleanTxData = sanitizeForFirestore(txData);
     const cleanKardexEntries = updates.kardexEntries.map(entry => sanitizeForFirestore(entry));
     const cleanAccountingEntry = updates.accountingEntry ? sanitizeForFirestore(updates.accountingEntry) : null;
@@ -335,95 +324,75 @@ export const syncService = {
     };
     
     return runTransaction(db, async (transaction) => {
-      // 1. Verificar stock de los productos
       for (const [prodId, update] of updates.products.entries()) {
         const prodRef = doc(db, 'products', prodId.toString());
         const prodSnap = await transaction.get(prodRef);
         if (!prodSnap.exists()) throw new Error(`Producto ${prodId} no existe`);
-        const currentStock = prodSnap.data().stock;
+        const currentData = prodSnap.data();
+        const currentStock = currentData.stock;
         const requiredStock = currentStock - update.newStock;
-        if (requiredStock < 0) {
+        if (requiredStock < 0 && !currentData.isKit) {
           throw new Error(`Stock insuficiente para producto ${prodId}`);
         }
       }
       
-      // 2. Actualizar productos (stock)
       for (const [prodId, update] of updates.products.entries()) {
         const prodRef = doc(db, 'products', prodId.toString());
         transaction.update(prodRef, { stock: update.newStock, updatedAt: Date.now() });
       }
       
-      // 3. Guardar transacción (con datos sanitizados)
       const txRef = doc(db, 'transactions', cleanTxData.id.toString());
       transaction.set(txRef, { ...cleanTxData, createdAt: Date.now() });
       
-      // 4. Guardar entradas de kardex (con datos sanitizados)
       for (const entry of cleanKardexEntries) {
         const kardexRef = doc(db, 'kardex_entries', entry.id);
         transaction.set(kardexRef, { ...entry, createdAt: Date.now() });
       }
       
-      // 5. Guardar asiento contable (si existe y está sanitizado)
       if (cleanAccountingEntry && cleanAccountingEntry.id) {
         const accRef = doc(db, 'accounting_entries', cleanAccountingEntry.id.toString());
         transaction.set(accRef, { ...cleanAccountingEntry, createdAt: Date.now() });
       }
       
-      // 6. Actualizar caja de la terminal
       const registerRef = doc(db, 'registers', terminalId);
-      transaction.update(registerRef, {
+      transaction.set(registerRef, {
         txs: cleanRegisterUpdate.txs,
         updatedAt: Date.now()
-      });
+      }, { merge: true });
     });
   },
 
-  // ✅ NUEVO MÉTODO: Actualizar producto con Costo Promedio Ponderado (CPP)
   async updateProductWithWeightedAverageCost(productId: number, newQty: number, newCostUsd: number, exchangeRate: number) {
     if (!db) throw new Error('Firebase no disponible');
     
-    // Asegurar precisión de 4 decimales para costos
     const newCostUsdRounded = roundTo4(newCostUsd);
     const exchangeRateRounded = roundTo2(exchangeRate);
     
     return runTransaction(db, async (transaction) => {
-      // 1. Leer el producto actual
       const prodRef = doc(db, 'products', productId.toString());
       const prodSnap = await transaction.get(prodRef);
       
-      if (!prodSnap.exists()) {
-        throw new Error(`Producto ${productId} no existe`);
-      }
+      if (!prodSnap.exists()) throw new Error(`Producto ${productId} no existe`);
       
       const productData = prodSnap.data();
       const currentStock = productData.stock || 0;
       const currentCostUsd = productData.costUsd || 0;
       const profitPercent = productData.profitPercent || 30;
       
-      // 2. Calcular nuevo costo promedio ponderado (CPP)
       let newAverageCost: number;
-      
       if (currentStock <= 0) {
-        // ✅ Caso especial: stock cero o negativo, el nuevo costo es directamente el costo de compra
         newAverageCost = newCostUsdRounded;
       } else {
-        // ✅ Fórmula del promedio ponderado
         const totalCostBefore = currentStock * currentCostUsd;
         const totalCostNew = newQty * newCostUsdRounded;
         const newTotalStock = currentStock + newQty;
-        const rawAverage = (totalCostBefore + totalCostNew) / newTotalStock;
-        newAverageCost = roundTo4(rawAverage);
+        newAverageCost = roundTo4((totalCostBefore + totalCostNew) / newTotalStock);
       }
       
-      // 3. Recalcular precios de venta basados en el nuevo costo
-      const priceUsdRaw = newAverageCost * (1 + profitPercent / 100);
-      const priceUsd = roundTo2(priceUsdRaw);
+      const priceUsd = roundTo2(newAverageCost * (1 + profitPercent / 100));
       const priceBs = roundTo2(priceUsd * exchangeRateRounded);
-      
-      // 4. Calcular nuevo stock
       const newStock = currentStock + newQty;
       
-      // 5. Crear entrada de Kardex
       const kardexEntry = {
         id: `${Date.now()}_${productId}_${Math.random()}`,
         productId: productId,
@@ -433,12 +402,11 @@ export const syncService = {
         previousStock: currentStock,
         newStock: newStock,
         reference: `Compra - CPP aplicado`,
-        note: `Costo anterior: $${currentCostUsd.toFixed(4)} → Nuevo costo: $${newAverageCost.toFixed(4)} (ponderado)`,
+        note: `Costo ant: $${currentCostUsd.toFixed(4)} → Nuevo: $${newAverageCost.toFixed(4)}`,
         costUsd: newCostUsdRounded,
         costBs: roundTo2(newCostUsdRounded * exchangeRateRounded),
       };
       
-      // 6. Guardar todo en la transacción
       transaction.update(prodRef, {
         stock: newStock,
         costUsd: newAverageCost,
@@ -451,16 +419,10 @@ export const syncService = {
       const kardexRef = doc(db, 'kardex_entries', kardexEntry.id);
       transaction.set(kardexRef, { ...kardexEntry, createdAt: Date.now() });
       
-      return {
-        newStock,
-        newAverageCost,
-        newPriceUsd: priceUsd,
-        newPriceBs: priceBs
-      };
+      return { newStock, newAverageCost, newPriceUsd: priceUsd, newPriceBs: priceBs };
     });
   },
 
-  // PROVEEDORES, FACTURAS, ETC. (con nuevos métodos)
   async saveSupplier(supplier: any) {
     if (!db) return;
     if (!isOnline) return addToQueue('saveSupplier', supplier);
@@ -472,9 +434,10 @@ export const syncService = {
   },
   subscribeToSuppliers(callback: (data: any[]) => void) {
     if (!db) return () => {};
-    return onSnapshot(collection(db, 'suppliers'), (snap) => {
-      callback(snap.docs.map(d => ({ id: parseInt(d.id), ...d.data() })));
-    });
+    return onSnapshot(collection(db, 'suppliers'), 
+      (snap) => callback(snap.docs.map(d => ({ id: parseInt(d.id), ...d.data() }))),
+      (err) => console.warn("Suscripción restringida: suppliers", err.message)
+    );
   },
 
   async savePurchaseInvoice(invoice: any) {
@@ -483,14 +446,12 @@ export const syncService = {
     await setDoc(doc(db, 'purchase_invoices', invoice.id.toString()), sanitizeForFirestore(invoice));
   },
   
-  // ✅ NUEVO MÉTODO: Obtener todas las facturas de compra
   async getPurchaseInvoices(): Promise<any[]> {
     if (!db) return [];
     const snap = await getDocs(collection(db, 'purchase_invoices'));
     return snap.docs.map(doc => ({ id: parseInt(doc.id), ...doc.data() }));
   },
   
-  // ✅ NUEVO MÉTODO: Eliminar una factura de compra
   async deletePurchaseInvoice(id: number) {
     if (!db) return;
     await deleteDoc(doc(db, 'purchase_invoices', id.toString()));
@@ -498,9 +459,10 @@ export const syncService = {
   
   subscribeToPurchaseInvoices(callback: (data: any[]) => void) {
     if (!db) return () => {};
-    return onSnapshot(query(collection(db, 'purchase_invoices'), orderBy('date', 'desc'), limit(500)), (snap) => {
-      callback(snap.docs.map(d => d.data()));
-    });
+    return onSnapshot(query(collection(db, 'purchase_invoices'), orderBy('date', 'desc'), limit(500)), 
+      (snap) => callback(snap.docs.map(d => d.data())),
+      (err) => console.warn("Suscripción restringida: purchase_invoices", err.message)
+    );
   },
 
   async savePurchaseInvoiceItems(invoiceId: number, items: any[]) {
@@ -513,9 +475,10 @@ export const syncService = {
   },
   subscribeToPurchaseItems(callback: (data: any[]) => void) {
     if (!db) return () => {};
-    return onSnapshot(collection(db, 'purchase_items'), (snap) => {
-      callback(snap.docs.map(d => d.data()));
-    });
+    return onSnapshot(collection(db, 'purchase_items'), 
+      (snap) => callback(snap.docs.map(d => d.data())),
+      (err) => console.warn("Suscripción restringida: purchase_items", err.message)
+    );
   },
 
   async saveSupplierPayment(payment: any) {
@@ -529,9 +492,10 @@ export const syncService = {
   },
   subscribeToSupplierPayments(callback: (data: any[]) => void) {
     if (!db) return () => {};
-    return onSnapshot(query(collection(db, 'supplier_payments'), orderBy('date', 'desc'), limit(500)), (snap) => {
-      callback(snap.docs.map(d => d.data()));
-    });
+    return onSnapshot(query(collection(db, 'supplier_payments'), orderBy('date', 'desc'), limit(500)), 
+      (snap) => callback(snap.docs.map(d => d.data())),
+      (err) => console.warn("Suscripción restringida: supplier_payments", err.message)
+    );
   },
 
   async saveKardexEntry(entry: any) {
@@ -541,19 +505,18 @@ export const syncService = {
   },
   subscribeToKardex(callback: (data: any[]) => void) {
     if (!db) return () => {};
-    return onSnapshot(query(collection(db, 'kardex_entries'), orderBy('createdAt', 'desc'), limit(1000)), (snap) => {
-      callback(snap.docs.map(d => d.data()));
-    });
+    return onSnapshot(query(collection(db, 'kardex_entries'), orderBy('createdAt', 'desc'), limit(1000)), 
+      (snap) => callback(snap.docs.map(d => d.data())),
+      (err) => console.warn("Suscripción restringida: kardex", err.message)
+    );
   },
 
-  // ✅ NUEVO: Obtener todas las entradas de kardex
   async getAllKardexEntries(): Promise<any[]> {
     if (!db) return [];
     const snap = await getDocs(collection(db, 'kardex_entries'));
     return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
   },
 
-  // ✅ NUEVO: Eliminar todas las entradas de kardex (batch)
   async deleteAllKardexEntries() {
     if (!db) return;
     const snap = await getDocs(collection(db, 'kardex_entries'));
@@ -563,7 +526,6 @@ export const syncService = {
     await batch.commit();
   },
 
-  // ✅ TERMINALES (CORREGIDO: usar name como ID string)
   async saveTerminal(terminal: any) {
     if (!db) return;
     if (!isOnline) return addToQueue('saveTerminal', terminal);
@@ -575,16 +537,17 @@ export const syncService = {
   },
   subscribeToTerminals(callback: (data: any[]) => void) {
     if (!db) return () => {};
-    return onSnapshot(collection(db, 'terminals'), (snap) => {
-      callback(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    });
+    return onSnapshot(collection(db, 'terminals'), 
+      (snap) => callback(snap.docs.map(d => ({ id: d.id, ...d.data() }))),
+      (err) => console.warn("Suscripción restringida: terminals", err.message)
+    );
   },
-  // ✅ NUEVO: Suscripción en tiempo real a una terminal específica (ID string)
   subscribeToTerminal(id: string, callback: (terminal: any) => void) {
     if (!db || !id) return () => {};
-    return onSnapshot(doc(db, 'terminals', id), (snap) => {
-      callback(snap.exists() ? { id: snap.id, ...snap.data() } : null);
-    });
+    return onSnapshot(doc(db, 'terminals', id), 
+      (snap) => callback(snap.exists() ? { id: snap.id, ...snap.data() } : null),
+      (err) => console.warn(`Suscripción restringida: terminals/${id}`, err.message)
+    );
   },
   async saveGlobalSettings(settings: any) {
     if (!db) return;
@@ -600,25 +563,22 @@ export const syncService = {
   },
   subscribeToGlobalSettings(callback: (data: any) => void) {
     if (!db) return () => {};
-    return onSnapshot(doc(db, 'global_settings', 'global'), (snap) => {
-      callback(snap.exists() ? snap.data() : null);
-    });
+    return onSnapshot(doc(db, 'global_settings', 'global'), 
+      (snap) => callback(snap.exists() ? snap.data() : null),
+      (err) => console.warn("Suscripción restringida: global_settings", err.message)
+    );
   },
   
-  // ✅ CORREGIDO: El PIN se lee desde global_settings (no desde admin_codes)
   async getAdminCode() {
     if (!db) return null;
     const snap = await getDoc(doc(db, 'global_settings', 'global'));
     if (snap.exists()) {
       const data = snap.data();
-      if (data.adminCode) {
-        return { code: data.adminCode };
-      }
+      if (data.adminCode) return { code: data.adminCode };
     }
     return null;
   },
 
-  // ✅ NUEVO: Métodos para la colección cash_closes (historial de cierres)
   async saveCashClose(closeData: any) {
     if (!db) return;
     if (!isOnline) return addToQueue('saveCashClose', closeData);
@@ -634,9 +594,10 @@ export const syncService = {
 
   subscribeToCashCloses(callback: (data: any[]) => void) {
     if (!db) return () => {};
-    return onSnapshot(query(collection(db, 'cash_closes'), orderBy('fecha', 'desc')), (snap) => {
-      callback(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    });
+    return onSnapshot(query(collection(db, 'cash_closes'), orderBy('fecha', 'desc')), 
+      (snap) => callback(snap.docs.map(doc => ({ id: doc.id, ...doc.data() }))),
+      (err) => console.warn("Suscripción restringida: cash_closes", err.message)
+    );
   },
 
   async deleteAllCashCloses() {
@@ -648,36 +609,20 @@ export const syncService = {
     await batch.commit();
   },
 
-  // ========== 🆕 MÉTODOS PARA TERMINALES (BLOQUEO Y CONSULTA) ==========
-  
-  /**
-   * Obtiene un terminal por su ID (ahora string)
-   * @param id ID del terminal (nombre)
-   * @returns Datos del terminal o null
-   */
   async getTerminal(id: string): Promise<any | null> {
     if (!db || !id) return null;
     const snap = await getDoc(doc(db, 'terminals', id));
     return snap.exists() ? { id: snap.id, ...snap.data() } : null;
   },
 
-  /**
-   * Obtiene todos los terminales
-   * @returns Array con todos los terminales (id string)
-   */
   async getAllTerminals(): Promise<any[]> {
     if (!db) return [];
     const snap = await getDocs(collection(db, 'terminals'));
     return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
   },
 
-  /**
-   * Actualiza el estado de bloqueo de un terminal
-   * @param terminalId ID del terminal (string)
-   * @param isBlocked true para bloquear, false para desbloquear
-   */
   async updateTerminalBlockStatus(terminalId: string, isBlocked: boolean): Promise<void> {
-    if (!db) return;
+    if (!db || !terminalId) return;
     const ref = doc(db, 'terminals', terminalId);
     if (!isOnline) {
       addToQueue('updateTerminal', { id: terminalId, updates: { isBlocked } });
@@ -686,13 +631,8 @@ export const syncService = {
     await updateDoc(ref, { isBlocked, updatedAt: Date.now() });
   },
 
-  /**
-   * Actualiza cualquier campo de un terminal (genérico)
-   * @param terminalId ID del terminal (string)
-   * @param updates Objeto con los campos a actualizar
-   */
   async updateTerminal(terminalId: string, updates: Record<string, any>): Promise<void> {
-    if (!db) return;
+    if (!db || !terminalId) return;
     const ref = doc(db, 'terminals', terminalId);
     if (!isOnline) {
       addToQueue('updateTerminal', { id: terminalId, updates });
@@ -701,15 +641,8 @@ export const syncService = {
     await updateDoc(ref, { ...updates, updatedAt: Date.now() });
   },
 
-  // ========== 🆕 MÉTODO PARA ACTUALIZAR terminalId DEL USUARIO ==========
-  /**
-   * Actualiza el campo terminalId de un usuario en Firestore.
-   * Útil para asignar o desasignar una terminal a un cajero.
-   * @param userId ID del usuario (documento en Firestore)
-   * @param terminalId ID de la terminal (string) o null para desasignar
-   */
   async updateUserTerminalId(userId: string, terminalId: string | null): Promise<void> {
-    if (!db) return;
+    if (!db || !userId) return;
     const userRef = doc(db, 'users', userId);
     const data = { terminalId: terminalId || null, updatedAt: Date.now() };
     if (!isOnline) {
@@ -719,15 +652,6 @@ export const syncService = {
     await updateDoc(userRef, data);
   },
 
-  // ========== 🆕 MÉTODOS PARA SESIONES DE CAJA (Aislamiento de Terminales) ==========
-  
-  /**
-   * Crea una nueva sesión de caja para un terminal
-   * @param terminalId ID del terminal físico
-   * @param userId ID del usuario que abre la caja
-   * @param initialAmountUsd Monto inicial en USD
-   * @returns Objeto con id de sesión y datos
-   */
   async createCashSession(terminalId: string, userId: string, initialAmountUsd: number): Promise<any> {
     if (!db) throw new Error('Firebase no disponible');
     const sessionId = `SES-${Date.now()}-${terminalId}`;
@@ -753,13 +677,8 @@ export const syncService = {
     return sessionData;
   },
 
-  /**
-   * Obtiene la sesión activa (abierta) para un terminal específico
-   * @param terminalId ID del terminal
-   * @returns Sesión activa o null si no hay ninguna abierta
-   */
   async getActiveSessionByTerminal(terminalId: string): Promise<any | null> {
-    if (!db) return null;
+    if (!db || !terminalId) return null;
     const q = query(collection(db, 'cash_sessions'), 
       where('terminalId', '==', terminalId), 
       where('status', '==', 'abierta'),
@@ -770,37 +689,21 @@ export const syncService = {
     return { id: snap.docs[0].id, ...snap.docs[0].data() };
   },
 
-  /**
-   * Escucha en tiempo real la sesión activa de un terminal
-   * @param terminalId ID del terminal
-   * @param callback Función que recibe la sesión (null si no hay)
-   * @returns Función de unsubscribe
-   */
   subscribeToActiveSession(terminalId: string, callback: (session: any | null) => void): () => void {
-    if (!db) return () => {};
+    if (!db || !terminalId) return () => {};
     const q = query(collection(db, 'cash_sessions'), 
       where('terminalId', '==', terminalId), 
       where('status', '==', 'abierta'),
       limit(1)
     );
-    return onSnapshot(q, (snap) => {
-      if (snap.empty) {
-        callback(null);
-      } else {
-        const doc = snap.docs[0];
-        callback({ id: doc.id, ...doc.data() });
-      }
-    });
+    return onSnapshot(q, 
+      (snap) => callback(snap.empty ? null : { id: snap.docs[0].id, ...snap.docs[0].data() }),
+      (err) => console.warn(`Suscripción restringida: active_session/${terminalId}`, err.message)
+    );
   },
 
-  /**
-   * Cierra una sesión de caja
-   * @param sessionId ID de la sesión
-   * @param finalAmountUsd Monto final real en USD (arqueo)
-   * @returns Datos de la sesión actualizada
-   */
   async closeCashSession(sessionId: string, finalAmountUsd: number): Promise<any> {
-    if (!db) throw new Error('Firebase no disponible');
+    if (!db || !sessionId) throw new Error('Firebase o SessionId no disponible');
     const sessionRef = doc(db, 'cash_sessions', sessionId);
     const sessionSnap = await getDoc(sessionRef);
     if (!sessionSnap.exists()) throw new Error('Sesión no encontrada');
@@ -821,14 +724,8 @@ export const syncService = {
     return updated;
   },
 
-  /**
-   * Obtiene todas las transacciones asociadas a una sesión específica (con filtros opcionales)
-   * @param sessionId ID de la sesión
-   * @param limitCount Límite de resultados (default 500)
-   * @returns Array de transacciones
-   */
   async getTransactionsBySession(sessionId: string, limitCount: number = 500): Promise<any[]> {
-    if (!db) return [];
+    if (!db || !sessionId) return [];
     const q = query(collection(db, 'transactions'), 
       where('sessionId', '==', sessionId),
       orderBy('date', 'desc'),
@@ -838,31 +735,19 @@ export const syncService = {
     return snap.docs.map(doc => ({ id: parseInt(doc.id), ...doc.data() }));
   },
 
-  /**
-   * Escucha en tiempo real las transacciones de una sesión específica
-   * @param sessionId ID de la sesión
-   * @param callback Función que recibe el array de transacciones
-   * @returns Función de unsubscribe
-   */
   subscribeToTransactionsBySession(sessionId: string, callback: (transactions: any[]) => void): () => void {
-    if (!db) return () => {};
+    if (!db || !sessionId) return () => {};
     const q = query(collection(db, 'transactions'), 
       where('sessionId', '==', sessionId),
       orderBy('date', 'desc'),
       limit(500)
     );
-    return onSnapshot(q, (snap) => {
-      callback(snap.docs.map(doc => ({ id: parseInt(doc.id), ...doc.data() })));
-    });
+    return onSnapshot(q, 
+      (snap) => callback(snap.docs.map(doc => ({ id: parseInt(doc.id), ...doc.data() }))),
+      (err) => console.warn(`Suscripción restringida: session_txs/${sessionId}`, err.message)
+    );
   },
 
-  /**
-   * Guarda una transacción asociándola automáticamente a la sesión activa del terminal
-   * Si no hay sesión activa, la transacción se guarda sin sesión (comportamiento antiguo)
-   * @param tx Datos de la transacción (debe contener al menos id)
-   * @param terminalId ID del terminal (opcional, se intenta obtener sesión activa)
-   * @returns void
-   */
   async saveTransactionWithCurrentSession(tx: any, terminalId?: string): Promise<void> {
     if (!db) return;
     let sessionId = tx.sessionId;

@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useMemo, useEffect } from 'react';
@@ -51,24 +52,19 @@ export default function CashModule({ state }: CashModuleProps) {
   const [isTerminalBlocked, setIsTerminalBlocked] = useState(false);
   const [checkingBlock, setCheckingBlock] = useState(true);
 
-  // Verificar si la terminal está bloqueada
+  // ✅ Suscripción en TIEMPO REAL al bloqueo de terminal
   useEffect(() => {
-    const checkTerminalBlock = async () => {
-      if (!user || user.role === 'admin' || !user.terminalId) {
-        setCheckingBlock(false);
-        return;
-      }
-      try {
-        const terminal = await syncService.getTerminal(user.terminalId);
-        setIsTerminalBlocked(terminal?.isBlocked === true);
-      } catch (error) {
-        console.error('Error al verificar bloqueo de terminal:', error);
-        setIsTerminalBlocked(false);
-      } finally {
-        setCheckingBlock(false);
-      }
-    };
-    checkTerminalBlock();
+    if (!user || user.role === 'admin' || !user.terminalId) {
+      setCheckingBlock(false);
+      return;
+    }
+
+    const unsubscribe = syncService.subscribeToTerminal(user.terminalId, (terminal) => {
+      setIsTerminalBlocked(terminal?.isBlocked === true);
+      setCheckingBlock(false);
+    });
+
+    return () => unsubscribe();
   }, [user]);
 
   const reg = state.register;
@@ -181,7 +177,7 @@ export default function CashModule({ state }: CashModuleProps) {
     }
   };
 
-  // Mostrar pantalla de carga mientras se verifica bloqueo
+  // Pantalla de carga
   if (checkingBlock) {
     return (
       <div className="flex items-center justify-center h-full">

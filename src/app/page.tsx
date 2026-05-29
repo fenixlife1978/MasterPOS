@@ -1,7 +1,9 @@
+
 "use client";
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { useAuth } from '@/context/AuthContext';
 import { usePOSState } from '@/hooks/use-pos-state';
 import { useBarcode } from '@/hooks/use-barcode';
 import { useToast } from '@/hooks/use-toast';
@@ -23,77 +25,60 @@ import { Button } from '@/components/ui/button';
 import { Lock, RefreshCw } from 'lucide-react';
 
 export default function LicoPOSApp() {
-  const [user, setUser] = useState<{ name: string; role: string; email?: string; terminalId?: string } | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [terminalBlocked, setTerminalBlocked] = useState(false);
-  const [checkingBlock, setCheckingBlock] = useState(true);
+  const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const state = usePOSState();
   const { toast } = useToast();
+  const [terminalBlocked, setTerminalBlocked] = useState(false);
 
+  // Redirigir si no hay usuario autenticado
   useEffect(() => {
-    const storedUser = localStorage.getItem('user');
-    if (!storedUser) {
+    if (!authLoading && !user) {
       router.replace('/login');
-    } else {
-      try {
-        const parsedUser = JSON.parse(storedUser);
-        setUser(parsedUser);
-      } catch (e) {
-        console.error('Error parsing user data', e);
-        router.replace('/login');
-      }
     }
-    setIsLoading(false);
-  }, [router]);
+  }, [user, authLoading, router]);
 
-  // Verificar bloqueo de terminal para usuarios no administradores
+  // ✅ Suscripción en TIEMPO REAL al bloqueo de terminal para cajeros
   useEffect(() => {
-    const checkTerminalBlock = async () => {
-      if (!user || user.role === 'admin') {
-        setCheckingBlock(false);
-        return;
-      }
-      if (!user.terminalId) {
-        // Si el cajero no tiene terminal asignada, no bloqueamos (pero debería tener)
-        setCheckingBlock(false);
-        return;
-      }
-      try {
-        const terminal = await syncService.getTerminal(user.terminalId);
-        setTerminalBlocked(terminal?.isBlocked === true);
-      } catch (error) {
-        console.error('Error al verificar bloqueo de terminal:', error);
+    if (authLoading || !user || user.role === 'admin') {
+      setTerminalBlocked(false);
+      return;
+    }
+
+    if (!user.terminalId) {
+      console.warn('⚠️ Cajero sin terminalId asignado');
+      setTerminalBlocked(false);
+      return;
+    }
+
+    // Suscribirse al estado de la terminal en Firestore
+    const unsubscribe = syncService.subscribeToTerminal(user.terminalId, (terminal) => {
+      if (terminal) {
+        setTerminalBlocked(terminal.isBlocked === true);
+      } else {
         setTerminalBlocked(false);
-      } finally {
-        setCheckingBlock(false);
       }
-    };
-    if (!isLoading) {
-      checkTerminalBlock();
-    }
-  }, [user, isLoading]);
+    });
 
+    return () => unsubscribe();
+  }, [user, authLoading]);
+
+  // Redirigir según rol y bloqueo
   useEffect(() => {
-    if (user && state.isHydrated && !checkingBlock && !terminalBlocked) {
+    if (user && state.isHydrated && !terminalBlocked) {
       const allowedPages = ['dashboard', 'pos', 'inventario', 'clientes', 'cuentas', 'proveedores', 'contabilidad', 'devoluciones', 'caja', 'registrar_compra'];
-
       if (!allowedPages.includes(state.currentPage)) {
         state.setCurrentPage(user.role === 'admin' ? 'dashboard' : 'pos');
       }
-
-      // Redirigir administradores que aterrizan en POS por defecto
       if (user.role === 'admin' && (state.currentPage === 'pos' || state.currentPage === 'caja')) {
         state.setCurrentPage('dashboard');
       }
-      
-      // Redirigir cajeros que intentan entrar a módulos de admin
       const adminOnlyPages = ['dashboard', 'clientes', 'cuentas', 'contabilidad'];
       if (user.role === 'cashier' && adminOnlyPages.includes(state.currentPage)) {
         state.setCurrentPage('pos');
       }
     }
-  }, [user, state.isHydrated, state.currentPage, state.setCurrentPage, checkingBlock, terminalBlocked]);
+  }, [user, state.isHydrated, state.currentPage, terminalBlocked, state.setCurrentPage]);
 
   useBarcode((code) => {
     if (terminalBlocked) {
@@ -117,7 +102,7 @@ export default function LicoPOSApp() {
     }
   });
 
-  if (isLoading || !state.isHydrated || !user || checkingBlock) {
+  if (authLoading || !state.isHydrated || !user) {
     return (
       <div className="bg-background min-h-screen flex items-center justify-center">
         <div className="text-center">
@@ -128,7 +113,7 @@ export default function LicoPOSApp() {
     );
   }
 
-  // Pantalla de bloqueo de terminal
+  // Pantalla de bloqueo
   if (terminalBlocked) {
     return (
       <div className="fixed inset-0 bg-black/90 z-[9999] flex items-center justify-center">

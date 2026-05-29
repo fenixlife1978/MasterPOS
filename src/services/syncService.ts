@@ -1,3 +1,4 @@
+
 "use client";
 
 import { db } from '@/lib/firebase';
@@ -577,6 +578,14 @@ export const syncService = {
     });
   },
 
+  // ✅ NUEVO: Suscripción en tiempo real a una terminal específica
+  subscribeToTerminal(id: string | number, callback: (terminal: any) => void) {
+    if (!db || !id || typeof id === 'boolean') return () => {};
+    return onSnapshot(doc(db, 'terminals', id.toString()), (snap) => {
+      callback(snap.exists() ? { id: parseInt(snap.id), ...snap.data() } : null);
+    });
+  },
+
   async saveGlobalSettings(settings: any) {
     if (!db) return;
     const docRef = doc(db, 'global_settings', 'global');
@@ -647,7 +656,7 @@ export const syncService = {
    * @returns Datos del terminal o null
    */
   async getTerminal(id: number | string): Promise<any | null> {
-    if (!db) return null;
+    if (!db || !id || typeof id === 'boolean') return null;
     const snap = await getDoc(doc(db, 'terminals', id.toString()));
     return snap.exists() ? { id: parseInt(snap.id), ...snap.data() } : null;
   },

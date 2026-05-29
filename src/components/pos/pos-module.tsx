@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, useRef } from 'react';
@@ -49,32 +50,22 @@ export default function POSModule({ state }: POSModuleProps) {
   const [isTerminalBlocked, setIsTerminalBlocked] = useState(false);
   const [checkingBlock, setCheckingBlock] = useState(true);
 
-  // Verificar si la terminal está bloqueada
+  // ✅ Suscripción en TIEMPO REAL al bloqueo de terminal
   useEffect(() => {
-    const checkTerminalBlock = async () => {
-      if (!user || user.role === 'admin' || !user.terminalId) {
-        setCheckingBlock(false);
-        return;
-      }
-      try {
-        const terminal = await syncService.getTerminal(user.terminalId);
-        setIsTerminalBlocked(terminal?.isBlocked === true);
-      } catch (error) {
-        console.error('Error al verificar bloqueo de terminal:', error);
-        setIsTerminalBlocked(false);
-      } finally {
-        setCheckingBlock(false);
-      }
-    };
-    checkTerminalBlock();
+    if (!user || user.role === 'admin' || !user.terminalId) {
+      setCheckingBlock(false);
+      return;
+    }
+
+    const unsubscribe = syncService.subscribeToTerminal(user.terminalId, (terminal) => {
+      setIsTerminalBlocked(terminal?.isBlocked === true);
+      setCheckingBlock(false);
+    });
+
+    return () => unsubscribe();
   }, [user]);
 
   useEffect(() => {
-    const storedUser = localStorage.getItem('user');
-    if (storedUser) {
-      // No modificamos el user del contexto, solo para compatibilidad
-    }
-    
     const lastReceipt = localStorage.getItem('last_receipt_number');
     if (lastReceipt) {
       const lastNum = parseInt(lastReceipt);

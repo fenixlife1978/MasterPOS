@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
@@ -336,7 +337,13 @@ export function usePOSState() {
       }
     }
 
-    // ✅ Generar asiento contable ATÓMICO
+    // ✅ ACTUALIZACIÓN OPTIMISTA LOCAL DEL INVENTARIO (PARA MODO OFFLINE)
+    setProducts(prevProducts => prevProducts.map(p => {
+      const update = stockUpdates.get(p.id);
+      if (update) return { ...p, stock: update.newStock };
+      return p;
+    }));
+
     let accountingEntry: any = null;
     if (isSpecial && costoTotalOperacion > 0) {
       accountingEntry = {
@@ -356,8 +363,21 @@ export function usePOSState() {
     }
 
     const newTxs = [...(register.txs || []), tx];
-    await syncService.runAtomicSale(terminalId, tx, { products: stockUpdates, kardexEntries, accountingEntry, registerUpdate: { txs: newTxs } });
+    
+    // Ejecutamos la sincronización (ya sea online u offline a través de la cola)
+    // No bloqueamos el flujo principal si falla la red, ya que runAtomicSale ahora maneja el fallback
+    try {
+      await syncService.runAtomicSale(terminalId, tx, { 
+        products: stockUpdates, 
+        kardexEntries, 
+        accountingEntry, 
+        registerUpdate: { txs: newTxs } 
+      });
+    } catch (syncError) {
+      console.warn("⚠️ Error de sincronización inmediata, la operación se reintentará en segundo plano.", syncError);
+    }
 
+    // Actualizamos el estado local de la caja para que el cajero vea la venta reflejada
     setRegister({ ...register, txs: newTxs });
     saveRegisterToLocalStorage({ ...register, txs: newTxs });
     

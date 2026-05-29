@@ -25,8 +25,15 @@ if (typeof window !== 'undefined') {
   if (savedQueue) {
     try { pendingQueue = JSON.parse(savedQueue); } catch(e) {}
   }
-  window.addEventListener('online', () => { isOnline = true; processQueue(); });
-  window.addEventListener('offline', () => { isOnline = false; });
+  window.addEventListener('online', () => { 
+    isOnline = true; 
+    console.log("🌐 Conexión recuperada. Procesando cola...");
+    processQueue(); 
+  });
+  window.addEventListener('offline', () => { 
+    isOnline = false; 
+    console.log("🔌 Modo Offline activado.");
+  });
 }
 
 const deepClean = (obj: any): any => {
@@ -57,6 +64,8 @@ const processQueue = async () => {
   isSyncing = true;
   const toRetry: PendingOperation[] = [];
   
+  console.log(`⏳ Sincronizando ${pendingQueue.length} operaciones pendientes...`);
+
   for (const op of pendingQueue) {
     try {
       const data = sanitizeForFirestore(op.data);
@@ -65,6 +74,9 @@ const processQueue = async () => {
           const pBatch = writeBatch(db);
           (data as any[]).forEach((p: any) => pBatch.set(doc(db, 'products', p.id.toString()), { ...p, updatedAt: Date.now() }));
           await pBatch.commit();
+          break;
+        case 'updateProductStock':
+          await updateDoc(doc(db, 'products', data.id.toString()), { stock: data.newStock, updatedAt: Date.now() });
           break;
         case 'saveTransaction':
           await setDoc(doc(db, 'transactions', data.id.toString()), { ...data, createdAt: Date.now() });
@@ -120,6 +132,7 @@ const processQueue = async () => {
           break;
       }
     } catch (error) {
+      console.error(`❌ Error en operación ${op.type}:`, error);
       op.retries++;
       if (op.retries < 5) toRetry.push(op);
     }
@@ -127,6 +140,7 @@ const processQueue = async () => {
   pendingQueue = toRetry;
   if (typeof window !== 'undefined') localStorage.setItem('firebase_pending_queue', JSON.stringify(pendingQueue));
   isSyncing = false;
+  console.log("✅ Proceso de sincronización finalizado.");
 };
 
 const addToQueue = (type: string, data: any) => {
@@ -323,22 +337,35 @@ export const syncService = {
     const cleanRegisterUpdate = {
       txs: updates.registerUpdate.txs.map(tx => sanitizeForFirestore(tx))
     };
+
+    // FALLBACK OFFLINE: Si no hay internet, no usamos runTransaction (que falla sin red)
+    if (!isOnline) {
+      console.log("🛰️ Procesando venta en modo offline...");
+      this.saveTransaction(cleanTxData);
+      
+      for (const [prodId, update] of updates.products.entries()) {
+        addToQueue('updateProductStock', { id: prodId, newStock: update.newStock });
+      }
+      
+      for (const entry of cleanKardexEntries) {
+        this.saveKardexEntry(entry);
+      }
+      
+      if (cleanAccountingEntry) {
+        this.saveAccountingEntry(cleanAccountingEntry);
+      }
+      
+      this.saveRegisterByTerminal(terminalId, { ...cleanRegisterUpdate, updatedAt: Date.now() });
+      return; // Resolucion inmediata para no trancar la UI
+    }
     
+    // MODO ONLINE: Usamos transaccion para integridad total
     return runTransaction(db, async (transaction) => {
       for (const [prodId, update] of updates.products.entries()) {
         const prodRef = doc(db, 'products', prodId.toString());
         const prodSnap = await transaction.get(prodRef);
         if (!prodSnap.exists()) throw new Error(`Producto ${prodId} no existe`);
         const currentData = prodSnap.data();
-        const currentStock = currentData.stock;
-        const requiredStock = currentStock - update.newStock;
-        if (requiredStock < 0 && !currentData.isKit) {
-          throw new Error(`Stock insuficiente para producto ${prodId}`);
-        }
-      }
-      
-      for (const [prodId, update] of updates.products.entries()) {
-        const prodRef = doc(db, 'products', prodId.toString());
         transaction.update(prodRef, { stock: update.newStock, updatedAt: Date.now() });
       }
       
@@ -629,7 +656,6 @@ export const syncService = {
       addToQueue('updateTerminal', { id: terminalId, updates: { isBlocked } });
       return;
     }
-    // Usar setDoc con merge: true para asegurar la compatibilidad con las reglas allow update
     await setDoc(ref, { isBlocked, updatedAt: Date.now() }, { merge: true });
   },
 

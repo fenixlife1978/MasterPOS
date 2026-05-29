@@ -121,7 +121,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
   
   // ==================== NUEVO: KITS / COMBOS ====================
   const [isKit, setIsKit] = useState(false);
-  const [kitHasOwnStock, setKitHasOwnStock] = useState(false);
+  const [containerHasOwnStock, setKitHasOwnStock] = useState(false);
   const [kitComponents, setKitComponents] = useState<KitComponent[]>([]);
   const [searchChildProduct, setSearchChildProduct] = useState('');
   const [selectedChildProduct, setSelectedChildProduct] = useState<Product | null>(null);
@@ -130,7 +130,6 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
   
   // ==================== ESTADO LOCAL PARA EL PRECIO USD EDITABLE ====================
   const [localPriceUsd, setLocalPriceUsd] = useState('');
-  const priceUsdInputRef = useRef<HTMLInputElement>(null);
   const [isPriceUsdFocused, setIsPriceUsdFocused] = useState(false);
   
   // ✅ Función para calcular Precio Detal USD desde Costo y % de Ganancia
@@ -148,49 +147,15 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
     return Math.min(roundTo2(profitPercent), 99.99);
   };
   
-  // ✅ Actualizar precios cuando cambia el % de ganancia
-  const updatePricesFromProfit = useCallback((profitPercent: number, currentCost: number) => {
-    if (isUpdatingFromPriceBs) return;
-    setIsUpdatingFromProfit(true);
-    const priceUsd = calculatePriceUsdFromCostAndProfit(currentCost, profitPercent);
-    const priceBs = priceUsd * state.exchangeRate;
-    setPriceRetailBs(roundTo2(priceBs).toFixed(2));
-    setIsPriceFixed(false);
-    setIsUpdatingFromProfit(false);
-  }, [state.exchangeRate, isUpdatingFromPriceBs]);
-  
-  // ✅ Actualizar % de ganancia cuando cambia el precio en Bs
-  const updateProfitFromPriceBs = useCallback((priceBsValue: number, currentCost: number) => {
-    if (isUpdatingFromProfit) return;
-    setIsUpdatingFromPriceBs(true);
-    const priceUsd = priceBsValue / state.exchangeRate;
-    const newProfitPercent = calculateProfitFromCostAndPriceUsd(currentCost, priceUsd);
-    setProfitPercentInput(roundTo2(newProfitPercent).toString());
-    setIsPriceFixed(true);
-    setIsUpdatingFromPriceBs(false);
-  }, [state.exchangeRate, isUpdatingFromProfit]);
-  
-  // ✅ Actualizar porcentaje y precios cuando cambia el precio en USD (al perder foco)
-  const updateProfitFromPriceUsd = useCallback((priceUsdValue: number, currentCost: number) => {
-    if (isUpdatingFromProfit) return;
-    setIsUpdatingFromPriceBs(true);
-    const newProfitPercent = calculateProfitFromCostAndPriceUsd(currentCost, priceUsdValue);
-    setProfitPercentInput(roundTo2(newProfitPercent).toString());
-    const newPriceBs = priceUsdValue * state.exchangeRate;
-    setPriceRetailBs(roundTo2(newPriceBs).toFixed(2));
-    setIsPriceFixed(true);
-    setIsUpdatingFromPriceBs(false);
-  }, [state.exchangeRate]);
-  
-  // Sincronizar el valor local del precio USD con el calculado (si no está enfocado)
+  // Sincronizar el valor local del precio USD con el calculado (si no está enfocado y no está fijo)
   useEffect(() => {
-    if (!isPriceUsdFocused) {
+    if (!isPriceUsdFocused && !isPriceFixed) {
       const costVal = parseFloat(costUsdInput) || 0;
       const profitVal = parseFloat(profitPercentInput) || DEFAULT_PROFIT_PERCENT;
       const priceUsd = calculatePriceUsdFromCostAndProfit(costVal, profitVal);
       setLocalPriceUsd(priceUsd.toFixed(2));
     }
-  }, [costUsdInput, profitPercentInput, state.exchangeRate, isPriceUsdFocused]);
+  }, [costUsdInput, profitPercentInput, state.exchangeRate, isPriceUsdFocused, isPriceFixed]);
   
   const childProductResults = useMemo(() => {
     if (!searchChildProduct.trim() || hideChildResults) return [];
@@ -426,13 +391,22 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     const cost = parseFloat(costUsdInput) || 0;
-    const iva = ivaType === 'con_iva' ? ivaPercentage : 0;
     const profitPercent = parseFloat(profitPercentInput) || DEFAULT_PROFIT_PERCENT;
     
     let finalPriceUsd, finalPriceBs;
-    if (isPriceFixed && priceRetailBs !== '' && priceRetailBs !== 'NaN') {
-      finalPriceBs = parseFloat(priceRetailBs) || 0;
-      finalPriceUsd = finalPriceBs / state.exchangeRate;
+    if (isPriceFixed) {
+      const manualUsd = parseFloat(localPriceUsd);
+      const manualBs = parseFloat(priceRetailBs);
+      if (!isNaN(manualUsd) && manualUsd > 0) {
+        finalPriceUsd = manualUsd;
+        finalPriceBs = roundTo2(manualUsd * state.exchangeRate);
+      } else if (!isNaN(manualBs) && manualBs > 0) {
+        finalPriceBs = manualBs;
+        finalPriceUsd = finalPriceBs / state.exchangeRate;
+      } else {
+        finalPriceUsd = calculatePriceUsdFromCostAndProfit(cost, profitPercent);
+        finalPriceBs = finalPriceUsd * state.exchangeRate;
+      }
     } else {
       finalPriceUsd = calculatePriceUsdFromCostAndProfit(cost, profitPercent);
       finalPriceBs = finalPriceUsd * state.exchangeRate;
@@ -1091,7 +1065,6 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
           </div>
         </div>
       ) : (
-        // ==================== PESTAÑA HISTORIAL DE AJUSTES (CORREGIDA) ====================
         <div className="flex-1 flex flex-col overflow-hidden px-6 mt-4">
           <div className="flex justify-between items-center mb-3 gap-2 flex-wrap flex-shrink-0">
             <div className="flex items-center gap-2">
@@ -1210,7 +1183,6 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
         </Dialog>
       )}
       
-      {/* ✅ MODAL DE KARDEX - NUEVO FORMATO (CORREGIDO) */}
       {viewingKardex && (
         <Dialog open={true} onOpenChange={() => setViewingKardex(null)}>
           <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-6xl w-[95vw] p-0 overflow-hidden rounded-xl shadow-xl max-h-[90vh] flex flex-col">
@@ -1300,7 +1272,6 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
         </Dialog>
       )}
       
-      {/* Modal de ajuste de stock */}
       <Dialog open={!!adjustingStock} onOpenChange={() => setAdjustingStock(null)}>
         <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-md p-0 rounded-xl">
           <DialogHeader className="bg-amber-500 p-3 text-white rounded-t-xl"><div className="flex justify-between items-center"><DialogTitle className="text-sm font-black">Ajustar Stock</DialogTitle><button onClick={() => setAdjustingStock(null)}><X size={16} /></button></div></DialogHeader>
@@ -1312,7 +1283,6 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
         </DialogContent>
       </Dialog>
       
-      {/* Modal de autorización */}
       <Dialog open={showAuthCodeModal} onOpenChange={setShowAuthCodeModal}>
         <DialogContent className="bg-white max-w-md p-0 rounded-xl">
           <DialogHeader className="bg-red-600 p-3 text-white rounded-t-xl"><DialogTitle className="text-sm font-black flex items-center gap-2"><AlertTriangle size={14} /> Autorización requerida</DialogTitle></DialogHeader>
@@ -1320,7 +1290,6 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
         </DialogContent>
       </Dialog>
       
-      {/* Modal de gestión de categorías */}
       <Dialog open={showCategoryModal} onOpenChange={setShowCategoryModal}>
         <DialogContent className="bg-white max-w-md p-0 rounded-xl">
           <DialogHeader className="bg-[#1A2C4E] p-3 text-white rounded-t-xl"><DialogTitle className="text-xs font-black">🏷️ Gestionar Categorías</DialogTitle></DialogHeader>
@@ -1332,7 +1301,6 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
         </DialogContent>
       </Dialog>
       
-      {/* Modal de gestión de departamentos */}
       <Dialog open={showDepartmentModal} onOpenChange={setShowDepartmentModal}>
         <DialogContent className="bg-white max-w-md p-0 rounded-xl">
           <DialogHeader className="bg-[#1A2C4E] p-3 text-white rounded-t-xl"><DialogTitle className="text-xs font-black">📁 Gestionar Departamentos</DialogTitle></DialogHeader>
@@ -1344,7 +1312,6 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
         </DialogContent>
       </Dialog>
       
-      {/* Modal de ajuste global de IVA */}
       <Dialog open={showGlobalIvaModal} onOpenChange={setShowGlobalIvaModal}>
         <DialogContent className="bg-white max-w-md p-0 rounded-xl">
           <DialogHeader className="bg-[#1A2C4E] p-3 text-white rounded-t-xl"><DialogTitle className="text-sm font-black">Ajuste de IVA Global</DialogTitle></DialogHeader>
@@ -1356,7 +1323,6 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
         </DialogContent>
       </Dialog>
       
-      {/* Modal para crear/editar producto - CON % GANANCIA BIDIRECCIONAL Y CAMPO USD EDITABLE */}
       <Dialog open={isAdding} onOpenChange={(val) => { if(!val) { setIsAdding(false); setEditingProduct(null); resetForm(); } }}>
         <DialogContent className="bg-white max-w-3xl p-0 rounded-xl max-h-[90vh] flex flex-col">
           <DialogHeader className="bg-[#1A2C4E] p-3 text-white rounded-t-xl flex-shrink-0">
@@ -1368,7 +1334,6 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
           <form onSubmit={handleSave} className="flex flex-col flex-1 overflow-hidden">
             <div className="flex-1 overflow-y-auto p-4">
               <div className="grid grid-cols-2 gap-3">
-                {/* Columna izquierda: datos básicos */}
                 <div className="space-y-2">
                   <div><label className="text-[8px] font-black uppercase">Código de Barras</label><Input value={formData.barcode} onChange={e => setFormData({...formData, barcode: e.target.value})} className="h-7 text-xs" required /></div>
                   <div><label className="text-[8px] font-black uppercase">Nombre del Producto</label><Input value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="h-7 text-xs" required /></div>
@@ -1377,7 +1342,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                     <div><label className="text-[8px] font-black uppercase">Categoría</label><select value={formData.category} onChange={e => setFormData({...formData, category: e.target.value as Category})} className="w-full h-7 border rounded px-2 text-xs bg-white">{categories.map(c => <option key={c}>{c}</option>)}</select></div>
                   </div>
                   <div className="grid grid-cols-2 gap-2">
-                    <div><label className="text-[8px] font-black uppercase">Stock Inicial</label><Input type="text" inputMode="numeric" value={stockInput} onChange={(e) => setStockInput(e.target.value)} className="h-7 text-xs" placeholder="0" /></div>
+                    <div><label className="text-[8px] font-black uppercase">Stock Inicial</label><Input type="text" inputMode="numeric" value={stockInput} onChange={(e) => setStockInput(e.target.value)} className={cn("h-7 text-xs", !!editingProduct && "bg-gray-100 opacity-70")} placeholder="0" readOnly={!!editingProduct} /></div>
                     <div><label className="text-[8px] font-black uppercase">Stock Mínimo</label><Input type="text" inputMode="numeric" value={minStockInput} onChange={(e) => setMinStockInput(e.target.value)} className="h-7 text-xs" placeholder="5" /></div>
                   </div>
                   <div className="grid grid-cols-2 gap-2">
@@ -1390,8 +1355,8 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                   </div>
                   {isKit && (
                     <div className="border border-dashed border-blue-300 rounded-lg p-2 bg-blue-50/30 space-y-2">
-                      <div className="flex items-center justify-between bg-white/50 rounded p-1.5"><span className="text-[8px] font-bold uppercase">Stock del kit:</span><div className="flex gap-2"><button type="button" onClick={() => setKitHasOwnStock(false)} className={cn("px-2 py-0.5 rounded text-[9px] font-bold", !kitHasOwnStock ? "bg-primary text-black" : "bg-gray-200 text-gray-600")}>Sin stock propio</button><button type="button" onClick={() => setKitHasOwnStock(true)} className={cn("px-2 py-0.5 rounded text-[9px] font-bold", kitHasOwnStock ? "bg-primary text-black" : "bg-gray-200 text-gray-600")}>Con stock propio</button></div></div>
-                      <p className="text-[7px] text-blue-700 bg-blue-100 rounded px-2 py-1">{!kitHasOwnStock ? "📦 Sin stock propio: El kit siempre se puede vender si hay suficiente stock de sus componentes. Al vender, SOLO se descuentan los componentes." : "⚠️ Con stock propio: El kit tiene su propio inventario. Al vender, se descuenta 1 del kit + las cantidades de sus componentes."}</p>
+                      <div className="flex items-center justify-between bg-white/50 rounded p-1.5"><span className="text-[8px] font-bold uppercase">Stock del kit:</span><div className="flex gap-2"><button type="button" onClick={() => setKitHasOwnStock(false)} className={cn("px-2 py-0.5 rounded text-[9px] font-bold transition-all", !containerHasOwnStock ? "bg-primary text-black" : "bg-gray-200 text-gray-600")}>Sin stock propio</button><button type="button" onClick={() => setKitHasOwnStock(true)} className={cn("px-2 py-0.5 rounded text-[9px] font-bold transition-all", containerHasOwnStock ? "bg-primary text-black" : "bg-gray-200 text-gray-600")}>Con stock propio</button></div></div>
+                      <p className="text-[7px] text-blue-700 bg-blue-100 rounded px-2 py-1">{!containerHasOwnStock ? "📦 Sin stock propio: El kit siempre se puede vender si hay suficiente stock de sus componentes. Al vender, SOLO se descuentan los componentes." : "⚠️ Con stock propio: El kit tiene su propio inventario. Al vender, se descuenta 1 del kit + las cantidades de sus componentes."}</p>
                       <p className="text-[8px] font-bold text-blue-800 mb-1 flex items-center gap-1"><Package size={10} /> Componentes del kit</p>
                       <div className="space-y-2">
                         {kitComponents.length > 0 && (<div className="max-h-24 overflow-y-auto space-y-1">{kitComponents.map(comp => { const childProd = products.find(p => p.id === comp.productId); return <div key={comp.productId} className="flex justify-between items-center bg-white rounded px-2 py-1 text-[10px]"><span>{childProd?.name || 'Producto'} x{comp.quantity}</span><button type="button" onClick={() => removeKitComponent(comp.productId)} className="text-red-500"><Trash2 size={10} /></button></div>; })}</div>)}
@@ -1404,7 +1369,6 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                   )}
                 </div>
                 
-                {/* Columna derecha: costos y precios - CON % GANANCIA BIDIRECCIONAL Y CAMPO USD EDITABLE */}
                 <div className="bg-[#F5F5F5] rounded-lg p-3 space-y-2">
                   <div className="w-3/4"><label className="text-[7px] font-bold uppercase">Costo Unitario USD</label><Input type="text" inputMode="decimal" value={costUsdInput} onChange={(e) => { setCostUsdInput(e.target.value); const costVal = parseFloat(e.target.value) || 0; const profitVal = parseFloat(profitPercentInput) || DEFAULT_PROFIT_PERCENT; if (!isUpdatingFromPriceBs) { const newPriceUsd = calculatePriceUsdFromCostAndProfit(costVal, profitVal); const newPriceBs = newPriceUsd * state.exchangeRate; setPriceRetailBs(roundTo2(newPriceBs).toFixed(2)); setIsPriceFixed(false); } }} className="bg-white h-7 text-xs font-mono" placeholder="0.0000" /></div>
                   <div><label className="text-[7px] font-bold uppercase">% de Ganancia</label><div className="flex items-center gap-2"><Input type="text" inputMode="decimal" value={profitPercentInput} onChange={(e) => { const newProfit = parseFloat(e.target.value) || 0; setProfitPercentInput(e.target.value); const costVal = parseFloat(costUsdInput) || 0; if (!isUpdatingFromPriceBs) { const newPriceUsd = calculatePriceUsdFromCostAndProfit(costVal, newProfit); const newPriceBs = newPriceUsd * state.exchangeRate; setPriceRetailBs(roundTo2(newPriceBs).toFixed(2)); setIsPriceFixed(false); } }} className="bg-white h-7 text-xs font-mono w-24 text-right" placeholder="0" /><span className="text-[9px] text-black/60">%</span></div></div>
@@ -1416,23 +1380,12 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                         inputMode="decimal" 
                         value={localPriceUsd}
                         onFocus={() => setIsPriceUsdFocused(true)}
-                        onBlur={() => {
-                          setIsPriceUsdFocused(false);
-                          const parsed = parseFloat(localPriceUsd);
-                          if (!isNaN(parsed) && parsed > 0) {
-                            const costVal = parseFloat(costUsdInput) || 0;
-                            updateProfitFromPriceUsd(parsed, costVal);
-                          } else {
-                            const costVal = parseFloat(costUsdInput) || 0;
-                            const profitVal = parseFloat(profitPercentInput) || DEFAULT_PROFIT_PERCENT;
-                            const priceUsd = calculatePriceUsdFromCostAndProfit(costVal, profitVal);
-                            setLocalPriceUsd(priceUsd.toFixed(2));
-                          }
-                        }}
+                        onBlur={() => setIsPriceUsdFocused(false)}
                         onChange={(e) => {
                           const raw = e.target.value;
                           if (raw === '' || /^\d*\.?\d*$/.test(raw)) {
                             setLocalPriceUsd(raw);
+                            setIsPriceFixed(true); 
                           }
                         }}
                         className="bg-white h-7 text-xs font-mono"

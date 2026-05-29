@@ -188,12 +188,10 @@ export function usePOSState() {
   const saveClient = useCallback((c: Client) => syncService.saveClient(c), []);
   const deleteClient = useCallback((id: number) => syncService.deleteClient(id), []);
 
-  // ✅ Método para refrescar productos desde Firestore
   const refreshProducts = useCallback(async () => {
     return products;
   }, [products]);
 
-  // ✅ Verificar stock de un producto (incluyendo componentes de kits)
   const checkProductStock = useCallback((productId: number, quantity: number): boolean => {
     const product = products.find(p => p.id === productId);
     if (!product) return false;
@@ -269,7 +267,6 @@ export function usePOSState() {
     );
   }, []);
 
-  // ✅ Crear sesión de caja (al abrir caja)
   const createCashSession = useCallback(async (initialAmountUsd: number): Promise<any> => {
     if (!user) throw new Error('Usuario no autenticado');
     if (!terminalId) throw new Error('Terminal no definido');
@@ -279,7 +276,6 @@ export function usePOSState() {
     return session;
   }, [user, terminalId, setActiveSession]);
 
-  // ✅ Cerrar sesión de caja (al cerrar caja o al hacer corte)
   const closeCashSession = useCallback(async (finalAmountUsd: number): Promise<any> => {
     if (!currentSession) throw new Error('No hay sesión activa');
     const closed = await syncService.closeCashSession(currentSession.id, finalAmountUsd);
@@ -288,7 +284,6 @@ export function usePOSState() {
     return closed;
   }, [currentSession, setActiveSession]);
 
-  // ✅ Recargar sesión manualmente
   const reloadSession = useCallback(async () => {
     if (!terminalId) return;
     const session = await syncService.getActiveSessionByTerminal(terminalId);
@@ -310,7 +305,6 @@ export function usePOSState() {
     setRegister(registerData);
     saveRegisterToLocalStorage(registerData);
     
-    // ✅ Crear sesión de caja asociada
     try {
       await createCashSession(usdAmount);
     } catch (error) {
@@ -319,10 +313,7 @@ export function usePOSState() {
   }, [terminalId, saveRegisterToLocalStorage, createCashSession]);
 
   const closeCashRegister = useCallback(() => {
-    // ✅ Cerrar sesión de caja (si existe)
     if (currentSession) {
-      // Nota: el monto final debería venir del arqueo, pero aquí lo dejamos temporalmente como 0
-      // El corte final o el cierre de sesión real deberá actualizar este valor
       closeCashSession(0).catch(err => console.error('Error al cerrar sesión:', err));
     }
     syncService.clearRegisterByTerminal(terminalId);
@@ -440,11 +431,11 @@ export function usePOSState() {
       costoTotalOperacion: isSpecial ? costoTotalOperacion : undefined,
       notes: isSpecial ? paymentData.notes : undefined,
       authorizedBy: isSpecial ? paymentData.authorizedBy : undefined,
-      // ✅ Asociar la transacción a la sesión activa
       sessionId: currentSession?.id || null,
+      // Aplicar ajuste por redondeo bimonetario si se recibió desde el modal
+      ajusteRedondeoBs: paymentData.ajusteRedondeoBs || 0,
     };
 
-    // ✅ Guardar los detalles de los pagos (para ventas de contado)
     if (type === 'contado' && paymentData.payments) {
       tx.payments = paymentData.payments;
     }
@@ -468,7 +459,6 @@ export function usePOSState() {
           ? `[${type === 'colaboracion' ? 'Colaboración' : 'Consumo Propio'}] ${paymentData.notes || 'Sin motivo'}`
           : `Venta ID: ${tx.id}`;
         
-        // ✅ quantity como NEGATIVO para ventas (salida de inventario)
         kardexEntries.push({
           id: `${Date.now()}_${Math.random()}`,
           productId: product.id,
@@ -610,13 +600,11 @@ export function usePOSState() {
     await registerDebtPaymentEntry(tx, client);
   }, [register, clients, accounts, exchangeRate, terminalId, saveRegisterToLocalStorage, currentSession]);
 
-  // ✅ Registrar egreso de caja (para devoluciones en efectivo)
   const registerCashEgress = useCallback(async (amount: number, reason: string, referenceId: number) => {
     if (!register?.isOpen) {
       throw new Error('Caja no abierta');
     }
 
-    // Crear transacción de egreso (usando tipo 'devolucion' que ya existe en el tipo Transaction)
     const egressTx: Transaction = {
       id: getVenezuelaTimestamp(),
       date: getVenezuelaISOString(),
@@ -638,10 +626,8 @@ export function usePOSState() {
       sessionId: currentSession?.id || null,
     };
 
-    // Guardar transacción de egreso
     await syncService.saveTransaction(egressTx);
 
-    // Actualizar caja localmente
     const updatedRegister = {
       ...register,
       txs: [...(register.txs || []), egressTx],
@@ -651,7 +637,6 @@ export function usePOSState() {
     setRegister(updatedRegister);
     saveRegisterToLocalStorage(updatedRegister);
     
-    // Registrar asiento contable de egreso
     await registerReturnEntry(egressTx as any, referenceId);
     
     return egressTx;
@@ -661,7 +646,6 @@ export function usePOSState() {
     setExchangeRate(newRate);
     localStorage.setItem(STORAGE_KEYS.EXCHANGE_RATE, newRate.toString());
     await syncService.saveGlobalSettings({ exchangeRate: newRate });
-    // ✅ Recalcular precios con la nueva tasa
     recalcAllPricesWithNewRate(newRate);
   }, [exchangeRate, recalcAllPricesWithNewRate]);
 
@@ -678,7 +662,6 @@ export function usePOSState() {
     adminCode,
     checkProductStock,
     refreshProducts,
-    // ✅ Nuevos métodos para sesiones
     currentSession,
     setCurrentSession,
     reloadSession,

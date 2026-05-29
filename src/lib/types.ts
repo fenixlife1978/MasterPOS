@@ -85,6 +85,8 @@ export interface Transaction {
   payments?: PaymentDetail[];
   // ✅ ID de sesión de caja (aislamiento por terminal)
   sessionId?: string | null;
+  // ✅ Ajuste contable por redondeo bimonetario
+  ajusteRedondeoBs?: number;
 }
 
 export interface Account {

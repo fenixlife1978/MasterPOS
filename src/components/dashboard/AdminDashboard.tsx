@@ -24,7 +24,6 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { formatBs, formatUsd, formatBsNumber, formatUsdNumber } from '@/lib/currency-formatter';
-import { Switch } from '@/components/ui/switch';
 
 interface AdminDashboardProps {
   state: ReturnType<typeof usePOSState>;
@@ -40,62 +39,24 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
   const [monthlyRevenue, setMonthlyRevenue] = useState(0);
   const [monthlyExpenses, setMonthlyExpenses] = useState(0);
   
-  // ✅ Estado para la tasa BCV editable
+  // Estado para la tasa BCV editable
   const [exchangeRateInput, setExchangeRateInput] = useState(state.exchangeRate.toString());
   const [isUpdatingRate, setIsUpdatingRate] = useState(false);
   
-  // ✅ Estado para el PIN de autorización (código de administrador)
+  // Estado para el PIN de autorización
   const [adminPin, setAdminPin] = useState('');
   const [newAdminPin, setNewAdminPin] = useState('');
   const [confirmAdminPin, setConfirmAdminPin] = useState('');
   const [isUpdatingPin, setIsUpdatingPin] = useState(false);
   const [showPinSection, setShowPinSection] = useState(false);
   
-  // ✅ Estado para el modal de RESET
+  // Estado para el modal de RESET
   const [showResetModal, setShowResetModal] = useState(false);
   const [resetPinInput, setResetPinInput] = useState('');
   const [isResetting, setIsResetting] = useState(false);
 
-  // ✅ Estado para el modal de historial de cierres
+  // Estado para el modal de historial de cierres
   const [showHistoryModal, setShowHistoryModal] = useState(false);
-
-  // ✅ Estado para la lista de terminales y su estado de bloqueo
-  const [terminals, setTerminals] = useState<any[]>([]);
-  const [isLoadingTerminals, setIsLoadingTerminals] = useState(false);
-
-  // Cargar terminales al montar el componente
-  useEffect(() => {
-    loadTerminals();
-  }, []);
-
-  const loadTerminals = async () => {
-    setIsLoadingTerminals(true);
-    try {
-      const allTerminals = await syncService.getAllTerminals();
-      setTerminals(allTerminals);
-    } catch (error) {
-      console.error('Error al cargar terminales:', error);
-    } finally {
-      setIsLoadingTerminals(false);
-    }
-  };
-
-  // Función para cambiar el estado de bloqueo de un terminal
-  const handleToggleBlock = async (terminalId: number, currentBlocked: boolean) => {
-    try {
-      await syncService.updateTerminalBlockStatus(terminalId, !currentBlocked);
-      toast({ 
-        title: !currentBlocked ? "Terminal bloqueado" : "Terminal desbloqueado", 
-        description: `La terminal ha sido ${!currentBlocked ? 'bloqueada' : 'desbloqueada'} correctamente.`,
-        variant: "default"
-      });
-      // Recargar lista
-      loadTerminals();
-    } catch (error) {
-      console.error('Error al cambiar estado de bloqueo:', error);
-      toast({ title: "Error", description: "No se pudo cambiar el estado del terminal", variant: "destructive" });
-    }
-  };
 
   // Cargar PIN actual al inicio
   useEffect(() => {
@@ -108,7 +69,7 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
     loadAdminCode();
   }, []);
 
-  // Calcular ingresos del mes actual (reinicia cada 1ro)
+  // Calcular ingresos del mes actual
   const calculateMonthlyRevenue = () => {
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -120,7 +81,7 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
     setMonthlyRevenue(revenue);
   };
 
-  // Calcular gastos del mes (facturas de compra pagadas en el mes)
+  // Calcular gastos del mes
   const calculateMonthlyExpenses = () => {
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -140,7 +101,7 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
     calculateMonthlyExpenses();
   }, [state.transactions, invoices]);
 
-  // ✅ Función para actualizar la tasa BCV globalmente
+  // Función para actualizar la tasa BCV globalmente
   const handleUpdateExchangeRate = async () => {
     const newRate = parseFloat(exchangeRateInput);
     if (isNaN(newRate) || newRate <= 0) {
@@ -159,7 +120,7 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
     }
   };
 
-  // ✅ Función para actualizar el PIN de autorización
+  // Función para actualizar el PIN de autorización
   const handleUpdateAdminPin = async () => {
     if (!newAdminPin || newAdminPin.length !== 6) {
       toast({ title: "Error", description: "El PIN debe tener exactamente 6 dígitos", variant: "destructive" });
@@ -186,7 +147,7 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
     }
   };
 
-  // ✅ Función para resetear el sistema completo (CORREGIDA)
+  // Función para resetear el sistema completo
   const handleResetSystem = async () => {
     if (!resetPinInput) {
       toast({ title: "Error", description: "Ingrese el PIN de autorización", variant: "destructive" });
@@ -212,10 +173,10 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
         await syncService.deleteClient(client.id);
       }
       
-      // 3. Eliminar TODAS las transacciones (Firestore)
+      // 3. Eliminar TODAS las transacciones
       await syncService.deleteAllTransactions();
       
-      // 4. Eliminar todas las cuentas por cobrar (marcar como pagadas)
+      // 4. Eliminar todas las cuentas por cobrar
       for (const acc of state.accounts) {
         await syncService.saveAccount({ ...acc, status: 'pagada', paidAmount: acc.amountBs });
       }
@@ -226,10 +187,10 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
         await syncService.deletePurchaseInvoice?.(inv.id);
       }
       
-      // 6. Eliminar TODAS las entradas contables (accounting_entries)
+      // 6. Eliminar TODAS las entradas contables
       await syncService.deleteAllAccountingEntries();
       
-      // 7. Eliminar TODAS las entradas de kardex (kardex_entries)
+      // 7. Eliminar TODAS las entradas de kardex
       await syncService.deleteAllKardexEntries();
       
       // 8. Cerrar todas las cajas abiertas
@@ -241,7 +202,6 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
         variant: "default"
       });
       
-      // Recargar la página después de 2 segundos
       setTimeout(() => {
         window.location.reload();
       }, 2000);
@@ -290,7 +250,7 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
               <p className="text-sm text-black/50 mt-1">Gestiona tu negocio desde un solo lugar</p>
             </div>
             
-            {/* ✅ Tarjeta de Tasa BCV editable + Botones */}
+            {/* Tarjeta de Tasa BCV editable */}
             <div className="flex items-center gap-3">
               <div className="bg-[#1A2C4E] rounded-xl p-3 flex items-center gap-3 shadow-md">
                 <div className="bg-primary/20 rounded-lg p-2">
@@ -320,7 +280,7 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
                 </div>
               </div>
               
-              {/* ✅ Botón HISTORIAL CIERRES */}
+              {/* Botón HISTORIAL CIERRES */}
               <Button
                 onClick={() => setShowHistoryModal(true)}
                 variant="outline"
@@ -330,7 +290,7 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
                 HISTORIAL CIERRES
               </Button>
               
-              {/* ✅ Botón RESET */}
+              {/* Botón RESET */}
               <Button
                 onClick={() => setShowResetModal(true)}
                 variant="outline"
@@ -363,7 +323,7 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
               );
             })}
             
-            {/* ✅ Botón para gestión de PIN */}
+            {/* Botón para gestión de PIN */}
             <button
               onClick={() => setShowPinSection(!showPinSection)}
               className={cn(
@@ -378,7 +338,7 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
             </button>
           </div>
           
-          {/* ✅ Sección de gestión de PIN de autorización */}
+          {/* Sección de gestión de PIN de autorización */}
           {showPinSection && (
             <div className="mt-4 bg-amber-50 border border-amber-200 rounded-xl p-4">
               <div className="flex items-center gap-2 mb-3">
@@ -427,66 +387,6 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
                   PIN actual: {adminPin.split('').map(() => '•').join('')}
                 </p>
               )}
-            </div>
-          )}
-          
-          {/* ✅ Sección de bloqueo/desbloqueo de terminales */}
-          {activeTab === 'terminals' && (
-            <div className="mt-6">
-              <h3 className="text-sm font-black mb-3 flex items-center gap-2">
-                <Lock size={16} /> Control de Bloqueo de Terminales
-              </h3>
-              <div className="bg-white border border-[#9E9E9E] rounded-xl overflow-hidden shadow-sm">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs">
-                    <thead className="bg-gray-100">
-                      <tr>
-                        <th className="p-2 text-left">Terminal</th>
-                        <th className="p-2 text-left">Ubicación</th>
-                        <th className="p-2 text-left">Usuario Asignado</th>
-                        <th className="p-2 text-center">Estado</th>
-                        <th className="p-2 text-center">Bloqueado</th>
-                        <th className="p-2 text-center">Acción</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {isLoadingTerminals ? (
-                        <tr><td colSpan={6} className="text-center p-4">Cargando terminales...</td></tr>
-                      ) : terminals.length === 0 ? (
-                        <tr><td colSpan={6} className="text-center p-4">No hay terminales registradas</td></tr>
-                      ) : (
-                        terminals.map(term => (
-                          <tr key={term.id} className="border-t">
-                            <td className="p-2 font-bold">{term.name}</td>
-                            <td className="p-2">{term.location || '—'}</td>
-                            <td className="p-2">{term.assignedTo || '—'}</td>
-                            <td className="p-2 text-center">
-                              <span className={cn("px-2 py-0.5 rounded-full text-[9px] font-bold", term.status === 'active' ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700")}>
-                                {term.status === 'active' ? 'Activa' : 'Inactiva'}
-                              </span>
-                            </td>
-                            <td className="p-2 text-center">
-                              <span className={cn("px-2 py-0.5 rounded-full text-[9px] font-bold", term.isBlocked ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700")}>
-                                {term.isBlocked ? 'BLOQUEADA' : 'DESBLOQUEADA'}
-                              </span>
-                            </td>
-                            <td className="p-2 text-center">
-                              <Switch
-                                checked={!!term.isBlocked}
-                                onCheckedChange={() => handleToggleBlock(term.id, term.isBlocked)}
-                                className="data-[state=checked]:bg-red-500 data-[state=unchecked]:bg-green-500"
-                              />
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-                <div className="bg-gray-50 p-3 text-[9px] text-black/40">
-                  <p>⚠️ Al bloquear una terminal, ningún cajero podrá acceder a ella hasta que el administrador la desbloquee.</p>
-                </div>
-              </div>
             </div>
           )}
         </div>
@@ -563,7 +463,7 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
         {activeTab === 'supervision' && <CashSupervision />}
       </div>
       
-      {/* ✅ Modal de confirmación para RESET */}
+      {/* Modal de confirmación para RESET */}
       <Dialog open={showResetModal} onOpenChange={setShowResetModal}>
         <DialogContent className="bg-white max-w-md p-0 rounded-xl">
           <DialogHeader className="bg-red-600 p-4 text-white rounded-t-xl">
@@ -646,7 +546,7 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
         </DialogContent>
       </Dialog>
 
-      {/* ✅ Modal de historial de cierres */}
+      {/* Modal de historial de cierres */}
       <CloseHistoryModal open={showHistoryModal} onClose={() => setShowHistoryModal(false)} />
     </>
   );

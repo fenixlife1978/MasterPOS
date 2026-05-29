@@ -21,11 +21,15 @@ export default function Topbar({ register, rate, onRateChange }: TopbarProps) {
   const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
   const [pendingSync, setPendingSync] = useState(0);
   
-  // ✅ Verificar si es admin (por rol o por email)
+  // Verificar si es admin (por rol o por email)
   const isAdmin = user?.role === 'admin' || user?.email === 'admin@licopos.com';
   
-  // ✅ Determinar si debe mostrar el badge de caja (solo si NO es admin Y la caja existe)
+  // Determinar si debe mostrar el badge de caja (solo si NO es admin Y la caja existe)
   const showRegisterBadge = !loading && !isAdmin && register !== undefined;
+  
+  // ✅ Mostrar número de terminal solo para cajeros y si tiene terminalId
+  const showTerminalBadge = !loading && !isAdmin && user?.terminalId;
+  const terminalDisplay = showTerminalBadge ? `Terminal ${user.terminalId}` : null;
 
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 1000);
@@ -69,12 +73,23 @@ export default function Topbar({ register, rate, onRateChange }: TopbarProps) {
 
   return (
     <header className="h-[56px] bg-secondary border-b border-black/10 flex items-center px-6 gap-6 shrink-0 z-40">
-      <div className="font-headline font-bold text-[22px] tracking-tight">
-        <span className="text-primary">Master</span>
-        <span className="text-white">POS</span>
+      <div className="flex items-center gap-3">
+        <div className="font-headline font-bold text-[22px] tracking-tight">
+          <span className="text-primary">Master</span>
+          <span className="text-white">POS</span>
+        </div>
+        
+        {/* ✅ Recuadro rojo con número de terminal (solo para cajeros) */}
+        {terminalDisplay && (
+          <div className="bg-red-600 rounded-lg px-3 py-1 shadow-md">
+            <span className="text-white font-black text-sm tracking-wide">
+              {terminalDisplay}
+            </span>
+          </div>
+        )}
       </div>
       
-      {/* ✅ El badge de caja SOLO se muestra para cajeros (NO administradores) */}
+      {/* Badge de estado de caja (solo para cajeros) */}
       {showRegisterBadge && (
         <div className={cn(
           "px-4 py-1 rounded-full text-[12px] font-bold tracking-tight transition-all duration-200 shadow-md flex items-center gap-2",

@@ -13,16 +13,16 @@ interface AppUser {
   email: string | null;
   name: string;
   role: 'admin' | 'cashier';
-  terminalId?: string; // ✅ Terminal asignada al usuario
+  terminalId?: string;
 }
 
 interface AuthContextType {
   user: AppUser | null;
   loading: boolean;
   logout: () => void;
-  activeSession: any | null;          // ✅ Sesión activa de caja
-  reloadActiveSession: () => Promise<void>; // ✅ Refrescar sesión
-  setActiveSession: (session: any | null) => void; // ✅ Actualizar manualmente
+  activeSession: any | null;
+  reloadActiveSession: () => Promise<void>;
+  setActiveSession: (session: any | null) => void;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -41,7 +41,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
 
-  // ✅ Función para cargar la sesión activa desde Firestore
   const reloadActiveSession = async () => {
     if (!user?.terminalId) {
       setActiveSession(null);
@@ -64,15 +63,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser: FirebaseUser | null) => {
       if (firebaseUser) {
-        // Obtener terminalId desde Firestore (colección 'users')
+        // Obtener datos del usuario desde Firestore (colección 'users')
         let terminalId: string | undefined;
+        let userRole: 'admin' | 'cashier' = 'cashier';
+        let userName = firebaseUser.displayName || 'Usuario';
         try {
           const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
           if (userDoc.exists()) {
-            terminalId = userDoc.data().terminalId;
+            const data = userDoc.data();
+            terminalId = data.terminalId;
+            userRole = data.role === 'admin' ? 'admin' : 'cashier';
+            userName = data.name || firebaseUser.displayName || 'Usuario';
           }
         } catch (error) {
-          console.error('Error al cargar terminalId del usuario:', error);
+          console.error('Error al cargar datos del usuario:', error);
         }
 
         const stored = localStorage.getItem('user');
@@ -82,22 +86,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           appUser = {
             uid: firebaseUser.uid,
             email: firebaseUser.email,
-            name: parsed.name || firebaseUser.displayName || 'Usuario',
-            role: parsed.role || 'cashier',
+            name: parsed.name || userName,
+            role: parsed.role || userRole,
             terminalId: terminalId || parsed.terminalId,
           };
         } else {
           appUser = {
             uid: firebaseUser.uid,
             email: firebaseUser.email,
-            name: firebaseUser.displayName || 'Usuario',
-            role: 'cashier',
+            name: userName,
+            role: userRole,
             terminalId: terminalId,
           };
         }
         setUser(appUser);
         
-        // ✅ Cargar sesión activa después de tener el usuario y terminalId
+        // Cargar sesión activa si tiene terminalId
         if (appUser.terminalId) {
           try {
             const session = await syncService.getActiveSessionByTerminal(appUser.terminalId);
@@ -117,7 +121,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => unsubscribe();
   }, []);
 
-  // ✅ Reload session cuando cambia el usuario (por si terminalId cambia)
+  // Recargar sesión cuando cambia el terminalId del usuario
   useEffect(() => {
     if (user?.terminalId) {
       reloadActiveSession();

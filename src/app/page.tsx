@@ -55,6 +55,7 @@ export default function LicoPOSApp() {
         return;
       }
       if (!user.terminalId) {
+        // Si el cajero no tiene terminal asignada, no bloqueamos (pero debería tener)
         setCheckingBlock(false);
         return;
       }

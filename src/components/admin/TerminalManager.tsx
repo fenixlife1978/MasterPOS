@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { 
   Plus, Edit, Trash2, X, 
   Computer, Users, MapPin, Power, 
-  PowerOff, AlertTriangle, Search, Loader2 
+  PowerOff, AlertTriangle, Search, Loader2, Lock, Unlock
 } from 'lucide-react';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
@@ -23,6 +23,7 @@ interface Terminal {
   location: string;
   status: 'active' | 'inactive' | 'maintenance';
   assignedTo: string | null;
+  isBlocked?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -42,6 +43,7 @@ export default function TerminalManager() {
   const [editingTerminal, setEditingTerminal] = useState<Terminal | null>(null);
   const [search, setSearch] = useState('');
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
   
   const [formData, setFormData] = useState({
     name: '',
@@ -53,7 +55,11 @@ export default function TerminalManager() {
   useEffect(() => {
     if (!user) return;
 
-    const unsub = syncService.subscribeToTerminals(setTerminals as any);
+    const unsub = syncService.subscribeToTerminals((data: any[]) => {
+      // Asegurar que cada terminal tenga isBlocked (por defecto false)
+      const terminalsWithBlock = data.map(t => ({ ...t, isBlocked: t.isBlocked ?? false }));
+      setTerminals(terminalsWithBlock);
+    });
     
     const loadCashiers = async () => {
       setIsLoadingUsers(true);
@@ -91,6 +97,7 @@ export default function TerminalManager() {
       location: formData.location,
       assignedTo: formData.assignedTo || null,
       status: editingTerminal ? editingTerminal.status : 'active',
+      isBlocked: editingTerminal ? (editingTerminal.isBlocked ?? false) : false,
       updatedAt: new Date().toISOString(),
       createdAt: editingTerminal ? editingTerminal.createdAt : new Date().toISOString(),
     };
@@ -113,6 +120,23 @@ export default function TerminalManager() {
       updatedAt: new Date().toISOString()
     };
     await syncService.saveTerminal(updated);
+  };
+
+  const handleToggleBlock = async (terminal: Terminal) => {
+    setIsUpdating(true);
+    try {
+      const newBlocked = !terminal.isBlocked;
+      await syncService.updateTerminalBlockStatus(terminal.id, newBlocked);
+      // Actualizar localmente para mejor UX
+      setTerminals(prev => prev.map(t => 
+        t.id === terminal.id ? { ...t, isBlocked: newBlocked, updatedAt: new Date().toISOString() } : t
+      ));
+    } catch (error) {
+      console.error('Error al cambiar estado de bloqueo:', error);
+      alert('No se pudo cambiar el estado de bloqueo');
+    } finally {
+      setIsUpdating(false);
+    }
   };
 
   const handleEdit = (terminal: Terminal) => {
@@ -177,6 +201,7 @@ export default function TerminalManager() {
               <TableHead className="text-[10px] font-black text-black uppercase">Ubicación</TableHead>
               <TableHead className="text-[10px] font-black text-black uppercase">Asignado a</TableHead>
               <TableHead className="text-[10px] font-black text-black uppercase">Estado</TableHead>
+              <TableHead className="text-[10px] font-black text-black uppercase">Bloqueo</TableHead>
               <TableHead className="text-[10px] font-black text-black uppercase text-right">Acciones</TableHead>
             </TableRow>
           </TableHeader>
@@ -208,6 +233,21 @@ export default function TerminalManager() {
                     )} />
                     {terminal.status === 'active' ? 'ACTIVA' : 'INACTIVA'}
                   </span>
+                </TableCell>
+                <TableCell>
+                  <button
+                    onClick={() => handleToggleBlock(terminal)}
+                    disabled={isUpdating}
+                    className={cn(
+                      "inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold transition-all",
+                      terminal.isBlocked 
+                        ? "bg-red-100 text-red-700 hover:bg-red-200" 
+                        : "bg-green-100 text-green-700 hover:bg-green-200"
+                    )}
+                  >
+                    {terminal.isBlocked ? <Lock size={10} /> : <Unlock size={10} />}
+                    {terminal.isBlocked ? 'BLOQUEADA' : 'DESBLOQUEADA'}
+                  </button>
                 </TableCell>
                 <TableCell className="text-right">
                   <div className="flex justify-end gap-1">

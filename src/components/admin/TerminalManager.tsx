@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { 
   Plus, Edit, Trash2, Computer, Users, MapPin, Power, 
-  PowerOff, Search, Lock, Unlock
+  PowerOff, Search, Lock, Unlock, AlertTriangle
 } from 'lucide-react';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
@@ -16,7 +16,7 @@ import { cn } from '@/lib/utils';
 import { useAuth } from '@/context/AuthContext';
 
 interface Terminal {
-  id: number;
+  id: string;        // ahora es el nombre (string)
   name: string;
   description: string;
   location: string;
@@ -44,6 +44,7 @@ export default function TerminalManager() {
   const [search, setSearch] = useState('');
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [nameError, setNameError] = useState('');
   
   const [formData, setFormData] = useState({
     name: '',
@@ -56,7 +57,12 @@ export default function TerminalManager() {
     if (!user) return;
 
     const unsub = syncService.subscribeToTerminals((data: any[]) => {
-      const terminalsWithBlock = data.map(t => ({ ...t, isBlocked: t.isBlocked ?? false }));
+      // Asegurar que cada terminal tenga isBlocked y que id sea string (el nombre)
+      const terminalsWithBlock = data.map(t => ({ 
+        ...t, 
+        id: t.id || t.name,
+        isBlocked: t.isBlocked ?? false 
+      }));
       setTerminals(terminalsWithBlock);
     });
     
@@ -84,24 +90,43 @@ export default function TerminalManager() {
     return () => unsub();
   }, [user]);
 
-  const updateUserTerminalAssignment = async (userId: string | null, terminalId: number | null) => {
+  // Actualizar terminalId del usuario (ahora recibe string)
+  const updateUserTerminalAssignment = async (userId: string | null, terminalId: string | null) => {
     if (!userId) return;
     try {
-      await syncService.updateUserTerminalId(userId, terminalId ? terminalId.toString() : null);
+      await syncService.updateUserTerminalId(userId, terminalId);
     } catch (error) {
       console.error('Error al actualizar terminalId del usuario:', error);
     }
   };
 
+  // Validar que el nombre sea único (solo para nuevos)
+  const isNameUnique = (name: string, excludeId?: string) => {
+    return !terminals.some(t => t.name.toLowerCase() === name.toLowerCase() && t.id !== excludeId);
+  };
+
   const handleSubmit = async () => {
-    if (!formData.name) {
+    if (!formData.name.trim()) {
       alert('El nombre de la terminal es requerido');
       return;
     }
 
+    // Validar nombre único al crear nueva
+    if (!editingTerminal && !isNameUnique(formData.name)) {
+      setNameError('Ya existe una terminal con este nombre');
+      return;
+    }
+    setNameError('');
+
     const oldAssignedTo = editingTerminal ? editingTerminal.assignedTo : null;
     const newAssignedTo = formData.assignedTo || null;
-    const terminalId = editingTerminal ? editingTerminal.id : Date.now();
+    const terminalId = formData.name; // El nombre será el ID del documento
+
+    // Si está editando y el nombre cambió, no permitir (o se podría migrar, pero mejor deshabilitar)
+    if (editingTerminal && editingTerminal.name !== formData.name) {
+      alert('No se puede cambiar el nombre de la terminal. Cree una nueva terminal y elimine esta.');
+      return;
+    }
 
     const terminalData = {
       id: terminalId,
@@ -131,7 +156,7 @@ export default function TerminalManager() {
   };
 
   const handleDelete = async (terminal: Terminal) => {
-    if (confirm('¿Está seguro de eliminar esta terminal?')) {
+    if (confirm(`¿Eliminar la terminal "${terminal.name}"? Esta acción también desasignará a cualquier usuario.`)) {
       if (terminal.assignedTo) {
         await updateUserTerminalAssignment(terminal.assignedTo, null);
       }
@@ -178,6 +203,7 @@ export default function TerminalManager() {
   const resetForm = () => {
     setEditingTerminal(null);
     setFormData({ name: '', description: '', location: '', assignedTo: '' });
+    setNameError('');
   };
 
   const getAssignedUserName = (userId: string | null) => {
@@ -312,10 +338,19 @@ export default function TerminalManager() {
               <label className="text-[10px] font-bold text-black/60 uppercase block mb-1">Nombre de la Terminal *</label>
               <Input 
                 value={formData.name} 
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })} 
-                placeholder="Ej: Caja Principal" 
-                autoFocus
+                onChange={(e) => {
+                  setFormData({ ...formData, name: e.target.value });
+                  setNameError('');
+                }}
+                placeholder="Ej: Caja Principal"
+                disabled={!!editingTerminal}
+                className={editingTerminal ? "bg-gray-100" : ""}
               />
+              {nameError && (
+                <p className="text-red-500 text-[10px] mt-1 flex items-center gap-1">
+                  <AlertTriangle size={10} /> {nameError}
+                </p>
+              )}
             </div>
             <div>
               <label className="text-[10px] font-bold text-black/60 uppercase block mb-1">Descripción</label>

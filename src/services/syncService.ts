@@ -1,4 +1,3 @@
-
 "use client";
 
 import { db } from '@/lib/firebase';
@@ -101,8 +100,9 @@ const processQueue = async () => {
         case 'saveKardexEntry':
           await setDoc(doc(db, 'kardex_entries', data.id), { ...data, createdAt: Date.now() });
           break;
+        // ✅ CORREGIDO: usar el nombre como ID del documento
         case 'saveTerminal':
-          await setDoc(doc(db, 'terminals', data.id.toString()), { ...data, updatedAt: Date.now() });
+          await setDoc(doc(db, 'terminals', data.name), { ...data, updatedAt: Date.now() });
           break;
         case 'saveCashClose':
           await setDoc(doc(db, 'cash_closes', data.id), { ...data, createdAt: Date.now() });
@@ -113,8 +113,9 @@ const processQueue = async () => {
         case 'updateCashSession':
           await setDoc(doc(db, 'cash_sessions', data.id), { ...data, updatedAt: Date.now() });
           break;
+        // ✅ CORREGIDO: data.id ya es string (el nombre)
         case 'updateTerminal':
-          await updateDoc(doc(db, 'terminals', data.id.toString()), { ...data.updates, updatedAt: Date.now() });
+          await updateDoc(doc(db, 'terminals', data.id), { ...data.updates, updatedAt: Date.now() });
           break;
         // ✅ NUEVO: Actualizar terminalId de un usuario (offline)
         case 'updateUserTerminalId':
@@ -562,30 +563,29 @@ export const syncService = {
     await batch.commit();
   },
 
+  // ✅ TERMINALES (CORREGIDO: usar name como ID string)
   async saveTerminal(terminal: any) {
     if (!db) return;
     if (!isOnline) return addToQueue('saveTerminal', terminal);
-    await setDoc(doc(db, 'terminals', terminal.id.toString()), { ...sanitizeForFirestore(terminal), updatedAt: Date.now() });
+    await setDoc(doc(db, 'terminals', terminal.name), { ...sanitizeForFirestore(terminal), updatedAt: Date.now() });
   },
-  async deleteTerminal(id: number) {
+  async deleteTerminal(id: string) {
     if (!db) return;
-    await deleteDoc(doc(db, 'terminals', id.toString()));
+    await deleteDoc(doc(db, 'terminals', id));
   },
   subscribeToTerminals(callback: (data: any[]) => void) {
     if (!db) return () => {};
     return onSnapshot(collection(db, 'terminals'), (snap) => {
-      callback(snap.docs.map(d => d.data()));
+      callback(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     });
   },
-
-  // ✅ NUEVO: Suscripción en tiempo real a una terminal específica
-  subscribeToTerminal(id: string | number, callback: (terminal: any) => void) {
-    if (!db || !id || typeof id === 'boolean') return () => {};
-    return onSnapshot(doc(db, 'terminals', id.toString()), (snap) => {
-      callback(snap.exists() ? { id: parseInt(snap.id), ...snap.data() } : null);
+  // ✅ NUEVO: Suscripción en tiempo real a una terminal específica (ID string)
+  subscribeToTerminal(id: string, callback: (terminal: any) => void) {
+    if (!db || !id) return () => {};
+    return onSnapshot(doc(db, 'terminals', id), (snap) => {
+      callback(snap.exists() ? { id: snap.id, ...snap.data() } : null);
     });
   },
-
   async saveGlobalSettings(settings: any) {
     if (!db) return;
     const docRef = doc(db, 'global_settings', 'global');
@@ -651,34 +651,34 @@ export const syncService = {
   // ========== 🆕 MÉTODOS PARA TERMINALES (BLOQUEO Y CONSULTA) ==========
   
   /**
-   * Obtiene un terminal por su ID
-   * @param id ID numérico del terminal
+   * Obtiene un terminal por su ID (ahora string)
+   * @param id ID del terminal (nombre)
    * @returns Datos del terminal o null
    */
-  async getTerminal(id: number | string): Promise<any | null> {
-    if (!db || !id || typeof id === 'boolean') return null;
-    const snap = await getDoc(doc(db, 'terminals', id.toString()));
-    return snap.exists() ? { id: parseInt(snap.id), ...snap.data() } : null;
+  async getTerminal(id: string): Promise<any | null> {
+    if (!db || !id) return null;
+    const snap = await getDoc(doc(db, 'terminals', id));
+    return snap.exists() ? { id: snap.id, ...snap.data() } : null;
   },
 
   /**
    * Obtiene todos los terminales
-   * @returns Array con todos los terminales
+   * @returns Array con todos los terminales (id string)
    */
   async getAllTerminals(): Promise<any[]> {
     if (!db) return [];
     const snap = await getDocs(collection(db, 'terminals'));
-    return snap.docs.map(doc => ({ id: parseInt(doc.id), ...doc.data() }));
+    return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
   },
 
   /**
    * Actualiza el estado de bloqueo de un terminal
-   * @param terminalId ID del terminal
+   * @param terminalId ID del terminal (string)
    * @param isBlocked true para bloquear, false para desbloquear
    */
-  async updateTerminalBlockStatus(terminalId: number, isBlocked: boolean): Promise<void> {
+  async updateTerminalBlockStatus(terminalId: string, isBlocked: boolean): Promise<void> {
     if (!db) return;
-    const ref = doc(db, 'terminals', terminalId.toString());
+    const ref = doc(db, 'terminals', terminalId);
     if (!isOnline) {
       addToQueue('updateTerminal', { id: terminalId, updates: { isBlocked } });
       return;
@@ -688,12 +688,12 @@ export const syncService = {
 
   /**
    * Actualiza cualquier campo de un terminal (genérico)
-   * @param terminalId ID del terminal
+   * @param terminalId ID del terminal (string)
    * @param updates Objeto con los campos a actualizar
    */
-  async updateTerminal(terminalId: number, updates: Record<string, any>): Promise<void> {
+  async updateTerminal(terminalId: string, updates: Record<string, any>): Promise<void> {
     if (!db) return;
-    const ref = doc(db, 'terminals', terminalId.toString());
+    const ref = doc(db, 'terminals', terminalId);
     if (!isOnline) {
       addToQueue('updateTerminal', { id: terminalId, updates });
       return;

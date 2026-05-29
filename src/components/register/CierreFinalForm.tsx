@@ -40,7 +40,7 @@ function getVenezuelaTimeString(dateStr: string): string {
 
 export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalFormProps) {
   const state = usePOSState();
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const terminalId = user?.terminalId || 'default';
   const [register, setRegister] = useState<any>(null);
   const [conteoFisico, setConteoFisico] = useState<Record<string, number>>({});
@@ -283,19 +283,24 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
         
         if (currentSession) await closeCashSession(totalCashUsd).catch(console.error);
         
-        // Limpiar cortes parciales
+        // Limpiar cortes parciales locales
         for (let i = localStorage.length - 1; i >= 0; i--) {
           const key = localStorage.key(i);
           if (key?.startsWith('corte_parcial_')) localStorage.removeItem(key);
         }
 
-        // ✅ ACTIVAR PANTALLA DE BLOQUEO DE FORMA INMEDIATA
-        // Se actualiza el estado en Firestore para que el cajero no pueda seguir operando
+        // ✅ BLOQUEAR TERMINAL Y CERRAR SESIÓN DE FORMA ATÓMICA
+        // Se actualiza el estado en Firestore para que la terminal quede bloqueada
         if (terminalId && terminalId !== 'default') {
           await syncService.updateTerminalBlockStatus(terminalId, true);
         }
 
+        // Limpiar estado de caja local
         state.closeCashRegister();
+
+        // ✅ EXPULSAR AL CAJERO (Cierre de sesión y redirección a login)
+        logout();
+
       } catch (error) {
         console.error("Error al finalizar cierre:", error);
       } finally {
@@ -538,7 +543,7 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
                   disabled={isSubmitting}
                   className="bg-emerald-600 hover:bg-emerald-700 text-white px-8 h-12 text-base font-black shadow-lg"
                 >
-                  {isSubmitting ? 'CERRANDO...' : 'FINALIZAR Y BLOQUEAR TERMINAL'}
+                  {isSubmitting ? 'CERRANDO...' : 'FINALIZAR Y BLOQUEAR ESTACIÓN'}
                 </Button>
               </div>
             </div>

@@ -179,7 +179,7 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen bg-[#D9D9D9] flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-sm overflow-hidden">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
         <div className="bg-[#1A2C4E] p-5 text-center">
           <div className="w-14 h-14 rounded-xl overflow-hidden mx-auto mb-2">
             <Image 

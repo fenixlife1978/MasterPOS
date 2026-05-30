@@ -35,7 +35,6 @@ function getVenezuelaDateString(date: Date | string | number): string {
   }
 }
 
-// ✅ Función para obtener la fecha actual en formato YYYY-MM-DD (Venezuela)
 function getTodayYMD(): string {
   return getVenezuelaDateString(new Date());
 }
@@ -52,24 +51,25 @@ export default function CashModule({ state }: CashModuleProps) {
   const [nuevaTasaInput, setNuevaTasaInput] = useState(state.exchangeRate.toString());
   const [isUpdatingRate, setIsUpdatingRate] = useState(false);
   
-  // Estados para bloqueo de terminal
   const [isTerminalBlocked, setIsTerminalBlocked] = useState(false);
   const [checkingBlock, setCheckingBlock] = useState(true);
 
-  // ✅ Suscripción en TIEMPO REAL al bloqueo de terminal
   useEffect(() => {
     if (!user || user.role === 'admin' || !user.terminalId) {
       setCheckingBlock(false);
       return;
     }
-
     const unsubscribe = syncService.subscribeToTerminal(user.terminalId, (terminal) => {
       setIsTerminalBlocked(terminal?.isBlocked === true);
       setCheckingBlock(false);
     });
-
     return () => unsubscribe();
   }, [user]);
+
+  // Actualizar el valor del modal cuando cambie la tasa global
+  useEffect(() => {
+    setNuevaTasaInput(state.exchangeRate.toString());
+  }, [state.exchangeRate]);
 
   const reg = state.register;
   const isClosed = !reg || !reg.isOpen;
@@ -83,7 +83,6 @@ export default function CashModule({ state }: CashModuleProps) {
     { id: 'zelle', label: 'ZELLE', icon: Plane, isUsd: true },
   ];
 
-  // Calcular ventas del día por método: totalBs y totalUsd
   const salesBreakdown = useMemo(() => {
     const totalsBs: Record<string, number> = {};
     const totalsUsd: Record<string, number> = {};
@@ -95,35 +94,28 @@ export default function CashModule({ state }: CashModuleProps) {
     if (!reg?.txs || reg.txs.length === 0) return { totalsBs, totalsUsd };
     
     const todayYMD = getTodayYMD();
-    
-    // ✅ Filtrar transacciones del día actual (comparando la fecha en formato YYYY-MM-DD)
     const txDay = reg.txs.filter((t: any) => {
       const txDateYMD = getVenezuelaDateString(t.date);
       return txDateYMD === todayYMD;
     });
     
     for (const tx of txDay) {
-      // Solo transacciones que representan ingreso de efectivo (contado, cobro de deuda)
       if (tx.type !== 'contado' && tx.type !== 'cobro_deuda') continue;
       
-      // Si tiene pagos detallados (pago compuesto)
       if (tx.payments && Array.isArray(tx.payments) && tx.payments.length > 0) {
         for (const payment of tx.payments) {
           const method = payment.method;
           if (!method) continue;
           const isUsd = method === 'usd_efectivo' || method === 'zelle';
           if (isUsd) {
-            // ✅ usar usdAmount (propiedad correcta en PaymentDetail)
             const usdAmount = payment.usdAmount !== undefined ? payment.usdAmount : payment.amount;
             totalsUsd[method] = (totalsUsd[method] || 0) + usdAmount;
-            // No sumamos nada en Bs para métodos USD
           } else {
             const bsAmount = payment.amount || 0;
             totalsBs[method] = (totalsBs[method] || 0) + bsAmount;
           }
         }
       } else {
-        // Pago único
         const method = tx.payMethod || 'efectivo_bs';
         const isUsd = method === 'usd_efectivo' || method === 'zelle';
         if (isUsd) {
@@ -155,7 +147,6 @@ export default function CashModule({ state }: CashModuleProps) {
     return total;
   }, [salesBreakdown]);
 
-  // Total en caja: fondo en Bs + ventas en Bs (los USD no se suman al total en Bs)
   const totalEnCaja = (reg?.openAmountBs || 0) + totalContadoBs;
   const totalEnCajaUSD = (reg?.openAmountUsd || 0) + totalContadoUsd;
 
@@ -169,6 +160,7 @@ export default function CashModule({ state }: CashModuleProps) {
     state.openCashRegister(bsAmount, usdAmount, state.exchangeRate);
   };
 
+  // ✅ CORREGIDO: handleCambioTasa ahora actualiza la tasa local sin perder el estado de la caja
   const handleCambioTasa = async () => {
     if (isTerminalBlocked) {
       alert('Terminal bloqueada. No se puede cambiar la tasa.');
@@ -181,17 +173,32 @@ export default function CashModule({ state }: CashModuleProps) {
     }
     setIsUpdatingRate(true);
     try {
+      // Primero actualizamos la tasa en el estado global (esto actualiza state.exchangeRate y los precios)
       await state.setExchangeRate(newRate);
+      
+      // Luego, si la caja está abierta, actualizamos el registro local con la nueva tasa
+      // para mantener consistencia (sin esperar a Firestore)
+      if (reg && reg.isOpen) {
+        const updatedRegister = { ...reg, exchangeRate: newRate };
+        // Actualizar el estado local inmediatamente
+        state.setRegister(updatedRegister);
+        // Guardar en localStorage para persistencia offline
+        localStorage.setItem(`pos_register_${terminalId}`, JSON.stringify(updatedRegister));
+        // Intentar sincronizar con Firestore en segundo plano (sin bloquear)
+        syncService.saveRegisterByTerminal(terminalId, updatedRegister).catch((e) => {
+          console.warn("No se pudo sincronizar la tasa en el registro de caja (modo offline)", e);
+        });
+      }
+      
       setShowCambioTasaModal(false);
     } catch (error) {
-      console.error(error);
-      alert("No se pudo actualizar la tasa");
+      console.error("Error al cambiar tasa:", error);
+      alert("No se pudo actualizar la tasa, pero la caja sigue abierta. Revise su conexión.");
     } finally {
       setIsUpdatingRate(false);
     }
   };
 
-  // Pantalla de carga
   if (checkingBlock) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -203,7 +210,6 @@ export default function CashModule({ state }: CashModuleProps) {
     );
   }
 
-  // Pantalla de bloqueo si la terminal está bloqueada
   if (isTerminalBlocked) {
     return (
       <div className="flex flex-col items-center justify-center h-full bg-gray-50 p-6">
@@ -344,7 +350,6 @@ export default function CashModule({ state }: CashModuleProps) {
           </div>
         )}
 
-        {/* Modal para cambiar tasa BCV */}
         {showCambioTasaModal && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6">

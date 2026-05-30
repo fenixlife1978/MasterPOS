@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Product, Client, Transaction, Account, CashRegister, Page, CartItem, KitComponent } from '@/lib/types';
 import { syncService } from '@/services/syncService';
 import { useAuth } from '@/context/AuthContext';
@@ -36,6 +36,7 @@ const STORAGE_KEYS = {
 export function usePOSState() {
   const { user, activeSession: authActiveSession, setActiveSession } = useAuth();
   const terminalId = user?.terminalId || 'default';
+  const registerRef = useRef<CashRegister | null>(null);
   
   const [products, setProducts] = useState<Product[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -77,10 +78,15 @@ export function usePOSState() {
     );
   }, []);
 
+  // Cargar caché local al inicio
   useEffect(() => {
     const cachedRegister = localStorage.getItem(`${STORAGE_KEYS.POS_REGISTER}_${terminalId}`);
     if (cachedRegister) {
-      try { setRegister(JSON.parse(cachedRegister)); } catch (e) {}
+      try { 
+        const parsed = JSON.parse(cachedRegister);
+        setRegister(parsed);
+        registerRef.current = parsed;
+      } catch (e) {}
     }
     const cachedRate = localStorage.getItem(STORAGE_KEYS.EXCHANGE_RATE);
     if (cachedRate) {
@@ -102,6 +108,24 @@ export function usePOSState() {
     return () => unsubscribe();
   }, [user?.terminalId, setActiveSession]);
 
+  // Suscripción al registro de caja (con protección contra null que borre estado local)
+  useEffect(() => {
+    if (!user) return;
+
+    const unsubRegister = syncService.subscribeToRegisterByTerminal(terminalId, (registerData) => {
+      // Evitar que un null remoto sobrescriba una caja que está abierta localmente
+      if (!registerData && registerRef.current?.isOpen === true) {
+        console.warn("Suscripción devolvió null pero la caja local está abierta. Ignorando actualización.");
+        return;
+      }
+      setRegister(registerData);
+      registerRef.current = registerData;
+      saveRegisterToLocalStorage(registerData);
+    });
+
+    return () => unsubRegister();
+  }, [user, terminalId, saveRegisterToLocalStorage]);
+
   useEffect(() => {
     if (!user) return;
 
@@ -117,10 +141,6 @@ export function usePOSState() {
     const unsubClients = syncService.subscribeToClients(setClients);
     const unsubTransactions = syncService.subscribeToTransactions(setTransactions as any);
     const unsubAccounts = syncService.subscribeToAccounts(setAccounts as any);
-    const unsubRegister = syncService.subscribeToRegisterByTerminal(terminalId, (registerData) => {
-      setRegister(registerData);
-      saveRegisterToLocalStorage(registerData);
-    });
     
     const unsubSettings = syncService.subscribeToGlobalSettings?.((settings: any) => {
       if (settings) {
@@ -150,10 +170,10 @@ export function usePOSState() {
     setIsHydrated(true);
 
     return () => {
-      unsubProducts(); unsubClients(); unsubTransactions(); unsubAccounts(); unsubRegister();
+      unsubProducts(); unsubClients(); unsubTransactions(); unsubAccounts(); 
       if (typeof unsubSettings === 'function') unsubSettings();
     };
-  }, [user, terminalId, saveRegisterToLocalStorage, exchangeRate, recalcAllPricesWithNewRate]);
+  }, [user, terminalId, exchangeRate, recalcAllPricesWithNewRate]);
 
   const addProduct = useCallback((p: Product) => syncService.saveProduct(p), []);
   const updateProduct = useCallback((p: Product) => syncService.saveProduct(p), []);
@@ -245,6 +265,7 @@ export function usePOSState() {
     };
     await syncService.saveRegisterByTerminal(terminalId, registerData);
     setRegister(registerData);
+    registerRef.current = registerData;
     saveRegisterToLocalStorage(registerData);
     try { await createCashSession(usdAmount); } catch (e) { console.error('Error session:', e); }
   }, [terminalId, saveRegisterToLocalStorage, createCashSession]);
@@ -253,6 +274,7 @@ export function usePOSState() {
     if (currentSession) closeCashSession(0).catch(console.error);
     syncService.clearRegisterByTerminal(terminalId);
     setRegister(null);
+    registerRef.current = null;
     saveRegisterToLocalStorage(null);
   }, [terminalId, saveRegisterToLocalStorage, currentSession, closeCashSession]);
 
@@ -328,7 +350,6 @@ export function usePOSState() {
         const newStock = product.stock - discountItem.quantity;
         stockUpdates.set(product.id, { newStock });
         
-        // ✅ CORRECCIÓN: Guardar tipo específico para colaboración y consumo propio
         let kardexType: string = 'venta';
         if (isSpecial) {
           if (type === 'colaboracion') kardexType = 'colaboracion';
@@ -351,7 +372,7 @@ export function usePOSState() {
       }
     }
 
-    // ✅ ACTUALIZACIÓN OPTIMISTA LOCAL DEL INVENTARIO (PARA MODO OFFLINE)
+    // Actualización optimista local del inventario
     setProducts(prevProducts => prevProducts.map(p => {
       const update = stockUpdates.get(p.id);
       if (update) return { ...p, stock: update.newStock };
@@ -378,7 +399,6 @@ export function usePOSState() {
 
     const newTxs = [...(register.txs || []), tx];
     
-    // Ejecutamos la sincronización (ya sea online u offline a través de la cola)
     try {
       await syncService.runAtomicSale(terminalId, tx, { 
         products: stockUpdates, 
@@ -390,8 +410,8 @@ export function usePOSState() {
       console.warn("⚠️ Error de sincronización inmediata, la operación se reintentará en segundo plano.", syncError);
     }
 
-    // Actualizamos el estado local de la caja para que el cajero vea la venta reflejada
     setRegister({ ...register, txs: newTxs });
+    registerRef.current = { ...register, txs: newTxs };
     saveRegisterToLocalStorage({ ...register, txs: newTxs });
     
     if (type === 'credito') {
@@ -442,6 +462,7 @@ export function usePOSState() {
     await syncService.runAtomicSale(terminalId, tx, { products: new Map(), kardexEntries: [], accountingEntry, registerUpdate: { txs: newTxs } });
     
     setRegister({ ...register, txs: newTxs });
+    registerRef.current = { ...register, txs: newTxs };
     saveRegisterToLocalStorage({ ...register, txs: newTxs });
     await syncService.saveClient({ ...client, debt: Math.max(0, (client.debt || 0) - amount) });
   }, [register, clients, accounts, exchangeRate, terminalId, saveRegisterToLocalStorage, currentSession]);
@@ -465,15 +486,25 @@ export function usePOSState() {
     await syncService.runAtomicSale(terminalId, tx, { products: new Map(), kardexEntries: [], accountingEntry, registerUpdate: { txs: newTxs } });
     
     setRegister({ ...register, txs: newTxs });
+    registerRef.current = { ...register, txs: newTxs };
     saveRegisterToLocalStorage({ ...register, txs: newTxs });
     return tx;
   }, [register, exchangeRate, terminalId, saveRegisterToLocalStorage, currentSession]);
 
+  // ✅ CORREGIDO: setExchangeRateProxy ahora no rompe el estado local si falla la sincronización
   const setExchangeRateProxy = useCallback(async (newRate: number) => {
+    // Actualizar estado local y localStorage inmediatamente
     setExchangeRate(newRate);
     localStorage.setItem(STORAGE_KEYS.EXCHANGE_RATE, newRate.toString());
-    await syncService.saveGlobalSettings({ exchangeRate: newRate });
     recalcAllPricesWithNewRate(newRate);
+    
+    // Intentar sincronizar con Firestore, sin bloquear ni afectar el estado local
+    try {
+      await syncService.saveGlobalSettings({ exchangeRate: newRate });
+    } catch (error) {
+      console.warn("No se pudo sincronizar la tasa con la nube (modo offline o error)", error);
+      // No hacemos nada más, la operación se encolará internamente en syncService
+    }
   }, [recalcAllPricesWithNewRate]);
 
   return {

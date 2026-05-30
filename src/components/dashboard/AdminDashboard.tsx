@@ -24,6 +24,8 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { formatBs, formatUsd, formatBsNumber, formatUsdNumber } from '@/lib/currency-formatter';
+import { db } from '@/lib/firebase';
+import { collection, getDocs, deleteDoc, doc } from 'firebase/firestore';
 
 interface AdminDashboardProps {
   state: ReturnType<typeof usePOSState>;
@@ -147,7 +149,7 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
     }
   };
 
-  // Función para resetear el sistema completo
+  // Función para resetear el sistema completo (incluye nuevas colecciones)
   const handleResetSystem = async () => {
     if (!resetPinInput) {
       toast({ title: "Error", description: "Ingrese el PIN de autorización", variant: "destructive" });
@@ -176,24 +178,47 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
       // 3. Eliminar TODAS las transacciones
       await syncService.deleteAllTransactions();
       
-      // 4. Eliminar todas las cuentas por cobrar
-      for (const acc of state.accounts) {
-        await syncService.saveAccount({ ...acc, status: 'pagada', paidAmount: acc.amountBs });
+      // 4. Eliminar TODOS los documentos de la colección 'accounts'
+      const accountsCol = collection(db, 'accounts');
+      const accountsSnap = await getDocs(accountsCol);
+      for (const docSnap of accountsSnap.docs) {
+        await deleteDoc(doc(db, 'accounts', docSnap.id));
       }
       
-      // 5. Eliminar todas las facturas de compra
+      // 5. Eliminar todas las facturas de compra (purchase_invoices)
       const purchaseInvoices = await syncService.getPurchaseInvoices?.() || [];
       for (const inv of purchaseInvoices) {
         await syncService.deletePurchaseInvoice?.(inv.id);
       }
       
-      // 6. Eliminar TODAS las entradas contables
+      // 6. Eliminar TODAS las entradas contables (accounting_entries)
       await syncService.deleteAllAccountingEntries();
       
-      // 7. Eliminar TODAS las entradas de kardex
+      // 7. Eliminar TODAS las entradas de kardex (kardex_entries)
       await syncService.deleteAllKardexEntries();
       
-      // 8. Cerrar todas las cajas abiertas
+      // 8. Eliminar TODOS los documentos de 'cash_closes'
+      const cashClosesCol = collection(db, 'cash_closes');
+      const cashClosesSnap = await getDocs(cashClosesCol);
+      for (const docSnap of cashClosesSnap.docs) {
+        await deleteDoc(doc(db, 'cash_closes', docSnap.id));
+      }
+      
+      // 9. Eliminar TODOS los documentos de 'cash_sessions'
+      const cashSessionsCol = collection(db, 'cash_sessions');
+      const cashSessionsSnap = await getDocs(cashSessionsCol);
+      for (const docSnap of cashSessionsSnap.docs) {
+        await deleteDoc(doc(db, 'cash_sessions', docSnap.id));
+      }
+      
+      // 10. Eliminar TODOS los documentos de 'purchase_items'
+      const purchaseItemsCol = collection(db, 'purchase_items');
+      const purchaseItemsSnap = await getDocs(purchaseItemsCol);
+      for (const docSnap of purchaseItemsSnap.docs) {
+        await deleteDoc(doc(db, 'purchase_items', docSnap.id));
+      }
+      
+      // 11. Cerrar todas las cajas abiertas (registers)
       await syncService.clearRegisterByTerminal('default');
       
       toast({ 
@@ -490,6 +515,10 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
                 <li>Facturas de compra y proveedores</li>
                 <li>Kardex e historial de inventario</li>
                 <li>Cajas y registros</li>
+                <li>Cuentas contables (accounts)</li>
+                <li>Cierres de caja (cash_closes)</li>
+                <li>Sesiones de caja (cash_sessions)</li>
+                <li>Items de compra (purchase_items)</li>
               </ul>
               <p className="text-red-800 font-bold text-sm mt-3">
                 Esta operación es IRREVERSIBLE.

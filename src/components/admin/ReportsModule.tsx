@@ -3,7 +3,7 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { usePOSState } from '@/hooks/use-pos-state';
 import { useAccounting } from '@/hooks/use-accounting';
-import { Calendar, FileText, FileSpreadsheet, Search, X, TrendingUp, TrendingDown, BarChart3, DollarSign, Printer, Share2, Download, Monitor } from 'lucide-react';
+import { Calendar, FileText, FileSpreadsheet, Search, TrendingUp, TrendingDown, BarChart3, DollarSign, Printer, Share2, Download, Monitor } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
@@ -32,7 +32,7 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
   
   const reportContentRef = useRef<HTMLDivElement>(null);
 
-  // Cargar terminales disponibles sin restricción de rol
+  // Cargar terminales disponibles
   useEffect(() => {
     const loadTerminals = async () => {
       setIsLoadingTerminals(true);
@@ -70,22 +70,23 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
       return txDate >= startLimit && txDate <= endLimit;
     });
     
+    // ✅ Filtrar por terminal correctamente (usando terminalId o sessionId)
     if (selectedTerminalId !== 'all') {
-      filtered = filtered.filter(t => 
-        t.terminalId === selectedTerminalId || 
-        (t.sessionId && t.sessionId.startsWith(`SES-${selectedTerminalId}`))
-      );
+      filtered = filtered.filter(t => {
+        // Si tiene terminalId directamente
+        if (t.terminalId) return t.terminalId === selectedTerminalId;
+        // Si tiene sessionId, extraer el último segmento (formato: SES-{timestamp}-{terminal})
+        if (t.sessionId) {
+          const parts = t.sessionId.split('-');
+          const terminalFromSession = parts[parts.length - 1];
+          return terminalFromSession === selectedTerminalId;
+        }
+        return false;
+      });
     }
     
     setFilteredTransactions(filtered.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
     setHasSearched(true);
-  };
-
-  const handleDeleteTransaction = async (id: number) => {
-    if (!confirm('¿Está seguro de eliminar esta transacción de la base de datos central?')) return;
-    await syncService.deleteTransaction(id);
-    setFilteredTransactions(prev => prev.filter(t => t.id !== id));
-    alert('Transacción eliminada correctamente de Firebase');
   };
 
   const monthlyConsolidated = useMemo(() => {
@@ -144,13 +145,13 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
           </thead>
           <tbody>
             ${filteredTransactions.map(t => {
-              const terminalId = t.terminalId || (t.sessionId ? t.sessionId.split('-')[2] : '—');
+              let terminalDisplay = t.terminalId || (t.sessionId ? t.sessionId.split('-').pop() : '—');
               return `
               <tr>
                 <td>${formatLocalDate(t.date)}</td>
                 <td><span class="badge">${t.type.toUpperCase()}</span></td>
                 <td>${t.clientName || '—'}</td>
-                <td>${terminalId}</td>
+                <td>${terminalDisplay}</td>
                 <td class="text-right">${formatBs(t.total)}</td>
               </tr>`;
             }).join('')}
@@ -364,8 +365,8 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
     if (activeReport === 'transactions' && hasSearched) {
       csvRows.push(['Fecha', 'Tipo', 'Cliente', 'Terminal', 'Total Bs']);
       filteredTransactions.forEach(t => {
-        const terminalId = t.terminalId || (t.sessionId ? t.sessionId.split('-')[2] : '—');
-        csvRows.push([formatLocalDate(t.date), t.type, t.clientName || '—', terminalId, formatBsNumber(t.total)]);
+        let terminalDisplay = t.terminalId || (t.sessionId ? t.sessionId.split('-').pop() : '—');
+        csvRows.push([formatLocalDate(t.date), t.type, t.clientName || '—', terminalDisplay, formatBsNumber(t.total)]);
       });
     } else if (activeReport === 'summary' && hasSearched) {
       csvRows.push(['Concepto', 'Monto Bs']);
@@ -447,20 +448,19 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
                       <th className="p-2 text-left">Cliente</th>
                       <th className="p-2 text-left">Terminal</th>
                       <th className="p-2 text-right">Total</th>
-                      <th className="p-2 text-center">Borrar</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredTransactions.map((t) => {
-                      const terminalId = t.terminalId || (t.sessionId ? t.sessionId.split('-')[2] : '—');
+                      // ✅ Extraer terminal correctamente: usar terminalId o último segmento del sessionId
+                      let terminalDisplay = t.terminalId || (t.sessionId ? t.sessionId.split('-').pop() : '—');
                       return (
                         <tr key={t.id} className="border-b hover:bg-[#F5F5F5]">
                           <td className="p-2 text-xs">{formatLocalDate(t.date)}</td>
                           <td className="p-2"><span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-gray-100">{t.type.toUpperCase()}</span></td>
                           <td className="p-2 text-xs">{t.clientName || '—'}</td>
-                          <td className="p-2 text-xs font-mono">{terminalId}</td>
+                          <td className="p-2 text-xs font-mono">{terminalDisplay}</td>
                           <td className="p-2 text-right font-bold">{formatBs(t.total)}</td>
-                          <td className="p-2 text-center"><button onClick={() => handleDeleteTransaction(t.id)} className="text-red-500 hover:text-red-700"><X size={14} /></button></td>
                         </tr>
                       );
                     })}

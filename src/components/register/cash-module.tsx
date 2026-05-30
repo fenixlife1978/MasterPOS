@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useMemo, useEffect } from 'react';
@@ -34,6 +33,11 @@ function getVenezuelaDateString(date: Date | string | number): string {
   } catch (e) {
     return "";
   }
+}
+
+// ✅ Función para obtener la fecha actual en formato YYYY-MM-DD (Venezuela)
+function getTodayYMD(): string {
+  return getVenezuelaDateString(new Date());
 }
 
 export default function CashModule({ state }: CashModuleProps) {
@@ -79,71 +83,81 @@ export default function CashModule({ state }: CashModuleProps) {
     { id: 'zelle', label: 'ZELLE', icon: Plane, isUsd: true },
   ];
 
-  // Calcular ventas totales del día por método (en Bs para métodos Bs, en USD para métodos USD)
-  const salesByMethod = useMemo(() => {
-    const totals: Record<string, number> = {};
-    paymentMethods.forEach(m => totals[m.id] = 0);
+  // Calcular ventas del día por método: totalBs y totalUsd
+  const salesBreakdown = useMemo(() => {
+    const totalsBs: Record<string, number> = {};
+    const totalsUsd: Record<string, number> = {};
+    paymentMethods.forEach(m => {
+      totalsBs[m.id] = 0;
+      totalsUsd[m.id] = 0;
+    });
     
-    if (!reg?.txs) return totals;
+    if (!reg?.txs || reg.txs.length === 0) return { totalsBs, totalsUsd };
     
-    const today = new Date().toISOString().split('T')[0];
-    const txDay = reg.txs.filter((t: any) => t.date?.startsWith(today));
+    const todayYMD = getTodayYMD();
+    
+    // ✅ Filtrar transacciones del día actual (comparando la fecha en formato YYYY-MM-DD)
+    const txDay = reg.txs.filter((t: any) => {
+      const txDateYMD = getVenezuelaDateString(t.date);
+      return txDateYMD === todayYMD;
+    });
     
     for (const tx of txDay) {
+      // Solo transacciones que representan ingreso de efectivo (contado, cobro de deuda)
       if (tx.type !== 'contado' && tx.type !== 'cobro_deuda') continue;
-      const methodKey = tx.payMethod || 'efectivo_bs';
-      const isUsdMethod = methodKey === 'usd_efectivo' || methodKey === 'zelle';
       
-      let monto = 0;
-      if (isUsdMethod) {
-        if (tx.payments && Array.isArray(tx.payments)) {
-          tx.payments.forEach((p: any) => {
-            if (p.method === methodKey && p.usdAmount) {
-              monto += p.usdAmount;
-            }
-          });
-        } else {
-          monto = tx.totalUsd || 0;
+      // Si tiene pagos detallados (pago compuesto)
+      if (tx.payments && Array.isArray(tx.payments) && tx.payments.length > 0) {
+        for (const payment of tx.payments) {
+          const method = payment.method;
+          if (!method) continue;
+          const isUsd = method === 'usd_efectivo' || method === 'zelle';
+          if (isUsd) {
+            // ✅ usar usdAmount (propiedad correcta en PaymentDetail)
+            const usdAmount = payment.usdAmount !== undefined ? payment.usdAmount : payment.amount;
+            totalsUsd[method] = (totalsUsd[method] || 0) + usdAmount;
+            // No sumamos nada en Bs para métodos USD
+          } else {
+            const bsAmount = payment.amount || 0;
+            totalsBs[method] = (totalsBs[method] || 0) + bsAmount;
+          }
         }
       } else {
-        monto = tx.type === 'cobro_deuda' ? (tx.paidBs || tx.total || 0) : (tx.total || 0);
-      }
-      totals[methodKey] = (totals[methodKey] || 0) + monto;
-    }
-    return totals;
-  }, [reg?.txs, paymentMethods]);
-
-  const totalEfectivoUsd = useMemo(() => {
-    if (!reg?.txs) return 0;
-    const today = new Date().toISOString().split('T')[0];
-    const txDay = reg.txs.filter((t: any) => t.date?.startsWith(today) && t.type === 'contado');
-    let total = 0;
-    for (const tx of txDay) {
-      if (tx.payments && Array.isArray(tx.payments)) {
-        tx.payments.forEach((p: any) => {
-          if (p.method === 'usd_efectivo' && p.usdAmount) total += p.usdAmount;
-        });
+        // Pago único
+        const method = tx.payMethod || 'efectivo_bs';
+        const isUsd = method === 'usd_efectivo' || method === 'zelle';
+        if (isUsd) {
+          const usdAmount = tx.totalUsd || 0;
+          totalsUsd[method] = (totalsUsd[method] || 0) + usdAmount;
+        } else {
+          const bsAmount = tx.type === 'cobro_deuda' ? (tx.paidBs || tx.total || 0) : (tx.total || 0);
+          totalsBs[method] = (totalsBs[method] || 0) + bsAmount;
+        }
       }
     }
-    return total;
+    
+    return { totalsBs, totalsUsd };
   }, [reg?.txs]);
 
-  const totalContado = useMemo(() => {
+  const totalContadoBs = useMemo(() => {
     let total = 0;
-    for (const m of paymentMethods) {
-      total += salesByMethod[m.id];
+    for (const m of paymentMethods.filter(p => !p.isUsd)) {
+      total += salesBreakdown.totalsBs[m.id];
     }
     return total;
-  }, [salesByMethod]);
+  }, [salesBreakdown]);
 
-  const totalEnCaja = (reg?.openAmount || 0) + (() => {
-    let usdTotal = 0;
+  const totalContadoUsd = useMemo(() => {
+    let total = 0;
     for (const m of paymentMethods.filter(p => p.isUsd)) {
-      usdTotal += salesByMethod[m.id];
+      total += salesBreakdown.totalsUsd[m.id];
     }
-    return totalContado - (usdTotal * state.exchangeRate) + (usdTotal * state.exchangeRate);
-  })();
-  const totalEnCajaUSD = totalEnCaja / (state.exchangeRate || 1);
+    return total;
+  }, [salesBreakdown]);
+
+  // Total en caja: fondo en Bs + ventas en Bs (los USD no se suman al total en Bs)
+  const totalEnCaja = (reg?.openAmountBs || 0) + totalContadoBs;
+  const totalEnCajaUSD = (reg?.openAmountUsd || 0) + totalContadoUsd;
 
   const handleOpenCash = () => {
     if (isTerminalBlocked) {
@@ -299,33 +313,30 @@ export default function CashModule({ state }: CashModuleProps) {
                 <thead>
                   <tr className="bg-[#2c3e50] text-white text-[9px] uppercase font-bold tracking-wider">
                     <th className="p-2">MÉTODO DE PAGO</th>
-                    <th className="p-2 text-right">TOTAL</th>
-                    <th className="p-2 text-right">EFECTIVO USD</th>
+                    <th className="p-2 text-right">TOTAL (Bs)</th>
+                    <th className="p-2 text-right">VENTAS EN USD</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 text-[10px]">
                   {paymentMethods.map(({ id, label, icon: Icon, isUsd }) => {
-                    const monto = salesByMethod[id] || 0;
-                    let montoFormateado = '';
-                    if (isUsd) {
-                      montoFormateado = formatUsd(monto);
-                    } else {
-                      montoFormateado = formatBs(monto);
-                    }
+                    const montoBs = salesBreakdown.totalsBs[id] || 0;
+                    const montoUsd = salesBreakdown.totalsUsd[id] || 0;
                     return (
                       <tr key={id} className="hover:bg-slate-50">
                         <td className="p-2"><div className="flex items-center gap-2"><Icon size={12} className="text-[#1E3A8A]" /><span className="font-bold">{label}</span></div></td>
-                        <td className="p-2 text-right font-mono font-bold">{montoFormateado}</td>
                         <td className="p-2 text-right font-mono font-bold">
-                          {id === 'usd_efectivo' ? formatUsd(totalEfectivoUsd) : '—'}
+                          {!isUsd ? formatBs(montoBs) : '0,00'}
+                        </td>
+                        <td className="p-2 text-right font-mono font-bold">
+                          {isUsd ? formatUsd(montoUsd) : '—'}
                         </td>
                       </tr>
                     );
                   })}
                   <tr className="bg-[#F0F0F0] font-black">
                     <td className="p-2">TOTAL VENTAS CONTADO / INGRESOS</td>
-                    <td className="p-2 text-right font-mono">{formatBs(totalContado)}</td>
-                    <td className="p-2 text-right font-mono">{formatUsd(totalEfectivoUsd)}</td>
+                    <td className="p-2 text-right font-mono">{formatBs(totalContadoBs)}</td>
+                    <td className="p-2 text-right font-mono">{formatUsd(totalContadoUsd)}</td>
                   </tr>
                 </tbody>
               </table>

@@ -95,6 +95,19 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
   const [vueltosTarde, setVueltosTarde] = useState<Record<string, number>>({});
   const [devoluciones, setDevoluciones] = useState<Record<string, { bs: number; usd: number }>>({}); // Nuevo
 
+  // ✅ Total de ventas a crédito del día
+  const totalCreditoBs = useMemo(() => {
+    if (!reg?.txs) return 0;
+    const todayVzla = getVenezuelaToday();
+    const txDay = reg.txs.filter((t: any) => {
+      const txDate = new Date(t.date);
+      const formatter = new Intl.DateTimeFormat('fr-CA', { timeZone: 'America/Caracas', year: 'numeric', month: '2-digit', day: '2-digit' });
+      const txDateStr = formatter.format(txDate);
+      return txDateStr === todayVzla && t.type === 'credito';
+    });
+    return txDay.reduce((sum, t) => sum + t.total, 0);
+  }, [reg?.txs]);
+
   // Procesar transacciones del día
   useEffect(() => {
     if (!reg?.txs) return;
@@ -160,9 +173,6 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
 
       // Procesar devoluciones
       if (tx.type === 'devolucion') {
-        // Las devoluciones tienen items y total positivo? En realidad, una devolución es un egreso de caja.
-        // Pero manejamos el monto devuelto según el método de pago original.
-        // Usamos el método de pago de la transacción (payMethod) o payments.
         if (tx.payments && Array.isArray(tx.payments) && tx.payments.length > 0) {
           for (const payment of tx.payments) {
             const method = payment.method;
@@ -185,7 +195,7 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
             devolucionesTotales[method].bs += tx.total || 0;
           }
         }
-        continue; // Las devoluciones no se cuentan como ventas ni vueltos
+        continue;
       }
 
       // Solo ventas e ingresos (contado, cobro_deuda)
@@ -309,7 +319,7 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
     
     let sistemaMoneda: number;
     if (isUsd) {
-      sistemaMoneda = saldoInicial + totalVentasMoneda - totalDevolucionesMoneda; // vueltos no afectan USD
+      sistemaMoneda = saldoInicial + totalVentasMoneda - totalDevolucionesMoneda;
     } else {
       sistemaMoneda = saldoInicial + totalVentasMoneda - totalVueltos - totalDevolucionesMoneda;
     }
@@ -376,6 +386,7 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
       })),
       totales: { sistema: totalSistBs, real: totalFisBs, diferencia: diffNeta, estado: Math.abs(diffNeta) < 0.01 ? "CONCILIADO" : (diffNeta > 0 ? "SOBRANTE" : "FALTANTE") },
       usdEfectivo: totalCashUsd,
+      totalCreditoBs, // Agregar al reporte para posible uso
     };
     return report;
   };
@@ -449,6 +460,8 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
     const estado = data.totales.estado;
     const estadoColor = diff > 0 ? '#10b981' : (diff < 0 ? '#ef4444' : '#3b82f6');
     const estadoIcono = estado === 'SOBRANTE' ? '💰' : (estado === 'FALTANTE' ? '⚠️' : '✅');
+    // Calcular total de crédito desde las transacciones originales? Ya lo tenemos en data.totalCreditoBs
+    const creditoBs = data.totalCreditoBs || 0;
     return `<!DOCTYPE html>
       <html>
       <head><title>Cierre de Caja MasterPOS</title>
@@ -519,6 +532,16 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
               </tr>
             `;
           }).join('')}
+          <tr style="background-color: #e6f0ff; font-weight: bold;">
+            <td>VENTAS A CRÉDITO</td>
+            <td class="right">—</td>
+            <td class="right">${formatBs(creditoBs)}</td>
+            <td class="right">—</td>
+            <td class="right">—</td>
+            <td class="right">—</td>
+            <td class="right">—</td>
+            <td class="right">—</td>
+          </tr>
         </tbody>
       </table>
       <div class="line"></div>
@@ -530,7 +553,7 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
   const generarTextoResumen = (data: any) => {
     const diff = data.totales.diferencia;
     const estado = data.totales.estado;
-    return `MASTERPOS - Cierre de Jornada\nFecha: ${data.fechaCierre}\nApertura: ${data.horaApertura} Tasa1: ${formatBs(data.tasa1)}\nÚltima tasa: ${data.horaUltimaActualizacion} Tasa2: ${formatBs(data.tasa2)}\nApertura: ${formatBs(data.apertura.bs)} + ${formatUsd(data.apertura.usd)}\nUSD Efectivo: ${formatUsd(data.usdEfectivo)}\nRESULTADO: ${estado} por ${formatBs(Math.abs(diff))}`;
+    return `MASTERPOS - Cierre de Jornada\nFecha: ${data.fechaCierre}\nApertura: ${data.horaApertura} Tasa1: ${formatBs(data.tasa1)}\nÚltima tasa: ${data.horaUltimaActualizacion} Tasa2: ${formatBs(data.tasa2)}\nApertura: ${formatBs(data.apertura.bs)} + ${formatUsd(data.apertura.usd)}\nUSD Efectivo: ${formatUsd(data.usdEfectivo)}\nVentas a Crédito: ${formatBs(data.totalCreditoBs)}\nRESULTADO: ${estado} por ${formatBs(Math.abs(diff))}`;
   };
 
   return (
@@ -610,6 +633,18 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
                     </td>
                   </tr>
                 ))}
+                {/* ✅ Fila de VENTAS A CRÉDITO */}
+                <tr className="bg-blue-50/50 font-bold">
+                  <td className="p-2 font-bold text-blue-700">VENTAS A CRÉDITO</td>
+                  <td className="p-2 text-center">—</td>
+                  <td className="p-2 text-center font-mono font-bold text-blue-700">{formatBs(totalCreditoBs)}</td>
+                  <td className="p-2 text-center">—</td>
+                  <td className="p-2 text-center">—</td>
+                  <td className="p-2 text-center">—</td>
+                  <td className="p-2 text-center">—</td>
+                  <td className="p-2 text-center">—</td>
+                  <td className="p-2 text-center">—</td>
+                </tr>
                 <tr className="bg-[#1E3A8A] text-white font-bold">
                   <td colSpan={5} className="p-2 text-right">TOTAL CONSOLIDADO (Bs):</td>
                   <td className="p-2 text-center font-bold">{formatBs(totalSistBs)}</td>
@@ -655,6 +690,10 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
               <div className="grid grid-cols-2 gap-4 border-b pb-4">
                 <div><p className="text-xs text-gray-500">Apertura</p><p className="font-bold">{formatBs(closeReportData.apertura.bs)}</p><p className="font-bold">{formatUsd(closeReportData.apertura.usd)} <span className="text-xs text-gray-500">({formatBs(closeReportData.apertura.usd * closeReportData.tasaCierre)})</span></p></div>
                 <div><p className="text-xs text-gray-500">USD Efectivo</p><p className="font-bold">{formatUsd(closeReportData.usdEfectivo)} <span className="text-xs text-gray-500">({formatBs(closeReportData.usdEfectivo * closeReportData.tasaCierre)})</span></p></div>
+              </div>
+              <div className="bg-blue-50 rounded-lg p-3 text-center border border-blue-200">
+                <p className="text-[9px] font-black uppercase text-blue-700">Ventas a Crédito del día</p>
+                <p className="text-xl font-black text-blue-700">{formatBs(closeReportData.totalCreditoBs)}</p>
               </div>
               <div className="text-center py-4 bg-gray-50 rounded-lg">
                 <p className="text-xs uppercase tracking-wider text-gray-500">RESULTADO DE LA JORNADA</p>

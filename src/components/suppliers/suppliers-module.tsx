@@ -151,8 +151,27 @@ export default function SuppliersModule() {
     return filtered.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [invoices, filterSupplier, filterDateStart, filterDateEnd]);
 
+  // ✅ Validar RIF duplicado
+  const isRifDuplicado = (rif: string, excludeId?: number): boolean => {
+    return suppliers.some(s => 
+      s.rif.toLowerCase() === rif.toLowerCase() && 
+      (excludeId === undefined || s.id !== excludeId)
+    );
+  };
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Validar RIF duplicado
+    if (isRifDuplicado(formData.rif, editingSupplier?.id)) {
+      toast({ 
+        title: "Error", 
+        description: `Ya existe un proveedor con el RIF ${formData.rif}. No se puede duplicar.`, 
+        variant: "destructive" 
+      });
+      return;
+    }
+
     const supplierData: Supplier = {
       id: editingSupplier?.id || Date.now(),
       name: formData.name,

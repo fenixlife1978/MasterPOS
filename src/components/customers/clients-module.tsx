@@ -32,9 +32,22 @@ export default function ClientsModule({ state }: ClientsModuleProps) {
     c.cedula.toLowerCase().includes(search.toLowerCase())
   );
 
+  // ✅ Validar cédula duplicada (excluyendo el cliente actual en edición)
+  const isCedulaDuplicada = (cedula: string, excludeId?: number): boolean => {
+    return state.clients.some(c => 
+      c.cedula.toLowerCase() === cedula.toLowerCase() && 
+      (excludeId === undefined || c.id !== excludeId)
+    );
+  };
+
   const handleNewClient = async () => {
     if (!newClientData.name || !newClientData.cedula) {
       alert('El nombre y cédula son requeridos');
+      return;
+    }
+
+    if (isCedulaDuplicada(newClientData.cedula)) {
+      alert(`Ya existe un cliente con la cédula ${newClientData.cedula}. No se puede duplicar.`);
       return;
     }
 
@@ -48,11 +61,16 @@ export default function ClientsModule({ state }: ClientsModuleProps) {
     await state.saveClient(newClient);
     setNewClientData({ name: '', cedula: '', phone: '', address: '', debt: 0 });
     setShowNewClientModal(false);
-    alert('Cliente creado correctamente en el servidor');
+    alert('Cliente creado correctamente');
   };
 
   const handleEditClient = async () => {
     if (!editingClient) return;
+
+    if (isCedulaDuplicada(editingClient.cedula, editingClient.id)) {
+      alert(`Ya existe otro cliente con la cédula ${editingClient.cedula}. No se puede usar.`);
+      return;
+    }
     
     await state.saveClient(editingClient);
     setShowEditClientModal(false);
@@ -63,7 +81,7 @@ export default function ClientsModule({ state }: ClientsModuleProps) {
   const handleDeleteClient = async (client: any) => {
     if (confirm(`¿Está seguro de eliminar a ${client.name} PERMANENTEMENTE del sistema? Esta acción no se puede deshacer.`)) {
       await state.deleteClient(client.id);
-      alert('Cliente eliminado correctamente de la base de datos central');
+      alert('Cliente eliminado correctamente');
     }
   };
 

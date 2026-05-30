@@ -131,6 +131,17 @@ export default function CashModule({ state }: CashModuleProps) {
     return { totalsBs, totalsUsd };
   }, [reg?.txs]);
 
+  // ✅ Total de ventas a crédito del día
+  const totalCreditoBs = useMemo(() => {
+    if (!reg?.txs) return 0;
+    const todayYMD = getTodayYMD();
+    const txDay = reg.txs.filter((t: any) => {
+      const txDateYMD = getVenezuelaDateString(t.date);
+      return txDateYMD === todayYMD && t.type === 'credito';
+    });
+    return txDay.reduce((sum, t) => sum + t.total, 0);
+  }, [reg?.txs]);
+
   const totalContadoBs = useMemo(() => {
     let total = 0;
     for (const m of paymentMethods.filter(p => !p.isUsd)) {
@@ -339,6 +350,12 @@ export default function CashModule({ state }: CashModuleProps) {
                       </tr>
                     );
                   })}
+                  {/* ✅ Fila de VENTAS A CRÉDITO */}
+                  <tr className="border-t-2 border-slate-300 bg-blue-50/30">
+                    <td className="p-2 font-bold text-blue-700"><div className="flex items-center gap-2"><CreditCard size={12} className="text-blue-700" /> VENTAS A CRÉDITO</div></td>
+                    <td className="p-2 text-right font-mono font-bold text-blue-700">{formatBs(totalCreditoBs)}</td>
+                    <td className="p-2 text-right font-mono font-bold text-blue-700">—</td>
+                  </tr>
                   <tr className="bg-[#F0F0F0] font-black">
                     <td className="p-2">TOTAL VENTAS CONTADO / INGRESOS</td>
                     <td className="p-2 text-right font-mono">{formatBs(totalContadoBs)}</td>

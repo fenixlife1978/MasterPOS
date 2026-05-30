@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import { Client, CartItem } from '@/lib/types';
 import { Handshake, X, Search, UserPlus, UserCheck, DollarSign } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -20,19 +20,42 @@ export default function CreditModal({ cart, clients, exchangeRate, total, onClos
   const [selected, setSelected] = useState<Client | null>(null);
   const [isNewMode, setIsNewMode] = useState(false);
   const [newClient, setNewClient] = useState({ name: '', cedula: '', phone: '', address: '' });
+  const [showAllOnFocus, setShowAllOnFocus] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // ✅ Usar el total recibido como prop, NO recalcular
+  // ✅ Verificar si la cédula ya existe
+  const isCedulaDuplicada = (cedula: string): boolean => {
+    return clients.some(c => c.cedula.toLowerCase() === cedula.toLowerCase());
+  };
+
   const totalUsd = total / exchangeRate;
 
+  // ✅ Mostrar todos los clientes cuando el campo de búsqueda recibe foco y no hay query
   const results = useMemo(() => {
+    if (showAllOnFocus && !query.trim()) {
+      return clients; // todos los clientes
+    }
     if (!query.trim()) return [];
     const q = query.toLowerCase();
     return clients.filter(c => c.name.toLowerCase().includes(q) || c.cedula.toLowerCase().includes(q));
-  }, [query, clients]);
+  }, [query, clients, showAllOnFocus]);
+
+  const handleFocus = () => {
+    setShowAllOnFocus(true);
+  };
+
+  const handleBlur = () => {
+    // Retrasar para permitir que el clic en el resultado se ejecute antes
+    setTimeout(() => setShowAllOnFocus(false), 200);
+  };
 
   const handleConfirm = () => {
     if (isNewMode) {
       if (!newClient.name || !newClient.cedula) return;
+      if (isCedulaDuplicada(newClient.cedula)) {
+        alert(`Ya existe un cliente con la cédula ${newClient.cedula}. No se puede crear duplicado.`);
+        return;
+      }
       onConfirm({
         method: 'credito',
         isNewClient: true,
@@ -88,9 +111,12 @@ export default function CreditModal({ cart, clients, exchangeRate, total, onClos
             <div className="flex items-center bg-[#0F1E3A] border border-white/20 rounded-lg px-3 mb-4">
               <Search size={14} className="text-white/60" />
               <input 
+                ref={searchInputRef}
                 type="text" 
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
+                onFocus={handleFocus}
+                onBlur={handleBlur}
                 placeholder="Buscar cliente por nombre o cédula..."
                 className="flex-1 bg-transparent border-none text-sm px-3 py-2.5 focus:outline-none text-white placeholder:text-white/40"
               />
@@ -111,7 +137,11 @@ export default function CreditModal({ cart, clients, exchangeRate, total, onClos
               {results.map(c => (
                 <button 
                   key={c.id} 
-                  onClick={() => setSelected(c)}
+                  onClick={() => {
+                    setSelected(c);
+                    setQuery(c.name);
+                    setShowAllOnFocus(false);
+                  }}
                   className={cn(
                     "w-full flex items-center gap-3 p-3 rounded-lg text-left transition-all",
                     selected?.id === c.id ? "bg-primary/20 border border-primary" : "bg-[#0F1E3A] border border-white/10 hover:border-white/30"
@@ -129,7 +159,7 @@ export default function CreditModal({ cart, clients, exchangeRate, total, onClos
               ))}
             </div>
             
-            {!query && (
+            {!query && !showAllOnFocus && (
               <button 
                 onClick={() => setIsNewMode(true)}
                 className="w-full py-3 mb-4 border border-dashed border-white/30 rounded-xl text-xs font-bold text-white/70 hover:text-primary hover:border-primary transition-all flex items-center justify-center gap-2"

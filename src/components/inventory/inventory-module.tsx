@@ -144,6 +144,14 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
     return Math.min(roundTo2(profitPercent), 99.99);
   };
   
+  // ✅ Validar código de barras duplicado
+  const isBarcodeDuplicado = (barcode: string, excludeId?: number): boolean => {
+    return products.some(p => 
+      p.barcode.toLowerCase() === barcode.toLowerCase() && 
+      (excludeId === undefined || p.id !== excludeId)
+    );
+  };
+  
   const childProductResults = useMemo(() => {
     if (!searchChildProduct.trim() || hideChildResults) return [];
     const q = searchChildProduct.toLowerCase();
@@ -299,7 +307,6 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                 if (entry.type === 'compra' || entry.type === 'ajuste_inicial' || entry.type === 'devolucion') {
                   entrada = absQty;
                 } else if (entry.type === 'ajuste_manual' || entry.type === 'colaboracion' || entry.type === 'consumo') {
-                  // Para ajustes, colaboraciones y consumos: entrada si quantity > 0, salida si quantity < 0
                   if (entry.quantity > 0) entrada = absQty;
                   else salida = absQty;
                 } else {
@@ -326,7 +333,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                   </tr>
                 `;
               }).join('')}
-              ${entries.length === 0 ? '<tr><td colspan="7" class="text-center">No hay movimientos registrados</td></tr>' : ''}
+              ${entries.length === 0 ? '<tr><td colspan="7" class="text-center">No hay movimientos registrados</td>' : ''}
             </tbody>
           </table>
           <div class="footer">Documento generado desde MasterPOS - Sistema de Punto de Venta</div>
@@ -392,6 +399,13 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
   // ==================== MANEJO DE PRODUCTOS (CRUD) ====================
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // ✅ Validar código de barras duplicado
+    if (isBarcodeDuplicado(formData.barcode, editingProduct?.id)) {
+      toast({ title: "Error", description: `Ya existe un producto con el código ${formData.barcode}. No se puede duplicar.`, variant: "destructive" });
+      return;
+    }
+    
     const cost = parseFloat(costUsdInput) || 0;
     const profitPercent = parseFloat(profitPercentInput) || DEFAULT_PROFIT_PERCENT;
     
@@ -1126,7 +1140,9 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                     </tr>
                   ))}
                   {filteredAdjustments.length === 0 && (
-                    <tr><td colSpan={7} className="p-4 text-center text-black/40 italic">No hay ajustes manuales en el período seleccionado</td></tr>
+                    <tr>
+                      <td colSpan={7} className="p-4 text-center text-black/40 italic">No hay ajustes manuales en el período seleccionado</td>
+                    </tr>
                   )}
                 </tbody>
               </table>
@@ -1226,7 +1242,8 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                     <tbody className="divide-y divide-gray-100">
                       {(() => {
                         const entries = getKardexForProduct(viewingKardex.id);
-                        const sortedEntries = [...entries].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+                        // ✅ Orden descendente (del más reciente al más antiguo)
+                        const sortedEntries = [...entries].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
                         return sortedEntries.map((entry, idx) => {
                           let entrada = 0, salida = 0;
                           const absQty = Math.abs(entry.quantity);

@@ -221,6 +221,11 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
       // 11. Cerrar todas las cajas abiertas (registers)
       await syncService.clearRegisterByTerminal('default');
       
+      // 12. ✅ Resetear el contador de recibos
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('last_receipt_number');
+      }
+      
       toast({ 
         title: "Sistema reseteado", 
         description: "Todos los datos han sido eliminados. Recargando página...",
@@ -519,6 +524,7 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
                 <li>Cierres de caja (cash_closes)</li>
                 <li>Sesiones de caja (cash_sessions)</li>
                 <li>Items de compra (purchase_items)</li>
+                <li>Contador de recibos</li>
               </ul>
               <p className="text-red-800 font-bold text-sm mt-3">
                 Esta operación es IRREVERSIBLE.

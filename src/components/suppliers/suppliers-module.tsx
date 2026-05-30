@@ -293,7 +293,7 @@ export default function SuppliersModule() {
         category: 'pagos_proveedores',
         subcategory: 'abono',
         concept: `Pago a proveedor ${selectedSupplierForPayment.name}`,
-        description: `Pago de {formatUsd(paymentData.amount)} USD`,
+        description: `Pago de ${formatUsd(paymentData.amount)} USD`,
         amount: paymentData.amount,
         referenceId: newPayment.id,
         referenceType: 'supplier_payment',
@@ -493,7 +493,7 @@ export default function SuppliersModule() {
     );
   };
 
-  // ✅ PurchaseHistoryModal CORREGIDO - con scroll vertical y estructura flex
+  // ✅ PurchaseHistoryModal CORREGIDO - con DialogTitle (sr-only) para accesibilidad
   const PurchaseHistoryModal = ({ supplier, onClose }: { supplier: Supplier; onClose: () => void }) => {
     const supplierInvoices = filteredInvoices.filter(i => i.supplierId === supplier.id);
     const totalPurchases = supplierInvoices.reduce((sum, i) => sum + i.total, 0);
@@ -514,6 +514,11 @@ export default function SuppliersModule() {
     return (
       <Dialog open={true} onOpenChange={onClose}>
         <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-4xl p-0 overflow-hidden rounded-xl shadow-xl max-h-[90vh] flex flex-col">
+          {/* ✅ DialogTitle oculto visualmente (accesibilidad) */}
+          <DialogHeader className="sr-only">
+            <DialogTitle>Historial de Compras</DialogTitle>
+          </DialogHeader>
+          
           {/* Header fijo */}
           <div className="bg-[#1A2C4E] p-4 text-white flex-shrink-0">
             <div className="flex justify-between items-center">

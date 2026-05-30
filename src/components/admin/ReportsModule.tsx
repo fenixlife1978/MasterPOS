@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useMemo, useRef } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import { usePOSState } from '@/hooks/use-pos-state';
 import { useAccounting } from '@/hooks/use-accounting';
-import { Calendar, FileText, FileSpreadsheet, Search, X, TrendingUp, TrendingDown, BarChart3, DollarSign, Printer, Share2, Download } from 'lucide-react';
+import { Calendar, FileText, FileSpreadsheet, Search, X, TrendingUp, TrendingDown, BarChart3, DollarSign, Printer, Share2, Download, Monitor } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
@@ -25,9 +25,36 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
   const [hasSearched, setHasSearched] = useState(false);
   const [activeReport, setActiveReport] = useState<'transactions' | 'summary' | 'consolidated'>('transactions');
   
+  const [terminals, setTerminals] = useState<{ id: string; name: string }[]>([]);
+  const [selectedTerminalId, setSelectedTerminalId] = useState<string>('all');
+  const [isLoadingTerminals, setIsLoadingTerminals] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  
   const reportContentRef = useRef<HTMLDivElement>(null);
 
-  const isAdmin = userRole === 'admin';
+  // Cargar terminales disponibles sin restricción de rol
+  useEffect(() => {
+    const loadTerminals = async () => {
+      setIsLoadingTerminals(true);
+      setLoadError(null);
+      try {
+        const terminalsData = await syncService.getAllTerminals();
+        if (terminalsData && terminalsData.length > 0) {
+          setTerminals(terminalsData.map(t => ({ id: t.id, name: t.name || t.id })));
+        } else {
+          setLoadError('No se encontraron terminales registradas.');
+          setTerminals([]);
+        }
+      } catch (error) {
+        console.error('Error al cargar terminales:', error);
+        setLoadError('Error al cargar las terminales. Verifique su conexión.');
+        setTerminals([]);
+      } finally {
+        setIsLoadingTerminals(false);
+      }
+    };
+    loadTerminals();
+  }, []);
 
   const handleSearch = () => {
     if (!startDate || !endDate) {
@@ -38,29 +65,29 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
     const startLimit = getStartOfDay(startDate);
     const endLimit = getEndOfDay(endDate);
     
-    const filtered = state.transactions.filter(t => {
+    let filtered = state.transactions.filter(t => {
       const txDate = new Date(t.date);
       return txDate >= startLimit && txDate <= endLimit;
     });
+    
+    if (selectedTerminalId !== 'all') {
+      filtered = filtered.filter(t => 
+        t.terminalId === selectedTerminalId || 
+        (t.sessionId && t.sessionId.startsWith(`SES-${selectedTerminalId}`))
+      );
+    }
     
     setFilteredTransactions(filtered.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
     setHasSearched(true);
   };
 
   const handleDeleteTransaction = async (id: number) => {
-    if (!isAdmin) {
-      alert('No tiene permisos para eliminar transacciones');
-      return;
-    }
-    
-    if (confirm('¿Está seguro de eliminar esta transacción de la base de datos central?')) {
-      await syncService.deleteTransaction(id);
-      setFilteredTransactions(prev => prev.filter(t => t.id !== id));
-      alert('Transacción eliminada correctamente de Firebase');
-    }
+    if (!confirm('¿Está seguro de eliminar esta transacción de la base de datos central?')) return;
+    await syncService.deleteTransaction(id);
+    setFilteredTransactions(prev => prev.filter(t => t.id !== id));
+    alert('Transacción eliminada correctamente de Firebase');
   };
 
-  // Cálculo de consolidado mensual
   const monthlyConsolidated = useMemo(() => {
     const consolidated: Record<string, { label: string, year: number, monthIdx: number, income: number, expense: number }> = {};
     
@@ -101,10 +128,10 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
   const colaboracionTotal = filteredTransactions.filter(t => t.type === 'colaboracion' || t.type === 'consumo_propio').reduce((sum, t) => sum + (t.costoTotalOperacion || 0), 0);
   const costoTotalOperacion = filteredTransactions.reduce((sum, t) => sum + (t.costoTotalOperacion || 0), 0);
 
-  // Genera el contenido HTML profesional para impresión/PDF
   const generateReportHTML = () => {
     const title = activeReport === 'transactions' ? 'Reporte de Transacciones' : activeReport === 'summary' ? 'Resumen de Ventas' : 'Consolidado de Ingresos/Egresos';
     const dateRange = hasSearched ? `Desde ${formatLocalDate(startDate)} hasta ${formatLocalDate(endDate)}` : 'Período histórico';
+    const terminalText = selectedTerminalId !== 'all' ? ` | Terminal: ${selectedTerminalId}` : ' | Todas las terminales';
     const companyName = 'MASTERPOS - LICORERÍA ELITE';
     
     let content = '';
@@ -113,19 +140,22 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
       content = `
         <table class="report-table">
           <thead>
-            <tr><th>Fecha</th><th>Tipo</th><th>Cliente</th><th class="text-right">Total (Bs)</th></tr>
+            <tr><th>Fecha</th><th>Tipo</th><th>Cliente</th><th>Terminal</th><th class="text-right">Total (Bs)</th></tr>
           </thead>
           <tbody>
-            ${filteredTransactions.map(t => `
+            ${filteredTransactions.map(t => {
+              const terminalId = t.terminalId || (t.sessionId ? t.sessionId.split('-')[2] : '—');
+              return `
               <tr>
                 <td>${formatLocalDate(t.date)}</td>
                 <td><span class="badge">${t.type.toUpperCase()}</span></td>
                 <td>${t.clientName || '—'}</td>
+                <td>${terminalId}</td>
                 <td class="text-right">${formatBs(t.total)}</td>
-              </tr>
-            `).join('')}
+              </tr>`;
+            }).join('')}
           </tbody>
-          <tfoot><tr><td colspan="3" class="text-right"><strong>Total General</strong></td><td class="text-right"><strong>${formatBs(totalGeneral)}</strong></td></tr></tfoot>
+          <tfoot><tr><td colspan="4" class="text-right"><strong>Total General</strong></td><td class="text-right"><strong>${formatBs(totalGeneral)}</strong></td></tr></tfoot>
         </table>
       `;
     } else if (activeReport === 'summary' && hasSearched) {
@@ -281,7 +311,7 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
       <div class="report-container">
         <div class="report-header">
           <h1>${companyName}</h1>
-          <p>${title} | ${dateRange}</p>
+          <p>${title} | ${dateRange}${terminalText}</p>
           <p>Fecha de generación: ${new Date().toLocaleString('es-VE')}</p>
         </div>
         <div class="report-body">
@@ -320,7 +350,6 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
         alert('No se pudo compartir el archivo');
       }
     } else {
-      // Si no soporta compartir, descargamos el HTML
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -333,9 +362,10 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
   const exportToExcel = () => {
     let csvRows = [];
     if (activeReport === 'transactions' && hasSearched) {
-      csvRows.push(['Fecha', 'Tipo', 'Cliente', 'Total Bs']);
+      csvRows.push(['Fecha', 'Tipo', 'Cliente', 'Terminal', 'Total Bs']);
       filteredTransactions.forEach(t => {
-        csvRows.push([formatLocalDate(t.date), t.type, t.clientName || '—', formatBsNumber(t.total)]);
+        const terminalId = t.terminalId || (t.sessionId ? t.sessionId.split('-')[2] : '—');
+        csvRows.push([formatLocalDate(t.date), t.type, t.clientName || '—', terminalId, formatBsNumber(t.total)]);
       });
     } else if (activeReport === 'summary' && hasSearched) {
       csvRows.push(['Concepto', 'Monto Bs']);
@@ -387,9 +417,24 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
       <div ref={reportContentRef}>
         {activeReport === 'transactions' && (
           <>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
               <div><label className="text-[10px] font-black text-black/60 block mb-1">Fecha Desde</label><Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} /></div>
               <div><label className="text-[10px] font-black text-black/60 block mb-1">Fecha Hasta</label><Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} /></div>
+              <div>
+                <label className="text-[10px] font-black text-black/60 block mb-1 flex items-center gap-1"><Monitor size={12} /> Terminal</label>
+                <select 
+                  value={selectedTerminalId} 
+                  onChange={(e) => setSelectedTerminalId(e.target.value)}
+                  className="w-full h-10 bg-white border border-[#9E9E9E] rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                >
+                  <option value="all">📡 Todas las terminales</option>
+                  {terminals.map(term => (
+                    <option key={term.id} value={term.id}>{term.name}</option>
+                  ))}
+                </select>
+                {isLoadingTerminals && <p className="text-[8px] text-black/40 mt-1">Cargando terminales...</p>}
+                {loadError && <p className="text-[8px] text-red-500 mt-1">{loadError}</p>}
+              </div>
               <div className="flex gap-2 items-end"><Button onClick={handleSearch} className="bg-primary text-black font-black flex-1"><Search size={14} className="mr-2" /> BUSCAR</Button></div>
             </div>
             {hasSearched && (
@@ -400,20 +445,25 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
                       <th className="p-2 text-left">Fecha</th>
                       <th className="p-2 text-left">Tipo</th>
                       <th className="p-2 text-left">Cliente</th>
+                      <th className="p-2 text-left">Terminal</th>
                       <th className="p-2 text-right">Total</th>
-                      {isAdmin && <th className="p-2 text-center">Borrar</th>}
+                      <th className="p-2 text-center">Borrar</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredTransactions.map((t) => (
-                      <tr key={t.id} className="border-b hover:bg-[#F5F5F5]">
-                        <td className="p-2 text-xs">{formatLocalDate(t.date)}</td>
-                        <td className="p-2"><span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-gray-100">{t.type.toUpperCase()}</span></td>
-                        <td className="p-2 text-xs">{t.clientName || '—'}</td>
-                        <td className="p-2 text-right font-bold">{formatBs(t.total)}</td>
-                        {isAdmin && <td className="p-2 text-center"><button onClick={() => handleDeleteTransaction(t.id)} className="text-red-500 hover:text-red-700"><X size={14} /></button></td>}
-                      </tr>
-                    ))}
+                    {filteredTransactions.map((t) => {
+                      const terminalId = t.terminalId || (t.sessionId ? t.sessionId.split('-')[2] : '—');
+                      return (
+                        <tr key={t.id} className="border-b hover:bg-[#F5F5F5]">
+                          <td className="p-2 text-xs">{formatLocalDate(t.date)}</td>
+                          <td className="p-2"><span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-gray-100">{t.type.toUpperCase()}</span></td>
+                          <td className="p-2 text-xs">{t.clientName || '—'}</td>
+                          <td className="p-2 text-xs font-mono">{terminalId}</td>
+                          <td className="p-2 text-right font-bold">{formatBs(t.total)}</td>
+                          <td className="p-2 text-center"><button onClick={() => handleDeleteTransaction(t.id)} className="text-red-500 hover:text-red-700"><X size={14} /></button></td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

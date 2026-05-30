@@ -28,9 +28,29 @@ const getVenezuelaDate = (): string => {
   return `${partMap.year}-${partMap.month}-${partMap.day}`;
 };
 
+// ✅ Función para formatear fecha de manera amigable: "29/05/2026, 7:38 p.m."
+const formatDateFriendly = (dateStr: string): string => {
+  if (!dateStr) return '—';
+  try {
+    const date = new Date(dateStr);
+    if (isNaN(date.getTime())) return dateStr;
+    return date.toLocaleString('es-VE', {
+      timeZone: 'America/Caracas',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    });
+  } catch {
+    return dateStr;
+  }
+};
+
 export default function AccountingModule() {
   const { entries, addEntry, getTotalIngresos, getTotalEgresos } = useAccounting();
-  const [search, setSearch] = useState('');
+  // ✅ Eliminado el estado 'search'
   const [filterType, setFilterType] = useState<'todos' | 'ingreso' | 'egreso'>('todos');
   const [filterCategory, setFilterCategory] = useState('todas');
   const [startDate, setStartDate] = useState('');
@@ -57,11 +77,10 @@ export default function AccountingModule() {
     { id: 'cuenta_por_cobrar', label: 'Venta a Crédito' }
   ];
 
-  // Filtrar entradas basadas en búsqueda, tipo, categoría y fechas
+  // Filtrar entradas basadas en tipo, categoría y fechas (sin búsqueda)
   const filteredEntries = (entries || []).filter(entry => {
     if (filterType !== 'todos' && entry.type !== filterType) return false;
     if (filterCategory !== 'todas' && entry.category !== filterCategory) return false;
-    if (search && !entry.concept?.toLowerCase().includes(search.toLowerCase()) && !entry.description?.toLowerCase().includes(search.toLowerCase())) return false;
     if (startDate && new Date(entry.date) < new Date(startDate)) return false;
     if (endDate && new Date(entry.date) > new Date(endDate)) return false;
     return true;
@@ -83,7 +102,7 @@ export default function AccountingModule() {
     const entryId = getTimestamp();
     
     await addEntry({
-      id: entryId,  // ✅ ID generado automáticamente
+      id: entryId,
       date: data.date || now,
       type: 'egreso',
       category: data.category,
@@ -97,12 +116,6 @@ export default function AccountingModule() {
     
     alert('Egreso registrado correctamente');
     setShowExpenseModal(false);
-  };
-
-  const formatDate = (dateStr: string) => {
-    if (!dateStr) return '—';
-    const [year, month, day] = dateStr.split('-');
-    return `${day}/${month}/${year}`;
   };
 
   const getCategoryLabel = (categoryId: string) => {
@@ -137,13 +150,9 @@ export default function AccountingModule() {
         </div>
       </div>
 
+      {/* ✅ Filtros - Eliminada la barra de búsqueda inteligente */}
       <div className="bg-white border border-[#9E9E9E] rounded-xl p-4 mb-6">
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
-          <div className="relative">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-black/50" />
-            <Input placeholder="Buscar por concepto..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9 h-10 bg-white border-[#9E9E9E]" />
-          </div>
-          
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
           <select value={filterType} onChange={(e) => { setFilterType(e.target.value as any); setFilterCategory('todas'); }} className="h-10 bg-white border border-[#9E9E9E] rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50">
             <option value="todos">Todos los Tipos</option>
             <option value="ingreso">Solo Ingresos</option>
@@ -179,7 +188,8 @@ export default function AccountingModule() {
             <TableBody>
               {filteredEntries.map((entry, idx) => (
                 <TableRow key={`${entry.id}_${idx}`} className="border-b border-[#9E9E9E] hover:bg-[#F5F5F5] cursor-pointer" onClick={() => { setSelectedEntry(entry); setShowEntryDetail(true); }}>
-                  <TableCell className="text-xs text-black/60">{formatDate(entry.date)}</TableCell>
+                  {/* ✅ Formato de fecha amigable */}
+                  <TableCell className="text-xs text-black/60">{formatDateFriendly(entry.date)}</TableCell>
                   <TableCell><span className={cn("px-2 py-0.5 rounded-full text-[10px] font-bold", entry.type === 'ingreso' ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700")}>{entry.type === 'ingreso' ? 'INGRESO' : 'EGRESO'}</span></TableCell>
                   <TableCell className="text-xs text-black/80">{getCategoryLabel(entry.category)}</TableCell>
                   <TableCell className="text-xs font-medium text-black">{entry.concept}</TableCell>
@@ -208,7 +218,7 @@ export default function AccountingModule() {
             <div className="flex flex-col">
               <div className="bg-[#1A2C4E] p-4 text-white"><div className="flex justify-between"><h3 className="text-lg font-black">Detalle del Movimiento</h3><button onClick={() => setShowEntryDetail(false)}><X size={18} /></button></div></div>
               <div className="p-5 space-y-3">
-                <div className="grid grid-cols-2 gap-2"><p className="text-[10px] font-bold text-black/60">Fecha</p><p className="text-sm font-bold text-black">{formatDate(selectedEntry.date)}</p></div>
+                <div className="grid grid-cols-2 gap-2"><p className="text-[10px] font-bold text-black/60">Fecha</p><p className="text-sm font-bold text-black">{formatDateFriendly(selectedEntry.date)}</p></div>
                 <div className="grid grid-cols-2 gap-2"><p className="text-[10px] font-bold text-black/60">Tipo</p><p className={cn("text-sm font-bold", selectedEntry.type === 'ingreso' ? "text-green-600" : "text-red-600")}>{selectedEntry.type === 'ingreso' ? 'INGRESO' : 'EGRESO'}</p></div>
                 <div className="grid grid-cols-2 gap-2"><p className="text-[10px] font-bold text-black/60">Categoría</p><p className="text-sm text-black">{getCategoryLabel(selectedEntry.category)}</p></div>
                 {selectedEntry.subcategory && <div className="grid grid-cols-2 gap-2"><p className="text-[10px] font-bold text-black/60">Subcategoría</p><p className="text-sm text-black">{selectedEntry.subcategory}</p></div>}

@@ -57,8 +57,8 @@ export interface CartItem {
 export interface PaymentDetail {
   id: string;
   method: string;
-  amount: number;   // monto en bolívares
-  usdAmount?: number; // monto original en USD (solo para métodos USD)
+  amount: number;      // monto en bolívares (o USD si el método es USD)
+  usdAmount?: number;  // monto original en USD (solo para métodos USD, opcional)
 }
 
 export interface Transaction {
@@ -85,6 +85,8 @@ export interface Transaction {
   payments?: PaymentDetail[];
   // ✅ ID de sesión de caja (aislamiento por terminal)
   sessionId?: string | null;
+  // ✅ Terminal ID (para filtrar por terminal en reportes)
+  terminalId?: string;
   // ✅ Ajuste contable por redondeo bimonetario
   ajusteRedondeoBs?: number;
 }

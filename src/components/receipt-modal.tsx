@@ -133,6 +133,17 @@ export default function ReceiptModal({ transaction, exchangeRate, receiptNumber,
               font-weight: bold;
               font-size: 11px;
             }
+            .payment-list {
+              border: 1px solid #000;
+              padding: 4px;
+              margin: 8px 0;
+            }
+            .payment-item {
+              display: flex;
+              justify-content: space-between;
+              font-size: 9px;
+              margin: 2px 0;
+            }
             .footer {
               margin-top: 12px;
               padding-top: 6px;
@@ -195,8 +206,9 @@ export default function ReceiptModal({ transaction, exchangeRate, receiptNumber,
   const transactionPayMethod = transaction?.payMethod || 'efectivo_bs';
   const transactionItems = transaction?.items || [];
   const transactionExchangeRate = transaction?.exchangeRate || exchangeRate;
+  const transactionPayments = transaction?.payments || [];
 
-  // ✅ Determinar título según tipo de transacción
+  // Determinar título según tipo de transacción
   const getDocumentTitle = () => {
     if (isCredito) return 'DOCUMENTO DE CRÉDITO';
     if (isCobroDeuda) return 'RECIBO DE PAGO';
@@ -205,7 +217,6 @@ export default function ReceiptModal({ transaction, exchangeRate, receiptNumber,
     return 'RECIBO';
   };
 
-  // ✅ Color de fondo del título
   const getTitleBgColor = () => {
     if (isCredito) return '#e74c3c';
     if (isCobroDeuda) return '#27ae60';
@@ -214,7 +225,6 @@ export default function ReceiptModal({ transaction, exchangeRate, receiptNumber,
     return '#2c3e50';
   };
 
-  // ✅ Mensaje especial para colaboración/consumo
   const getSpecialMessage = () => {
     if (isColaboracion) {
       return {
@@ -236,6 +246,45 @@ export default function ReceiptModal({ transaction, exchangeRate, receiptNumber,
   };
 
   const special = getSpecialMessage();
+
+  // ✅ Renderizar la sección de pagos (compuestos o simple) - CORREGIDO
+  const renderPaymentSection = () => {
+    if (isCredito || isCobroDeuda || isColaboracion || isConsumoPropio) return null;
+
+    // Si hay pagos compuestos (múltiples métodos)
+    if (transactionPayments && transactionPayments.length > 0) {
+      return (
+        <div className="payment-list" style={{ border: '1px solid #000', padding: '4px', margin: '8px 0' }}>
+          <div style={{ textAlign: 'center', fontWeight: 'bold', fontSize: '10px', marginBottom: '4px' }}>DETALLE DE PAGOS</div>
+          {transactionPayments.map((payment, idx) => {
+            const isUsd = payment.method === 'usd_efectivo' || payment.method === 'zelle';
+            let amountDisplay = '';
+            if (isUsd) {
+              // Para pagos en USD, usar usdAmount si existe, o amount (que viene en USD)
+              const usdValue = payment.usdAmount !== undefined ? payment.usdAmount : payment.amount;
+              amountDisplay = formatUsd(usdValue);
+            } else {
+              // Pagos en Bs
+              amountDisplay = formatBs(payment.amount);
+            }
+            return (
+              <div key={idx} className="payment-item" style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', margin: '2px 0' }}>
+                <span>{paymentMethodLabels[payment.method] || payment.method.toUpperCase()}</span>
+                <span style={{ fontWeight: 'bold' }}>{amountDisplay}</span>
+              </div>
+            );
+          })}
+        </div>
+      );
+    } else {
+      // Pago simple (compatibilidad con transacciones antiguas)
+      return (
+        <div className="payment-method" style={{ border: '1px solid #000', padding: '3px', margin: '8px 0', textAlign: 'center', fontWeight: 'bold', fontSize: '10px' }}>
+          FORMA DE PAGO: {paymentMethodLabels[transactionPayMethod] || transactionPayMethod.toUpperCase()}
+        </div>
+      );
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-[300] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
@@ -387,11 +436,8 @@ export default function ReceiptModal({ transaction, exchangeRate, receiptNumber,
               </div>
             )}
 
-            {!isCredito && !isColaboracion && !isConsumoPropio && (
-              <div style={{ border: '1px solid #000', padding: '3px', margin: '8px 0', textAlign: 'center', fontWeight: 'bold', fontSize: '10px' }}>
-                FORMA DE PAGO: {paymentMethodLabels[transactionPayMethod] || transactionPayMethod.toUpperCase()}
-              </div>
-            )}
+            {/* Renderizar pagos compuestos o simple */}
+            {!isCredito && !isColaboracion && !isConsumoPropio && renderPaymentSection()}
 
             {isCredito && (
               <div style={{ border: '1px dashed #e74c3c', padding: '6px', margin: '8px 0', textAlign: 'center', fontSize: '9px', background: '#fff5f5' }}>

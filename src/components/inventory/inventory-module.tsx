@@ -152,6 +152,25 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
     );
   };
   
+  // ✅ Función para formatear fecha de Venezuela
+  const formatVenezuelaDateTime = (dateStr: string): string => {
+    try {
+      const date = new Date(dateStr);
+      if (isNaN(date.getTime())) return 'Fecha inválida';
+      return date.toLocaleString('es-VE', {
+        timeZone: 'America/Caracas',
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true
+      });
+    } catch {
+      return dateStr;
+    }
+  };
+  
   const childProductResults = useMemo(() => {
     if (!searchChildProduct.trim() || hideChildResults) return [];
     const q = searchChildProduct.toLowerCase();
@@ -459,7 +478,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
       const kardexEntry: KardexEntry = {
         id: `${Date.now()}_${Math.random()}`,
         productId: productData.id,
-        date: new Date().toLocaleString('es-VE'),
+        date: new Date().toISOString(),
         type: 'ajuste_inicial',
         quantity: productData.stock,
         previousStock: 0,
@@ -534,12 +553,18 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
   
   // ==================== KARDEX ====================
   const addKardexEntryLocal = (productId: number, entry: KardexEntry) => {
-    setKardexEntries(prev => ({
-      ...prev,
-      [productId]: [entry, ...(prev[productId] || [])]
-    }));
-    const updated = { ...kardexEntries, [productId]: [entry, ...(kardexEntries[productId] || [])] };
-    localStorage.setItem(CACHE_KEYS.KARDEX, JSON.stringify(updated));
+    setKardexEntries(prev => {
+      const existing = prev[productId] || [];
+      if (existing.some(e => e.id === entry.id)) {
+        return prev;
+      }
+      const updated = {
+        ...prev,
+        [productId]: [entry, ...existing]
+      };
+      localStorage.setItem(CACHE_KEYS.KARDEX, JSON.stringify(updated));
+      return updated;
+    });
   };
   
   const getKardexForProduct = (productId: number): KardexEntry[] => {
@@ -618,8 +643,8 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
         const kardexEntry: KardexEntry = {
           id: `${Date.now()}_${Math.random()}`,
           productId: product.id,
-          date: new Date().toLocaleString('es-VE'),
-          type: 'ajuste_manual', // ✅ Ya estaba bien
+          date: new Date().toISOString(),
+          type: 'ajuste_manual',
           quantity: delta,
           previousStock: previousStock,
           newStock: newQty,
@@ -841,6 +866,11 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
     return filtered.sort((a, b) => a.name.localeCompare(b.name));
   }, [products, filterDepartment, filterCategory]);
   
+  // ✅ Total del valor de inventario en USD
+  const totalInventoryValueUsd = useMemo(() => {
+    return reportProducts.reduce((sum, p) => sum + ((p.costUsd || 0) * p.stock), 0);
+  }, [reportProducts]);
+  
   // ==================== HISTORIAL DE AJUSTES ====================
   const allAdjustments = useMemo(() => {
     const adjustments: (KardexEntry & { productName: string; productBarcode: string; costBsValue: number })[] = [];
@@ -902,6 +932,13 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
       return sum + valorBs;
     }, 0);
   }, [filteredAdjustments, state.exchangeRate]);
+  
+  // ✅ Total de ajustes en USD
+  const totalAdjustmentUsd = useMemo(() => {
+    return filteredAdjustments.reduce((sum, adj) => {
+      return sum + (Math.abs(adj.quantity) * (adj.costUsd || 0));
+    }, 0);
+  }, [filteredAdjustments]);
   
   // ==================== RENDERIZADO ====================
   return (
@@ -1074,6 +1111,13 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                   ))}
                   {reportProducts.length === 0 && <TableRow><TableCell colSpan={6} className="text-center py-10 text-black/40 italic">No hay productos para mostrar con los filtros seleccionados</TableCell></TableRow>}
                 </TableBody>
+                <tfoot className="bg-[#F0F0F0] border-t-2 border-[#9E9E9E]">
+                  <tr className="font-black">
+                    <td colSpan={4} className="p-3 text-right text-lg font-black">TOTAL VALOR INVENTARIO:</td>
+                    <td className="p-3 text-right text-xl font-black text-primary">{formatUsd(totalInventoryValueUsd)}</td>
+                    <td></td>
+                  </tr>
+                </tfoot>
               </Table>
             </div>
           </div>
@@ -1102,7 +1146,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
               </div>
             )}
             <div className="ml-auto text-xs bg-gray-100 px-3 py-1 rounded-full">
-              Total ajustes: <span className="font-bold">{formatBs(totalAdjustmentValue)}</span>
+              Total ajustes: <span className="font-bold">{formatUsd(totalAdjustmentUsd)}</span>
             </div>
           </div>
           
@@ -1123,7 +1167,8 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                 <tbody>
                   {filteredAdjustments.map((adj, idx) => (
                     <tr key={`${adj.id}_${idx}`} className="border-b border-gray-100 hover:bg-gray-50">
-                      <td className="p-2 whitespace-nowrap text-[11px] font-mono">{new Date(adj.date).toLocaleString('es-VE')}</td>
+                      {/* ✅ Fecha formateada correctamente */}
+                      <td className="p-2 whitespace-nowrap text-[11px] font-mono">{formatVenezuelaDateTime(adj.date)}</td>
                       <td className="p-2">
                         <div className="font-bold">{adj.productName}</div>
                         <div className="text-[9px] text-black/50">{adj.productBarcode}</div>
@@ -1140,9 +1185,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                     </tr>
                   ))}
                   {filteredAdjustments.length === 0 && (
-                    <tr>
-                      <td colSpan={7} className="p-4 text-center text-black/40 italic">No hay ajustes manuales en el período seleccionado</td>
-                    </tr>
+                    <tr><td colSpan={7} className="p-4 text-center text-black/40 italic">No hay ajustes manuales en el período seleccionado</td></tr>
                   )}
                 </tbody>
               </table>
@@ -1242,12 +1285,10 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                     <tbody className="divide-y divide-gray-100">
                       {(() => {
                         const entries = getKardexForProduct(viewingKardex.id);
-                        // ✅ Orden descendente (del más reciente al más antiguo)
                         const sortedEntries = [...entries].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
                         return sortedEntries.map((entry, idx) => {
                           let entrada = 0, salida = 0;
                           const absQty = Math.abs(entry.quantity);
-                          // Lógica de entrada/salida según tipo
                           if (entry.type === 'compra' || entry.type === 'ajuste_inicial' || entry.type === 'devolucion') {
                             entrada = absQty;
                           } else if (entry.type === 'ajuste_manual' || entry.type === 'colaboracion' || entry.type === 'consumo') {
@@ -1537,7 +1578,6 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                     <Button 
                       type="button" 
                       onClick={() => { 
-                        // Sincronizar: recalcular con porcentaje por defecto (30%)
                         const costVal = parseFloat(costUsdInput) || 0;
                         const defaultProfit = DEFAULT_PROFIT_PERCENT;
                         if (costVal > 0) {

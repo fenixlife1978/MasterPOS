@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
-import { Product, SupplierInvoice, PurchaseInvoiceItem, Category, KitComponent } from '@/lib/types';
+import { Product, SupplierInvoice, PurchaseInvoiceItem, Category, KitComponent, AccountingEntry } from '@/lib/types';
 import { syncService } from '@/services/syncService';
 import { formatBs, formatUsd, formatBsNumber, formatUsdNumber } from '@/lib/currency-formatter';
 
@@ -30,6 +30,15 @@ const DEFAULT_PROFIT_PERCENT = 30;
 // ✅ Categorías por defecto (deben coincidir con las del sistema)
 const DEFAULT_CATEGORIES: Category[] = ['Whisky', 'Ron', 'Cerveza', 'Vino', 'Vodka', 'Tequila', 'Licor', 'Gin', 'Otro'];
 const DEFAULT_DEPARTMENTS = ['Polar', 'Munchy', 'Otros'];
+
+// ✅ Función para obtener fecha local de Venezuela en formato YYYY-MM-DD (sin desfase horario)
+function getLocalDate(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
 
 export default function RegisterPurchase() {
   const state = usePOSState();
@@ -309,6 +318,27 @@ export default function RegisterPurchase() {
         });
       }
       
+      // ✅ Crear entrada contable SOLO para la parte pagada de contado (NO para crédito)
+      if (paymentType !== 'credito') {
+        const paidAmountBs = totalPaidUsd * rateNum; // Monto en Bs pagado de contado
+        const localDate = getLocalDate(); // Fecha local sin desfase
+        
+        const accountingEntry: AccountingEntry = {
+          id: Date.now(),
+          date: localDate,
+          type: 'egreso',
+          category: 'compra_mercancia',
+          subcategory: 'compra',
+          concept: `Compra de mercancía - Factura ${invoiceNumber} (Pago contado)`,
+          description: `Proveedor: ${supplier?.name || 'N/A'} | Total factura: ${formatUsd(totalInvoiceUsd)} | Pagado: ${formatUsd(totalPaidUsd)}`,
+          amount: paidAmountBs,
+          referenceId: invoiceId,
+          referenceType: 'purchase',
+          createdAt: timestamp,
+        };
+        await syncService.saveAccountingEntry(accountingEntry);
+      }
+      
       await state.refreshProducts?.();
       
       alert(`✅ Compra registrada exitosamente\nEstado: ${invoiceStatus()}\nTotal: ${formatUsd(totalInvoiceUsd, 4)}\nPagado: ${formatUsd(totalPaidUsd)}\nSaldo: ${formatUsd(remainingUsd, 4)}`);
@@ -541,12 +571,11 @@ export default function RegisterPurchase() {
                         step="0.01"
                         value={exchangeRate}
                         onChange={(e) => setExchangeRate(e.target.value)}
-                        className="pl-7 h-8 text-sm font-mono bg-gray-50"
-                        readOnly
+                        className="pl-7 h-8 text-sm font-mono"
                       />
                     </div>
                     <p className="text-[8px] text-black/40 mt-1">
-                      Tasa actual del sistema: {formatBs(state.exchangeRate)}
+                      Tasa actual del sistema: {formatBs(state.exchangeRate)} — Puede modificarla según la factura
                     </p>
                   </div>
                 </div>
@@ -778,7 +807,6 @@ export default function RegisterPurchase() {
                       <span className="text-[8px] block text-gray-500 uppercase">Total en Bolívares</span>
                       <span className="text-xs font-black text-secondary">{formatBs(totalInvoiceBs)}</span>
                     </div>
-                    {/* ✅ TOTAL EN USD - NUEVO */}
                     <div className="bg-white border border-gray-300 rounded px-2 py-1">
                       <span className="text-[8px] block text-gray-500 uppercase">Total USD</span>
                       <span className="text-xs font-black text-secondary">{formatUsd(totalInvoiceUsd, 4)}</span>

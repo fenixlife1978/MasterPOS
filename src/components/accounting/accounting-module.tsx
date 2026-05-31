@@ -63,6 +63,7 @@ export default function AccountingModule() {
   const categoriesList = [
     { id: 'ventas', label: 'Ventas' },
     { id: 'compra_mercancia', label: 'Compra de Mercancía' },
+    { id: 'pagos_proveedores', label: 'Pagos a Proveedores' }, // ✅ Agregado
     { id: 'servicios_publicos', label: 'Servicios Públicos' },
     { id: 'alquiler', label: 'Alquiler' },
     { id: 'telefonia', label: 'Telefonía' },
@@ -70,7 +71,7 @@ export default function AccountingModule() {
     { id: 'declaracion_renta', label: 'Declaración de Renta' },
     { id: 'servicios_profesionales', label: 'Servicios Profesionales' },
     { id: 'reparacion_local', label: 'Reparación de Local' },
-    { id: 'sueldos', label: 'Sueldos' },
+    { id: 'sueldos', label: 'Sueldos y Salarios' }, // ✅ Renombrado
     { id: 'otros', label: 'Otros Gastos' },
     { id: 'devolucion', label: 'Devolución' },
     { id: 'cobro_deuda', label: 'Cobro de Deuda' },

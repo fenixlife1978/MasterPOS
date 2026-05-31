@@ -38,8 +38,12 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
   const [activeTab, setActiveTab] = useState<AdminTab>('dashboard');
   const { suppliers, invoices } = useSuppliers();
   
-  const [monthlyRevenue, setMonthlyRevenue] = useState(0);
-  const [monthlyExpenses, setMonthlyExpenses] = useState(0);
+  // Estados para los cálculos en USD
+  const [monthlyRevenueUsd, setMonthlyRevenueUsd] = useState(0);
+  const [monthlyExpensesUsd, setMonthlyExpensesUsd] = useState(0);
+  
+  // Estado para los pagos a proveedores
+  const [supplierPayments, setSupplierPayments] = useState<any[]>([]);
   
   // Estado para la tasa BCV editable
   const [exchangeRateInput, setExchangeRateInput] = useState(state.exchangeRate.toString());
@@ -60,6 +64,45 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
   // Estado para el modal de historial de cierres
   const [showHistoryModal, setShowHistoryModal] = useState(false);
 
+  // Cargar pagos a proveedores en tiempo real
+  useEffect(() => {
+    const unsubscribe = syncService.subscribeToSupplierPayments((data) => {
+      setSupplierPayments(data);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Calcular ingresos y gastos del mes en USD
+  useEffect(() => {
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    
+    // Ingresos: transacciones de tipo 'contado' (ventas)
+    const revenue = state.transactions
+      .filter(tx => tx.type === 'contado' && new Date(tx.date) >= startOfMonth)
+      .reduce((sum, tx) => sum + (tx.totalUsd || 0), 0);
+    
+    // Gastos: pagos a proveedores del mes + devoluciones + colaboraciones/consumo propio
+    const supplierExpenses = supplierPayments
+      .filter(p => new Date(p.date) >= startOfMonth)
+      .reduce((sum, p) => sum + (p.amount || 0), 0);
+    
+    // Devoluciones (egresos)
+    const returns = state.transactions
+      .filter(tx => tx.type === 'devolucion' && new Date(tx.date) >= startOfMonth)
+      .reduce((sum, tx) => sum + (tx.totalUsd || 0), 0);
+    
+    // Colaboraciones y consumo propio (egresos)
+    const specialExpenses = state.transactions
+      .filter(tx => (tx.type === 'colaboracion' || tx.type === 'consumo_propio') && new Date(tx.date) >= startOfMonth)
+      .reduce((sum, tx) => sum + (tx.costoTotalOperacion || 0), 0);
+    
+    const totalExpenses = supplierExpenses + returns + specialExpenses;
+    
+    setMonthlyRevenueUsd(revenue);
+    setMonthlyExpensesUsd(totalExpenses);
+  }, [state.transactions, supplierPayments]);
+
   // Cargar PIN actual al inicio
   useEffect(() => {
     const loadAdminCode = async () => {
@@ -70,38 +113,6 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
     };
     loadAdminCode();
   }, []);
-
-  // Calcular ingresos del mes actual
-  const calculateMonthlyRevenue = () => {
-    const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    
-    const revenue = state.transactions
-      .filter(t => t.type === 'contado' && new Date(t.date) >= startOfMonth)
-      .reduce((sum, t) => sum + t.total, 0);
-    
-    setMonthlyRevenue(revenue);
-  };
-
-  // Calcular gastos del mes
-  const calculateMonthlyExpenses = () => {
-    const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    
-    const expenses = invoices
-      .filter(inv => {
-        const hasPaymentInMonth = inv.paidAmount > 0;
-        return hasPaymentInMonth;
-      })
-      .reduce((sum, inv) => sum + inv.paidAmount, 0);
-    
-    setMonthlyExpenses(expenses);
-  };
-
-  useEffect(() => {
-    calculateMonthlyRevenue();
-    calculateMonthlyExpenses();
-  }, [state.transactions, invoices]);
 
   // Función para actualizar la tasa BCV globalmente
   const handleUpdateExchangeRate = async () => {
@@ -149,7 +160,7 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
     }
   };
 
-  // Función para resetear el sistema completo (incluye nuevas colecciones)
+  // Función para resetear el sistema completo
   const handleResetSystem = async () => {
     if (!resetPinInput) {
       toast({ title: "Error", description: "Ingrese el PIN de autorización", variant: "destructive" });
@@ -218,10 +229,22 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
         await deleteDoc(doc(db, 'purchase_items', docSnap.id));
       }
       
-      // 11. Cerrar todas las cajas abiertas (registers)
+      // 11. Eliminar todos los pagos a proveedores
+      await syncService.deleteAllSupplierPayments();
+      
+      // 12. Eliminar todos los proveedores
+      await syncService.deleteAllSuppliers();
+      
+      // 13. Eliminar todas las terminales
+      await syncService.deleteAllTerminals();
+      
+      // 14. Eliminar todos los usuarios excepto admin@masterpos.com
+      await syncService.deleteAllUsersExceptAdmin();
+      
+      // 15. Cerrar todas las cajas abiertas
       await syncService.clearRegisterByTerminal('default');
       
-      // 12. ✅ Resetear el contador de recibos
+      // 16. Resetear el contador de recibos
       if (typeof window !== 'undefined') {
         localStorage.removeItem('last_receipt_number');
       }
@@ -250,12 +273,9 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
   const totalProducts = state.products.length;
   const totalClients = state.clients.length;
   const totalSales = state.transactions.filter(t => t.type === 'contado').length;
-  const totalRevenue = state.transactions
-    .filter(t => t.type === 'contado')
-    .reduce((sum, t) => sum + t.total, 0);
-  const totalCredit = state.clients.reduce((sum, c) => sum + (c.debt || 0), 0);
-  
-  const totalPayable = invoices.reduce((sum, inv) => sum + (inv.total - inv.paidAmount), 0);
+  const totalCredit = state.clients.reduce((sum, c) => sum + (c.debt || 0), 0); // en Bs
+  const totalPayable = invoices.reduce((sum, inv) => sum + (inv.total - inv.paidAmount), 0); // en USD
+  const totalCreditUsd = totalCredit / state.exchangeRate;
   
   const outOfStock = state.products.filter(p => p.stock === 0).length;
   const lowStock = state.products.filter(p => p.stock > 0 && p.stock <= 5).length;
@@ -438,13 +458,13 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
               </div>
               <div className="bg-white rounded-xl border border-[#9E9E9E] p-4">
                 <p className="text-[10px] font-black text-black/60 uppercase">Ingresos del Mes</p>
-                <p className="text-2xl font-black text-green-600">{formatBs(monthlyRevenue)}</p>
-                <p className="text-[8px] text-black/50">Reinicia cada 1ro del mes</p>
+                <p className="text-2xl font-black text-green-600">{formatUsd(monthlyRevenueUsd)}</p>
+                <p className="text-[8px] text-black/50">Ventas de contado del mes (USD)</p>
               </div>
               <div className="bg-white rounded-xl border border-[#9E9E9E] p-4">
                 <p className="text-[10px] font-black text-black/60 uppercase">Gastos del Mes</p>
-                <p className="text-2xl font-black text-red-600">{formatBs(monthlyExpenses)}</p>
-                <p className="text-[8px] text-black/50">Compras pagadas en el mes</p>
+                <p className="text-2xl font-black text-red-600">{formatUsd(monthlyExpensesUsd)}</p>
+                <p className="text-[8px] text-black/50">Pagos a proveedores + devoluciones (USD)</p>
               </div>
             </div>
 
@@ -454,16 +474,16 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
                   <CreditCard size={18} className="text-orange-500" />
                   <p className="text-sm font-black text-black uppercase">Cuentas por Cobrar</p>
                 </div>
-                <p className="text-2xl font-black text-red-600">{formatBs(totalCredit)}</p>
-                <p className="text-[10px] text-black/50">Total de créditos pendientes de clientes</p>
+                <p className="text-2xl font-black text-red-600">{formatUsd(totalCreditUsd)}</p>
+                <p className="text-[10px] text-black/50">Total de créditos pendientes de clientes (USD)</p>
               </div>
               <div className="bg-white rounded-xl border border-[#9E9E9E] p-4">
                 <div className="flex items-center gap-2 mb-2">
                   <Truck size={18} className="text-blue-500" />
                   <p className="text-sm font-black text-black uppercase">Cuentas por Pagar</p>
                 </div>
-                <p className="text-2xl font-black text-red-600">{formatBs(totalPayable)}</p>
-                <p className="text-[10px] text-black/50">Total de facturas pendientes a proveedores</p>
+                <p className="text-2xl font-black text-red-600">{formatUsd(totalPayable)}</p>
+                <p className="text-[10px] text-black/50">Total de facturas pendientes a proveedores (USD)</p>
               </div>
             </div>
 
@@ -524,6 +544,9 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
                 <li>Cierres de caja (cash_closes)</li>
                 <li>Sesiones de caja (cash_sessions)</li>
                 <li>Items de compra (purchase_items)</li>
+                <li>Pagos a proveedores (supplier_payments)</li>
+                <li>Terminales</li>
+                <li>Usuarios (excepto admin@masterpos.com)</li>
                 <li>Contador de recibos</li>
               </ul>
               <p className="text-red-800 font-bold text-sm mt-3">

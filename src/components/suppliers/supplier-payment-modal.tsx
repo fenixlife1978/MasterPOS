@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { X, DollarSign, CreditCard, Banknote, Smartphone, Fingerprint, Plane } from 'lucide-react';
+import { X, DollarSign, CreditCard, Banknote, Smartphone, Fingerprint, Plane, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -40,17 +40,28 @@ export default function SupplierPaymentModal({
   invoiceNumber, 
   exchangeRate = 36.50 
 }: SupplierPaymentModalProps) {
-  const [amount, setAmount] = useState((total - currentPaid).toFixed(2));
+  const [amount, setAmount] = useState('0');
   const [method, setMethod] = useState('efectivo_bs');
   const [reference, setReference] = useState('');
   const [bank, setBank] = useState('');
   const [usdAmount, setUsdAmount] = useState(0);
   const [customRate, setCustomRate] = useState(exchangeRate.toString());
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const remaining = total - currentPaid;
   const selectedMethod = METHODS.find(m => m.id === method);
   const isUSD = selectedMethod?.currency === 'USD';
   const needsReference = method === 'transferencia' || method === 'pago_movil' || method === 'zelle';
+
+  // ✅ Resetear montos a 0 al abrir el modal o cambiar de método (pero no durante envío)
+  useEffect(() => {
+    if (!isSubmitting) {
+      setAmount('0');
+      setUsdAmount(0);
+      setReference('');
+      setBank('');
+    }
+  }, [open, method, isSubmitting]);
 
   // Actualizar el monto en USD cuando cambia el monto en Bs o la tasa
   useEffect(() => {
@@ -89,11 +100,18 @@ export default function SupplierPaymentModal({
     }
   };
 
-  const handleConfirm = () => {
+  const handleMethodChange = (newMethod: string) => {
+    setMethod(newMethod);
+    // Los montos se resetearán en el useEffect que depende de `method`
+  };
+
+  const handleConfirm = async () => {
+    if (isSubmitting) return;
+    
     let finalUsdAmount = 0;
     const finalExchangeRate = parseFloat(customRate) || exchangeRate;
 
-    if (method === 'efectivo_usd' || method === 'zelle') {
+    if (isUSD) {
       finalUsdAmount = usdAmount;
       if (finalUsdAmount <= 0) {
         alert('Ingrese un monto válido en USD');
@@ -117,15 +135,21 @@ export default function SupplierPaymentModal({
       }
     }
 
-    onConfirm({ 
-      amount: finalUsdAmount,
-      method, 
-      reference, 
-      bank,
-      usdAmount: finalUsdAmount,
-      exchangeRate: finalExchangeRate
-    });
-    onClose();
+    setIsSubmitting(true);
+    try {
+      onConfirm({ 
+        amount: finalUsdAmount,
+        method, 
+        reference, 
+        bank,
+        usdAmount: finalUsdAmount,
+        exchangeRate: finalExchangeRate
+      });
+      onClose();
+    } finally {
+      // Pequeño retraso para evitar reseteo antes de cerrar
+      setTimeout(() => setIsSubmitting(false), 500);
+    }
   };
 
   return (
@@ -167,10 +191,7 @@ export default function SupplierPaymentModal({
                     return (
                       <button
                         key={m.id}
-                        onClick={() => { 
-                          setMethod(m.id);
-                          setUsdAmount(0);
-                        }}
+                        onClick={() => handleMethodChange(m.id)}
                         className={cn(
                           "py-2 rounded-lg border text-[9px] font-bold transition-all flex flex-col items-center gap-0.5",
                           isActive ? "border-primary bg-primary/10 text-black" : "border-[#9E9E9E] bg-white text-black/60 hover:border-primary/50"
@@ -192,7 +213,7 @@ export default function SupplierPaymentModal({
                   <Input 
                     type="number" 
                     step="0.01" 
-                    value={usdAmount || ''} 
+                    value={usdAmount === 0 ? '' : usdAmount} 
                     onChange={(e) => handleUsdAmountChange(e.target.value)} 
                     className="bg-white border-green-300 font-mono"
                     placeholder="0.00"
@@ -207,7 +228,7 @@ export default function SupplierPaymentModal({
                   <Input 
                     type="number" 
                     step="0.01" 
-                    value={amount} 
+                    value={amount === '0' ? '' : amount} 
                     onChange={(e) => handleAmountChange(e.target.value)} 
                     className="bg-white border-blue-300 font-mono"
                     placeholder="0.00"
@@ -273,7 +294,14 @@ export default function SupplierPaymentModal({
           
           <div className="bg-[#F5F5F5] p-4 border-t flex justify-end gap-3">
             <Button variant="ghost" onClick={onClose} className="px-6 text-black">CANCELAR</Button>
-            <Button onClick={handleConfirm} className="px-6 bg-primary text-black font-black">REGISTRAR PAGO</Button>
+            <Button 
+              onClick={handleConfirm} 
+              disabled={isSubmitting}
+              className="px-6 bg-primary text-black font-black disabled:opacity-50"
+            >
+              {isSubmitting ? <Loader2 size={16} className="animate-spin mr-1" /> : null}
+              REGISTRAR PAGO
+            </Button>
           </div>
         </div>
       </DialogContent>

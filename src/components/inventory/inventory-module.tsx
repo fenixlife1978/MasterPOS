@@ -7,7 +7,8 @@ import {
   Tag, Settings, History, RefreshCw, Save,
   FileText, Share2, Printer, Percent, AlertTriangle,
   DollarSign, Package, Layers, Boxes, PlusCircle,
-  FileSpreadsheet, TrendingUp, Calculator, Info, Calendar
+  FileSpreadsheet, TrendingUp, Calculator, Info, Calendar,
+  Lock, Unlock
 } from 'lucide-react';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
@@ -305,7 +306,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
             <p><strong>Costo Promedio Actual:</strong> ${formatUsd(product.costUsd || 0, 4)}</p>
             <p><strong>Fecha:</strong> ${new Date().toLocaleString('es-VE')}</p>
           </div>
-          <table>
+          </td>
             <thead>
               <tr>
                 <th>FECHA</th>
@@ -429,16 +430,15 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
     const profitPercent = parseFloat(profitPercentInput) || DEFAULT_PROFIT_PERCENT;
     
     let finalPriceUsd, finalPriceBs;
+    
+    // ✅ LÓGICA CORREGIDA: cuando el precio está fijado manualmente, se usa el valor exacto del campo priceRetailBs
     if (isPriceFixed) {
-      const manualUsd = parseFloat(localPriceUsd);
       const manualBs = parseFloat(priceRetailBs);
-      if (!isNaN(manualUsd) && manualUsd > 0) {
-        finalPriceUsd = manualUsd;
-        finalPriceBs = roundTo2(manualUsd * state.exchangeRate);
-      } else if (!isNaN(manualBs) && manualBs > 0) {
+      if (!isNaN(manualBs) && manualBs > 0) {
         finalPriceBs = manualBs;
-        finalPriceUsd = finalPriceBs / state.exchangeRate;
+        finalPriceUsd = manualBs / state.exchangeRate;
       } else {
+        // Fallback: recalcular desde costo y ganancia
         finalPriceUsd = calculatePriceUsdFromCostAndProfit(cost, profitPercent);
         finalPriceBs = finalPriceUsd * state.exchangeRate;
       }
@@ -458,9 +458,9 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
       costUsd: roundTo4(cost),
       costBs: roundTo2(cost * state.exchangeRate),
       profitPercent: profitPercent,
-      priceUsd: finalPriceUsd,
+      priceUsd: roundTo2(finalPriceUsd),
       priceBs: roundTo2(finalPriceBs),
-      priceRetail: finalPriceUsd,
+      priceRetail: roundTo2(finalPriceUsd),
       priceWholesale: roundTo2(parseFloat(priceWholesaleInput) || 0),
       priceCost: roundTo2(parseFloat(priceCostInput) || 0),
       ivaType: ivaType,
@@ -468,7 +468,11 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
       isKit: isKit,
       kitHasOwnStock: isKit ? containerHasOwnStock : undefined,
       kitComponents: isKit && kitComponents.length > 0 ? kitComponents : undefined,
+      isPriceFixed: isPriceFixed,
     };
+    
+    // ✅ Depuración: ver el valor que se va a guardar
+    console.log("🟢 Guardando producto:", { isPriceFixed, priceRetailBs, finalPriceBs, finalPriceUsd });
     
     if (editingProduct) {
       await state.updateProduct(productData);
@@ -522,7 +526,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
     setKitComponents(p.kitComponents || []);
     setPriceRetailBs(p.priceBs.toString());
     setLocalPriceUsd(p.priceUsd.toString());
-    setIsPriceFixed(true);
+    setIsPriceFixed(p.isPriceFixed ?? false);
     setIsAdding(true);
   };
   
@@ -1467,15 +1471,18 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                       value={costUsdInput} 
                       onChange={(e) => { 
                         setCostUsdInput(e.target.value); 
-                        const costVal = parseFloat(e.target.value) || 0; 
-                        const profitVal = parseFloat(profitPercentInput) || DEFAULT_PROFIT_PERCENT; 
-                        if (costVal > 0) {
-                          const newPriceUsd = roundTo2(costVal / (1 - profitVal / 100));
-                          setLocalPriceUsd(newPriceUsd.toFixed(2));
-                          setPriceRetailBs(roundTo2(newPriceUsd * state.exchangeRate).toFixed(2));
-                        } else if (costVal === 0) {
-                          setLocalPriceUsd('');
-                          setPriceRetailBs('');
+                        // Solo recalcular automáticamente si el precio no está fijado manualmente
+                        if (!isPriceFixed) {
+                          const costVal = parseFloat(e.target.value) || 0; 
+                          const profitVal = parseFloat(profitPercentInput) || DEFAULT_PROFIT_PERCENT; 
+                          if (costVal > 0) {
+                            const newPriceUsd = roundTo2(costVal / (1 - profitVal / 100));
+                            setLocalPriceUsd(newPriceUsd.toFixed(2));
+                            setPriceRetailBs(roundTo2(newPriceUsd * state.exchangeRate).toFixed(2));
+                          } else if (costVal === 0) {
+                            setLocalPriceUsd('');
+                            setPriceRetailBs('');
+                          }
                         }
                       }} 
                       className="bg-white h-7 text-xs font-mono" 
@@ -1492,16 +1499,18 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                         onChange={(e) => { 
                           const raw = e.target.value;
                           setProfitPercentInput(raw);
-                          const newProfit = parseFloat(raw);
-                          const costVal = parseFloat(costUsdInput) || 0;
-                          if (!isNaN(newProfit) && costVal > 0) {
-                            const newPriceUsd = roundTo2(costVal / (1 - newProfit / 100));
-                            setLocalPriceUsd(newPriceUsd.toFixed(2));
-                            setPriceRetailBs(roundTo2(newPriceUsd * state.exchangeRate).toFixed(2));
-                            setIsPriceFixed(true);
-                          } else if (costVal === 0) {
-                            setLocalPriceUsd('');
-                            setPriceRetailBs('');
+                          // Solo recalcular automáticamente si el precio no está fijado manualmente
+                          if (!isPriceFixed) {
+                            const newProfit = parseFloat(raw);
+                            const costVal = parseFloat(costUsdInput) || 0;
+                            if (!isNaN(newProfit) && costVal > 0) {
+                              const newPriceUsd = roundTo2(costVal / (1 - newProfit / 100));
+                              setLocalPriceUsd(newPriceUsd.toFixed(2));
+                              setPriceRetailBs(roundTo2(newPriceUsd * state.exchangeRate).toFixed(2));
+                            } else if (costVal === 0) {
+                              setLocalPriceUsd('');
+                              setPriceRetailBs('');
+                            }
                           }
                         }} 
                         className="bg-white h-7 text-xs font-mono w-24 text-right" 
@@ -1551,30 +1560,19 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                         onChange={(e) => { 
                           const newValue = e.target.value;
                           setPriceRetailBs(newValue);
-                          const bsValue = parseFloat(newValue) || 0;
-                          const costVal = parseFloat(costUsdInput) || 0;
-                          if (bsValue > 0 && costVal > 0) {
-                            const newPriceUsd = roundTo2(bsValue / state.exchangeRate);
-                            setLocalPriceUsd(newPriceUsd.toFixed(2));
-                            const newProfit = roundTo2(((newPriceUsd / costVal) - 1) * 100);
-                            setProfitPercentInput(newProfit.toString());
-                            setIsPriceFixed(true);
-                          } else if (bsValue === 0 || costVal === 0) {
-                            if (costVal === 0 && bsValue > 0) {
-                              const newPriceUsd = roundTo2(bsValue / state.exchangeRate);
-                              setLocalPriceUsd(newPriceUsd.toFixed(2));
-                              setProfitPercentInput('');
-                            } else if (bsValue === 0) {
-                              setLocalPriceUsd('');
-                              setProfitPercentInput('');
-                            }
+                          // ✅ Cuando se modifica manualmente, se activa isPriceFixed y se actualiza el precio USD (solo para mostrar equivalencia)
+                          const bs = parseFloat(newValue);
+                          if (!isNaN(bs) && bs > 0) {
+                            const usd = bs / state.exchangeRate;
+                            setLocalPriceUsd(usd.toFixed(2));
                           }
+                          setIsPriceFixed(true);
                         }} 
                         className="bg-white h-7 text-xs font-mono w-full" 
                       />
                     </div>
                   </div>
-                  <div className="flex justify-end">
+                  <div className="flex justify-end gap-2">
                     <Button 
                       type="button" 
                       onClick={() => { 
@@ -1596,11 +1594,43 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                     >
                       <RefreshCw size={12} className="mr-1" /> Sincronizar
                     </Button>
+                    <Button 
+                      type="button" 
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setIsPriceFixed(true);
+                        toast({ 
+                          title: "Precio fijado", 
+                          description: "El precio actual se ha fijado manualmente. No se modificará automáticamente." 
+                        });
+                      }} 
+                      className={cn(
+                        "h-7 text-[9px] px-3 font-bold transition-all",
+                        isPriceFixed 
+                          ? "bg-green-600 text-white hover:bg-green-700" 
+                          : "bg-gray-200 text-black hover:bg-gray-300"
+                      )}
+                    >
+                      <Lock size={12} className="mr-1" />
+                      {isPriceFixed ? "PRECIO FIJADO" : "FIJAR PRECIO"}
+                    </Button>
                   </div>
                   <div className="border-t pt-2 mt-1"><label className="text-[7px] font-bold uppercase text-black/60 block mb-1">Configuración de IVA</label><div className="flex gap-2"><button type="button" onClick={() => setIvaType('con_iva')} className={cn("flex-1 py-1 text-[9px] font-bold rounded border", ivaType === 'con_iva' ? "bg-primary text-black border-primary" : "bg-white text-black/60 border-gray-300")}>Con I.V.A.</button><button type="button" onClick={() => setIvaType('sin_iva')} className={cn("flex-1 py-1 text-[9px] font-bold rounded border", ivaType === 'sin_iva' ? "bg-primary text-black border-primary" : "bg-white text-black/60 border-gray-300")}>Sin I.V.A.</button></div>{ivaType === 'con_iva' && (<div className="flex items-center gap-2 mt-2"><Percent size={10} className="text-black/40" /><Input type="text" inputMode="decimal" value={isNaN(ivaPercentage) ? '' : ivaPercentage} onChange={(e) => setIvaPercentage(e.target.value === '' ? 0 : Number(e.target.value))} className="h-6 text-[9px] w-20 text-center" /><span className="text-[8px] text-black/60">% de I.V.A.</span></div>)}</div>
                   <div className="bg-white rounded p-1.5 border mt-2">
-                    <div className="flex justify-between text-[10px]"><span className="text-black/60">Precio Base USD (sin IVA):</span><span className="font-black text-secondary">{formatUsd((() => { const costVal = parseFloat(costUsdInput) || 0; const profitVal = parseFloat(profitPercentInput) || DEFAULT_PROFIT_PERCENT; return calculatePriceUsdFromCostAndProfit(costVal, profitVal); })())}</span></div>
-                    {ivaType === 'con_iva' && (<div className="flex justify-between text-[9px]"><span className="text-black/60">+ IVA ({isNaN(ivaPercentage) ? 0 : ivaPercentage}%):</span><span className="text-black/70">{formatUsd((() => { const costVal = parseFloat(costUsdInput) || 0; const profitVal = parseFloat(profitPercentInput) || DEFAULT_PROFIT_PERCENT; const priceUsd = calculatePriceUsdFromCostAndProfit(costVal, profitVal); return priceUsd * (isNaN(ivaPercentage) ? 0 : ivaPercentage) / 100; })())}</span></div>)}
+                    <div className="flex justify-between text-[10px]">
+                      <span className="text-black/60">Precio Base USD (sin IVA):</span>
+                      <span className="font-black text-secondary">
+                        {(() => {
+                          const priceUsd = parseFloat(localPriceUsd) || (calculatePriceUsdFromCostAndProfit(parseFloat(costUsdInput) || 0, parseFloat(profitPercentInput) || DEFAULT_PROFIT_PERCENT));
+                          if (ivaType === 'con_iva' && ivaPercentage > 0) {
+                            return formatUsd(roundTo2(priceUsd / (1 + ivaPercentage / 100)));
+                          }
+                          return formatUsd(priceUsd);
+                        })()}
+                      </span>
+                    </div>
+                    {ivaType === 'con_iva' && (<div className="flex justify-between text-[9px]"><span className="text-black/60">+ IVA ({isNaN(ivaPercentage) ? 0 : ivaPercentage}%):</span><span className="text-black/70">{formatUsd((() => { const priceUsd = parseFloat(localPriceUsd) || (calculatePriceUsdFromCostAndProfit(parseFloat(costUsdInput) || 0, parseFloat(profitPercentInput) || DEFAULT_PROFIT_PERCENT)); return roundTo2(priceUsd - (priceUsd / (1 + ivaPercentage / 100))); })())}</span></div>)}
                     <div className="flex justify-between text-[10px] pt-1 border-t mt-1"><span className="text-black/60">Precio Mayor USD:</span><span className="font-black text-secondary">{formatUsd(parseFloat(priceWholesaleInput) || 0)}</span></div>
                     <div className="flex justify-between text-[10px]"><span className="text-black/60">Precio Costo USD:</span><span className="font-black text-secondary">{formatUsd(parseFloat(priceCostInput) || 0)}</span></div>
                   </div>

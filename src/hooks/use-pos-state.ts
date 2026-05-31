@@ -62,21 +62,36 @@ export function usePOSState() {
     }
   }, [terminalId]);
 
+  // ✅ Recalcular precios respetando isPriceFixed
   const recalcAllPricesWithNewRate = useCallback((newRate: number) => {
     setProducts(prevProducts => 
-      prevProducts.map(product => ({
-        ...product,
-        priceBs: roundTo2(product.priceUsd * newRate),
-        costBs: product.costUsd ? roundTo2(product.costUsd * newRate) : undefined,
-      }))
+      prevProducts.map(product => {
+        if (product.isPriceFixed) {
+          return {
+            ...product,
+            costBs: product.costUsd ? roundTo2(product.costUsd * newRate) : product.costBs,
+          };
+        }
+        return {
+          ...product,
+          priceBs: roundTo2(product.priceUsd * newRate),
+          costBs: product.costUsd ? roundTo2(product.costUsd * newRate) : undefined,
+        };
+      })
     );
     setCart(prevCart =>
-      prevCart.map(item => ({
-        ...item,
-        priceBs: roundTo2(item.priceUsd * newRate),
-      }))
+      prevCart.map(item => {
+        const product = products.find(p => p.id === item.productId);
+        if (product?.isPriceFixed) {
+          return item;
+        }
+        return {
+          ...item,
+          priceBs: roundTo2(item.priceUsd * newRate),
+        };
+      })
     );
-  }, []);
+  }, [products]);
 
   // Cargar caché local al inicio
   useEffect(() => {
@@ -108,12 +123,11 @@ export function usePOSState() {
     return () => unsubscribe();
   }, [user?.terminalId, setActiveSession]);
 
-  // Suscripción al registro de caja (con protección contra null que borre estado local)
+  // Suscripción al registro de caja
   useEffect(() => {
     if (!user) return;
 
     const unsubRegister = syncService.subscribeToRegisterByTerminal(terminalId, (registerData) => {
-      // Evitar que un null remoto sobrescriba una caja que está abierta localmente
       if (!registerData && registerRef.current?.isOpen === true) {
         console.warn("Suscripción devolvió null pero la caja local está abierta. Ignorando actualización.");
         return;
@@ -126,16 +140,22 @@ export function usePOSState() {
     return () => unsubRegister();
   }, [user, terminalId, saveRegisterToLocalStorage]);
 
+  // ✅ Suscripción a productos respetando isPriceFixed
   useEffect(() => {
     if (!user) return;
 
     const unsubProducts = syncService.subscribeToProducts((data: Product[]) => {
-      const productsWithCorrectBs = data.map(product => ({
-        ...product,
-        priceBs: roundTo2(product.priceUsd * exchangeRate),
-        costBs: product.costUsd ? roundTo2(product.costUsd * exchangeRate) : undefined,
-      }));
-      setProducts(productsWithCorrectBs);
+      const productsWithFixed = data.map(product => {
+        if (product.isPriceFixed) {
+          return product;
+        }
+        return {
+          ...product,
+          priceBs: roundTo2(product.priceUsd * exchangeRate),
+          costBs: product.costUsd ? roundTo2(product.costUsd * exchangeRate) : undefined,
+        };
+      });
+      setProducts(productsWithFixed);
     });
     
     const unsubClients = syncService.subscribeToClients(setClients);
@@ -175,9 +195,25 @@ export function usePOSState() {
     };
   }, [user, terminalId, exchangeRate, recalcAllPricesWithNewRate]);
 
-  const addProduct = useCallback((p: Product) => syncService.saveProduct(p), []);
-  const updateProduct = useCallback((p: Product) => syncService.saveProduct(p), []);
-  const deleteProduct = useCallback((id: number) => syncService.deleteProduct(id), []);
+  // ========== CRUD OPTIMISTA ==========
+  const addProduct = useCallback((p: Product) => {
+    setProducts(prev => {
+      if (prev.some(prod => prod.id === p.id)) return prev;
+      return [...prev, p];
+    });
+    return syncService.saveProduct(p);
+  }, []);
+
+  const updateProduct = useCallback((p: Product) => {
+    setProducts(prev => prev.map(prod => prod.id === p.id ? p : prod));
+    return syncService.saveProduct(p);
+  }, []);
+
+  const deleteProduct = useCallback((id: number) => {
+    setProducts(prev => prev.filter(p => p.id !== id));
+    return syncService.deleteProduct(id);
+  }, []);
+
   const saveClient = useCallback((c: Client) => syncService.saveClient(c), []);
   const deleteClient = useCallback((id: number) => syncService.deleteClient(id), []);
 
@@ -206,13 +242,13 @@ export function usePOSState() {
         return prev.map(item => item.productId === productId ? { ...item, qty: item.qty + 1 } : item);
       }
       return [...prev, { 
-        productId: product.id, name: product.name, priceBs: roundTo2(product.priceUsd * exchangeRate), 
+        productId: product.id, name: product.name, priceBs: product.priceBs,
         priceUsd: product.priceUsd, qty: 1, category: product.category,
         ivaType: product.ivaType, ivaPercentage: product.ivaPercentage, isKit: product.isKit || false
       }];
     });
     return true;
-  }, [products, exchangeRate, checkProductStock]);
+  }, [products, checkProductStock]);
 
   const removeFromCart = useCallback((productId: number) => {
     setCart(prev => prev.filter(item => item.productId !== productId));
@@ -225,11 +261,11 @@ export function usePOSState() {
         const newQty = item.qty + delta;
         if (newQty <= 0) return null as any;
         if (product && !checkProductStock(productId, newQty)) return item;
-        return { ...item, qty: newQty, priceBs: product ? roundTo2(product.priceUsd * exchangeRate) : item.priceBs };
+        return { ...item, qty: newQty, priceBs: product ? product.priceBs : item.priceBs };
       }
       return item;
     }).filter(Boolean));
-  }, [products, exchangeRate, checkProductStock]);
+  }, [products, checkProductStock]);
 
   const updateCartItemPrice = useCallback((productId: number, newPriceUsd: number, newPriceBs: number) => {
     setCart(prevCart => prevCart.map(item => item.productId === productId ? { ...item, priceUsd: roundTo2(newPriceUsd), priceBs: roundTo2(newPriceBs) } : item));
@@ -372,7 +408,6 @@ export function usePOSState() {
       }
     }
 
-    // Actualización optimista local del inventario
     setProducts(prevProducts => prevProducts.map(p => {
       const update = stockUpdates.get(p.id);
       if (update) return { ...p, stock: update.newStock };
@@ -491,19 +526,15 @@ export function usePOSState() {
     return tx;
   }, [register, exchangeRate, terminalId, saveRegisterToLocalStorage, currentSession]);
 
-  // ✅ CORREGIDO: setExchangeRateProxy ahora no rompe el estado local si falla la sincronización
+  // ✅ Proxy para actualizar la tasa de cambio
   const setExchangeRateProxy = useCallback(async (newRate: number) => {
-    // Actualizar estado local y localStorage inmediatamente
     setExchangeRate(newRate);
     localStorage.setItem(STORAGE_KEYS.EXCHANGE_RATE, newRate.toString());
     recalcAllPricesWithNewRate(newRate);
-    
-    // Intentar sincronizar con Firestore, sin bloquear ni afectar el estado local
     try {
       await syncService.saveGlobalSettings({ exchangeRate: newRate });
     } catch (error) {
       console.warn("No se pudo sincronizar la tasa con la nube (modo offline o error)", error);
-      // No hacemos nada más, la operación se encolará internamente en syncService
     }
   }, [recalcAllPricesWithNewRate]);
 

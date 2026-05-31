@@ -424,7 +424,7 @@ export const syncService = {
         id: `${Date.now()}_${productId}_${Math.random()}`,
         productId: productId,
         date: new Date().toISOString(),
-        type: 'compra', // ✅ CORREGIDO: antes era 'entrada_compra'
+        type: 'compra',
         quantity: newQty,
         previousStock: currentStock,
         newStock: newStock,
@@ -633,6 +633,49 @@ export const syncService = {
     if (snap.empty) return;
     const batch = writeBatch(db);
     snap.docs.forEach(doc => batch.delete(doc.ref));
+    await batch.commit();
+  },
+
+  // ========== NUEVOS MÉTODOS PARA RESETEO ==========
+  async deleteAllSupplierPayments() {
+    if (!db) return;
+    const snap = await getDocs(collection(db, 'supplier_payments'));
+    if (snap.empty) return;
+    const batch = writeBatch(db);
+    snap.docs.forEach(doc => batch.delete(doc.ref));
+    await batch.commit();
+  },
+
+  async deleteAllSuppliers() {
+    if (!db) return;
+    const snap = await getDocs(collection(db, 'suppliers'));
+    if (snap.empty) return;
+    const batch = writeBatch(db);
+    snap.docs.forEach(doc => batch.delete(doc.ref));
+    await batch.commit();
+  },
+
+  async deleteAllTerminals() {
+    if (!db) return;
+    const snap = await getDocs(collection(db, 'terminals'));
+    if (snap.empty) return;
+    const batch = writeBatch(db);
+    snap.docs.forEach(doc => batch.delete(doc.ref));
+    await batch.commit();
+  },
+
+  async deleteAllUsersExceptAdmin() {
+    if (!db) return;
+    const snap = await getDocs(collection(db, 'users'));
+    if (snap.empty) return;
+    const batch = writeBatch(db);
+    snap.docs.forEach(doc => {
+      const data = doc.data();
+      // Conservar solo el usuario con email admin@masterpos.com
+      if (data.email !== 'admin@masterpos.com') {
+        batch.delete(doc.ref);
+      }
+    });
     await batch.commit();
   },
 

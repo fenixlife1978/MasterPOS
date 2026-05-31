@@ -29,6 +29,8 @@ export interface Product {
   kitComponents?: KitComponent[];
   // ✅ Nueva propiedad: indica si el kit tiene su propio stock o solo descuenta componentes
   kitHasOwnStock?: boolean;
+  // ✅ Nueva propiedad: indica si el precio en Bs fue fijado manualmente
+  isPriceFixed?: boolean;
 }
 
 export interface Client {
@@ -208,7 +210,7 @@ export interface AccountingEntry {
   description: string;
   amount: number;
   referenceId?: number;
-  referenceType?: 'sale' | 'supplier_payment' | 'expense' | 'return' | 'payment_reversal' | 'credit_sale' | 'debt_payment' | 'colaboracion' | 'consumo_propio' | 'inventory_adjustment';
+  referenceType?: 'sale' | 'supplier_payment' | 'expense' | 'return' | 'payment_reversal' | 'credit_sale' | 'debt_payment' | 'colaboracion' | 'consumo_propio' | 'inventory_adjustment' | 'purchase';
   createdAt: string;
 }
 
@@ -221,14 +223,15 @@ export interface ExpenseCategory {
 export const EXPENSE_CATEGORIES: ExpenseCategory[] = [
   { id: 'ventas', name: 'Ventas' },
   { id: 'pagos_proveedores', name: 'Pagos a Proveedores' },
-  { id: 'servicios_publicos', name: 'Pago de Servicios Públicos', subcategories: ['Agua', 'Aseo', 'Electricidad', 'Teléfono CANTV'] },
-  { id: 'alquiler', name: 'Pago de Alquiler' },
-  { id: 'telefonia', name: 'Pago de Telefonía', subcategories: ['Movistar', 'Movilnet', 'Digitel'] },
-  { id: 'impuestos_municipales', name: 'Pago de Impuestos Municipales' },
+  { id: 'compra_mercancia', name: 'Compra de Mercancía' }, // ✅ Agregado
+  { id: 'servicios_publicos', name: 'Servicios Públicos', subcategories: ['Agua', 'Aseo', 'Electricidad', 'Teléfono CANTV'] },
+  { id: 'alquiler', name: 'Alquiler' },
+  { id: 'telefonia', name: 'Telefonía', subcategories: ['Movistar', 'Movilnet', 'Digitel'] },
+  { id: 'impuestos_municipales', name: 'Impuestos Municipales' },
   { id: 'declaracion_renta', name: 'Declaración de Renta' },
   { id: 'servicios_profesionales', name: 'Servicios Profesionales' },
   { id: 'reparacion_local', name: 'Reparación de Local' },
-  { id: 'sueldos', name: 'Pago de Sueldos' },
+  { id: 'sueldos', name: 'Sueldos y Salarios' }, // ✅ Renombrado
   { id: 'otros', name: 'Otros Gastos' },
 ];
 

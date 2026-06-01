@@ -4,10 +4,12 @@ import { useState, useEffect, useMemo } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { FileText, X, Archive, Calendar, Eye, Eraser } from 'lucide-react';
+import { FileText, X, Archive, Calendar, Eye, Eraser, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatBs, formatUsd, formatBsNumber } from '@/lib/currency-formatter';
 import { syncService } from '@/services/syncService';
+import { deleteDoc, doc } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 
 interface CloseHistoryModalProps {
   open: boolean;
@@ -57,7 +59,6 @@ function extractVentasContadoFromCuadre(cuadre: any[]): number {
   if (!cuadre || !Array.isArray(cuadre)) return 0;
   let total = 0;
   for (const row of cuadre) {
-    // Si la fila tiene moneda 'Bs' o el método no es USD, sumar su campo 'ventas'
     if (row.moneda === 'Bs' || (row.metodo && row.metodo !== 'EFECTIVO USD' && row.metodo !== 'ZELLE')) {
       total += row.ventas || 0;
     }
@@ -91,193 +92,192 @@ export default function CloseHistoryModal({ open, onClose }: CloseHistoryModalPr
   const [loading, setLoading] = useState(true);
 
   // Cargar cierres al abrir (localStorage + Firestore)
+  const loadAllCloses = async () => {
+    const loadedRecords: UnifiedCloseRecord[] = [];
+
+    // --- Procesar cierres desde localStorage ---
+    const processParcial = (key: string, data: any): UnifiedCloseRecord => {
+      const diff = data.diferenciaNetaGlobal ?? (data.cuadre?.reduce((sum: number, r: any) => sum + (r.diff ?? r.diferencia), 0) ?? 0);
+      const totalSistema = data.cuadre?.reduce((sum: number, r: any) => sum + (r.sistema ?? r.sistBs ?? 0), 0) ?? 0;
+      const totalReal = data.cuadre?.reduce((sum: number, r: any) => sum + (r.real ?? r.fisicoBs ?? 0), 0) ?? 0;
+      const estado = Math.abs(diff) < 0.01 ? 'CONCILIADO' : (diff > 0 ? 'SOBRANTE' : 'FALTANTE');
+      const cuadre = (data.cuadre || []).map((c: any) => ({
+        metodo: c.metodo,
+        sistema: c.sistema ?? c.sistBs ?? 0,
+        real: c.real ?? c.fisicoBs ?? 0,
+        diferencia: c.diff ?? c.diferencia ?? 0,
+      }));
+      const ventasContado = getNumericValue(data, ['ventas.totalContado', 'totalVentasContado', 'ventasContado']);
+      const creditos = getNumericValue(data, ['creditos.total', 'totalCreditos', 'creditos']);
+      const devoluciones = getNumericValue(data, ['devoluciones.total', 'totalDevoluciones', 'devoluciones']);
+      const usdEfectivo = getNumericValue(data, ['usdEfectivo', 'efectivoUsd', 'totalUsdEfectivo']);
+      return {
+        id: key,
+        fecha: data.fecha,
+        tipo: 'parcial',
+        fechaDisplay: new Date(data.fecha).toLocaleString('es-VE', { dateStyle: 'full', timeStyle: 'medium' }),
+        apertura: { bs: data.apertura?.montoBs ?? 0, usd: data.apertura?.montoUsd ?? 0, tasa: data.tasaBCV },
+        ventasContado,
+        devoluciones,
+        creditos,
+        usdEfectivo,
+        cuadre,
+        totalSistema,
+        totalReal,
+        diferencia: diff,
+        estado,
+        source: 'local',
+        rawData: data,
+      };
+    };
+
+    const processFinal = (key: string, data: any): UnifiedCloseRecord => {
+      const diff = data.totales?.diferencia ?? 0;
+      const estado = data.totales?.estado ?? (Math.abs(diff) < 0.01 ? 'CONCILIADO' : (diff > 0 ? 'SOBRANTE' : 'FALTANTE'));
+      const cuadre = (data.cuadre || []).map((c: any) => ({
+        metodo: c.metodo,
+        sistema: c.sistema,
+        real: c.real,
+        diferencia: c.diferencia,
+      }));
+      let ventasContado = 0;
+      let devoluciones = 0;
+      if (cuadre.length > 0) {
+        ventasContado = extractVentasContadoFromCuadre(data.cuadre);
+        devoluciones = extractDevolucionesFromCuadre(data.cuadre);
+      } else {
+        ventasContado = getNumericValue(data, ['ventas.totalContado', 'totalVentasContado', 'ventasContado']);
+        devoluciones = getNumericValue(data, ['devoluciones.total', 'totalDevoluciones', 'devoluciones']);
+      }
+      const creditos = getNumericValue(data, ['totalCreditoBs', 'creditos.total', 'totalCreditos', 'creditos']);
+      const usdEfectivo = getNumericValue(data, ['usdEfectivo', 'efectivoUsd', 'totalUsdEfectivo']);
+      return {
+        id: key,
+        fecha: data.fecha,
+        tipo: 'final',
+        fechaDisplay: new Date(data.fecha).toLocaleString('es-VE', { dateStyle: 'full', timeStyle: 'medium' }),
+        apertura: { bs: data.apertura?.bs ?? 0, usd: data.apertura?.usd ?? 0, tasa: data.tasaPeriodo2 },
+        ventasContado,
+        devoluciones,
+        creditos,
+        usdEfectivo,
+        cuadre,
+        totalSistema: data.totales?.sistema ?? 0,
+        totalReal: data.totales?.real ?? 0,
+        diferencia: diff,
+        estado,
+        source: 'local',
+        rawData: data,
+      };
+    };
+
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key?.startsWith('corte_parcial_')) {
+        try {
+          const data = JSON.parse(localStorage.getItem(key)!);
+          loadedRecords.push(processParcial(key, data));
+        } catch (e) {}
+      }
+      if (key?.startsWith('cierre_final_')) {
+        try {
+          const data = JSON.parse(localStorage.getItem(key)!);
+          loadedRecords.push(processFinal(key, data));
+        } catch (e) {}
+      }
+    }
+
+    // --- Cargar cierres desde Firestore (colección cash_closes) ---
+    try {
+      const firestoreCloses = await syncService.getAllCashCloses();
+      for (const docData of firestoreCloses) {
+        const data = docData; // ya es el objeto guardado
+        if (data.tipo === 'parcial') {
+          const diff = data.diferenciaNetaGlobal ?? (data.cuadre?.reduce((sum: number, r: any) => sum + (r.diff ?? r.diferencia), 0) ?? 0);
+          const totalSistema = data.cuadre?.reduce((sum: number, r: any) => sum + (r.sistema ?? 0), 0) ?? 0;
+          const totalReal = data.cuadre?.reduce((sum: number, r: any) => sum + (r.real ?? 0), 0) ?? 0;
+          const estado = Math.abs(diff) < 0.01 ? 'CONCILIADO' : (diff > 0 ? 'SOBRANTE' : 'FALTANTE');
+          const cuadre = (data.cuadre || []).map((c: any) => ({
+            metodo: c.metodo,
+            sistema: c.sistema,
+            real: c.real,
+            diferencia: c.diff ?? c.diferencia ?? 0,
+          }));
+          const ventasContado = getNumericValue(data, ['ventas.totalContado', 'totalVentasContado', 'ventasContado']);
+          const creditos = getNumericValue(data, ['creditos.total', 'totalCreditos', 'creditos']);
+          const devoluciones = getNumericValue(data, ['devoluciones.total', 'totalDevoluciones', 'devoluciones']);
+          const usdEfectivo = getNumericValue(data, ['usdEfectivo', 'efectivoUsd', 'totalUsdEfectivo']);
+          loadedRecords.push({
+            id: data.id,
+            fecha: data.fecha,
+            tipo: 'parcial',
+            fechaDisplay: new Date(data.fecha).toLocaleString('es-VE', { dateStyle: 'full', timeStyle: 'medium' }),
+            apertura: { bs: data.apertura?.montoBs ?? 0, usd: data.apertura?.montoUsd ?? 0, tasa: data.tasaBCV },
+            ventasContado,
+            devoluciones,
+            creditos,
+            usdEfectivo,
+            cuadre,
+            totalSistema,
+            totalReal,
+            diferencia: diff,
+            estado,
+            source: 'firestore',
+            rawData: data,
+          });
+        } else if (data.tipo === 'final') {
+          const diff = data.totales?.diferencia ?? 0;
+          const estado = data.totales?.estado ?? (Math.abs(diff) < 0.01 ? 'CONCILIADO' : (diff > 0 ? 'SOBRANTE' : 'FALTANTE'));
+          const cuadre = (data.cuadre || []).map((c: any) => ({
+            metodo: c.metodo,
+            sistema: c.sistema,
+            real: c.real,
+            diferencia: c.diferencia,
+          }));
+          let ventasContado = 0;
+          let devoluciones = 0;
+          if (cuadre.length > 0) {
+            ventasContado = extractVentasContadoFromCuadre(data.cuadre);
+            devoluciones = extractDevolucionesFromCuadre(data.cuadre);
+          } else {
+            ventasContado = getNumericValue(data, ['ventas.totalContado', 'totalVentasContado', 'ventasContado']);
+            devoluciones = getNumericValue(data, ['devoluciones.total', 'totalDevoluciones', 'devoluciones']);
+          }
+          const creditos = getNumericValue(data, ['totalCreditoBs', 'creditos.total', 'totalCreditos', 'creditos']);
+          const usdEfectivo = getNumericValue(data, ['usdEfectivo', 'efectivoUsd', 'totalUsdEfectivo']);
+          loadedRecords.push({
+            id: data.id,
+            fecha: data.fecha,
+            tipo: 'final',
+            fechaDisplay: new Date(data.fecha).toLocaleString('es-VE', { dateStyle: 'full', timeStyle: 'medium' }),
+            apertura: { bs: data.apertura?.bs ?? 0, usd: data.apertura?.usd ?? 0, tasa: data.tasaPeriodo2 },
+            ventasContado,
+            devoluciones,
+            creditos,
+            usdEfectivo,
+            cuadre,
+            totalSistema: data.totales?.sistema ?? 0,
+            totalReal: data.totales?.real ?? 0,
+            diferencia: diff,
+            estado,
+            source: 'firestore',
+            rawData: data,
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Error cargando cierres desde Firestore:', error);
+    }
+
+    // Ordenar por fecha descendente
+    loadedRecords.sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
+    setRecords(loadedRecords);
+    setLoading(false);
+  };
+
   useEffect(() => {
     if (!open) return;
     setLoading(true);
-    const loadAllCloses = async () => {
-      const loadedRecords: UnifiedCloseRecord[] = [];
-
-      // --- Procesar cierres desde localStorage ---
-      const processParcial = (key: string, data: any): UnifiedCloseRecord => {
-        const diff = data.diferenciaNetaGlobal ?? (data.cuadre?.reduce((sum: number, r: any) => sum + (r.diff ?? r.diferencia), 0) ?? 0);
-        const totalSistema = data.cuadre?.reduce((sum: number, r: any) => sum + (r.sistema ?? r.sistBs ?? 0), 0) ?? 0;
-        const totalReal = data.cuadre?.reduce((sum: number, r: any) => sum + (r.real ?? r.fisicoBs ?? 0), 0) ?? 0;
-        const estado = Math.abs(diff) < 0.01 ? 'CONCILIADO' : (diff > 0 ? 'SOBRANTE' : 'FALTANTE');
-        const cuadre = (data.cuadre || []).map((c: any) => ({
-          metodo: c.metodo,
-          sistema: c.sistema ?? c.sistBs ?? 0,
-          real: c.real ?? c.fisicoBs ?? 0,
-          diferencia: c.diff ?? c.diferencia ?? 0,
-        }));
-        const ventasContado = getNumericValue(data, ['ventas.totalContado', 'totalVentasContado', 'ventasContado']);
-        const creditos = getNumericValue(data, ['creditos.total', 'totalCreditos', 'creditos']);
-        const devoluciones = getNumericValue(data, ['devoluciones.total', 'totalDevoluciones', 'devoluciones']);
-        const usdEfectivo = getNumericValue(data, ['usdEfectivo', 'efectivoUsd', 'totalUsdEfectivo']);
-        return {
-          id: key,
-          fecha: data.fecha,
-          tipo: 'parcial',
-          fechaDisplay: new Date(data.fecha).toLocaleString('es-VE', { dateStyle: 'full', timeStyle: 'medium' }),
-          apertura: { bs: data.apertura?.montoBs ?? 0, usd: data.apertura?.montoUsd ?? 0, tasa: data.tasaBCV },
-          ventasContado,
-          devoluciones,
-          creditos,
-          usdEfectivo,
-          cuadre,
-          totalSistema,
-          totalReal,
-          diferencia: diff,
-          estado,
-          source: 'local',
-          rawData: data,
-        };
-      };
-
-      const processFinal = (key: string, data: any): UnifiedCloseRecord => {
-        const diff = data.totales?.diferencia ?? 0;
-        const estado = data.totales?.estado ?? (Math.abs(diff) < 0.01 ? 'CONCILIADO' : (diff > 0 ? 'SOBRANTE' : 'FALTANTE'));
-        const cuadre = (data.cuadre || []).map((c: any) => ({
-          metodo: c.metodo,
-          sistema: c.sistema,
-          real: c.real,
-          diferencia: c.diferencia,
-        }));
-        // Para cierres finales de CierreFinalForm, las ventas contado están en el array cuadre
-        let ventasContado = 0;
-        let devoluciones = 0;
-        if (cuadre.length > 0) {
-          ventasContado = extractVentasContadoFromCuadre(data.cuadre);
-          devoluciones = extractDevolucionesFromCuadre(data.cuadre);
-        } else {
-          ventasContado = getNumericValue(data, ['ventas.totalContado', 'totalVentasContado', 'ventasContado']);
-          devoluciones = getNumericValue(data, ['devoluciones.total', 'totalDevoluciones', 'devoluciones']);
-        }
-        const creditos = getNumericValue(data, ['totalCreditoBs', 'creditos.total', 'totalCreditos', 'creditos']);
-        const usdEfectivo = getNumericValue(data, ['usdEfectivo', 'efectivoUsd', 'totalUsdEfectivo']);
-        return {
-          id: key,
-          fecha: data.fecha,
-          tipo: 'final',
-          fechaDisplay: new Date(data.fecha).toLocaleString('es-VE', { dateStyle: 'full', timeStyle: 'medium' }),
-          apertura: { bs: data.apertura?.bs ?? 0, usd: data.apertura?.usd ?? 0, tasa: data.tasaPeriodo2 },
-          ventasContado,
-          devoluciones,
-          creditos,
-          usdEfectivo,
-          cuadre,
-          totalSistema: data.totales?.sistema ?? 0,
-          totalReal: data.totales?.real ?? 0,
-          diferencia: diff,
-          estado,
-          source: 'local',
-          rawData: data,
-        };
-      };
-
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key?.startsWith('corte_parcial_')) {
-          try {
-            const data = JSON.parse(localStorage.getItem(key)!);
-            loadedRecords.push(processParcial(key, data));
-          } catch (e) {}
-        }
-        if (key?.startsWith('cierre_final_')) {
-          try {
-            const data = JSON.parse(localStorage.getItem(key)!);
-            loadedRecords.push(processFinal(key, data));
-          } catch (e) {}
-        }
-      }
-
-      // --- Cargar cierres desde Firestore (colección cash_closes) ---
-      try {
-        const firestoreCloses = await syncService.getAllCashCloses();
-        for (const docData of firestoreCloses) {
-          const data = docData; // ya es el objeto guardado
-          if (data.tipo === 'parcial') {
-            const diff = data.diferenciaNetaGlobal ?? (data.cuadre?.reduce((sum: number, r: any) => sum + (r.diff ?? r.diferencia), 0) ?? 0);
-            const totalSistema = data.cuadre?.reduce((sum: number, r: any) => sum + (r.sistema ?? 0), 0) ?? 0;
-            const totalReal = data.cuadre?.reduce((sum: number, r: any) => sum + (r.real ?? 0), 0) ?? 0;
-            const estado = Math.abs(diff) < 0.01 ? 'CONCILIADO' : (diff > 0 ? 'SOBRANTE' : 'FALTANTE');
-            const cuadre = (data.cuadre || []).map((c: any) => ({
-              metodo: c.metodo,
-              sistema: c.sistema,
-              real: c.real,
-              diferencia: c.diff ?? c.diferencia ?? 0,
-            }));
-            const ventasContado = getNumericValue(data, ['ventas.totalContado', 'totalVentasContado', 'ventasContado']);
-            const creditos = getNumericValue(data, ['creditos.total', 'totalCreditos', 'creditos']);
-            const devoluciones = getNumericValue(data, ['devoluciones.total', 'totalDevoluciones', 'devoluciones']);
-            const usdEfectivo = getNumericValue(data, ['usdEfectivo', 'efectivoUsd', 'totalUsdEfectivo']);
-            loadedRecords.push({
-              id: data.id,
-              fecha: data.fecha,
-              tipo: 'parcial',
-              fechaDisplay: new Date(data.fecha).toLocaleString('es-VE', { dateStyle: 'full', timeStyle: 'medium' }),
-              apertura: { bs: data.apertura?.montoBs ?? 0, usd: data.apertura?.montoUsd ?? 0, tasa: data.tasaBCV },
-              ventasContado,
-              devoluciones,
-              creditos,
-              usdEfectivo,
-              cuadre,
-              totalSistema,
-              totalReal,
-              diferencia: diff,
-              estado,
-              source: 'firestore',
-              rawData: data,
-            });
-          } else if (data.tipo === 'final') {
-            const diff = data.totales?.diferencia ?? 0;
-            const estado = data.totales?.estado ?? (Math.abs(diff) < 0.01 ? 'CONCILIADO' : (diff > 0 ? 'SOBRANTE' : 'FALTANTE'));
-            const cuadre = (data.cuadre || []).map((c: any) => ({
-              metodo: c.metodo,
-              sistema: c.sistema,
-              real: c.real,
-              diferencia: c.diferencia,
-            }));
-            let ventasContado = 0;
-            let devoluciones = 0;
-            if (cuadre.length > 0) {
-              ventasContado = extractVentasContadoFromCuadre(data.cuadre);
-              devoluciones = extractDevolucionesFromCuadre(data.cuadre);
-            } else {
-              ventasContado = getNumericValue(data, ['ventas.totalContado', 'totalVentasContado', 'ventasContado']);
-              devoluciones = getNumericValue(data, ['devoluciones.total', 'totalDevoluciones', 'devoluciones']);
-            }
-            const creditos = getNumericValue(data, ['totalCreditoBs', 'creditos.total', 'totalCreditos', 'creditos']);
-            const usdEfectivo = getNumericValue(data, ['usdEfectivo', 'efectivoUsd', 'totalUsdEfectivo']);
-            loadedRecords.push({
-              id: data.id,
-              fecha: data.fecha,
-              tipo: 'final',
-              fechaDisplay: new Date(data.fecha).toLocaleString('es-VE', { dateStyle: 'full', timeStyle: 'medium' }),
-              apertura: { bs: data.apertura?.bs ?? 0, usd: data.apertura?.usd ?? 0, tasa: data.tasaPeriodo2 },
-              ventasContado,
-              devoluciones,
-              creditos,
-              usdEfectivo,
-              cuadre,
-              totalSistema: data.totales?.sistema ?? 0,
-              totalReal: data.totales?.real ?? 0,
-              diferencia: diff,
-              estado,
-              source: 'firestore',
-              rawData: data,
-            });
-          }
-        }
-      } catch (error) {
-        console.error('Error cargando cierres desde Firestore:', error);
-      }
-
-      // Ordenar por fecha descendente
-      loadedRecords.sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
-      setRecords(loadedRecords);
-      setLoading(false);
-    };
-
     loadAllCloses();
   }, [open]);
 
@@ -308,6 +308,26 @@ export default function CloseHistoryModal({ open, onClose }: CloseHistoryModalPr
     setDateFilter(new Date().toISOString().split('T')[0]);
     setMonthFilter(`${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`);
     setYearFilter(new Date().getFullYear().toString());
+  };
+
+  const handleDeleteRecord = async (record: UnifiedCloseRecord) => {
+    const confirmMsg = `¿Eliminar este cierre del ${record.fechaDisplay}? Esta acción no se puede deshacer.`;
+    if (!confirm(confirmMsg)) return;
+
+    try {
+      if (record.source === 'local') {
+        // Eliminar de localStorage
+        localStorage.removeItem(record.id);
+      } else if (record.source === 'firestore') {
+        // Eliminar de Firestore (colección cash_closes)
+        await deleteDoc(doc(db, 'cash_closes', record.id));
+      }
+      // Recargar la lista sin recargar la página
+      await loadAllCloses();
+    } catch (error) {
+      console.error('Error al eliminar cierre:', error);
+      alert('No se pudo eliminar el cierre. Verifique su conexión o permisos.');
+    }
   };
 
   const exportToPDF = (record: UnifiedCloseRecord) => {
@@ -341,7 +361,7 @@ export default function CloseHistoryModal({ open, onClose }: CloseHistoryModalPr
           <p><strong>Créditos:</strong> ${formatBs(record.creditos)}</p>
           <p><strong>USD en efectivo:</strong> ${formatUsd(record.usdEfectivo)}</p>
           <h3>Cuadre por Método</h3>
-          <table><thead><tr><th>Método</th><th>Sistema (Bs)</th><th>Real (Bs)</th><th>Diferencia</th></tr></thead>
+          <table><thead><tr><th>Método</th><th>Sistema (Bs)</th><th>Real (Bs)</th><th>Diferencia</th></td></thead>
           <tbody>${record.cuadre.map(c => `
             <tr>
               <td>${c.metodo}</td>
@@ -363,13 +383,6 @@ export default function CloseHistoryModal({ open, onClose }: CloseHistoryModalPr
     printWindow.document.close();
     printWindow.print();
   };
-
-  // Depuración: mostrar en consola la estructura del primer registro (solo en desarrollo)
-  useEffect(() => {
-    if (records.length > 0 && process.env.NODE_ENV !== 'production') {
-      console.log("Estructura del primer cierre:", records[0].rawData);
-    }
-  }, [records]);
 
   return (
     <>
@@ -415,7 +428,7 @@ export default function CloseHistoryModal({ open, onClose }: CloseHistoryModalPr
               </div>
             </div>
             <p className="text-[10px] text-black/40 mt-3">
-              Mostrando ${filteredRecords.length} de ${records.length} cierres
+              Mostrando {filteredRecords.length} de {records.length} cierres
               {!loading && records.some(r => r.source === 'firestore') && <span className="ml-2 text-primary">(incluye datos en la nube)</span>}
             </p>
           </div>
@@ -440,17 +453,20 @@ export default function CloseHistoryModal({ open, onClose }: CloseHistoryModalPr
                           <p className="text-xs font-mono text-black/50">{record.id}</p>
                         </div>
                         <p className="text-sm font-bold text-black mt-1">{record.fechaDisplay}</p>
-                        <p className="text-[10px] text-black/50 mt-1">Apertura: ${formatBs(record.apertura.bs)} + ${formatUsd(record.apertura.usd)} | Ventas: ${formatBs(record.ventasContado)} | Créditos: ${formatBs(record.creditos)}</p>
+                        <p className="text-[10px] text-black/50 mt-1">Apertura: {formatBs(record.apertura.bs)} + {formatUsd(record.apertura.usd)} | Ventas: {formatBs(record.ventasContado)} | Créditos: {formatBs(record.creditos)}</p>
                         <div className="flex items-center gap-2 mt-2">
                           <div className={cn("text-[10px] font-bold px-2 py-0.5 rounded-full", record.estado === 'CONCILIADO' ? "bg-green-100 text-green-700" : record.estado === 'SOBRANTE' ? "bg-yellow-100 text-yellow-700" : "bg-red-100 text-red-700")}>
-                            ${record.estado} ${record.diferencia !== 0 && `(${record.diferencia > 0 ? '+' : ''}${formatBsNumber(Math.abs(record.diferencia))})`}
+                            {record.estado} {record.diferencia !== 0 && `(${record.diferencia > 0 ? '+' : ''}${formatBsNumber(Math.abs(record.diferencia))})`}
                           </div>
-                          <span className="text-[9px] text-black/40">USD en caja: ${formatUsd(record.usdEfectivo)}</span>
+                          <span className="text-[9px] text-black/40">USD en caja: {formatUsd(record.usdEfectivo)}</span>
                         </div>
                       </div>
                       <div className="flex gap-2">
                         <Button onClick={() => { setSelectedRecord(record); setShowDetailModal(true); }} variant="outline" className="h-8 text-xs border-gray-300"><Eye size={12} className="mr-1" /> Detalle</Button>
                         <Button onClick={() => exportToPDF(record)} className="h-8 text-xs bg-[#D4A017] hover:bg-[#b8890f] text-black font-bold"><FileText size={12} className="mr-1" /> PDF</Button>
+                        <Button onClick={() => handleDeleteRecord(record)} variant="outline" className="h-8 text-xs border-red-300 text-red-600 hover:bg-red-50">
+                          <Trash2 size={12} className="mr-1" /> Eliminar
+                        </Button>
                       </div>
                     </div>
                   </div>

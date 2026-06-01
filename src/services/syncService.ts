@@ -19,6 +19,11 @@ let pendingQueue: PendingOperation[] = [];
 let isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
 let isSyncing = false;
 
+let activeUnsubscribes: (() => void)[] = [];
+
+// ✅ Bandera global para indicar que estamos cerrando sesión
+let isLoggingOut = false;
+
 if (typeof window !== 'undefined') {
   const savedQueue = localStorage.getItem('firebase_pending_queue');
   if (savedQueue) {
@@ -151,7 +156,42 @@ const addToQueue = (type: string, data: any) => {
 const roundTo2 = (num: number): number => Math.round(num * 100) / 100;
 const roundTo4 = (num: number): number => Math.round(num * 10000) / 10000;
 
+const registerUnsubscribe = (unsubscribe: () => void) => {
+  activeUnsubscribes.push(unsubscribe);
+  return () => {
+    const index = activeUnsubscribes.indexOf(unsubscribe);
+    if (index !== -1) activeUnsubscribes.splice(index, 1);
+    unsubscribe();
+  };
+};
+
+// ✅ Helper para manejar errores de suscripción durante logout
+const handleSubscriptionError = (err: any, context: string) => {
+  if (isLoggingOut && (err.code === 'permission-denied' || err.message?.includes('Missing or insufficient permissions'))) {
+    // Ignorar silenciosamente durante el cierre de sesión
+    console.debug(`🔇 Suscripción ${context} ignorada durante logout:`, err.message);
+    return;
+  }
+  console.warn(`⚠️ Suscripción ${context}:`, err.message);
+};
+
 export const syncService = {
+  // ✅ Método para indicar que estamos cerrando sesión
+  setLoggingOut(status: boolean) {
+    isLoggingOut = status;
+    if (status) {
+      console.log("🚪 Modo logout activado: se ignorarán errores de permisos");
+    } else {
+      console.log("✅ Modo logout desactivado");
+    }
+  },
+
+  unsubscribeAll() {
+    console.log(`🛑 Cancelando ${activeUnsubscribes.length} suscripciones activas...`);
+    activeUnsubscribes.forEach(unsub => unsub());
+    activeUnsubscribes = [];
+  },
+
   async saveProduct(product: any) {
     if (!db) return;
     if (!isOnline) return addToQueue('saveProducts', [product]);
@@ -170,10 +210,11 @@ export const syncService = {
   },
   subscribeToProducts(callback: (data: any[]) => void) {
     if (!db) return () => {};
-    return onSnapshot(query(collection(db, 'products'), limit(500)), 
+    const unsub = onSnapshot(query(collection(db, 'products'), limit(500)), 
       (snap) => callback(snap.docs.map(d => ({ id: parseInt(d.id), ...d.data() }))),
-      (err) => console.warn("Suscripción restringida: products", err.message)
+      (err) => handleSubscriptionError(err, 'products')
     );
+    return registerUnsubscribe(unsub);
   },
 
   async saveClient(client: any) {
@@ -187,10 +228,11 @@ export const syncService = {
   },
   subscribeToClients(callback: (data: any[]) => void) {
     if (!db) return () => {};
-    return onSnapshot(collection(db, 'clients'), 
+    const unsub = onSnapshot(collection(db, 'clients'), 
       (snap) => callback(snap.docs.map(d => ({ id: parseInt(d.id), ...d.data() }))),
-      (err) => console.warn("Suscripción restringida: clients", err.message)
+      (err) => handleSubscriptionError(err, 'clients')
     );
+    return registerUnsubscribe(unsub);
   },
 
   async saveTransaction(tx: any) {
@@ -205,10 +247,11 @@ export const syncService = {
   },
   subscribeToTransactions(callback: (data: any[]) => void) {
     if (!db) return () => {};
-    return onSnapshot(query(collection(db, 'transactions'), orderBy('date', 'desc'), limit(500)), 
+    const unsub = onSnapshot(query(collection(db, 'transactions'), orderBy('date', 'desc'), limit(500)), 
       (snap) => callback(snap.docs.map(d => d.data())),
-      (err) => console.warn("Suscripción restringida: transactions", err.message)
+      (err) => handleSubscriptionError(err, 'transactions')
     );
+    return registerUnsubscribe(unsub);
   },
 
   async getAllTransactions(): Promise<any[]> {
@@ -233,10 +276,11 @@ export const syncService = {
   },
   subscribeToAccounts(callback: (data: any[]) => void) {
     if (!db) return () => {};
-    return onSnapshot(collection(db, 'accounts'), 
+    const unsub = onSnapshot(collection(db, 'accounts'), 
       (snap) => callback(snap.docs.map(d => d.data())),
-      (err) => console.warn("Suscripción restringida: accounts", err.message)
+      (err) => handleSubscriptionError(err, 'accounts')
     );
+    return registerUnsubscribe(unsub);
   },
 
   async saveAccountingEntry(entry: any) {
@@ -246,10 +290,11 @@ export const syncService = {
   },
   subscribeToAccounting(callback: (data: any[]) => void) {
     if (!db) return () => {};
-    return onSnapshot(query(collection(db, 'accounting_entries'), orderBy('date', 'desc'), limit(1000)), 
+    const unsub = onSnapshot(query(collection(db, 'accounting_entries'), orderBy('date', 'desc'), limit(1000)), 
       (snap) => callback(snap.docs.map(d => d.data())),
-      (err) => console.warn("Suscripción restringida: accounting", err.message)
+      (err) => handleSubscriptionError(err, 'accounting')
     );
+    return registerUnsubscribe(unsub);
   },
 
   async getAllAccountingEntries(): Promise<any[]> {
@@ -288,10 +333,11 @@ export const syncService = {
   },
   subscribeToRegister(callback: (data: any) => void) {
     if (!db) return () => {};
-    return onSnapshot(doc(db, 'register', 'current'), 
+    const unsub = onSnapshot(doc(db, 'register', 'current'), 
       (snap) => callback(snap.exists() ? snap.data() : null),
-      (err) => console.warn("Suscripción restringida: register", err.message)
+      (err) => handleSubscriptionError(err, 'register')
     );
+    return registerUnsubscribe(unsub);
   },
 
   async saveRegisterByTerminal(terminalId: string, reg: any) {
@@ -315,10 +361,11 @@ export const syncService = {
   },
   subscribeToRegisterByTerminal(terminalId: string, callback: (data: any) => void) {
     if (!db || !terminalId) return () => {};
-    return onSnapshot(doc(db, 'registers', terminalId), 
+    const unsub = onSnapshot(doc(db, 'registers', terminalId), 
       (snap) => callback(snap.exists() ? snap.data() : null),
-      (err) => console.warn(`Suscripción restringida: registers/${terminalId}`, err.message)
+      (err) => handleSubscriptionError(err, `registers/${terminalId}`)
     );
+    return registerUnsubscribe(unsub);
   },
 
   async runAtomicSale(terminalId: string, txData: any, updates: {
@@ -337,50 +384,39 @@ export const syncService = {
       txs: updates.registerUpdate.txs.map(tx => sanitizeForFirestore(tx))
     };
 
-    // FALLBACK OFFLINE: Si no hay internet, no usamos runTransaction (que falla sin red)
     if (!isOnline) {
       console.log("🛰️ Procesando venta en modo offline...");
       this.saveTransaction(cleanTxData);
-      
       for (const [prodId, update] of updates.products.entries()) {
         addToQueue('updateProductStock', { id: prodId, newStock: update.newStock });
       }
-      
       for (const entry of cleanKardexEntries) {
         this.saveKardexEntry(entry);
       }
-      
       if (cleanAccountingEntry) {
         this.saveAccountingEntry(cleanAccountingEntry);
       }
-      
       this.saveRegisterByTerminal(terminalId, { ...cleanRegisterUpdate, updatedAt: Date.now() });
-      return; // Resolucion inmediata para no trancar la UI
+      return;
     }
     
-    // MODO ONLINE: Usamos transaccion para integridad total
     return runTransaction(db, async (transaction) => {
       for (const [prodId, update] of updates.products.entries()) {
         const prodRef = doc(db, 'products', prodId.toString());
         const prodSnap = await transaction.get(prodRef);
         if (!prodSnap.exists()) throw new Error(`Producto ${prodId} no existe`);
-        const currentData = prodSnap.data();
         transaction.update(prodRef, { stock: update.newStock, updatedAt: Date.now() });
       }
-      
       const txRef = doc(db, 'transactions', cleanTxData.id.toString());
       transaction.set(txRef, { ...cleanTxData, createdAt: Date.now() });
-      
       for (const entry of cleanKardexEntries) {
         const kardexRef = doc(db, 'kardex_entries', entry.id);
         transaction.set(kardexRef, { ...entry, createdAt: Date.now() });
       }
-      
       if (cleanAccountingEntry && cleanAccountingEntry.id) {
         const accRef = doc(db, 'accounting_entries', cleanAccountingEntry.id.toString());
         transaction.set(accRef, { ...cleanAccountingEntry, createdAt: Date.now() });
       }
-      
       const registerRef = doc(db, 'registers', terminalId);
       transaction.set(registerRef, {
         txs: cleanRegisterUpdate.txs,
@@ -391,21 +427,16 @@ export const syncService = {
 
   async updateProductWithWeightedAverageCost(productId: number, newQty: number, newCostUsd: number, exchangeRate: number) {
     if (!db) throw new Error('Firebase no disponible');
-    
     const newCostUsdRounded = roundTo4(newCostUsd);
     const exchangeRateRounded = roundTo2(exchangeRate);
-    
     return runTransaction(db, async (transaction) => {
       const prodRef = doc(db, 'products', productId.toString());
       const prodSnap = await transaction.get(prodRef);
-      
       if (!prodSnap.exists()) throw new Error(`Producto ${productId} no existe`);
-      
       const productData = prodSnap.data();
       const currentStock = productData.stock || 0;
       const currentCostUsd = productData.costUsd || 0;
       const profitPercent = productData.profitPercent || 30;
-      
       let newAverageCost: number;
       if (currentStock <= 0) {
         newAverageCost = newCostUsdRounded;
@@ -415,11 +446,9 @@ export const syncService = {
         const newTotalStock = currentStock + newQty;
         newAverageCost = roundTo4((totalCostBefore + totalCostNew) / newTotalStock);
       }
-      
       const priceUsd = roundTo2(newAverageCost * (1 + profitPercent / 100));
       const priceBs = roundTo2(priceUsd * exchangeRateRounded);
       const newStock = currentStock + newQty;
-      
       const kardexEntry = {
         id: `${Date.now()}_${productId}_${Math.random()}`,
         productId: productId,
@@ -433,7 +462,6 @@ export const syncService = {
         costUsd: newCostUsdRounded,
         costBs: roundTo2(newCostUsdRounded * exchangeRateRounded),
       };
-      
       transaction.update(prodRef, {
         stock: newStock,
         costUsd: newAverageCost,
@@ -442,10 +470,8 @@ export const syncService = {
         priceBs: priceBs,
         updatedAt: Date.now()
       });
-      
       const kardexRef = doc(db, 'kardex_entries', kardexEntry.id);
       transaction.set(kardexRef, { ...kardexEntry, createdAt: Date.now() });
-      
       return { newStock, newAverageCost, newPriceUsd: priceUsd, newPriceBs: priceBs };
     });
   },
@@ -461,10 +487,11 @@ export const syncService = {
   },
   subscribeToSuppliers(callback: (data: any[]) => void) {
     if (!db) return () => {};
-    return onSnapshot(collection(db, 'suppliers'), 
+    const unsub = onSnapshot(collection(db, 'suppliers'), 
       (snap) => callback(snap.docs.map(d => ({ id: parseInt(d.id), ...d.data() }))),
-      (err) => console.warn("Suscripción restringida: suppliers", err.message)
+      (err) => handleSubscriptionError(err, 'suppliers')
     );
+    return registerUnsubscribe(unsub);
   },
 
   async savePurchaseInvoice(invoice: any) {
@@ -472,24 +499,22 @@ export const syncService = {
     if (!isOnline) return addToQueue('savePurchaseInvoice', invoice);
     await setDoc(doc(db, 'purchase_invoices', invoice.id.toString()), sanitizeForFirestore(invoice));
   },
-  
   async getPurchaseInvoices(): Promise<any[]> {
     if (!db) return [];
     const snap = await getDocs(collection(db, 'purchase_invoices'));
     return snap.docs.map(doc => ({ id: parseInt(doc.id), ...doc.data() }));
   },
-  
   async deletePurchaseInvoice(id: number) {
     if (!db) return;
     await deleteDoc(doc(db, 'purchase_invoices', id.toString()));
   },
-  
   subscribeToPurchaseInvoices(callback: (data: any[]) => void) {
     if (!db) return () => {};
-    return onSnapshot(query(collection(db, 'purchase_invoices'), orderBy('date', 'desc'), limit(500)), 
+    const unsub = onSnapshot(query(collection(db, 'purchase_invoices'), orderBy('date', 'desc'), limit(500)), 
       (snap) => callback(snap.docs.map(d => d.data())),
-      (err) => console.warn("Suscripción restringida: purchase_invoices", err.message)
+      (err) => handleSubscriptionError(err, 'purchase_invoices')
     );
+    return registerUnsubscribe(unsub);
   },
 
   async savePurchaseInvoiceItems(invoiceId: number, items: any[]) {
@@ -502,10 +527,11 @@ export const syncService = {
   },
   subscribeToPurchaseItems(callback: (data: any[]) => void) {
     if (!db) return () => {};
-    return onSnapshot(collection(db, 'purchase_items'), 
+    const unsub = onSnapshot(collection(db, 'purchase_items'), 
       (snap) => callback(snap.docs.map(d => d.data())),
-      (err) => console.warn("Suscripción restringida: purchase_items", err.message)
+      (err) => handleSubscriptionError(err, 'purchase_items')
     );
+    return registerUnsubscribe(unsub);
   },
 
   async saveSupplierPayment(payment: any) {
@@ -519,10 +545,11 @@ export const syncService = {
   },
   subscribeToSupplierPayments(callback: (data: any[]) => void) {
     if (!db) return () => {};
-    return onSnapshot(query(collection(db, 'supplier_payments'), orderBy('date', 'desc'), limit(500)), 
+    const unsub = onSnapshot(query(collection(db, 'supplier_payments'), orderBy('date', 'desc'), limit(500)), 
       (snap) => callback(snap.docs.map(d => d.data())),
-      (err) => console.warn("Suscripción restringida: supplier_payments", err.message)
+      (err) => handleSubscriptionError(err, 'supplier_payments')
     );
+    return registerUnsubscribe(unsub);
   },
 
   async saveKardexEntry(entry: any) {
@@ -532,10 +559,11 @@ export const syncService = {
   },
   subscribeToKardex(callback: (data: any[]) => void) {
     if (!db) return () => {};
-    return onSnapshot(query(collection(db, 'kardex_entries'), orderBy('createdAt', 'desc'), limit(1000)), 
+    const unsub = onSnapshot(query(collection(db, 'kardex_entries'), orderBy('createdAt', 'desc'), limit(1000)), 
       (snap) => callback(snap.docs.map(d => d.data())),
-      (err) => console.warn("Suscripción restringida: kardex", err.message)
+      (err) => handleSubscriptionError(err, 'kardex')
     );
+    return registerUnsubscribe(unsub);
   },
 
   async getAllKardexEntries(): Promise<any[]> {
@@ -564,17 +592,19 @@ export const syncService = {
   },
   subscribeToTerminals(callback: (data: any[]) => void) {
     if (!db) return () => {};
-    return onSnapshot(collection(db, 'terminals'), 
+    const unsub = onSnapshot(collection(db, 'terminals'), 
       (snap) => callback(snap.docs.map(d => ({ id: d.id, ...d.data() }))),
-      (err) => console.warn("Suscripción restringida: terminals", err.message)
+      (err) => handleSubscriptionError(err, 'terminals')
     );
+    return registerUnsubscribe(unsub);
   },
   subscribeToTerminal(id: string, callback: (terminal: any) => void) {
     if (!db || !id) return () => {};
-    return onSnapshot(doc(db, 'terminals', id), 
+    const unsub = onSnapshot(doc(db, 'terminals', id), 
       (snap) => callback(snap.exists() ? { id: snap.id, ...snap.data() } : null),
-      (err) => console.warn(`Suscripción restringida: terminals/${id}`, err.message)
+      (err) => handleSubscriptionError(err, `terminals/${id}`)
     );
+    return registerUnsubscribe(unsub);
   },
   async saveGlobalSettings(settings: any) {
     if (!db) return;
@@ -590,12 +620,13 @@ export const syncService = {
   },
   subscribeToGlobalSettings(callback: (data: any) => void) {
     if (!db) return () => {};
-    return onSnapshot(doc(db, 'global_settings', 'global'), 
+    const unsub = onSnapshot(doc(db, 'global_settings', 'global'), 
       (snap) => callback(snap.exists() ? snap.data() : null),
-      (err) => console.warn("Suscripción restringida: global_settings", err.message)
+      (err) => handleSubscriptionError(err, 'global_settings')
     );
+    return registerUnsubscribe(unsub);
   },
-  
+
   async getAdminCode() {
     if (!db) return null;
     const snap = await getDoc(doc(db, 'global_settings', 'global'));
@@ -621,10 +652,11 @@ export const syncService = {
 
   subscribeToCashCloses(callback: (data: any[]) => void) {
     if (!db) return () => {};
-    return onSnapshot(query(collection(db, 'cash_closes'), orderBy('fecha', 'desc')), 
+    const unsub = onSnapshot(query(collection(db, 'cash_closes'), orderBy('fecha', 'desc')), 
       (snap) => callback(snap.docs.map(doc => ({ id: doc.id, ...doc.data() }))),
-      (err) => console.warn("Suscripción restringida: cash_closes", err.message)
+      (err) => handleSubscriptionError(err, 'cash_closes')
     );
+    return registerUnsubscribe(unsub);
   },
 
   async deleteAllCashCloses() {
@@ -636,7 +668,6 @@ export const syncService = {
     await batch.commit();
   },
 
-  // ========== NUEVOS MÉTODOS PARA RESETEO ==========
   async deleteAllSupplierPayments() {
     if (!db) return;
     const snap = await getDocs(collection(db, 'supplier_payments'));
@@ -671,7 +702,6 @@ export const syncService = {
     const batch = writeBatch(db);
     snap.docs.forEach(doc => {
       const data = doc.data();
-      // Conservar solo el usuario con email admin@masterpos.com
       if (data.email !== 'admin@masterpos.com') {
         batch.delete(doc.ref);
       }
@@ -766,10 +796,11 @@ export const syncService = {
       where('status', '==', 'abierta'),
       limit(1)
     );
-    return onSnapshot(q, 
+    const unsub = onSnapshot(q, 
       (snap) => callback(snap.empty ? null : { id: snap.docs[0].id, ...snap.docs[0].data() }),
-      (err) => console.warn(`Suscripción restringida: active_session/${terminalId}`, err.message)
+      (err) => handleSubscriptionError(err, `active_session/${terminalId}`)
     );
+    return registerUnsubscribe(unsub);
   },
 
   async closeCashSession(sessionId: string, finalAmountUsd: number): Promise<any> {
@@ -777,7 +808,6 @@ export const syncService = {
     const sessionRef = doc(db, 'cash_sessions', sessionId);
     const sessionSnap = await getDoc(sessionRef);
     if (!sessionSnap.exists()) throw new Error('Sesión no encontrada');
-    
     const updated = {
       ...sessionSnap.data(),
       status: 'cerrada',
@@ -812,10 +842,11 @@ export const syncService = {
       orderBy('date', 'desc'),
       limit(500)
     );
-    return onSnapshot(q, 
+    const unsub = onSnapshot(q, 
       (snap) => callback(snap.empty ? [] : snap.docs.map(doc => ({ id: parseInt(doc.id), ...doc.data() }))),
-      (err) => console.warn(`Suscripción restringida: session_txs/${sessionId}`, err.message)
+      (err) => handleSubscriptionError(err, `session_txs/${sessionId}`)
     );
+    return registerUnsubscribe(unsub);
   },
 
   async saveTransactionWithCurrentSession(tx: any, terminalId?: string): Promise<void> {

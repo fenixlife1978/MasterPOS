@@ -24,6 +24,20 @@ function getVenezuelaISOString(): string {
   return `${partMap.year}-${partMap.month}-${partMap.day}T${partMap.hour}:${partMap.minute}:${partMap.second}.000-04:00`;
 }
 
+// ✅ Nueva función para obtener solo la fecha (YYYY-MM-DD) en Venezuela sin desfase horario
+function getVenezuelaDate(): string {
+  const now = new Date();
+  const formatter = new Intl.DateTimeFormat('sv-SE', {
+    timeZone: 'America/Caracas',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  const parts = formatter.formatToParts(now);
+  const partMap = Object.fromEntries(parts.map(p => [p.type, p.value]));
+  return `${partMap.year}-${partMap.month}-${partMap.day}`;
+}
+
 function getVenezuelaTimestamp(): number {
   return Date.now();
 }
@@ -62,7 +76,7 @@ export function usePOSState() {
     }
   }, [terminalId]);
 
-  // ✅ Recalcular precios respetando isPriceFixed
+  // Recalcular precios respetando isPriceFixed
   const recalcAllPricesWithNewRate = useCallback((newRate: number) => {
     setProducts(prevProducts => 
       prevProducts.map(product => {
@@ -140,7 +154,7 @@ export function usePOSState() {
     return () => unsubRegister();
   }, [user, terminalId, saveRegisterToLocalStorage]);
 
-  // ✅ Suscripción a productos respetando isPriceFixed
+  // Suscripción a productos respetando isPriceFixed
   useEffect(() => {
     if (!user) return;
 
@@ -423,8 +437,9 @@ export function usePOSState() {
         amount: costoTotalOperacion, referenceId: tx.id, referenceType: type, createdAt: tx.date,
       };
     } else if (type === 'contado' || type === 'credito' || type === 'cobro_deuda') {
+      // ✅ Usar getVenezuelaDate() para la fecha del asiento contable (sin desfase horario)
       accountingEntry = {
-        id: getVenezuelaTimestamp() + 1, date: tx.date.split('T')[0], type: 'ingreso',
+        id: getVenezuelaTimestamp() + 1, date: getVenezuelaDate(), type: 'ingreso',
         category: type === 'credito' ? 'cuenta_por_cobrar' : (type === 'cobro_deuda' ? 'cobro_deuda' : 'ventas'),
         concept: type === 'cobro_deuda' ? 'Cobro de deuda' : (type === 'credito' ? 'Venta a crédito' : 'Venta'),
         description: `Cliente: ${tx.clientName || 'Cliente Final'} - Pago: ${tx.payMethod}`,
@@ -488,7 +503,7 @@ export function usePOSState() {
     };
     
     const accountingEntry = {
-      id: getVenezuelaTimestamp() + 2, date: tx.date.split('T')[0], type: 'ingreso',
+      id: getVenezuelaTimestamp() + 2, date: getVenezuelaDate(), type: 'ingreso',
       category: 'cobro_deuda', concept: 'Cobro de deuda', description: `Abono Cliente: ${client.name}`,
       amount: amount, referenceId: tx.id, referenceType: 'cobro_deuda', createdAt: tx.date,
     };
@@ -512,7 +527,7 @@ export function usePOSState() {
     };
 
     const accountingEntry = {
-      id: getVenezuelaTimestamp() + 3, date: tx.date.split('T')[0], type: 'egreso',
+      id: getVenezuelaTimestamp() + 3, date: getVenezuelaDate(), type: 'egreso',
       category: 'devolucion', concept: 'Devolución de venta', description: reason,
       amount: amount, referenceId: tx.id, referenceType: 'return', createdAt: tx.date,
     };
@@ -526,7 +541,7 @@ export function usePOSState() {
     return tx;
   }, [register, exchangeRate, terminalId, saveRegisterToLocalStorage, currentSession]);
 
-  // ✅ Proxy para actualizar la tasa de cambio
+  // Proxy para actualizar la tasa de cambio
   const setExchangeRateProxy = useCallback(async (newRate: number) => {
     setExchangeRate(newRate);
     localStorage.setItem(STORAGE_KEYS.EXCHANGE_RATE, newRate.toString());

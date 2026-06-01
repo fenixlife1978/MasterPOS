@@ -3,6 +3,7 @@
 import { useAuth } from '@/context/AuthContext';
 import { DoorOpen } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { syncService } from '@/services/syncService';
 
 interface LogoutButtonProps {
   className?: string;
@@ -14,7 +15,13 @@ export default function LogoutButton({ className, variant = 'sidebar', collapsed
   const { logout } = useAuth();
 
   const handleLogout = async () => {
-    // Limpiamos memorias locales específicas de la app antes del logout global
+    // ✅ Activar el modo logout (silencia errores de permisos)
+    syncService.setLoggingOut(true);
+    
+    // Cancelar todas las suscripciones activas
+    syncService.unsubscribeAll();
+
+    // Limpiar localStorage
     localStorage.removeItem('masterpos_users');
     localStorage.removeItem('masterpos_terminals');
     localStorage.removeItem('licopos_products');

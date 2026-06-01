@@ -36,6 +36,47 @@ interface UnifiedCloseRecord {
   rawData: any;
 }
 
+// Función auxiliar para extraer un valor numérico de un objeto, probando múltiples rutas
+function getNumericValue(obj: any, paths: string[]): number {
+  for (const path of paths) {
+    const parts = path.split('.');
+    let current = obj;
+    for (const part of parts) {
+      if (current === undefined || current === null) break;
+      current = current[part];
+    }
+    if (typeof current === 'number' && !isNaN(current)) {
+      return current;
+    }
+  }
+  return 0;
+}
+
+// Extraer ventas contado (en Bs) desde el array cuadre de un cierre final
+function extractVentasContadoFromCuadre(cuadre: any[]): number {
+  if (!cuadre || !Array.isArray(cuadre)) return 0;
+  let total = 0;
+  for (const row of cuadre) {
+    // Si la fila tiene moneda 'Bs' o el método no es USD, sumar su campo 'ventas'
+    if (row.moneda === 'Bs' || (row.metodo && row.metodo !== 'EFECTIVO USD' && row.metodo !== 'ZELLE')) {
+      total += row.ventas || 0;
+    }
+  }
+  return total;
+}
+
+// Extraer devoluciones totales (en Bs) desde el array cuadre
+function extractDevolucionesFromCuadre(cuadre: any[]): number {
+  if (!cuadre || !Array.isArray(cuadre)) return 0;
+  let total = 0;
+  for (const row of cuadre) {
+    if (row.moneda === 'Bs' || (row.metodo && row.metodo !== 'EFECTIVO USD' && row.metodo !== 'ZELLE')) {
+      total += row.devoluciones || 0;
+    }
+  }
+  return total;
+}
+
 export default function CloseHistoryModal({ open, onClose }: CloseHistoryModalProps) {
   const [records, setRecords] = useState<UnifiedCloseRecord[]>([]);
   const [filterType, setFilterType] = useState<FilterType>('day');
@@ -68,16 +109,20 @@ export default function CloseHistoryModal({ open, onClose }: CloseHistoryModalPr
           real: c.real ?? c.fisicoBs ?? 0,
           diferencia: c.diff ?? c.diferencia ?? 0,
         }));
+        const ventasContado = getNumericValue(data, ['ventas.totalContado', 'totalVentasContado', 'ventasContado']);
+        const creditos = getNumericValue(data, ['creditos.total', 'totalCreditos', 'creditos']);
+        const devoluciones = getNumericValue(data, ['devoluciones.total', 'totalDevoluciones', 'devoluciones']);
+        const usdEfectivo = getNumericValue(data, ['usdEfectivo', 'efectivoUsd', 'totalUsdEfectivo']);
         return {
           id: key,
           fecha: data.fecha,
           tipo: 'parcial',
           fechaDisplay: new Date(data.fecha).toLocaleString('es-VE', { dateStyle: 'full', timeStyle: 'medium' }),
           apertura: { bs: data.apertura?.montoBs ?? 0, usd: data.apertura?.montoUsd ?? 0, tasa: data.tasaBCV },
-          ventasContado: data.ventas?.totalContado ?? 0,
-          devoluciones: data.devoluciones?.total ?? 0,
-          creditos: data.creditos?.total ?? 0,
-          usdEfectivo: data.usdEfectivo ?? 0,
+          ventasContado,
+          devoluciones,
+          creditos,
+          usdEfectivo,
           cuadre,
           totalSistema,
           totalReal,
@@ -97,16 +142,28 @@ export default function CloseHistoryModal({ open, onClose }: CloseHistoryModalPr
           real: c.real,
           diferencia: c.diferencia,
         }));
+        // Para cierres finales de CierreFinalForm, las ventas contado están en el array cuadre
+        let ventasContado = 0;
+        let devoluciones = 0;
+        if (cuadre.length > 0) {
+          ventasContado = extractVentasContadoFromCuadre(data.cuadre);
+          devoluciones = extractDevolucionesFromCuadre(data.cuadre);
+        } else {
+          ventasContado = getNumericValue(data, ['ventas.totalContado', 'totalVentasContado', 'ventasContado']);
+          devoluciones = getNumericValue(data, ['devoluciones.total', 'totalDevoluciones', 'devoluciones']);
+        }
+        const creditos = getNumericValue(data, ['totalCreditoBs', 'creditos.total', 'totalCreditos', 'creditos']);
+        const usdEfectivo = getNumericValue(data, ['usdEfectivo', 'efectivoUsd', 'totalUsdEfectivo']);
         return {
           id: key,
           fecha: data.fecha,
           tipo: 'final',
           fechaDisplay: new Date(data.fecha).toLocaleString('es-VE', { dateStyle: 'full', timeStyle: 'medium' }),
           apertura: { bs: data.apertura?.bs ?? 0, usd: data.apertura?.usd ?? 0, tasa: data.tasaPeriodo2 },
-          ventasContado: data.ventas?.totalContado ?? 0,
-          devoluciones: data.devoluciones?.total ?? 0,
-          creditos: data.ventas?.credito ?? 0,
-          usdEfectivo: data.usdEfectivo ?? 0,
+          ventasContado,
+          devoluciones,
+          creditos,
+          usdEfectivo,
           cuadre,
           totalSistema: data.totales?.sistema ?? 0,
           totalReal: data.totales?.real ?? 0,
@@ -149,16 +206,20 @@ export default function CloseHistoryModal({ open, onClose }: CloseHistoryModalPr
               real: c.real,
               diferencia: c.diff ?? c.diferencia ?? 0,
             }));
+            const ventasContado = getNumericValue(data, ['ventas.totalContado', 'totalVentasContado', 'ventasContado']);
+            const creditos = getNumericValue(data, ['creditos.total', 'totalCreditos', 'creditos']);
+            const devoluciones = getNumericValue(data, ['devoluciones.total', 'totalDevoluciones', 'devoluciones']);
+            const usdEfectivo = getNumericValue(data, ['usdEfectivo', 'efectivoUsd', 'totalUsdEfectivo']);
             loadedRecords.push({
               id: data.id,
               fecha: data.fecha,
               tipo: 'parcial',
               fechaDisplay: new Date(data.fecha).toLocaleString('es-VE', { dateStyle: 'full', timeStyle: 'medium' }),
               apertura: { bs: data.apertura?.montoBs ?? 0, usd: data.apertura?.montoUsd ?? 0, tasa: data.tasaBCV },
-              ventasContado: data.ventas?.totalContado ?? 0,
-              devoluciones: data.devoluciones?.total ?? 0,
-              creditos: data.creditos?.total ?? 0,
-              usdEfectivo: data.usdEfectivo ?? 0,
+              ventasContado,
+              devoluciones,
+              creditos,
+              usdEfectivo,
               cuadre,
               totalSistema,
               totalReal,
@@ -176,16 +237,27 @@ export default function CloseHistoryModal({ open, onClose }: CloseHistoryModalPr
               real: c.real,
               diferencia: c.diferencia,
             }));
+            let ventasContado = 0;
+            let devoluciones = 0;
+            if (cuadre.length > 0) {
+              ventasContado = extractVentasContadoFromCuadre(data.cuadre);
+              devoluciones = extractDevolucionesFromCuadre(data.cuadre);
+            } else {
+              ventasContado = getNumericValue(data, ['ventas.totalContado', 'totalVentasContado', 'ventasContado']);
+              devoluciones = getNumericValue(data, ['devoluciones.total', 'totalDevoluciones', 'devoluciones']);
+            }
+            const creditos = getNumericValue(data, ['totalCreditoBs', 'creditos.total', 'totalCreditos', 'creditos']);
+            const usdEfectivo = getNumericValue(data, ['usdEfectivo', 'efectivoUsd', 'totalUsdEfectivo']);
             loadedRecords.push({
               id: data.id,
               fecha: data.fecha,
               tipo: 'final',
               fechaDisplay: new Date(data.fecha).toLocaleString('es-VE', { dateStyle: 'full', timeStyle: 'medium' }),
               apertura: { bs: data.apertura?.bs ?? 0, usd: data.apertura?.usd ?? 0, tasa: data.tasaPeriodo2 },
-              ventasContado: data.ventas?.totalContado ?? 0,
-              devoluciones: data.devoluciones?.total ?? 0,
-              creditos: data.ventas?.credito ?? 0,
-              usdEfectivo: data.usdEfectivo ?? 0,
+              ventasContado,
+              devoluciones,
+              creditos,
+              usdEfectivo,
               cuadre,
               totalSistema: data.totales?.sistema ?? 0,
               totalReal: data.totales?.real ?? 0,
@@ -231,7 +303,6 @@ export default function CloseHistoryModal({ open, onClose }: CloseHistoryModalPr
     });
   }, [records, filterType, dateFilter, monthFilter, yearFilter]);
 
-  // Limpiar filtros (restablecer a vista de día actual)
   const handleClearFilters = () => {
     setFilterType('day');
     setDateFilter(new Date().toISOString().split('T')[0]);
@@ -293,6 +364,13 @@ export default function CloseHistoryModal({ open, onClose }: CloseHistoryModalPr
     printWindow.print();
   };
 
+  // Depuración: mostrar en consola la estructura del primer registro (solo en desarrollo)
+  useEffect(() => {
+    if (records.length > 0 && process.env.NODE_ENV !== 'production') {
+      console.log("Estructura del primer cierre:", records[0].rawData);
+    }
+  }, [records]);
+
   return (
     <>
       <Dialog open={open} onOpenChange={onClose}>
@@ -337,7 +415,7 @@ export default function CloseHistoryModal({ open, onClose }: CloseHistoryModalPr
               </div>
             </div>
             <p className="text-[10px] text-black/40 mt-3">
-              Mostrando {filteredRecords.length} de {records.length} cierres
+              Mostrando ${filteredRecords.length} de ${records.length} cierres
               {!loading && records.some(r => r.source === 'firestore') && <span className="ml-2 text-primary">(incluye datos en la nube)</span>}
             </p>
           </div>
@@ -362,12 +440,12 @@ export default function CloseHistoryModal({ open, onClose }: CloseHistoryModalPr
                           <p className="text-xs font-mono text-black/50">{record.id}</p>
                         </div>
                         <p className="text-sm font-bold text-black mt-1">{record.fechaDisplay}</p>
-                        <p className="text-[10px] text-black/50 mt-1">Apertura: {formatBs(record.apertura.bs)} + {formatUsd(record.apertura.usd)} | Ventas: {formatBs(record.ventasContado)} | Créditos: {formatBs(record.creditos)}</p>
+                        <p className="text-[10px] text-black/50 mt-1">Apertura: ${formatBs(record.apertura.bs)} + ${formatUsd(record.apertura.usd)} | Ventas: ${formatBs(record.ventasContado)} | Créditos: ${formatBs(record.creditos)}</p>
                         <div className="flex items-center gap-2 mt-2">
                           <div className={cn("text-[10px] font-bold px-2 py-0.5 rounded-full", record.estado === 'CONCILIADO' ? "bg-green-100 text-green-700" : record.estado === 'SOBRANTE' ? "bg-yellow-100 text-yellow-700" : "bg-red-100 text-red-700")}>
-                            {record.estado} {record.diferencia !== 0 && `(${record.diferencia > 0 ? '+' : ''}${formatBsNumber(Math.abs(record.diferencia))})`}
+                            ${record.estado} ${record.diferencia !== 0 && `(${record.diferencia > 0 ? '+' : ''}${formatBsNumber(Math.abs(record.diferencia))})`}
                           </div>
-                          <span className="text-[9px] text-black/40">USD en caja: {formatUsd(record.usdEfectivo)}</span>
+                          <span className="text-[9px] text-black/40">USD en caja: ${formatUsd(record.usdEfectivo)}</span>
                         </div>
                       </div>
                       <div className="flex gap-2">

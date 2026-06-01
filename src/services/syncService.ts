@@ -18,11 +18,20 @@ interface PendingOperation {
 let pendingQueue: PendingOperation[] = [];
 let isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
 let isSyncing = false;
-
 let activeUnsubscribes: (() => void)[] = [];
-
-// ✅ Bandera global para indicar que estamos cerrando sesión
 let isLoggingOut = false;
+
+// Opcional: filtrar errores de permisos en consola durante logout
+if (typeof window !== 'undefined') {
+  const originalConsoleError = console.error;
+  console.error = function(...args) {
+    const message = args.join(' ');
+    if (isLoggingOut && (message.includes('Missing or insufficient permissions') || message.includes('permission-denied'))) {
+      return; // Ignorar silenciosamente
+    }
+    originalConsoleError.apply(console, args);
+  };
+}
 
 if (typeof window !== 'undefined') {
   const savedQueue = localStorage.getItem('firebase_pending_queue');
@@ -165,25 +174,19 @@ const registerUnsubscribe = (unsubscribe: () => void) => {
   };
 };
 
-// ✅ Helper para manejar errores de suscripción durante logout
 const handleSubscriptionError = (err: any, context: string) => {
   if (isLoggingOut && (err.code === 'permission-denied' || err.message?.includes('Missing or insufficient permissions'))) {
     // Ignorar silenciosamente durante el cierre de sesión
-    console.debug(`🔇 Suscripción ${context} ignorada durante logout:`, err.message);
     return;
   }
   console.warn(`⚠️ Suscripción ${context}:`, err.message);
 };
 
 export const syncService = {
-  // ✅ Método para indicar que estamos cerrando sesión
   setLoggingOut(status: boolean) {
     isLoggingOut = status;
-    if (status) {
-      console.log("🚪 Modo logout activado: se ignorarán errores de permisos");
-    } else {
-      console.log("✅ Modo logout desactivado");
-    }
+    if (status) console.log("🚪 Modo logout activado: se ignorarán errores de permisos");
+    else console.log("✅ Modo logout desactivado");
   },
 
   unsubscribeAll() {
@@ -500,7 +503,7 @@ export const syncService = {
     await setDoc(doc(db, 'purchase_invoices', invoice.id.toString()), sanitizeForFirestore(invoice));
   },
   async getPurchaseInvoices(): Promise<any[]> {
-    if (!db) return [];
+    if (!db || isLoggingOut) return [];
     const snap = await getDocs(collection(db, 'purchase_invoices'));
     return snap.docs.map(doc => ({ id: parseInt(doc.id), ...doc.data() }));
   },
@@ -567,7 +570,7 @@ export const syncService = {
   },
 
   async getAllKardexEntries(): Promise<any[]> {
-    if (!db) return [];
+    if (!db || isLoggingOut) return [];
     const snap = await getDocs(collection(db, 'kardex_entries'));
     return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
   },
@@ -608,13 +611,14 @@ export const syncService = {
   },
   async saveGlobalSettings(settings: any) {
     if (!db) return;
+    if (isLoggingOut) return;
     const docRef = doc(db, 'global_settings', 'global');
     const existing = await getDoc(docRef);
     const merged = sanitizeForFirestore({ ...(existing.exists() ? existing.data() : {}), ...settings, updatedAt: Date.now() });
     await setDoc(docRef, merged);
   },
   async getGlobalSettings() {
-    if (!db) return null;
+    if (!db || isLoggingOut) return null;
     const snap = await getDoc(doc(db, 'global_settings', 'global'));
     return snap.exists() ? snap.data() : null;
   },
@@ -626,9 +630,9 @@ export const syncService = {
     );
     return registerUnsubscribe(unsub);
   },
-
+  
   async getAdminCode() {
-    if (!db) return null;
+    if (!db || isLoggingOut) return null;
     const snap = await getDoc(doc(db, 'global_settings', 'global'));
     if (snap.exists()) {
       const data = snap.data();
@@ -645,7 +649,7 @@ export const syncService = {
   },
 
   async getAllCashCloses(): Promise<any[]> {
-    if (!db) return [];
+    if (!db || isLoggingOut) return [];
     const snap = await getDocs(collection(db, 'cash_closes'));
     return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
   },
@@ -668,6 +672,7 @@ export const syncService = {
     await batch.commit();
   },
 
+  // ========== NUEVOS MÉTODOS PARA RESETEO ==========
   async deleteAllSupplierPayments() {
     if (!db) return;
     const snap = await getDocs(collection(db, 'supplier_payments'));
@@ -710,13 +715,13 @@ export const syncService = {
   },
 
   async getTerminal(id: string): Promise<any | null> {
-    if (!db || !id) return null;
+    if (!db || !id || isLoggingOut) return null;
     const snap = await getDoc(doc(db, 'terminals', id));
     return snap.exists() ? { id: snap.id, ...snap.data() } : null;
   },
 
   async getAllTerminals(): Promise<any[]> {
-    if (!db) return [];
+    if (!db || isLoggingOut) return [];
     const snap = await getDocs(collection(db, 'terminals'));
     return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
   },
@@ -778,7 +783,7 @@ export const syncService = {
   },
 
   async getActiveSessionByTerminal(terminalId: string): Promise<any | null> {
-    if (!db || !terminalId) return null;
+    if (!db || !terminalId || isLoggingOut) return null;
     const q = query(collection(db, 'cash_sessions'), 
       where('terminalId', '==', terminalId), 
       where('status', '==', 'abierta'),
@@ -825,7 +830,7 @@ export const syncService = {
   },
 
   async getTransactionsBySession(sessionId: string, limitCount: number = 500): Promise<any[]> {
-    if (!db || !sessionId) return [];
+    if (!db || !sessionId || isLoggingOut) return [];
     const q = query(collection(db, 'transactions'), 
       where('sessionId', '==', sessionId),
       orderBy('date', 'desc'),

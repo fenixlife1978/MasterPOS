@@ -24,7 +24,6 @@ function getVenezuelaISOString(): string {
   return `${partMap.year}-${partMap.month}-${partMap.day}T${partMap.hour}:${partMap.minute}:${partMap.second}.000-04:00`;
 }
 
-// ✅ Nueva función para obtener solo la fecha (YYYY-MM-DD) en Venezuela sin desfase horario
 function getVenezuelaDate(): string {
   const now = new Date();
   const formatter = new Intl.DateTimeFormat('sv-SE', {
@@ -76,7 +75,7 @@ export function usePOSState() {
     }
   }, [terminalId]);
 
-  // Recalcular precios respetando isPriceFixed
+  // Recalcular precios
   const recalcAllPricesWithNewRate = useCallback((newRate: number) => {
     setProducts(prevProducts => 
       prevProducts.map(product => {
@@ -106,6 +105,25 @@ export function usePOSState() {
       })
     );
   }, [products]);
+
+  // ========== LIMPIEZA GLOBAL CUANDO EL USUARIO CIERRA SESIÓN ==========
+  useEffect(() => {
+    if (!user) {
+      // Cancelar TODAS las suscripciones activas de Firestore
+      syncService.unsubscribeAll();
+      // Limpiar estados locales para evitar datos residuales
+      setProducts([]);
+      setClients([]);
+      setTransactions([]);
+      setAccounts([]);
+      setRegister(null);
+      registerRef.current = null;
+      setCurrentSession(null);
+      setCart([]);
+      // Limpiar localStorage relacionados
+      localStorage.removeItem(`${STORAGE_KEYS.POS_REGISTER}_${terminalId}`);
+    }
+  }, [user, terminalId]);
 
   // Cargar caché local al inicio
   useEffect(() => {
@@ -137,10 +155,9 @@ export function usePOSState() {
     return () => unsubscribe();
   }, [user?.terminalId, setActiveSession]);
 
-  // Suscripción al registro de caja
+  // Suscripción al registro de caja (se reinicia si cambia user o terminalId)
   useEffect(() => {
     if (!user) return;
-
     const unsubRegister = syncService.subscribeToRegisterByTerminal(terminalId, (registerData) => {
       if (!registerData && registerRef.current?.isOpen === true) {
         console.warn("Suscripción devolvió null pero la caja local está abierta. Ignorando actualización.");
@@ -150,19 +167,16 @@ export function usePOSState() {
       registerRef.current = registerData;
       saveRegisterToLocalStorage(registerData);
     });
-
     return () => unsubRegister();
   }, [user, terminalId, saveRegisterToLocalStorage]);
 
-  // Suscripción a productos respetando isPriceFixed
+  // Suscripciones a productos, clientes, transacciones, cuentas y settings
   useEffect(() => {
     if (!user) return;
 
     const unsubProducts = syncService.subscribeToProducts((data: Product[]) => {
       const productsWithFixed = data.map(product => {
-        if (product.isPriceFixed) {
-          return product;
-        }
+        if (product.isPriceFixed) return product;
         return {
           ...product,
           priceBs: roundTo2(product.priceUsd * exchangeRate),
@@ -204,12 +218,15 @@ export function usePOSState() {
     setIsHydrated(true);
 
     return () => {
-      unsubProducts(); unsubClients(); unsubTransactions(); unsubAccounts(); 
+      unsubProducts(); 
+      unsubClients(); 
+      unsubTransactions(); 
+      unsubAccounts(); 
       if (typeof unsubSettings === 'function') unsubSettings();
     };
   }, [user, terminalId, exchangeRate, recalcAllPricesWithNewRate]);
 
-  // ========== CRUD OPTIMISTA ==========
+  // ========== CRUD OPTIMISTA (sin cambios) ==========
   const addProduct = useCallback((p: Product) => {
     setProducts(prev => {
       if (prev.some(prod => prod.id === p.id)) return prev;
@@ -437,7 +454,6 @@ export function usePOSState() {
         amount: costoTotalOperacion, referenceId: tx.id, referenceType: type, createdAt: tx.date,
       };
     } else if (type === 'contado' || type === 'credito' || type === 'cobro_deuda') {
-      // ✅ Usar getVenezuelaDate() para la fecha del asiento contable (sin desfase horario)
       accountingEntry = {
         id: getVenezuelaTimestamp() + 1, date: getVenezuelaDate(), type: 'ingreso',
         category: type === 'credito' ? 'cuenta_por_cobrar' : (type === 'cobro_deuda' ? 'cobro_deuda' : 'ventas'),

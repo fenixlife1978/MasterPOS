@@ -20,7 +20,10 @@ export default function LogoutButton({ className, variant = 'sidebar', collapsed
     
     // Cancelar todas las suscripciones activas
     syncService.unsubscribeAll();
-
+    
+    // Pequeña pausa para asegurar que las cancelaciones se procesen
+    await new Promise(resolve => setTimeout(resolve, 150));
+    
     // Limpiar localStorage
     localStorage.removeItem('masterpos_users');
     localStorage.removeItem('masterpos_terminals');

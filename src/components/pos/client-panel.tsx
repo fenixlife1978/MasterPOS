@@ -5,7 +5,7 @@ import { Client, CartItem } from '@/lib/types';
 import { UserCircle, X, CheckCircle, HandCoins, Eye, History, DollarSign } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { usePOSState } from '@/hooks/use-pos-state';
-import PaymentModal from './payment-modal';
+import FloatingPaymentModal from './FloatingPaymentModal'; // ✅ nueva calculadora
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { formatBs, formatUsd, formatBsNumber, formatUsdNumber } from '@/lib/currency-formatter';
@@ -285,9 +285,9 @@ export default function ClientPanel({ client, state, onClose }: ClientPanelProps
         </div>
       </div>
 
-      {/* Modal de pago (calculadora) */}
+      {/* ✅ Modal de pago usando la nueva calculadora (FloatingPaymentModal) */}
       {showPaymentModal && (
-        <PaymentModal 
+        <FloatingPaymentModal 
           total={paymentAmount}
           exchangeRate={state.exchangeRate}
           onClose={() => setShowPaymentModal(false)}
@@ -295,7 +295,7 @@ export default function ClientPanel({ client, state, onClose }: ClientPanelProps
         />
       )}
 
-      {/* Modal de detalle de transacción con Tasa BCV HISTÓRICA */}
+      {/* Modal de detalle de transacción con Tasa BCV HISTÓRICA (sin cambios) */}
       <Dialog open={showDetailModal} onOpenChange={setShowDetailModal}>
         <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-2xl p-0 overflow-hidden rounded-2xl shadow-xl max-h-[85vh] overflow-y-auto">
           <DialogHeader className="sr-only">

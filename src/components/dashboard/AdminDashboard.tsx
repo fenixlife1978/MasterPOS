@@ -38,72 +38,24 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
   const [activeTab, setActiveTab] = useState<AdminTab>('dashboard');
   const { suppliers, invoices } = useSuppliers();
   
-  // Estados para los cálculos en USD
-  const [monthlyRevenueUsd, setMonthlyRevenueUsd] = useState(0);
-  const [monthlyExpensesUsd, setMonthlyExpensesUsd] = useState(0);
+  const [monthlyRevenue, setMonthlyRevenue] = useState(0);
+  const [monthlyExpenses, setMonthlyExpenses] = useState(0);
   
-  // Estado para los pagos a proveedores
-  const [supplierPayments, setSupplierPayments] = useState<any[]>([]);
-  
-  // Estado para la tasa BCV editable
   const [exchangeRateInput, setExchangeRateInput] = useState(state.exchangeRate.toString());
   const [isUpdatingRate, setIsUpdatingRate] = useState(false);
   
-  // Estado para el PIN de autorización
   const [adminPin, setAdminPin] = useState('');
   const [newAdminPin, setNewAdminPin] = useState('');
   const [confirmAdminPin, setConfirmAdminPin] = useState('');
   const [isUpdatingPin, setIsUpdatingPin] = useState(false);
   const [showPinSection, setShowPinSection] = useState(false);
   
-  // Estado para el modal de RESET
   const [showResetModal, setShowResetModal] = useState(false);
   const [resetPinInput, setResetPinInput] = useState('');
   const [isResetting, setIsResetting] = useState(false);
 
-  // Estado para el modal de historial de cierres
   const [showHistoryModal, setShowHistoryModal] = useState(false);
 
-  // Cargar pagos a proveedores en tiempo real
-  useEffect(() => {
-    const unsubscribe = syncService.subscribeToSupplierPayments((data) => {
-      setSupplierPayments(data);
-    });
-    return () => unsubscribe();
-  }, []);
-
-  // Calcular ingresos y gastos del mes en USD
-  useEffect(() => {
-    const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    
-    // Ingresos: transacciones de tipo 'contado' (ventas)
-    const revenue = state.transactions
-      .filter(tx => tx.type === 'contado' && new Date(tx.date) >= startOfMonth)
-      .reduce((sum, tx) => sum + (tx.totalUsd || 0), 0);
-    
-    // Gastos: pagos a proveedores del mes + devoluciones + colaboraciones/consumo propio
-    const supplierExpenses = supplierPayments
-      .filter(p => new Date(p.date) >= startOfMonth)
-      .reduce((sum, p) => sum + (p.amount || 0), 0);
-    
-    // Devoluciones (egresos)
-    const returns = state.transactions
-      .filter(tx => tx.type === 'devolucion' && new Date(tx.date) >= startOfMonth)
-      .reduce((sum, tx) => sum + (tx.totalUsd || 0), 0);
-    
-    // Colaboraciones y consumo propio (egresos)
-    const specialExpenses = state.transactions
-      .filter(tx => (tx.type === 'colaboracion' || tx.type === 'consumo_propio') && new Date(tx.date) >= startOfMonth)
-      .reduce((sum, tx) => sum + (tx.costoTotalOperacion || 0), 0);
-    
-    const totalExpenses = supplierExpenses + returns + specialExpenses;
-    
-    setMonthlyRevenueUsd(revenue);
-    setMonthlyExpensesUsd(totalExpenses);
-  }, [state.transactions, supplierPayments]);
-
-  // Cargar PIN actual al inicio
   useEffect(() => {
     const loadAdminCode = async () => {
       const adminCodeData = await syncService.getAdminCode();
@@ -114,14 +66,35 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
     loadAdminCode();
   }, []);
 
-  // Función para actualizar la tasa BCV globalmente
+  const calculateMonthlyRevenue = () => {
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const revenue = state.transactions
+      .filter(t => t.type === 'contado' && new Date(t.date) >= startOfMonth)
+      .reduce((sum, t) => sum + t.total, 0);
+    setMonthlyRevenue(revenue);
+  };
+
+  const calculateMonthlyExpenses = () => {
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const expenses = invoices
+      .filter(inv => inv.paidAmount > 0 && new Date(inv.date) >= startOfMonth)
+      .reduce((sum, inv) => sum + inv.paidAmount, 0);
+    setMonthlyExpenses(expenses);
+  };
+
+  useEffect(() => {
+    calculateMonthlyRevenue();
+    calculateMonthlyExpenses();
+  }, [state.transactions, invoices]);
+
   const handleUpdateExchangeRate = async () => {
     const newRate = parseFloat(exchangeRateInput);
     if (isNaN(newRate) || newRate <= 0) {
       toast({ title: "Error", description: "Ingrese una tasa válida", variant: "destructive" });
       return;
     }
-    
     setIsUpdatingRate(true);
     try {
       await state.setExchangeRate(newRate);
@@ -133,18 +106,15 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
     }
   };
 
-  // Función para actualizar el PIN de autorización
   const handleUpdateAdminPin = async () => {
     if (!newAdminPin || newAdminPin.length !== 6) {
       toast({ title: "Error", description: "El PIN debe tener exactamente 6 dígitos", variant: "destructive" });
       return;
     }
-    
     if (newAdminPin !== confirmAdminPin) {
       toast({ title: "Error", description: "Los PINs no coinciden", variant: "destructive" });
       return;
     }
-    
     setIsUpdatingPin(true);
     try {
       await syncService.saveGlobalSettings({ adminCode: newAdminPin });
@@ -160,13 +130,12 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
     }
   };
 
-  // Función para resetear el sistema completo
+  // ==================== RESET COMPLETO (con todas las colecciones) ====================
   const handleResetSystem = async () => {
     if (!resetPinInput) {
       toast({ title: "Error", description: "Ingrese el PIN de autorización", variant: "destructive" });
       return;
     }
-    
     if (resetPinInput !== adminPin) {
       toast({ title: "Acceso denegado", description: "PIN de autorización incorrecto", variant: "destructive" });
       setResetPinInput('');
@@ -176,77 +145,51 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
     setIsResetting(true);
     
     try {
-      // 1. Eliminar todos los productos
-      for (const product of state.products) {
-        await syncService.deleteProduct(product.id);
-      }
+      // Función auxiliar para vaciar una colección
+      const clearCollection = async (colName: string) => {
+        try {
+          const colRef = collection(db, colName);
+          const snap = await getDocs(colRef);
+          const deletePromises = snap.docs.map(d => deleteDoc(doc(db, colName, d.id)));
+          await Promise.allSettled(deletePromises);
+        } catch (err) {
+          console.warn(`Error limpiando ${colName}:`, err);
+        }
+      };
       
-      // 2. Eliminar todos los clientes
-      for (const client of state.clients) {
-        await syncService.deleteClient(client.id);
-      }
+      // Colecciones a limpiar
+      const collections = [
+        'products',
+        'clients',
+        'transactions',
+        'accounts',
+        'purchase_invoices',
+        'purchase_items',
+        'supplier_payments',
+        'suppliers',
+        'accounting_entries',
+        'kardex_entries',
+        'cash_closes',
+        'cash_sessions',
+        'registers',
+        'terminals',
+      ];
       
-      // 3. Eliminar TODAS las transacciones
-      await syncService.deleteAllTransactions();
+      await Promise.allSettled(collections.map(col => clearCollection(col)));
       
-      // 4. Eliminar TODOS los documentos de la colección 'accounts'
-      const accountsCol = collection(db, 'accounts');
-      const accountsSnap = await getDocs(accountsCol);
-      for (const docSnap of accountsSnap.docs) {
-        await deleteDoc(doc(db, 'accounts', docSnap.id));
-      }
+      // Eliminar documento register/current
+      try {
+        await deleteDoc(doc(db, 'register', 'current'));
+      } catch (e) {}
       
-      // 5. Eliminar todas las facturas de compra (purchase_invoices)
-      const purchaseInvoices = await syncService.getPurchaseInvoices?.() || [];
-      for (const inv of purchaseInvoices) {
-        await syncService.deletePurchaseInvoice?.(inv.id);
-      }
-      
-      // 6. Eliminar TODAS las entradas contables (accounting_entries)
-      await syncService.deleteAllAccountingEntries();
-      
-      // 7. Eliminar TODAS las entradas de kardex (kardex_entries)
-      await syncService.deleteAllKardexEntries();
-      
-      // 8. Eliminar TODOS los documentos de 'cash_closes'
-      const cashClosesCol = collection(db, 'cash_closes');
-      const cashClosesSnap = await getDocs(cashClosesCol);
-      for (const docSnap of cashClosesSnap.docs) {
-        await deleteDoc(doc(db, 'cash_closes', docSnap.id));
-      }
-      
-      // 9. Eliminar TODOS los documentos de 'cash_sessions'
-      const cashSessionsCol = collection(db, 'cash_sessions');
-      const cashSessionsSnap = await getDocs(cashSessionsCol);
-      for (const docSnap of cashSessionsSnap.docs) {
-        await deleteDoc(doc(db, 'cash_sessions', docSnap.id));
-      }
-      
-      // 10. Eliminar TODOS los documentos de 'purchase_items'
-      const purchaseItemsCol = collection(db, 'purchase_items');
-      const purchaseItemsSnap = await getDocs(purchaseItemsCol);
-      for (const docSnap of purchaseItemsSnap.docs) {
-        await deleteDoc(doc(db, 'purchase_items', docSnap.id));
-      }
-      
-      // 11. Eliminar todos los pagos a proveedores
-      await syncService.deleteAllSupplierPayments();
-      
-      // 12. Eliminar todos los proveedores
-      await syncService.deleteAllSuppliers();
-      
-      // 13. Eliminar todas las terminales
-      await syncService.deleteAllTerminals();
-      
-      // 14. Eliminar todos los usuarios excepto admin@masterpos.com
+      // Eliminar usuarios excepto admin
       await syncService.deleteAllUsersExceptAdmin();
       
-      // 15. Cerrar todas las cajas abiertas
-      await syncService.clearRegisterByTerminal('default');
-      
-      // 16. Resetear el contador de recibos
+      // Limpiar localStorage
       if (typeof window !== 'undefined') {
         localStorage.removeItem('last_receipt_number');
+        localStorage.removeItem('bcv_exchange_rate');
+        localStorage.removeItem('pos_register_default');
       }
       
       toast({ 
@@ -273,10 +216,9 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
   const totalProducts = state.products.length;
   const totalClients = state.clients.length;
   const totalSales = state.transactions.filter(t => t.type === 'contado').length;
-  const totalCredit = state.clients.reduce((sum, c) => sum + (c.debt || 0), 0); // en Bs
-  const totalPayable = invoices.reduce((sum, inv) => sum + (inv.total - inv.paidAmount), 0); // en USD
-  const totalCreditUsd = totalCredit / state.exchangeRate;
-  
+  const totalRevenue = state.transactions.filter(t => t.type === 'contado').reduce((sum, t) => sum + t.total, 0);
+  const totalCredit = state.clients.reduce((sum, c) => sum + (c.debt || 0), 0);
+  const totalPayable = invoices.reduce((sum, inv) => sum + (inv.total - inv.paidAmount), 0);
   const outOfStock = state.products.filter(p => p.stock === 0).length;
   const lowStock = state.products.filter(p => p.stock > 0 && p.stock <= 5).length;
 
@@ -300,7 +242,6 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
               <p className="text-sm text-black/50 mt-1">Gestiona tu negocio desde un solo lugar</p>
             </div>
             
-            {/* Tarjeta de Tasa BCV editable */}
             <div className="flex items-center gap-3">
               <div className="bg-[#1A2C4E] rounded-xl p-3 flex items-center gap-3 shadow-md">
                 <div className="bg-primary/20 rounded-lg p-2">
@@ -330,7 +271,6 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
                 </div>
               </div>
               
-              {/* Botón HISTORIAL CIERRES */}
               <Button
                 onClick={() => setShowHistoryModal(true)}
                 variant="outline"
@@ -340,7 +280,6 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
                 HISTORIAL CIERRES
               </Button>
               
-              {/* Botón RESET */}
               <Button
                 onClick={() => setShowResetModal(true)}
                 variant="outline"
@@ -373,7 +312,6 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
               );
             })}
             
-            {/* Botón para gestión de PIN */}
             <button
               onClick={() => setShowPinSection(!showPinSection)}
               className={cn(
@@ -388,7 +326,6 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
             </button>
           </div>
           
-          {/* Sección de gestión de PIN de autorización */}
           {showPinSection && (
             <div className="mt-4 bg-amber-50 border border-amber-200 rounded-xl p-4">
               <div className="flex items-center gap-2 mb-3">
@@ -458,13 +395,13 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
               </div>
               <div className="bg-white rounded-xl border border-[#9E9E9E] p-4">
                 <p className="text-[10px] font-black text-black/60 uppercase">Ingresos del Mes</p>
-                <p className="text-2xl font-black text-green-600">{formatUsd(monthlyRevenueUsd)}</p>
-                <p className="text-[8px] text-black/50">Ventas de contado del mes (USD)</p>
+                <p className="text-2xl font-black text-green-600">{formatBs(monthlyRevenue)}</p>
+                <p className="text-[8px] text-black/50">Reinicia cada 1ro del mes</p>
               </div>
               <div className="bg-white rounded-xl border border-[#9E9E9E] p-4">
                 <p className="text-[10px] font-black text-black/60 uppercase">Gastos del Mes</p>
-                <p className="text-2xl font-black text-red-600">{formatUsd(monthlyExpensesUsd)}</p>
-                <p className="text-[8px] text-black/50">Pagos a proveedores + devoluciones (USD)</p>
+                <p className="text-2xl font-black text-red-600">{formatBs(monthlyExpenses)}</p>
+                <p className="text-[8px] text-black/50">Compras pagadas en el mes</p>
               </div>
             </div>
 
@@ -474,16 +411,16 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
                   <CreditCard size={18} className="text-orange-500" />
                   <p className="text-sm font-black text-black uppercase">Cuentas por Cobrar</p>
                 </div>
-                <p className="text-2xl font-black text-red-600">{formatUsd(totalCreditUsd)}</p>
-                <p className="text-[10px] text-black/50">Total de créditos pendientes de clientes (USD)</p>
+                <p className="text-2xl font-black text-red-600">{formatBs(totalCredit)}</p>
+                <p className="text-[10px] text-black/50">Total de créditos pendientes de clientes</p>
               </div>
               <div className="bg-white rounded-xl border border-[#9E9E9E] p-4">
                 <div className="flex items-center gap-2 mb-2">
                   <Truck size={18} className="text-blue-500" />
                   <p className="text-sm font-black text-black uppercase">Cuentas por Pagar</p>
                 </div>
-                <p className="text-2xl font-black text-red-600">{formatUsd(totalPayable)}</p>
-                <p className="text-[10px] text-black/50">Total de facturas pendientes a proveedores (USD)</p>
+                <p className="text-2xl font-black text-red-600">{formatBs(totalPayable)}</p>
+                <p className="text-[10px] text-black/50">Total de facturas pendientes a proveedores</p>
               </div>
             </div>
 
@@ -534,20 +471,14 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
                 Esta acción ELIMINARÁ PERMANENTEMENTE todos los datos del sistema:
               </p>
               <ul className="text-red-700 text-xs mt-2 space-y-1 list-disc list-inside">
-                <li>Productos y categorías</li>
-                <li>Clientes y cuentas por cobrar</li>
-                <li>Transacciones y ventas</li>
-                <li>Facturas de compra y proveedores</li>
-                <li>Kardex e historial de inventario</li>
-                <li>Cajas y registros</li>
-                <li>Cuentas contables (accounts)</li>
-                <li>Cierres de caja (cash_closes)</li>
-                <li>Sesiones de caja (cash_sessions)</li>
-                <li>Items de compra (purchase_items)</li>
-                <li>Pagos a proveedores (supplier_payments)</li>
+                <li>Productos, clientes, transacciones, cuentas por cobrar</li>
+                <li>Facturas de compra (purchase_invoices), proveedores, pagos a proveedores</li>
+                <li>Kardex, entradas contables</li>
+                <li>Cajas y registros (registers, register/current)</li>
+                <li>Cierres de caja (cash_closes), sesiones de caja (cash_sessions)</li>
                 <li>Terminales</li>
                 <li>Usuarios (excepto admin@masterpos.com)</li>
-                <li>Contador de recibos</li>
+                <li>Contador de recibos y otros datos locales</li>
               </ul>
               <p className="text-red-800 font-bold text-sm mt-3">
                 Esta operación es IRREVERSIBLE.
@@ -604,7 +535,6 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
         </DialogContent>
       </Dialog>
 
-      {/* Modal de historial de cierres */}
       <CloseHistoryModal open={showHistoryModal} onClose={() => setShowHistoryModal(false)} />
     </>
   );

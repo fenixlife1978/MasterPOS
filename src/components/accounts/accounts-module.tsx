@@ -7,7 +7,7 @@ import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import PaymentModal from '../pos/payment-modal';
+import FloatingPaymentModal from '../pos/FloatingPaymentModal';
 import { CartItem } from '@/lib/types';
 import { formatBs, formatUsd, formatBsNumber, formatUsdNumber } from '@/lib/currency-formatter';
 
@@ -124,18 +124,13 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
     return new Date(dateStr).toLocaleDateString('es-VE', { day: '2-digit', month: '2-digit', year: 'numeric' });
   };
 
-  // Obtener la tasa BCV HISTÓRICA guardada en la transacción
-  // Este valor es FIJO y NO cambia, es el testigo fiel del día de la venta
   const getHistoricalExchangeRate = () => {
-    // Priorizar la tasa guardada en la transacción original
     if (selectedTransaction?.accountInfo?.exchangeRate) {
       return selectedTransaction.accountInfo.exchangeRate;
     }
-    // Fallback: usar la tasa del momento de la venta (si está disponible en la transacción)
     if (selectedTransaction?.exchangeRate) {
       return selectedTransaction.exchangeRate;
     }
-    // Último recurso: mostrar un mensaje de que no hay tasa histórica
     return null;
   };
 
@@ -252,7 +247,7 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
       </div>
 
       {showPaymentModal && selectedClient && (
-        <PaymentModal 
+        <FloatingPaymentModal
           total={selectedClient.debt}
           exchangeRate={state.exchangeRate}
           onClose={() => { setShowPaymentModal(false); setSelectedClient(null); }}
@@ -260,7 +255,6 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
         />
       )}
 
-      {/* Modal de detalle de crédito con Tasa BCV HISTÓRICA (fija e inmutable) */}
       <Dialog open={showDetailModal} onOpenChange={setShowDetailModal}>
         <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-2xl p-0 overflow-hidden rounded-2xl shadow-xl max-h-[85vh] overflow-y-auto">
           <DialogHeader className="sr-only"><DialogTitle>Detalle del Crédito</DialogTitle></DialogHeader>
@@ -286,7 +280,6 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
                   <div><label className="text-[10px] font-black text-black/60 uppercase">Estado</label><p className={cn("inline-block px-3 py-1 rounded-full text-[10px] font-bold", selectedTransaction.accountInfo.status === 'pagada' ? "bg-green-100 text-green-700" : selectedTransaction.accountInfo.status === 'parcial' ? "bg-yellow-100 text-yellow-700" : "bg-red-100 text-red-700")}>{selectedTransaction.accountInfo.status === 'pagada' ? 'PAGADA' : selectedTransaction.accountInfo.status === 'parcial' ? 'PARCIAL' : 'PENDIENTE'}</p></div>
                 </div>
 
-                {/* Tasa BCV HISTÓRICA - Valor FIJO e INMUTABLE del momento de la venta */}
                 <div className="bg-amber-50 rounded-lg p-4 border border-amber-200">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
@@ -310,58 +303,64 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
                   <label className="text-[10px] font-black text-black/60 uppercase flex items-center gap-2 mb-3">📦 PRODUCTOS</label>
                   <div className="border border-[#9E9E9E] rounded-lg overflow-hidden">
                     <table className="w-full text-sm">
-                      <thead className="bg-[#E8E8E8]"><tr><th className="text-left p-3 text-[10px] font-black uppercase">CANT</th><th className="text-left p-3 text-[10px] font-black uppercase">PRODUCTO</th><th className="text-right p-3 text-[10px] font-black uppercase">PRECIO</th><th className="text-right p-3 text-[10px] font-black uppercase">TOTAL</th></tr></thead>
+                      <thead className="bg-[#E8E8E8]">
+                        <tr>
+                          <th className="text-left p-3 text-[10px] font-black uppercase">CANT</th>
+                          <th className="text-left p-3 text-[10px] font-black uppercase">PRODUCTO</th>
+                          <th className="text-right p-3 text-[10px] font-black uppercase">PRECIO</th>
+                          <th className="text-right p-3 text-[10px] font-black uppercase">TOTAL</th>
+                        </tr>
+                      </thead>
                       <tbody>
                         {(() => {
                           const items = getTransactionItems();
-                          if (items.length > 0) return items.map((item, idx) => (
-                            <tr key={idx} className="border-b border-[#9E9E9E]/50 hover:bg-[#F5F5F5]">
-                              <td className="p-3 text-xs text-black/80">{item.qty}</td>
-                              <td className="p-3 text-xs text-black font-medium">{item.name}</td>
-                              <td className="p-3 text-right text-xs text-black/80">
-                                {item.priceBs > 0 ? formatBs(item.priceBs) : 
-                                 item.priceUsd > 0 ? formatUsd(item.priceUsd) : '—'}
-                              </td>
-                              <td className="p-3 text-right text-xs font-bold text-black">
-                                {item.priceBs > 0 ? formatBs(item.priceBs * item.qty) : 
-                                 item.priceUsd > 0 ? formatUsd(item.priceUsd * item.qty) : '—'}
-                               </td>
+                          if (items.length > 0) {
+                            return items.map((item, idx) => (
+                              <tr key={idx} className="border-b border-[#9E9E9E]/50 hover:bg-[#F5F5F5]">
+                                <td className="p-3 text-xs text-black/80">{item.qty}</td>
+                                <td className="p-3 text-xs text-black font-medium">{item.name}</td>
+                                <td className="p-3 text-right text-xs text-black/80">
+                                  {item.priceBs > 0 ? formatBs(item.priceBs) : 
+                                   item.priceUsd > 0 ? formatUsd(item.priceUsd) : '—'}
+                                </td>
+                                <td className="p-3 text-right text-xs font-bold text-black">
+                                  {item.priceBs > 0 ? formatBs(item.priceBs * item.qty) : 
+                                   item.priceUsd > 0 ? formatUsd(item.priceUsd * item.qty) : '—'}
+                                </td>
+                              </tr>
+                            ));
+                          }
+                          return (
+                            <tr>
+                              <td colSpan={4} className="text-center p-4 text-black/50 italic">No se pudieron cargar los productos</td>
                             </tr>
-                          ));
-                          return <tr><td colSpan={4} className="text-center p-4 text-black/50 italic">No se pudieron cargar los productos</td></tr>;
+                          );
                         })()}
                       </tbody>
                     </table>
                   </div>
                 </div>
 
-                {/* Resumen financiero con valores basados en la tasa HISTÓRICA */}
                 <div className="bg-[#F5F5F5] rounded-lg p-4 space-y-2">
                   <div className="flex justify-between text-sm">
                     <span className="text-black/60">Monto Total (Bs):</span>
                     <div className="text-right">
                       <span className="font-bold text-black">{formatBs(selectedTransaction.accountInfo.amountBs)}</span>
-                      {historicalRate && (
-                        <span className="text-xs text-black/50 ml-2">({formatUsd(selectedTransaction.accountInfo.amountBs / historicalRate)})</span>
-                      )}
+                      {historicalRate && <span className="text-xs text-black/50 ml-2">({formatUsd(selectedTransaction.accountInfo.amountBs / historicalRate)})</span>}
                     </div>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-black/60">Monto Pagado (Bs):</span>
                     <div className="text-right">
                       <span className="font-bold text-green-600">{formatBs(selectedTransaction.accountInfo.paidAmount || 0)}</span>
-                      {historicalRate && (
-                        <span className="text-xs text-black/50 ml-2">({formatUsd((selectedTransaction.accountInfo.paidAmount || 0) / historicalRate)})</span>
-                      )}
+                      {historicalRate && <span className="text-xs text-black/50 ml-2">({formatUsd((selectedTransaction.accountInfo.paidAmount || 0) / historicalRate)})</span>}
                     </div>
                   </div>
                   <div className="flex justify-between text-sm pt-1 border-t border-dashed border-[#9E9E9E]">
                     <span className="text-black/60">Saldo Pendiente (Bs):</span>
                     <div className="text-right">
                       <span className="font-bold text-red-600">{formatBs(selectedTransaction.accountInfo.amountBs - (selectedTransaction.accountInfo.paidAmount || 0))}</span>
-                      {historicalRate && (
-                        <span className="text-xs text-black/50 ml-2">({formatUsd((selectedTransaction.accountInfo.amountBs - (selectedTransaction.accountInfo.paidAmount || 0)) / historicalRate)})</span>
-                      )}
+                      {historicalRate && <span className="text-xs text-black/50 ml-2">({formatUsd((selectedTransaction.accountInfo.amountBs - (selectedTransaction.accountInfo.paidAmount || 0)) / historicalRate)})</span>}
                     </div>
                   </div>
                   <div className="text-[8px] text-amber-600 text-center pt-2 border-t border-dashed border-[#9E9E9E]">
@@ -374,11 +373,22 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
                     <label className="text-[10px] font-black text-black/60 uppercase flex items-center gap-2 mb-3"><History size={12} /> HISTORIAL DE ABONOS</label>
                     <div className="border border-[#9E9E9E] rounded-lg overflow-hidden">
                       <table className="w-full text-sm">
-                        <thead className="bg-[#E8E8E8]"><tr><th className="text-left p-3 text-[10px] font-black uppercase">FECHA</th><th className="text-right p-3 text-[10px] font-black uppercase">MONTO</th></tr></thead>
+                        <thead className="bg-[#E8E8E8]">
+                          <tr>
+                            <th className="text-left p-3 text-[10px] font-black uppercase">FECHA</th>
+                            <th className="text-right p-3 text-[10px] font-black uppercase">MONTO</th>
+                          </tr>
+                        </thead>
                         <tbody>
                           {(() => {
                             const abonos = getAbonosForClient();
-                            if (abonos.length === 0) return <tr><td colSpan={2} className="text-center p-4 text-black/50 italic">No hay registros de abonos individuales</td></tr>;
+                            if (abonos.length === 0) {
+                              return (
+                                <tr>
+                                  <td colSpan={2} className="text-center p-4 text-black/50 italic">No hay registros de abonos individuales</td>
+                                </tr>
+                              );
+                            }
                             return abonos.map((abono, idx) => (
                               <tr key={idx} className="border-b border-[#9E9E9E]/50 hover:bg-[#F5F5F5]">
                                 <td className="p-3 text-xs text-black/80">{formatDateShort(abono.date)}</td>
@@ -387,7 +397,12 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
                             ));
                           })()}
                         </tbody>
-                        <tfoot className="bg-[#F0F0F0]"><tr><td className="p-3 text-xs font-bold text-black">TOTAL ABONADO</td><td className="p-3 text-right text-sm font-black text-green-700">{formatBs(selectedTransaction.accountInfo.paidAmount || 0)}</td></tr></tfoot>
+                        <tfoot className="bg-[#F0F0F0]">
+                          <tr>
+                            <td className="p-3 text-xs font-bold text-black">TOTAL ABONADO</td>
+                            <td className="p-3 text-right text-sm font-black text-green-700">{formatBs(selectedTransaction.accountInfo.paidAmount || 0)}</td>
+                          </tr>
+                        </tfoot>
                       </table>
                     </div>
                   </div>

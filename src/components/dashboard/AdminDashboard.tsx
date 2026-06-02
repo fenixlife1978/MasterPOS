@@ -25,7 +25,8 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { formatBs, formatUsd, formatBsNumber, formatUsdNumber } from '@/lib/currency-formatter';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, deleteDoc, doc } from 'firebase/firestore';
+import { collection, getDocs, deleteDoc, doc, setDoc } from 'firebase/firestore';
+import { getAuth } from 'firebase/auth';
 
 interface AdminDashboardProps {
   state: ReturnType<typeof usePOSState>;
@@ -130,7 +131,7 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
     }
   };
 
-  // ==================== RESET COMPLETO (con todas las colecciones) ====================
+  // ==================== RESET COMPLETO (CONSERVANDO USUARIOS) ====================
   const handleResetSystem = async () => {
     if (!resetPinInput) {
       toast({ title: "Error", description: "Ingrese el PIN de autorización", variant: "destructive" });
@@ -145,7 +146,7 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
     setIsResetting(true);
     
     try {
-      // Función auxiliar para vaciar una colección
+      // Función auxiliar para vaciar una colección (sin tocar usuarios)
       const clearCollection = async (colName: string) => {
         try {
           const colRef = collection(db, colName);
@@ -157,7 +158,7 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
         }
       };
       
-      // Colecciones a limpiar
+      // Colecciones a limpiar (NO se incluye 'users')
       const collections = [
         'products',
         'clients',
@@ -182,10 +183,10 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
         await deleteDoc(doc(db, 'register', 'current'));
       } catch (e) {}
       
-      // Eliminar usuarios excepto admin
-      await syncService.deleteAllUsersExceptAdmin();
+      // Restablecer el código de autorización (PIN) por defecto
+      await setDoc(doc(db, 'global_settings', 'global'), { adminCode: '123456' }, { merge: true });
       
-      // Limpiar localStorage
+      // Limpiar localStorage (excepto datos de sesión)
       if (typeof window !== 'undefined') {
         localStorage.removeItem('last_receipt_number');
         localStorage.removeItem('bcv_exchange_rate');
@@ -194,7 +195,7 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
       
       toast({ 
         title: "Sistema reseteado", 
-        description: "Todos los datos han sido eliminados. Recargando página...",
+        description: "Todos los datos de negocio han sido eliminados. Los usuarios se conservan. Recargando página...",
         variant: "default"
       });
       
@@ -395,12 +396,12 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
               </div>
               <div className="bg-white rounded-xl border border-[#9E9E9E] p-4">
                 <p className="text-[10px] font-black text-black/60 uppercase">Ingresos del Mes</p>
-                <p className="text-2xl font-black text-green-600">{formatBs(monthlyRevenue)}</p>
+                <p className="text-2xl font-black text-green-600">{formatUsd(monthlyRevenue)}</p>
                 <p className="text-[8px] text-black/50">Reinicia cada 1ro del mes</p>
               </div>
               <div className="bg-white rounded-xl border border-[#9E9E9E] p-4">
                 <p className="text-[10px] font-black text-black/60 uppercase">Gastos del Mes</p>
-                <p className="text-2xl font-black text-red-600">{formatBs(monthlyExpenses)}</p>
+                <p className="text-2xl font-black text-red-600">{formatUsd(monthlyExpenses)}</p>
                 <p className="text-[8px] text-black/50">Compras pagadas en el mes</p>
               </div>
             </div>
@@ -411,7 +412,7 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
                   <CreditCard size={18} className="text-orange-500" />
                   <p className="text-sm font-black text-black uppercase">Cuentas por Cobrar</p>
                 </div>
-                <p className="text-2xl font-black text-red-600">{formatBs(totalCredit)}</p>
+                <p className="text-2xl font-black text-red-600">{formatUsd(totalCredit)}</p>
                 <p className="text-[10px] text-black/50">Total de créditos pendientes de clientes</p>
               </div>
               <div className="bg-white rounded-xl border border-[#9E9E9E] p-4">
@@ -419,7 +420,7 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
                   <Truck size={18} className="text-blue-500" />
                   <p className="text-sm font-black text-black uppercase">Cuentas por Pagar</p>
                 </div>
-                <p className="text-2xl font-black text-red-600">{formatBs(totalPayable)}</p>
+                <p className="text-2xl font-black text-red-600">{formatUsd(totalPayable)}</p>
                 <p className="text-[10px] text-black/50">Total de facturas pendientes a proveedores</p>
               </div>
             </div>
@@ -468,7 +469,7 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
             <div className="bg-red-50 border-2 border-red-300 rounded-lg p-4 mb-5">
               <p className="text-red-800 font-bold text-sm mb-2">⚠️ ¡ADVERTENCIA!</p>
               <p className="text-red-700 text-xs">
-                Esta acción ELIMINARÁ PERMANENTEMENTE todos los datos del sistema:
+                Esta acción ELIMINARÁ PERMANENTEMENTE los siguientes datos:
               </p>
               <ul className="text-red-700 text-xs mt-2 space-y-1 list-disc list-inside">
                 <li>Productos, clientes, transacciones, cuentas por cobrar</li>
@@ -477,10 +478,12 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
                 <li>Cajas y registros (registers, register/current)</li>
                 <li>Cierres de caja (cash_closes), sesiones de caja (cash_sessions)</li>
                 <li>Terminales</li>
-                <li>Usuarios (excepto admin@masterpos.com)</li>
                 <li>Contador de recibos y otros datos locales</li>
               </ul>
               <p className="text-red-800 font-bold text-sm mt-3">
+                ✅ Los USUARIOS se conservarán. El PIN de autorización se restablece a 123456.
+              </p>
+              <p className="text-red-800 font-bold text-sm mt-2">
                 Esta operación es IRREVERSIBLE.
               </p>
             </div>

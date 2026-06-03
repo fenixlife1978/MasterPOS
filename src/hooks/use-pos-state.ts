@@ -4,12 +4,13 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Product, Client, Transaction, Account, CashRegister, Page, CartItem, KitComponent } from '@/lib/types';
 import { syncService } from '@/services/syncService';
 import { useAuth } from '@/context/AuthContext';
+import { rtdb } from '@/lib/firebase';
 
 const roundTo2 = (num: number): number => Math.round(num * 100) / 100;
 const roundTo4 = (num: number): number => Math.round(num * 10000) / 10000;
 
+// ✅ CORREGIDO DEFINITIVAMENTE: Obtiene fecha/hora ISO de Venezuela sin retraso
 function getVenezuelaISOString(): string {
-  const now = new Date();
   const formatter = new Intl.DateTimeFormat('sv-SE', {
     timeZone: 'America/Caracas',
     year: 'numeric',
@@ -18,21 +19,23 @@ function getVenezuelaISOString(): string {
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
+    fractionalSecondDigits: 3,
   });
-  const parts = formatter.formatToParts(now);
+  const parts = formatter.formatToParts(new Date());
   const partMap = Object.fromEntries(parts.map(p => [p.type, p.value]));
-  return `${partMap.year}-${partMap.month}-${partMap.day}T${partMap.hour}:${partMap.minute}:${partMap.second}.000-04:00`;
+  // Venezuela tiene offset fijo -04:00 (UTC-4)
+  return `${partMap.year}-${partMap.month}-${partMap.day}T${partMap.hour}:${partMap.minute}:${partMap.second}.${partMap.fractionalSecond}-04:00`;
 }
 
+// ✅ CORREGIDO DEFINITIVAMENTE: Obtiene fecha YYYY-MM-DD de Venezuela sin retraso
 function getVenezuelaDate(): string {
-  const now = new Date();
   const formatter = new Intl.DateTimeFormat('sv-SE', {
     timeZone: 'America/Caracas',
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
   });
-  const parts = formatter.formatToParts(now);
+  const parts = formatter.formatToParts(new Date());
   const partMap = Object.fromEntries(parts.map(p => [p.type, p.value]));
   return `${partMap.year}-${partMap.month}-${partMap.day}`;
 }
@@ -65,6 +68,10 @@ export function usePOSState() {
   const [adminCode, setAdminCode] = useState<string>('');
   const [currentSession, setCurrentSession] = useState<any | null>(authActiveSession);
 
+  // ✅ NUEVO: Acumuladores para guardar en lote al final del día
+  const pendingKardexEntries = useRef<any[]>([]);
+  const pendingAccountingEntries = useRef<any[]>([]);
+
   const saveRegisterToLocalStorage = useCallback((registerData: CashRegister | null) => {
     if (typeof window !== 'undefined') {
       if (registerData) {
@@ -75,7 +82,6 @@ export function usePOSState() {
     }
   }, [terminalId]);
 
-  // Recalcular precios
   const recalcAllPricesWithNewRate = useCallback((newRate: number) => {
     setProducts(prevProducts => 
       prevProducts.map(product => {
@@ -106,12 +112,9 @@ export function usePOSState() {
     );
   }, [products]);
 
-  // ========== LIMPIEZA GLOBAL CUANDO EL USUARIO CIERRA SESIÓN ==========
   useEffect(() => {
     if (!user) {
-      // Cancelar TODAS las suscripciones activas de Firestore
       syncService.unsubscribeAll();
-      // Limpiar estados locales para evitar datos residuales
       setProducts([]);
       setClients([]);
       setTransactions([]);
@@ -120,12 +123,10 @@ export function usePOSState() {
       registerRef.current = null;
       setCurrentSession(null);
       setCart([]);
-      // Limpiar localStorage relacionados
       localStorage.removeItem(`${STORAGE_KEYS.POS_REGISTER}_${terminalId}`);
     }
   }, [user, terminalId]);
 
-  // Cargar caché local al inicio
   useEffect(() => {
     const cachedRegister = localStorage.getItem(`${STORAGE_KEYS.POS_REGISTER}_${terminalId}`);
     if (cachedRegister) {
@@ -155,7 +156,6 @@ export function usePOSState() {
     return () => unsubscribe();
   }, [user?.terminalId, setActiveSession]);
 
-  // Suscripción al registro de caja (se reinicia si cambia user o terminalId)
   useEffect(() => {
     if (!user) return;
     const unsubRegister = syncService.subscribeToRegisterByTerminal(terminalId, (registerData) => {
@@ -170,7 +170,6 @@ export function usePOSState() {
     return () => unsubRegister();
   }, [user, terminalId, saveRegisterToLocalStorage]);
 
-  // Suscripciones a productos, clientes, transacciones, cuentas y settings
   useEffect(() => {
     if (!user) return;
 
@@ -226,7 +225,24 @@ export function usePOSState() {
     };
   }, [user, terminalId, exchangeRate, recalcAllPricesWithNewRate]);
 
-  // ========== CRUD OPTIMISTA (sin cambios) ==========
+  useEffect(() => {
+    if (!user || !rtdb) return;
+
+    const unsubscribeStock = syncService.subscribeToStockRTDB((stockData: Record<string, number>) => {
+      setProducts(prevProducts => 
+        prevProducts.map(product => {
+          const newStock = stockData[product.id.toString()];
+          if (newStock !== undefined && product.stock !== newStock) {
+            return { ...product, stock: newStock };
+          }
+          return product;
+        })
+      );
+    });
+
+    return () => unsubscribeStock();
+  }, [user]);
+
   const addProduct = useCallback((p: Product) => {
     setProducts(prev => {
       if (prev.some(prod => prod.id === p.id)) return prev;
@@ -235,8 +251,13 @@ export function usePOSState() {
     return syncService.saveProduct(p);
   }, []);
 
-  const updateProduct = useCallback((p: Product) => {
+  const updateProduct = useCallback(async (p: Product) => {
     setProducts(prev => prev.map(prod => prod.id === p.id ? p : prod));
+    if (p.stock !== undefined) {
+      if (syncService.updateStockInRTDB) {
+        await syncService.updateStockInRTDB(p.id, p.stock);
+      }
+    }
     return syncService.saveProduct(p);
   }, []);
 
@@ -465,11 +486,19 @@ export function usePOSState() {
 
     const newTxs = [...(register.txs || []), tx];
     
+    // ✅ NUEVO: Acumular kardex y contabilidad para guardar en lote al final del día
+    if (kardexEntries.length > 0) {
+      pendingKardexEntries.current.push(...kardexEntries);
+    }
+    if (accountingEntry) {
+      pendingAccountingEntries.current.push(accountingEntry);
+    }
+    
     try {
       await syncService.runAtomicSale(terminalId, tx, { 
         products: stockUpdates, 
-        kardexEntries, 
-        accountingEntry, 
+        kardexEntries: [], // Ya no enviamos kardex individual
+        accountingEntry: null, // Ya no enviamos contabilidad individual
         registerUpdate: { txs: newTxs } 
       });
     } catch (syncError) {
@@ -524,8 +553,11 @@ export function usePOSState() {
       amount: amount, referenceId: tx.id, referenceType: 'cobro_deuda', createdAt: tx.date,
     };
 
+    // ✅ Acumular contabilidad para batch
+    pendingAccountingEntries.current.push(accountingEntry);
+
     const newTxs = [...(register.txs || []), tx];
-    await syncService.runAtomicSale(terminalId, tx, { products: new Map(), kardexEntries: [], accountingEntry, registerUpdate: { txs: newTxs } });
+    await syncService.runAtomicSale(terminalId, tx, { products: new Map(), kardexEntries: [], accountingEntry: null, registerUpdate: { txs: newTxs } });
     
     setRegister({ ...register, txs: newTxs });
     registerRef.current = { ...register, txs: newTxs };
@@ -548,8 +580,11 @@ export function usePOSState() {
       amount: amount, referenceId: tx.id, referenceType: 'return', createdAt: tx.date,
     };
 
+    // ✅ Acumular contabilidad para batch
+    pendingAccountingEntries.current.push(accountingEntry);
+
     const newTxs = [...(register.txs || []), tx];
-    await syncService.runAtomicSale(terminalId, tx, { products: new Map(), kardexEntries: [], accountingEntry, registerUpdate: { txs: newTxs } });
+    await syncService.runAtomicSale(terminalId, tx, { products: new Map(), kardexEntries: [], accountingEntry: null, registerUpdate: { txs: newTxs } });
     
     setRegister({ ...register, txs: newTxs });
     registerRef.current = { ...register, txs: newTxs };
@@ -557,7 +592,6 @@ export function usePOSState() {
     return tx;
   }, [register, exchangeRate, terminalId, saveRegisterToLocalStorage, currentSession]);
 
-  // Proxy para actualizar la tasa de cambio
   const setExchangeRateProxy = useCallback(async (newRate: number) => {
     setExchangeRate(newRate);
     localStorage.setItem(STORAGE_KEYS.EXCHANGE_RATE, newRate.toString());
@@ -569,6 +603,20 @@ export function usePOSState() {
     }
   }, [recalcAllPricesWithNewRate]);
 
+  // ✅ NUEVAS FUNCIONES PARA BATCH (usar al cerrar la jornada)
+  const getPendingKardexEntries = useCallback(() => {
+    return pendingKardexEntries.current;
+  }, []);
+
+  const getPendingAccountingEntries = useCallback(() => {
+    return pendingAccountingEntries.current;
+  }, []);
+
+  const clearPendingEntries = useCallback(() => {
+    pendingKardexEntries.current = [];
+    pendingAccountingEntries.current = [];
+  }, []);
+
   return {
     products, setProducts, addProduct, updateProduct, deleteProduct,
     clients, setClients, saveClient, deleteClient, transactions, setTransactions, accounts, setAccounts,
@@ -579,5 +627,7 @@ export function usePOSState() {
     finalizeSale, applyAbono, registerCashEgress,
     isHydrated, globalIvaPercentage, adminCode, checkProductStock, refreshProducts,
     currentSession, setCurrentSession, reloadSession, createCashSession, closeCashSession,
+    // ✅ NUEVAS EXPORTACIONES
+    getPendingKardexEntries, getPendingAccountingEntries, clearPendingEntries,
   };
 }

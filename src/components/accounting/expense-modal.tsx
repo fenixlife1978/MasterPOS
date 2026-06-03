@@ -8,6 +8,16 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { cn } from '@/lib/utils';
 import { EXPENSE_CATEGORIES } from '@/lib/types';
 
+// ✅ Función para obtener fecha actual en Venezuela en formato YYYY-MM-DD
+const getVenezuelaDateString = (): string => {
+  const now = new Date();
+  const venezuelaDate = new Date(now.toLocaleString('en-US', { timeZone: 'America/Caracas' }));
+  const year = venezuelaDate.getFullYear();
+  const month = String(venezuelaDate.getMonth() + 1).padStart(2, '0');
+  const day = String(venezuelaDate.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 interface ExpenseModalProps {
   open: boolean;
   onClose: () => void;
@@ -27,7 +37,8 @@ export default function ExpenseModal({ open, onClose, onConfirm }: ExpenseModalP
   const [concept, setConcept] = useState('');
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  // ✅ CORREGIDO: Usar fecha de Venezuela
+  const [date, setDate] = useState(getVenezuelaDateString);
 
   const currentCategory = EXPENSE_CATEGORIES.find(c => c.id === selectedCategory);
   const showSubcategory = currentCategory?.subcategories && currentCategory.subcategories.length > 0;
@@ -65,7 +76,7 @@ export default function ExpenseModal({ open, onClose, onConfirm }: ExpenseModalP
     setConcept('');
     setDescription('');
     setAmount('');
-    setDate(new Date().toISOString().split('T')[0]);
+    setDate(getVenezuelaDateString());
   };
 
   const getCategoryLabel = (id: string) => {

@@ -1,11 +1,12 @@
 "use client";
 
-import { db } from '@/lib/firebase';
+import { db, rtdb } from '@/lib/firebase';
 import { 
   doc, setDoc, deleteDoc, 
   collection, query, onSnapshot, limit,
   orderBy, writeBatch, getDoc, getDocs, runTransaction, where, updateDoc
 } from 'firebase/firestore';
+import { ref, set, onValue } from 'firebase/database';  // ✅ NUEVO: RTDB
 
 interface PendingOperation {
   id: string;
@@ -72,6 +73,17 @@ const sanitizeForFirestore = (obj: any) => {
   return result === null ? {} : result;
 };
 
+// ✅ NUEVO: Función para actualizar stock en RTDB (con cola offline)
+const updateStockInRTDB = async (productId: number, newStock: number) => {
+  if (!rtdb) return;
+  const stockRef = ref(rtdb, `stock/${productId}`);
+  if (!isOnline) {
+    addToQueue('updateStockRTDB', { productId, newStock });
+    return;
+  }
+  await set(stockRef, newStock);
+};
+
 const processQueue = async () => {
   if (!isOnline || isSyncing || pendingQueue.length === 0 || !db) return;
   isSyncing = true;
@@ -90,6 +102,13 @@ const processQueue = async () => {
           break;
         case 'updateProductStock':
           await updateDoc(doc(db, 'products', data.id.toString()), { stock: data.newStock, updatedAt: Date.now() });
+          break;
+        // ✅ NUEVO: Caso para actualizar stock en RTDB desde cola offline
+        case 'updateStockRTDB':
+          if (rtdb) {
+            const stockRef = ref(rtdb, `stock/${data.productId}`);
+            await set(stockRef, data.newStock);
+          }
           break;
         case 'saveTransaction':
           await setDoc(doc(db, 'transactions', data.id.toString()), { ...data, createdAt: Date.now() });
@@ -176,7 +195,6 @@ const registerUnsubscribe = (unsubscribe: () => void) => {
 
 const handleSubscriptionError = (err: any, context: string) => {
   if (isLoggingOut && (err.code === 'permission-denied' || err.message?.includes('Missing or insufficient permissions'))) {
-    // Ignorar silenciosamente durante el cierre de sesión
     return;
   }
   console.warn(`⚠️ Suscripción ${context}:`, err.message);
@@ -195,30 +213,91 @@ export const syncService = {
     activeUnsubscribes = [];
   },
 
-  async saveProduct(product: any) {
-    if (!db) return;
-    if (!isOnline) return addToQueue('saveProducts', [product]);
-    await setDoc(doc(db, 'products', product.id.toString()), { ...sanitizeForFirestore(product), updatedAt: Date.now() });
-  },
-  async saveProducts(products: any[]) {
-    if (!db) return;
-    if (!isOnline) return addToQueue('saveProducts', products);
-    const batch = writeBatch(db);
-    products.forEach(p => batch.set(doc(db, 'products', p.id.toString()), { ...sanitizeForFirestore(p), updatedAt: Date.now() }));
-    await batch.commit();
-  },
-  async deleteProduct(id: number) {
-    if (!db) return;
-    await deleteDoc(doc(db, 'products', id.toString()));
-  },
-  subscribeToProducts(callback: (data: any[]) => void) {
-    if (!db) return () => {};
-    const unsub = onSnapshot(query(collection(db, 'products'), limit(500)), 
-      (snap) => callback(snap.docs.map(d => ({ id: parseInt(d.id), ...d.data() }))),
-      (err) => handleSubscriptionError(err, 'products')
-    );
+  // ✅ NUEVO: Suscribirse a cambios de stock en RTDB
+  subscribeToStockRTDB(callback: (stockData: Record<string, number>) => void) {
+    if (!rtdb) return () => {};
+    const stockRef = ref(rtdb, 'stock');
+    const unsub = onValue(stockRef, (snapshot) => {
+      const data = snapshot.val() || {};
+      callback(data);
+    }, (error) => {
+      console.warn('⚠️ Error en suscripción a RTDB stock:', error);
+    });
     return registerUnsubscribe(unsub);
   },
+
+  // ✅ NUEVO: Obtener stock actual de RTDB
+async getStockFromRTDB(productId: number): Promise<number | null> {
+  if (!rtdb || !isOnline) return null;
+  const stockRef = ref(rtdb, `stock/${productId}`);
+  const snapshot = await new Promise<any>((resolve) => {
+    onValue(stockRef, resolve, { onlyOnce: true });
+  });
+  return snapshot.val();
+},
+
+// ✅ NUEVO: Inicializar stock en RTDB desde Firestore (al iniciar el día)
+async initializeStockRTDB(products: any[]) {
+  if (!rtdb || !isOnline) return;
+  const stockRef = ref(rtdb, 'stock');
+  const stockData: Record<string, number> = {};
+  products.forEach(p => {
+    stockData[p.id.toString()] = p.stock;
+  });
+  await set(stockRef, stockData);
+  console.log(`📦 Stock inicializado en RTDB: ${products.length} productos`);
+},
+
+// ✅ NUEVO: Método público para actualizar stock en RTDB
+async updateStockInRTDB(productId: number, newStock: number) {
+  if (!rtdb) return;
+  const stockRef = ref(rtdb, `stock/${productId}`);
+  if (!isOnline) {
+    addToQueue('updateStockRTDB', { productId, newStock });
+    return;
+  }
+  await set(stockRef, newStock);
+},
+
+async saveProduct(product: any) {
+  if (!db) return;
+  if (!isOnline) return addToQueue('saveProducts', [product]);
+  await setDoc(doc(db, 'products', product.id.toString()), { ...sanitizeForFirestore(product), updatedAt: Date.now() });
+  // ✅ NUEVO: Sincronizar stock con RTDB
+  if (product.stock !== undefined) {
+    await this.updateStockInRTDB(product.id, product.stock);
+  }
+},
+async saveProducts(products: any[]) {
+  if (!db) return;
+  if (!isOnline) return addToQueue('saveProducts', products);
+  const batch = writeBatch(db);
+  products.forEach(p => batch.set(doc(db, 'products', p.id.toString()), { ...sanitizeForFirestore(p), updatedAt: Date.now() }));
+  await batch.commit();
+  // ✅ NUEVO: Sincronizar stocks con RTDB
+  for (const p of products) {
+    if (p.stock !== undefined) {
+      await this.updateStockInRTDB(p.id, p.stock);
+    }
+  }
+},
+async deleteProduct(id: number) {
+  if (!db) return;
+  await deleteDoc(doc(db, 'products', id.toString()));
+  // ✅ NUEVO: Eliminar de RTDB también
+  if (rtdb) {
+    const stockRef = ref(rtdb, `stock/${id}`);
+    await set(stockRef, null);
+  }
+},
+subscribeToProducts(callback: (data: any[]) => void) {
+  if (!db) return () => {};
+  const unsub = onSnapshot(query(collection(db, 'products'), limit(500)), 
+    (snap) => callback(snap.docs.map(d => ({ id: parseInt(d.id), ...d.data() }))),
+    (err) => handleSubscriptionError(err, 'products')
+  );
+  return registerUnsubscribe(unsub);
+},
 
   async saveClient(client: any) {
     if (!db) return;
@@ -371,6 +450,7 @@ export const syncService = {
     return registerUnsubscribe(unsub);
   },
 
+  // ✅ MODIFICADO: runAtomicSale ahora usa RTDB para el stock
   async runAtomicSale(terminalId: string, txData: any, updates: {
     products: Map<number, { newStock: number }>;
     kardexEntries: any[];
@@ -387,11 +467,17 @@ export const syncService = {
       txs: updates.registerUpdate.txs.map(tx => sanitizeForFirestore(tx))
     };
 
+    // Guardar los nuevos stocks para actualizar RTDB después
+    const stockUpdates: Array<{ productId: number; newStock: number }> = [];
+    for (const [prodId, update] of updates.products.entries()) {
+      stockUpdates.push({ productId: prodId, newStock: update.newStock });
+    }
+
     if (!isOnline) {
       console.log("🛰️ Procesando venta en modo offline...");
       this.saveTransaction(cleanTxData);
-      for (const [prodId, update] of updates.products.entries()) {
-        addToQueue('updateProductStock', { id: prodId, newStock: update.newStock });
+      for (const { productId, newStock } of stockUpdates) {
+        addToQueue('updateStockRTDB', { productId, newStock });
       }
       for (const entry of cleanKardexEntries) {
         this.saveKardexEntry(entry);
@@ -403,13 +489,8 @@ export const syncService = {
       return;
     }
     
-    return runTransaction(db, async (transaction) => {
-      for (const [prodId, update] of updates.products.entries()) {
-        const prodRef = doc(db, 'products', prodId.toString());
-        const prodSnap = await transaction.get(prodRef);
-        if (!prodSnap.exists()) throw new Error(`Producto ${prodId} no existe`);
-        transaction.update(prodRef, { stock: update.newStock, updatedAt: Date.now() });
-      }
+    // ✅ MODIFICADO: Transacción en Firestore SIN actualizar stock (solo guarda venta, kardex, contabilidad)
+    await runTransaction(db, async (transaction) => {
       const txRef = doc(db, 'transactions', cleanTxData.id.toString());
       transaction.set(txRef, { ...cleanTxData, createdAt: Date.now() });
       for (const entry of cleanKardexEntries) {
@@ -426,13 +507,24 @@ export const syncService = {
         updatedAt: Date.now()
       }, { merge: true });
     });
+
+    // ✅ NUEVO: Después de la transacción exitosa, actualizar stock en RTDB
+    for (const { productId, newStock } of stockUpdates) {
+      await updateStockInRTDB(productId, newStock);
+    }
   },
 
   async updateProductWithWeightedAverageCost(productId: number, newQty: number, newCostUsd: number, exchangeRate: number) {
     if (!db) throw new Error('Firebase no disponible');
     const newCostUsdRounded = roundTo4(newCostUsd);
     const exchangeRateRounded = roundTo2(exchangeRate);
-    return runTransaction(db, async (transaction) => {
+    
+    let updatedStock: number = 0;
+    let updatedCostUsd: number = 0;
+    let updatedPriceUsd: number = 0;
+    let updatedPriceBs: number = 0;
+    
+    await runTransaction(db, async (transaction) => {
       const prodRef = doc(db, 'products', productId.toString());
       const prodSnap = await transaction.get(prodRef);
       if (!prodSnap.exists()) throw new Error(`Producto ${productId} no existe`);
@@ -452,6 +544,10 @@ export const syncService = {
       const priceUsd = roundTo2(newAverageCost * (1 + profitPercent / 100));
       const priceBs = roundTo2(priceUsd * exchangeRateRounded);
       const newStock = currentStock + newQty;
+      updatedStock = newStock;
+      updatedCostUsd = newAverageCost;
+      updatedPriceUsd = priceUsd;
+      updatedPriceBs = priceBs;
       const kardexEntry = {
         id: `${Date.now()}_${productId}_${Math.random()}`,
         productId: productId,
@@ -475,8 +571,14 @@ export const syncService = {
       });
       const kardexRef = doc(db, 'kardex_entries', kardexEntry.id);
       transaction.set(kardexRef, { ...kardexEntry, createdAt: Date.now() });
-      return { newStock, newAverageCost, newPriceUsd: priceUsd, newPriceBs: priceBs };
     });
+    
+    // ✅ Actualizar stock en RTDB después de la transacción
+    if (updatedStock !== undefined && updatedStock !== null) {
+      await updateStockInRTDB(productId, updatedStock);
+    }
+    
+    return { newStock: updatedStock, newAverageCost: updatedCostUsd, newPriceUsd: updatedPriceUsd, newPriceBs: updatedPriceBs };
   },
 
   async saveSupplier(supplier: any) {
@@ -863,6 +965,34 @@ export const syncService = {
     }
     const txWithSession = { ...tx, sessionId: sessionId || null };
     await this.saveTransaction(txWithSession);
+  },
+
+  // ✅ Guardar múltiples entradas de kardex en lote (al cerrar la jornada)
+  async saveKardexBatch(entries: any[]) {
+    if (!db) return;
+    if (!entries || entries.length === 0) return;
+    
+    const batch = writeBatch(db);
+    for (const entry of entries) {
+      const ref = doc(db, 'kardex_entries', entry.id);
+      batch.set(ref, { ...entry, createdAt: Date.now() });
+    }
+    await batch.commit();
+    console.log(`📦 Kardex batch guardado: ${entries.length} entradas`);
+  },
+
+  // ✅ Guardar múltiples entradas contables en lote (al cerrar la jornada)
+  async saveAccountingBatch(entries: any[]) {
+    if (!db) return;
+    if (!entries || entries.length === 0) return;
+    
+    const batch = writeBatch(db);
+    for (const entry of entries) {
+      const ref = doc(db, 'accounting_entries', entry.id.toString());
+      batch.set(ref, { ...entry, createdAt: Date.now() });
+    }
+    await batch.commit();
+    console.log(`📊 Contabilidad batch guardada: ${entries.length} entradas`);
   },
 
   getPendingQueueLength() {

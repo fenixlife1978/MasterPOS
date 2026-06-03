@@ -3,6 +3,9 @@ const path = require('path');
 const { pathToFileURL } = require('url');
 const { autoUpdater } = require('electron-updater');
 
+// ✅ FORZAR ZONA HORARIA DE VENEZUELA
+app.commandLine.appendSwitch('timezone', 'America/Caracas');
+
 let mainWindow;
 
 // Registrar el protocolo seguro 'app' antes de que la aplicación esté lista (vital para el offline)
@@ -122,4 +125,4 @@ app.on('activate', () => {
   if (mainWindow === null) {
     createWindow();
   }
-});
+});;

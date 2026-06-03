@@ -1,34 +1,114 @@
-// Normalizar fecha a objeto Date
+// Zona horaria de Venezuela (UTC-4 sin horario de verano)
+const VENEZUELA_TZ = 'America/Caracas';
+
+/**
+ * Obtiene la fecha y hora actual en Venezuela como objeto Date
+ * Nota: El objeto Date internamente sigue siendo UTC, pero representa el momento exacto.
+ */
+export const getCurrentVenezuelaDate = (): Date => {
+  return new Date(); // Esto es universal, pero al formatear usamos la zona
+};
+
+/**
+ * Normalizar fecha a objeto Date (sin cambios)
+ */
 export const normalizeDate = (date: Date | string): Date => {
   return new Date(date);
 };
 
-// Obtener fecha en formato YYYY-MM-DD basado en la hora local del sistema
+/**
+ * Obtiene la fecha actual en Venezuela en formato YYYY-MM-DD (para Firestore)
+ */
+export const getVenezuelaDateString = (): string => {
+  const now = new Date();
+  const formatter = new Intl.DateTimeFormat('sv-SE', {
+    timeZone: VENEZUELA_TZ,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  const parts = formatter.formatToParts(now);
+  const partMap = Object.fromEntries(parts.map(p => [p.type, p.value]));
+  return `${partMap.year}-${partMap.month}-${partMap.day}`;
+};
+
+/**
+ * Obtiene la fecha y hora actual en Venezuela en formato ISO 8601 con offset -04:00
+ * Ejemplo: "2026-06-02T09:36:51.000-04:00"
+ */
+export const getVenezuelaISOString = (): string => {
+  const now = new Date();
+  const formatter = new Intl.DateTimeFormat('sv-SE', {
+    timeZone: VENEZUELA_TZ,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    fractionalSecondDigits: 3,
+  });
+  const parts = formatter.formatToParts(now);
+  const partMap = Object.fromEntries(parts.map(p => [p.type, p.value]));
+  // Añadir el offset fijo de Venezuela (-04:00)
+  return `${partMap.year}-${partMap.month}-${partMap.day}T${partMap.hour}:${partMap.minute}:${partMap.second}.${partMap.fractionalSecond}-04:00`;
+};
+
+/**
+ * Obtiene un timestamp numérico (ms desde epoch) basado en la hora actual de Venezuela.
+ * Como el timestamp es universal, no necesita cambio.
+ */
+export const getVenezuelaTimestamp = (): number => {
+  return Date.now();
+};
+
+/**
+ * Obtiene la fecha en formato YYYY-MM-DD basado en la zona horaria de Venezuela.
+ * @param date Fecha opcional (por defecto ahora)
+ */
 export const getLocalDateString = (date: Date | string = new Date()): string => {
   const d = new Date(date);
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  const formatter = new Intl.DateTimeFormat('sv-SE', {
+    timeZone: VENEZUELA_TZ,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  const parts = formatter.formatToParts(d);
+  const partMap = Object.fromEntries(parts.map(p => [p.type, p.value]));
+  return `${partMap.year}-${partMap.month}-${partMap.day}`;
 };
 
-// Obtener fecha inicio del día en la zona horaria local
+/**
+ * Obtiene fecha inicio del día en la zona horaria local (Venezuela)
+ */
 export const getStartOfDay = (dateStr: string): Date => {
-  // Crea una fecha a las 00:00:00 en hora local
-  return new Date(dateStr + 'T00:00:00');
+  // Crea una fecha a las 00:00:00 en hora local de Venezuela
+  const [year, month, day] = dateStr.split('-').map(Number);
+  // Crear fecha en UTC ajustando manualmente la hora a medianoche UTC-4
+  // Es más confiable usar Date.UTC con el offset
+  const dateLocal = new Date(Date.UTC(year, month - 1, day, 4, 0, 0));
+  return dateLocal;
 };
 
-// Obtener fecha fin del día en la zona horaria local
+/**
+ * Obtiene fecha fin del día en la zona horaria local (Venezuela)
+ */
 export const getEndOfDay = (dateStr: string): Date => {
-  // Crea una fecha a las 23:59:59 en hora local
-  return new Date(dateStr + 'T23:59:59.999');
+  const [year, month, day] = dateStr.split('-').map(Number);
+  // 23:59:59.999 en UTC-4 -> UTC+0 son las 03:59:59.999 del día siguiente
+  const dateLocal = new Date(Date.UTC(year, month - 1, day, 27, 59, 59, 999));
+  return dateLocal;
 };
 
-// Formatear fecha completa para mostrar en la UI (ajusta UTC a local automáticamente)
+/**
+ * Formatear fecha completa para mostrar en la UI (usando zona Venezuela)
+ */
 export const formatLocalDate = (dateStr: string): string => {
   if (!dateStr) return '—';
   const d = new Date(dateStr);
   return d.toLocaleDateString('es-VE', {
+    timeZone: VENEZUELA_TZ,
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
@@ -37,17 +117,25 @@ export const formatLocalDate = (dateStr: string): string => {
   });
 };
 
-// Formatear fecha corta
+/**
+ * Formatear fecha corta (solo día/mes)
+ */
 export const formatLocalDateShort = (dateStr: string): string => {
   if (!dateStr) return '—';
   const d = new Date(dateStr);
   return d.toLocaleDateString('es-VE', {
+    timeZone: VENEZUELA_TZ,
     day: '2-digit',
     month: 'short'
   });
 };
 
-// Obtener fecha actual en formato ISO estándar (UTC)
+/**
+ * Obtiene la fecha actual en formato ISO estándar (UTC) - útil para comparaciones
+ */
 export const getCurrentLocalISO = (): string => {
   return new Date().toISOString();
 };
+
+// Mantener compatibilidad con nombres anteriores
+export const getVenezuelaDateForFirestore = getVenezuelaDateString;

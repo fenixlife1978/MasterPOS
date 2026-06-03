@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect, useRef } from 'react';
@@ -64,6 +63,13 @@ export default function POSModule({ state }: POSModuleProps) {
 
     return () => unsubscribe();
   }, [user]);
+
+  // ✅ Inicializar RTDB con el stock actual cuando los productos estén cargados
+  useEffect(() => {
+    if (state.products.length > 0 && state.isHydrated) {
+      syncService.initializeStockRTDB(state.products);
+    }
+  }, [state.products, state.isHydrated]);
 
   useEffect(() => {
     const lastReceipt = localStorage.getItem('last_receipt_number');

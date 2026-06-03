@@ -81,21 +81,19 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
   const [closeReportData, setCloseReportData] = useState<any>(null);
   const { currentSession, closeCashSession } = state;
 
-  const reg = state.register; // Acceder directamente al registro actual
+  const reg = state.register;
 
-  // Estados para las tasas y horas
-  const [morningRate, setMorningRate] = useState<number | null>(null);      // Tasa 1 (apertura)
-  const [eveningRate, setEveningRate] = useState<number | null>(null);      // Tasa 2 (última actualización)
-  const [morningFirstTxTime, setMorningFirstTxTime] = useState<string>('');  // Hora de apertura (primera transacción)
-  const [eveningFirstTxTime, setEveningFirstTxTime] = useState<string>('');  // Hora de última actualización
+  const [morningRate, setMorningRate] = useState<number | null>(null);
+  const [eveningRate, setEveningRate] = useState<number | null>(null);
+  const [morningFirstTxTime, setMorningFirstTxTime] = useState<string>('');
+  const [eveningFirstTxTime, setEveningFirstTxTime] = useState<string>('');
 
   const [ventasManana, setVentasManana] = useState<Record<string, { bs: number; usd: number }>>({});
   const [vueltosManana, setVueltosManana] = useState<Record<string, number>>({});
   const [ventasTarde, setVentasTarde] = useState<Record<string, { bs: number; usd: number }>>({});
   const [vueltosTarde, setVueltosTarde] = useState<Record<string, number>>({});
-  const [devoluciones, setDevoluciones] = useState<Record<string, { bs: number; usd: number }>>({}); // Nuevo
+  const [devoluciones, setDevoluciones] = useState<Record<string, { bs: number; usd: number }>>({});
 
-  // ✅ Total de ventas a crédito del día
   const totalCreditoBs = useMemo(() => {
     if (!reg?.txs) return 0;
     const todayVzla = getVenezuelaToday();
@@ -108,7 +106,6 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
     return txDay.reduce((sum, t) => sum + t.total, 0);
   }, [reg?.txs]);
 
-  // Procesar transacciones del día
   useEffect(() => {
     if (!reg?.txs) return;
     const todayVzla = getVenezuelaToday();
@@ -132,7 +129,6 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
       return;
     }
 
-    // Detectar tasa de apertura (primera transacción del día) y última tasa
     let firstRate: number | null = null;
     let lastRate: number | null = null;
     let firstRateTime = '';
@@ -152,7 +148,6 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
     setMorningFirstTxTime(firstRateTime);
     setEveningFirstTxTime(lastRateTime);
 
-    // Inicializar acumuladores
     const ventasAM: Record<string, { bs: number; usd: number }> = {};
     const vueltosAM: Record<string, number> = {};
     const ventasPM: Record<string, { bs: number; usd: number }> = {};
@@ -171,7 +166,6 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
       const hour = getVenezuelaHour(tx.date);
       const isMorning = hour < 12;
 
-      // Procesar devoluciones
       if (tx.type === 'devolucion') {
         if (tx.payments && Array.isArray(tx.payments) && tx.payments.length > 0) {
           for (const payment of tx.payments) {
@@ -198,10 +192,8 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
         continue;
       }
 
-      // Solo ventas e ingresos (contado, cobro_deuda)
       if (tx.type !== 'contado' && tx.type !== 'cobro_deuda') continue;
 
-      // Procesar pagos (compuestos o único)
       if (tx.payments && Array.isArray(tx.payments) && tx.payments.length > 0) {
         for (const payment of tx.payments) {
           const method = payment.method;
@@ -243,7 +235,6 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
         }
       }
 
-      // Vuelto siempre en Bs
       const change = tx.change || 0;
       if (change > 0) {
         if (isMorning) {
@@ -265,7 +256,6 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
   const aperturaUsd = reg?.openAmountUsd ?? 0;
   const horaApertura = reg?.openTime ? new Date(reg.openTime).toLocaleTimeString('es-VE', { timeZone: 'America/Caracas', hour: '2-digit', minute: '2-digit' }) : '—';
 
-  // Total USD en efectivo (solo efectivo USD físico)
   const totalCashUsd = useMemo(() => {
     let total = aperturaUsd;
     if (reg?.txs && Array.isArray(reg.txs)) {
@@ -341,8 +331,8 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
     };
   });
 
-  const tasaManana = morningRate || tasaActual;   // Tasa 1
-  const tasaTarde = eveningRate || tasaActual;     // Tasa 2 (puede ser igual a tasaManana si no hubo cambio)
+  const tasaManana = morningRate || tasaActual;
+  const tasaTarde = eveningRate || tasaActual;
   const tasaCierre = tasaActual;
   const horaUltimaActualizacion = eveningFirstTxTime ? getVenezuelaTimeString(eveningFirstTxTime) : horaApertura;
   
@@ -386,7 +376,7 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
       })),
       totales: { sistema: totalSistBs, real: totalFisBs, diferencia: diffNeta, estado: Math.abs(diffNeta) < 0.01 ? "CONCILIADO" : (diffNeta > 0 ? "SOBRANTE" : "FALTANTE") },
       usdEfectivo: totalCashUsd,
-      totalCreditoBs, // Agregar al reporte para posible uso
+      totalCreditoBs,
     };
     return report;
   };
@@ -402,6 +392,21 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
     if (closeReportData) {
       setIsSubmitting(true);
       try {
+        // ✅ NUEVO: Guardar kardex pendiente en lote
+        const pendingKardex = state.getPendingKardexEntries();
+        if (pendingKardex && pendingKardex.length > 0) {
+          await syncService.saveKardexBatch(pendingKardex);
+        }
+
+        // ✅ NUEVO: Guardar contabilidad pendiente en lote
+        const pendingAccounting = state.getPendingAccountingEntries();
+        if (pendingAccounting && pendingAccounting.length > 0) {
+          await syncService.saveAccountingBatch(pendingAccounting);
+        }
+
+        // ✅ NUEVO: Limpiar acumuladores
+        state.clearPendingEntries();
+
         const timestamp = Date.now();
         localStorage.setItem(`cierre_final_${timestamp}`, JSON.stringify(closeReportData));
         await syncService.saveCashClose({ id: `final_${timestamp}`, tipo: 'final', ...closeReportData });
@@ -460,7 +465,6 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
     const estado = data.totales.estado;
     const estadoColor = diff > 0 ? '#10b981' : (diff < 0 ? '#ef4444' : '#3b82f6');
     const estadoIcono = estado === 'SOBRANTE' ? '💰' : (estado === 'FALTANTE' ? '⚠️' : '✅');
-    // Calcular total de crédito desde las transacciones originales? Ya lo tenemos en data.totalCreditoBs
     const creditoBs = data.totalCreditoBs || 0;
     return `<!DOCTYPE html>
       <html>
@@ -633,7 +637,6 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
                     </td>
                   </tr>
                 ))}
-                {/* ✅ Fila de VENTAS A CRÉDITO */}
                 <tr className="bg-blue-50/50 font-bold">
                   <td className="p-2 font-bold text-blue-700">VENTAS A CRÉDITO</td>
                   <td className="p-2 text-center">—</td>

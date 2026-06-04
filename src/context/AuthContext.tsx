@@ -127,7 +127,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setUser(null);
             setLoading(false);
             // Redirigir al login con mensaje de error
-            router.replace('/login?error=no_account');
+            router.replace('/login/');
           }
         }
       } else {
@@ -196,14 +196,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => { mounted = false; };
   }, [user?.terminalId]);
 
-  // Protección de rutas (evita bucle)
+  // Protección de rutas (evita bucle) - Ajustado para trailingSlash
   useEffect(() => {
-    const isLoginPage = pathname === '/login';
+    // Con trailingSlash: true, las rutas suelen terminar en /
+    const isLoginPage = pathname === '/login' || pathname === '/login/';
     const isErrorPage = pathname?.includes('error');
     
     if (!loading) {
       if (!user && !isLoginPage && !isErrorPage) {
-        router.replace('/login');
+        router.replace('/login/');
       } else if (user && isLoginPage) {
         router.replace('/');
       }
@@ -218,7 +219,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem('user');
     setUser(null);
     setActiveSession(null);
-    router.replace('/login');
+    router.replace('/login/');
   };
 
   const reloadActiveSession = async () => {

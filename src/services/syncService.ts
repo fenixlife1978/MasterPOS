@@ -3,11 +3,12 @@
 import { db, rtdb } from '@/lib/firebase';
 import { 
   doc, setDoc, deleteDoc, 
-  collection, query, onSnapshot, limit,
-  orderBy, writeBatch, getDoc, getDocs, runTransaction, where, updateDoc
+  collection, getDocs, writeBatch, runTransaction, updateDoc, query, where, orderBy, limit, getDoc
 } from 'firebase/firestore';
-import { ref, set, onValue } from 'firebase/database';  // ✅ NUEVO: RTDB
+import { ref, set, onValue } from 'firebase/database';
+import { localCache } from '@/lib/localCache';
 
+// ========== INTERFACES ==========
 interface PendingOperation {
   id: string;
   type: string;
@@ -16,29 +17,19 @@ interface PendingOperation {
   retries: number;
 }
 
+// ========== VARIABLES GLOBALES ==========
 let pendingQueue: PendingOperation[] = [];
 let isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
 let isSyncing = false;
-let activeUnsubscribes: (() => void)[] = [];
 let isLoggingOut = false;
 
-// Opcional: filtrar errores de permisos en consola durante logout
-if (typeof window !== 'undefined') {
-  const originalConsoleError = console.error;
-  console.error = function(...args) {
-    const message = args.join(' ');
-    if (isLoggingOut && (message.includes('Missing or insufficient permissions') || message.includes('permission-denied'))) {
-      return; // Ignorar silenciosamente
-    }
-    originalConsoleError.apply(console, args);
-  };
+// ========== INICIALIZACIÓN ==========
+async function loadPendingQueue() {
+  pendingQueue = await localCache.getAllPending();
 }
+loadPendingQueue();
 
 if (typeof window !== 'undefined') {
-  const savedQueue = localStorage.getItem('firebase_pending_queue');
-  if (savedQueue) {
-    try { pendingQueue = JSON.parse(savedQueue); } catch(e) {}
-  }
   window.addEventListener('online', () => { 
     isOnline = true; 
     console.log("🌐 Conexión recuperada. Procesando cola...");
@@ -50,6 +41,7 @@ if (typeof window !== 'undefined') {
   });
 }
 
+// ========== UTILIDADES ==========
 const deepClean = (obj: any): any => {
   if (obj === null || obj === undefined) return null;
   if (Array.isArray(obj)) {
@@ -73,18 +65,11 @@ const sanitizeForFirestore = (obj: any) => {
   return result === null ? {} : result;
 };
 
-// ✅ NUEVO: Función para actualizar stock en RTDB (con cola offline)
-const updateStockInRTDB = async (productId: number, newStock: number) => {
-  if (!rtdb) return;
-  const stockRef = ref(rtdb, `stock/${productId}`);
-  if (!isOnline) {
-    addToQueue('updateStockRTDB', { productId, newStock });
-    return;
-  }
-  await set(stockRef, newStock);
-};
+const roundTo2 = (num: number): number => Math.round(num * 100) / 100;
+const roundTo4 = (num: number): number => Math.round(num * 10000) / 10000;
 
-const processQueue = async () => {
+// ========== COLA DE OPERACIONES PENDIENTES ==========
+async function processQueue() {
   if (!isOnline || isSyncing || pendingQueue.length === 0 || !db) return;
   isSyncing = true;
   const toRetry: PendingOperation[] = [];
@@ -103,7 +88,6 @@ const processQueue = async () => {
         case 'updateProductStock':
           await updateDoc(doc(db, 'products', data.id.toString()), { stock: data.newStock, updatedAt: Date.now() });
           break;
-        // ✅ NUEVO: Caso para actualizar stock en RTDB desde cola offline
         case 'updateStockRTDB':
           if (rtdb) {
             const stockRef = ref(rtdb, `stock/${data.productId}`);
@@ -162,7 +146,21 @@ const processQueue = async () => {
         case 'updateUserTerminalId':
           await updateDoc(doc(db, 'users', data.userId), { terminalId: data.terminalId, updatedAt: Date.now() });
           break;
+        case 'deleteProduct':
+          await deleteDoc(doc(db, 'products', data.id.toString()));
+          if (rtdb) {
+            const stockRef = ref(rtdb, `stock/${data.id}`);
+            await set(stockRef, null);
+          }
+          break;
+        case 'deleteClient':
+          await deleteDoc(doc(db, 'clients', data.id.toString()));
+          break;
+        case 'deleteTransaction':
+          await deleteDoc(doc(db, 'transactions', data.id.toString()));
+          break;
       }
+      await localCache.deletePending(op.id);
     } catch (error) {
       console.error(`❌ Error en operación ${op.type}:`, error);
       op.retries++;
@@ -170,697 +168,524 @@ const processQueue = async () => {
     }
   }
   pendingQueue = toRetry;
-  if (typeof window !== 'undefined') localStorage.setItem('firebase_pending_queue', JSON.stringify(pendingQueue));
+  await localCache.clearPending();
+  for (const op of pendingQueue) {
+    await localCache.savePendingOperation(op);
+  }
   isSyncing = false;
-  console.log("✅ Proceso de sincronización finalizado.");
-};
+  console.log("✅ Sincronización completada.");
+}
 
-const addToQueue = (type: string, data: any) => {
-  pendingQueue.push({ id: `${Date.now()}_${Math.random()}`, type, data, timestamp: Date.now(), retries: 0 });
-  if (typeof window !== 'undefined') localStorage.setItem('firebase_pending_queue', JSON.stringify(pendingQueue));
-  if (isOnline) processQueue();
-};
-
-const roundTo2 = (num: number): number => Math.round(num * 100) / 100;
-const roundTo4 = (num: number): number => Math.round(num * 10000) / 10000;
-
-const registerUnsubscribe = (unsubscribe: () => void) => {
-  activeUnsubscribes.push(unsubscribe);
-  return () => {
-    const index = activeUnsubscribes.indexOf(unsubscribe);
-    if (index !== -1) activeUnsubscribes.splice(index, 1);
-    unsubscribe();
+async function addToQueue(type: string, data: any) {
+  const op: PendingOperation = { 
+    id: `${Date.now()}_${Math.random()}`, 
+    type, 
+    data, 
+    timestamp: Date.now(), 
+    retries: 0 
   };
-};
+  await localCache.savePendingOperation(op);
+  pendingQueue.push(op);
+  if (isOnline) processQueue();
+}
 
-const handleSubscriptionError = (err: any, context: string) => {
-  if (isLoggingOut && (err.code === 'permission-denied' || err.message?.includes('Missing or insufficient permissions'))) {
+// ========== FUNCIONES DE STOCK (RTDB en tiempo real) ==========
+const updateStockInRTDB = async (productId: number, newStock: number) => {
+  if (!rtdb) return;
+  const stockRef = ref(rtdb, `stock/${productId}`);
+  if (!isOnline) {
+    await addToQueue('updateStockRTDB', { productId, newStock });
     return;
   }
-  console.warn(`⚠️ Suscripción ${context}:`, err.message);
+  await set(stockRef, newStock);
 };
 
+// ========== FUNCIONES DE CARGA INICIAL Y REFRESCO ==========
+async function fetchAndCacheCollection(name: string, queryFn?: () => Promise<any[]>) {
+  if (!db) return [];
+  try {
+    let data: any[];
+    if (queryFn) {
+      data = await queryFn();
+    } else {
+      const snap = await getDocs(collection(db, name));
+      data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    }
+    await localCache.saveCollection(name, data);
+    console.log(`📦 Cargada colección: ${name} (${data.length} docs)`);
+    return data;
+  } catch (error) {
+    console.error(`Error cargando ${name}:`, error);
+    return [];
+  }
+}
+
+// ========== SERVICIO PRINCIPAL ==========
 export const syncService = {
   setLoggingOut(status: boolean) {
     isLoggingOut = status;
-    if (status) console.log("🚪 Modo logout activado: se ignorarán errores de permisos");
-    else console.log("✅ Modo logout desactivado");
   },
 
   unsubscribeAll() {
-    console.log(`🛑 Cancelando ${activeUnsubscribes.length} suscripciones activas...`);
-    activeUnsubscribes.forEach(unsub => unsub());
-    activeUnsubscribes = [];
+    console.log("No hay suscripciones activas (modo offline-first)");
   },
 
-  // ✅ NUEVO: Suscribirse a cambios de stock en RTDB
+  // ========== CARGA MASIVA AL INICIAR ==========
+  async loadAllDataToCache() {
+    console.log("🔄 Descargando todas las colecciones a caché local...");
+    await Promise.all([
+      this.refreshProducts(),
+      this.refreshClients(),
+      this.refreshTransactions(),
+      this.refreshAccounts(),
+      this.refreshAccountingEntries(),
+      this.refreshSuppliers(),
+      this.refreshPurchaseInvoices(),
+      this.refreshKardexEntries(),
+      this.refreshTerminals(),
+      this.refreshGlobalSettings(),
+      this.refreshCashCloses(),
+      this.refreshSupplierPayments(), // NUEVO: cargar pagos a proveedores
+    ]);
+    console.log("✅ Caché local actualizada.");
+  },
+
+  // Métodos de refresco individuales
+  async refreshProducts() {
+    const snap = await getDocs(query(collection(db, 'products'), limit(2000)));
+    const data = snap.docs.map(d => ({ id: parseInt(d.id), ...d.data() }));
+    await localCache.saveCollection('products', data);
+    return data;
+  },
+  async refreshClients() {
+    const snap = await getDocs(collection(db, 'clients'));
+    const data = snap.docs.map(d => ({ id: parseInt(d.id), ...d.data() }));
+    await localCache.saveCollection('clients', data);
+    return data;
+  },
+  async refreshTransactions() {
+    const snap = await getDocs(query(collection(db, 'transactions'), orderBy('date', 'desc'), limit(1000)));
+    const data = snap.docs.map(d => ({ id: parseInt(d.id), ...d.data() }));
+    await localCache.saveCollection('transactions', data);
+    return data;
+  },
+  async refreshAccounts() {
+    const snap = await getDocs(collection(db, 'accounts'));
+    const data = snap.docs.map(d => d.data());
+    await localCache.saveCollection('accounts', data);
+    return data;
+  },
+  async refreshAccountingEntries() {
+    const snap = await getDocs(query(collection(db, 'accounting_entries'), orderBy('date', 'desc'), limit(2000)));
+    const data = snap.docs.map(d => d.data());
+    await localCache.saveCollection('accounting_entries', data);
+    return data;
+  },
+  async refreshSuppliers() {
+    const snap = await getDocs(collection(db, 'suppliers'));
+    const data = snap.docs.map(d => ({ id: parseInt(d.id), ...d.data() }));
+    await localCache.saveCollection('suppliers', data);
+    return data;
+  },
+  async refreshPurchaseInvoices() {
+    const snap = await getDocs(query(collection(db, 'purchase_invoices'), orderBy('date', 'desc'), limit(500)));
+    const data = snap.docs.map(d => d.data());
+    await localCache.saveCollection('purchase_invoices', data);
+    return data;
+  },
+  async refreshKardexEntries() {
+    const snap = await getDocs(query(collection(db, 'kardex_entries'), orderBy('createdAt', 'desc'), limit(2000)));
+    const data = snap.docs.map(d => d.data());
+    await localCache.saveCollection('kardex_entries', data);
+    return data;
+  },
+  async refreshTerminals() {
+    const snap = await getDocs(collection(db, 'terminals'));
+    const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    await localCache.saveCollection('terminals', data);
+    return data;
+  },
+  async refreshGlobalSettings() {
+    const snap = await getDoc(doc(db, 'global_settings', 'global'));
+    const data = snap.exists() ? snap.data() : null;
+    await localCache.saveCollection('global_settings', data ? [data] : []);
+    return data;
+  },
+  async refreshCashCloses() {
+    const snap = await getDocs(query(collection(db, 'cash_closes'), orderBy('fecha', 'desc')));
+    const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    await localCache.saveCollection('cash_closes', data);
+    return data;
+  },
+  // NUEVO: refrescar pagos a proveedores
+  async refreshSupplierPayments() {
+    const snap = await getDocs(query(collection(db, 'supplier_payments'), orderBy('createdAt', 'desc'), limit(1000)));
+    const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    await localCache.saveCollection('supplier_payments', data);
+    return data;
+  },
+
+  // ========== LECTURAS DESDE CACHÉ LOCAL ==========
+  async getProducts() { return await localCache.getCollection('products'); },
+  async getClients() { return await localCache.getCollection('clients'); },
+  async getTransactions() { return await localCache.getCollection('transactions'); },
+  async getAllTransactions() { return await this.getTransactions(); },
+  async getAccounts() { return await localCache.getCollection('accounts'); },
+  async getAccountingEntries() { return await localCache.getCollection('accounting_entries'); },
+  async getAllAccountingEntries() { return await this.getAccountingEntries(); },
+  async getSuppliers() { return await localCache.getCollection('suppliers'); },
+  async getPurchaseInvoices() { return await localCache.getCollection('purchase_invoices'); },
+  async getKardexEntries() { return await localCache.getCollection('kardex_entries'); },
+  async getAllKardexEntries() { return await this.getKardexEntries(); },
+  async getTerminals() { return await localCache.getCollection('terminals'); },
+  async getAllTerminals() { return await this.getTerminals(); },
+  async getTerminal(id: string) { 
+    const terminals = await this.getTerminals(); 
+    return terminals.find(t => t.id === id) || null; 
+  },
+  async getGlobalSettings() { 
+    const arr = await localCache.getCollection('global_settings'); 
+    return arr[0] || null; 
+  },
+  async getCashCloses() { return await localCache.getCollection('cash_closes'); },
+  async getAllCashCloses() { return await this.getCashCloses(); },
+  async getAdminCode() {
+    const settings = await this.getGlobalSettings();
+    if (settings && settings.adminCode) return { code: settings.adminCode };
+    return null;
+  },
+  // NUEVO: obtener pagos a proveedores desde caché
+  async getSupplierPayments() {
+    return await localCache.getCollection('supplier_payments') || [];
+  },
+
+  // ========== SUSCRIPCIONES (COMPATIBILIDAD - DEVUELVEN DATOS UNA VEZ) ==========
+  subscribeToProducts(cb: (data: any[]) => void) { this.getProducts().then(cb); return () => {}; },
+  subscribeToClients(cb: (data: any[]) => void) { this.getClients().then(cb); return () => {}; },
+  subscribeToTransactions(cb: (data: any[]) => void) { this.getTransactions().then(cb); return () => {}; },
+  subscribeToAccounts(cb: (data: any[]) => void) { this.getAccounts().then(cb); return () => {}; },
+  subscribeToAccounting(cb: (data: any[]) => void) { this.getAccountingEntries().then(cb); return () => {}; },
+  subscribeToSuppliers(cb: (data: any[]) => void) { this.getSuppliers().then(cb); return () => {}; },
+  subscribeToPurchaseInvoices(cb: (data: any[]) => void) { this.getPurchaseInvoices().then(cb); return () => {}; },
+  subscribeToKardex(cb: (data: any[]) => void) { this.getKardexEntries().then(cb); return () => {}; },
+  subscribeToTerminals(cb: (data: any[]) => void) { this.getTerminals().then(cb); return () => {}; },
+  subscribeToTerminal(id: string, cb: (terminal: any) => void) { this.getTerminal(id).then(cb); return () => {}; },
+  subscribeToGlobalSettings(cb: (data: any) => void) { this.getGlobalSettings().then(cb); return () => {}; },
+  subscribeToCashCloses(cb: (data: any[]) => void) { this.getCashCloses().then(cb); return () => {}; },
+  subscribeToRegister(cb: (data: any) => void) { cb(null); return () => {}; },
+  subscribeToRegisterByTerminal(terminalId: string, cb: (data: any) => void) { cb(null); return () => {}; },
+  subscribeToActiveSession(terminalId: string, cb: (session: any | null) => void) { cb(null); return () => {}; },
+  subscribeToTransactionsBySession(sessionId: string, cb: (transactions: any[]) => void) { cb([]); return () => {}; },
+  // NUEVO: suscripción a pagos a proveedores
+  subscribeToSupplierPayments(cb: (data: any[]) => void) { 
+    this.getSupplierPayments().then(cb); 
+    return () => {}; 
+  },
+
+  // ========== STOCK RTDB (TIEMPO REAL - SIN COSTO) ==========
   subscribeToStockRTDB(callback: (stockData: Record<string, number>) => void) {
     if (!rtdb) return () => {};
     const stockRef = ref(rtdb, 'stock');
     const unsub = onValue(stockRef, (snapshot) => {
-      const data = snapshot.val() || {};
-      callback(data);
+      callback(snapshot.val() || {});
     }, (error) => {
       console.warn('⚠️ Error en suscripción a RTDB stock:', error);
     });
-    return registerUnsubscribe(unsub);
+    return unsub;
   },
 
-  // ✅ NUEVO: Obtener stock actual de RTDB
-async getStockFromRTDB(productId: number): Promise<number | null> {
-  if (!rtdb || !isOnline) return null;
-  const stockRef = ref(rtdb, `stock/${productId}`);
-  const snapshot = await new Promise<any>((resolve) => {
-    onValue(stockRef, resolve, { onlyOnce: true });
-  });
-  return snapshot.val();
-},
+  async getStockFromRTDB(productId: number): Promise<number | null> {
+    if (!rtdb || !isOnline) return null;
+    const stockRef = ref(rtdb, `stock/${productId}`);
+    const snapshot = await new Promise<any>((resolve) => {
+      onValue(stockRef, resolve, { onlyOnce: true });
+    });
+    return snapshot.val();
+  },
 
-// ✅ NUEVO: Inicializar stock en RTDB desde Firestore (al iniciar el día)
-async initializeStockRTDB(products: any[]) {
-  if (!rtdb || !isOnline) return;
-  const stockRef = ref(rtdb, 'stock');
-  const stockData: Record<string, number> = {};
-  products.forEach(p => {
-    stockData[p.id.toString()] = p.stock;
-  });
-  await set(stockRef, stockData);
-  console.log(`📦 Stock inicializado en RTDB: ${products.length} productos`);
-},
+  async initializeStockRTDB(products: any[]) {
+    if (!rtdb || !isOnline) return;
+    const stockData: Record<string, number> = {};
+    products.forEach(p => { stockData[p.id.toString()] = p.stock; });
+    await set(ref(rtdb, 'stock'), stockData);
+    console.log(`📦 Stock inicializado en RTDB: ${products.length} productos`);
+  },
 
-// ✅ NUEVO: Método público para actualizar stock en RTDB
-async updateStockInRTDB(productId: number, newStock: number) {
-  if (!rtdb) return;
-  const stockRef = ref(rtdb, `stock/${productId}`);
-  if (!isOnline) {
-    addToQueue('updateStockRTDB', { productId, newStock });
-    return;
-  }
-  await set(stockRef, newStock);
-},
+  async updateStockInRTDB(productId: number, newStock: number) {
+    await updateStockInRTDB(productId, newStock);
+  },
 
-async saveProduct(product: any) {
-  if (!db) return;
-  if (!isOnline) return addToQueue('saveProducts', [product]);
-  await setDoc(doc(db, 'products', product.id.toString()), { ...sanitizeForFirestore(product), updatedAt: Date.now() });
-  // ✅ NUEVO: Sincronizar stock con RTDB
-  if (product.stock !== undefined) {
-    await this.updateStockInRTDB(product.id, product.stock);
-  }
-},
-async saveProducts(products: any[]) {
-  if (!db) return;
-  if (!isOnline) return addToQueue('saveProducts', products);
-  const batch = writeBatch(db);
-  products.forEach(p => batch.set(doc(db, 'products', p.id.toString()), { ...sanitizeForFirestore(p), updatedAt: Date.now() }));
-  await batch.commit();
-  // ✅ NUEVO: Sincronizar stocks con RTDB
-  for (const p of products) {
-    if (p.stock !== undefined) {
-      await this.updateStockInRTDB(p.id, p.stock);
+  // ========== ESCRITURAS (GUARDAN LOCAL + ENCOLAN) ==========
+  async saveProduct(product: any) {
+    const products = await this.getProducts();
+    const index = products.findIndex(p => p.id === product.id);
+    if (index !== -1) products[index] = product;
+    else products.push(product);
+    await localCache.saveCollection('products', products);
+    await addToQueue('saveProducts', [product]);
+    if (product.stock !== undefined) {
+      await this.updateStockInRTDB(product.id, product.stock);
     }
-  }
-},
-async deleteProduct(id: number) {
-  if (!db) return;
-  await deleteDoc(doc(db, 'products', id.toString()));
-  // ✅ NUEVO: Eliminar de RTDB también
-  if (rtdb) {
-    const stockRef = ref(rtdb, `stock/${id}`);
-    await set(stockRef, null);
-  }
-},
-subscribeToProducts(callback: (data: any[]) => void) {
-  if (!db) return () => {};
-  const unsub = onSnapshot(query(collection(db, 'products'), limit(500)), 
-    (snap) => callback(snap.docs.map(d => ({ id: parseInt(d.id), ...d.data() }))),
-    (err) => handleSubscriptionError(err, 'products')
-  );
-  return registerUnsubscribe(unsub);
-},
+  },
+
+  async saveProducts(products: any[]) {
+    const current = await this.getProducts();
+    const map = new Map(current.map(p => [p.id, p]));
+    for (const p of products) map.set(p.id, p);
+    const updated = Array.from(map.values());
+    await localCache.saveCollection('products', updated);
+    await addToQueue('saveProducts', products);
+    for (const p of products) {
+      if (p.stock !== undefined) {
+        await this.updateStockInRTDB(p.id, p.stock);
+      }
+    }
+  },
+
+  async deleteProduct(id: number) {
+    let products = await this.getProducts();
+    products = products.filter(p => p.id !== id);
+    await localCache.saveCollection('products', products);
+    await addToQueue('deleteProduct', { id });
+    if (rtdb) {
+      const stockRef = ref(rtdb, `stock/${id}`);
+      await set(stockRef, null);
+    }
+  },
 
   async saveClient(client: any) {
-    if (!db) return;
-    if (!isOnline) return addToQueue('saveClient', client);
-    await setDoc(doc(db, 'clients', client.id.toString()), { ...sanitizeForFirestore(client), updatedAt: Date.now() });
+    const clients = await this.getClients();
+    const index = clients.findIndex(c => c.id === client.id);
+    if (index !== -1) clients[index] = client;
+    else clients.push(client);
+    await localCache.saveCollection('clients', clients);
+    await addToQueue('saveClient', client);
   },
+
   async deleteClient(id: number) {
-    if (!db) return;
-    await deleteDoc(doc(db, 'clients', id.toString()));
-  },
-  subscribeToClients(callback: (data: any[]) => void) {
-    if (!db) return () => {};
-    const unsub = onSnapshot(collection(db, 'clients'), 
-      (snap) => callback(snap.docs.map(d => ({ id: parseInt(d.id), ...d.data() }))),
-      (err) => handleSubscriptionError(err, 'clients')
-    );
-    return registerUnsubscribe(unsub);
+    let clients = await this.getClients();
+    clients = clients.filter(c => c.id !== id);
+    await localCache.saveCollection('clients', clients);
+    await addToQueue('deleteClient', { id });
   },
 
   async saveTransaction(tx: any) {
-    if (!db) return;
-    if (!isOnline) return addToQueue('saveTransaction', tx);
-    const cleaned = sanitizeForFirestore(tx);
-    await setDoc(doc(db, 'transactions', cleaned.id.toString()), { ...cleaned, createdAt: Date.now() });
-  },
-  async deleteTransaction(id: number) {
-    if (!db) return;
-    await deleteDoc(doc(db, 'transactions', id.toString()));
-  },
-  subscribeToTransactions(callback: (data: any[]) => void) {
-    if (!db) return () => {};
-    const unsub = onSnapshot(query(collection(db, 'transactions'), orderBy('date', 'desc'), limit(500)), 
-      (snap) => callback(snap.docs.map(d => d.data())),
-      (err) => handleSubscriptionError(err, 'transactions')
-    );
-    return registerUnsubscribe(unsub);
+    const txs = await this.getTransactions();
+    const index = txs.findIndex(t => t.id === tx.id);
+    if (index !== -1) txs[index] = tx;
+    else txs.unshift(tx);
+    await localCache.saveCollection('transactions', txs);
+    await addToQueue('saveTransaction', tx);
   },
 
-  async getAllTransactions(): Promise<any[]> {
-    if (!db) return [];
-    const snap = await getDocs(collection(db, 'transactions'));
-    return snap.docs.map(doc => ({ id: parseInt(doc.id), ...doc.data() }));
+  async deleteTransaction(id: number) {
+    let txs = await this.getTransactions();
+    txs = txs.filter(t => t.id !== id);
+    await localCache.saveCollection('transactions', txs);
+    await addToQueue('deleteTransaction', { id });
   },
 
   async deleteAllTransactions() {
-    if (!db) return;
-    const snap = await getDocs(collection(db, 'transactions'));
-    if (snap.empty) return;
-    const batch = writeBatch(db);
-    snap.docs.forEach(doc => batch.delete(doc.ref));
-    await batch.commit();
+    await localCache.saveCollection('transactions', []);
+    const all = await this.getTransactions();
+    for (const tx of all) {
+      await addToQueue('deleteTransaction', { id: tx.id });
+    }
   },
 
   async saveAccount(acc: any) {
-    if (!db) return;
-    if (!isOnline) return addToQueue('saveAccount', acc);
-    await setDoc(doc(db, 'accounts', acc.id.toString()), { ...sanitizeForFirestore(acc), updatedAt: Date.now() });
-  },
-  subscribeToAccounts(callback: (data: any[]) => void) {
-    if (!db) return () => {};
-    const unsub = onSnapshot(collection(db, 'accounts'), 
-      (snap) => callback(snap.docs.map(d => d.data())),
-      (err) => handleSubscriptionError(err, 'accounts')
-    );
-    return registerUnsubscribe(unsub);
+    const accounts = await this.getAccounts();
+    const index = accounts.findIndex(a => a.id === acc.id);
+    if (index !== -1) accounts[index] = acc;
+    else accounts.push(acc);
+    await localCache.saveCollection('accounts', accounts);
+    await addToQueue('saveAccount', acc);
   },
 
   async saveAccountingEntry(entry: any) {
-    if (!db) return;
-    if (!isOnline) return addToQueue('saveAccountingEntry', entry);
-    await setDoc(doc(db, 'accounting_entries', entry.id.toString()), { ...sanitizeForFirestore(entry), createdAt: Date.now() });
-  },
-  subscribeToAccounting(callback: (data: any[]) => void) {
-    if (!db) return () => {};
-    const unsub = onSnapshot(query(collection(db, 'accounting_entries'), orderBy('date', 'desc'), limit(1000)), 
-      (snap) => callback(snap.docs.map(d => d.data())),
-      (err) => handleSubscriptionError(err, 'accounting')
-    );
-    return registerUnsubscribe(unsub);
-  },
-
-  async getAllAccountingEntries(): Promise<any[]> {
-    if (!db) return [];
-    const snap = await getDocs(collection(db, 'accounting_entries'));
-    return snap.docs.map(doc => ({ id: parseInt(doc.id), ...doc.data() }));
+    const entries = await this.getAccountingEntries();
+    const index = entries.findIndex(e => e.id === entry.id);
+    if (index !== -1) entries[index] = entry;
+    else entries.unshift(entry);
+    await localCache.saveCollection('accounting_entries', entries);
+    await addToQueue('saveAccountingEntry', entry);
   },
 
   async deleteAllAccountingEntries() {
-    if (!db) return;
-    const snap = await getDocs(collection(db, 'accounting_entries'));
-    if (snap.empty) return;
-    const batch = writeBatch(db);
-    snap.docs.forEach(doc => batch.delete(doc.ref));
-    await batch.commit();
-  },
-
-  async saveRegister(reg: any) {
-    if (!db) return;
-    if (!isOnline) return addToQueue('saveRegister', reg);
-    const cleaned = sanitizeForFirestore({
-      isOpen: reg.isOpen === true,
-      openTime: reg.openTime || new Date().toISOString(),
-      openAmount: typeof reg.openAmount === 'number' ? reg.openAmount : 0,
-      openAmountBs: typeof reg.openAmountBs === 'number' ? reg.openAmountBs : 0,
-      openAmountUsd: typeof reg.openAmountUsd === 'number' ? reg.openAmountUsd : 0,
-      exchangeRate: typeof reg.exchangeRate === 'number' ? reg.exchangeRate : 36.50,
-      txs: reg.txs || [],
-      updatedAt: Date.now()
-    });
-    await setDoc(doc(db, 'register', 'current'), cleaned, { merge: true });
-  },
-  async clearRegister() {
-    if (!db) return;
-    await deleteDoc(doc(db, 'register', 'current'));
-  },
-  subscribeToRegister(callback: (data: any) => void) {
-    if (!db) return () => {};
-    const unsub = onSnapshot(doc(db, 'register', 'current'), 
-      (snap) => callback(snap.exists() ? snap.data() : null),
-      (err) => handleSubscriptionError(err, 'register')
-    );
-    return registerUnsubscribe(unsub);
-  },
-
-  async saveRegisterByTerminal(terminalId: string, reg: any) {
-    if (!db || !terminalId) return;
-    if (!isOnline) return addToQueue('saveRegister', { terminalId, reg });
-    const cleaned = sanitizeForFirestore({
-      isOpen: reg.isOpen === true,
-      openTime: reg.openTime || new Date().toISOString(),
-      openAmount: typeof reg.openAmount === 'number' ? reg.openAmount : 0,
-      openAmountBs: typeof reg.openAmountBs === 'number' ? reg.openAmountBs : 0,
-      openAmountUsd: typeof reg.openAmountUsd === 'number' ? reg.openAmountUsd : 0,
-      exchangeRate: typeof reg.exchangeRate === 'number' ? reg.exchangeRate : 36.50,
-      txs: reg.txs || [],
-      updatedAt: Date.now()
-    });
-    await setDoc(doc(db, 'registers', terminalId), cleaned, { merge: true });
-  },
-  async clearRegisterByTerminal(terminalId: string) {
-    if (!db || !terminalId) return;
-    await deleteDoc(doc(db, 'registers', terminalId));
-  },
-  subscribeToRegisterByTerminal(terminalId: string, callback: (data: any) => void) {
-    if (!db || !terminalId) return () => {};
-    const unsub = onSnapshot(doc(db, 'registers', terminalId), 
-      (snap) => callback(snap.exists() ? snap.data() : null),
-      (err) => handleSubscriptionError(err, `registers/${terminalId}`)
-    );
-    return registerUnsubscribe(unsub);
-  },
-
-  // ✅ MODIFICADO: runAtomicSale ahora usa RTDB para el stock
-  async runAtomicSale(terminalId: string, txData: any, updates: {
-    products: Map<number, { newStock: number }>;
-    kardexEntries: any[];
-    accountingEntry?: any;
-    registerUpdate: { txs: any[] };
-  }) {
-    if (!db) throw new Error('Firebase no disponible');
-    if (!terminalId) throw new Error('ID de Terminal no proporcionado');
-    
-    const cleanTxData = sanitizeForFirestore(txData);
-    const cleanKardexEntries = updates.kardexEntries.map(entry => sanitizeForFirestore(entry));
-    const cleanAccountingEntry = updates.accountingEntry ? sanitizeForFirestore(updates.accountingEntry) : null;
-    const cleanRegisterUpdate = {
-      txs: updates.registerUpdate.txs.map(tx => sanitizeForFirestore(tx))
-    };
-
-    // Guardar los nuevos stocks para actualizar RTDB después
-    const stockUpdates: Array<{ productId: number; newStock: number }> = [];
-    for (const [prodId, update] of updates.products.entries()) {
-      stockUpdates.push({ productId: prodId, newStock: update.newStock });
+    await localCache.saveCollection('accounting_entries', []);
+    const all = await this.getAccountingEntries();
+    for (const entry of all) {
+      await addToQueue('deleteAccountingEntry', { id: entry.id });
     }
-
-    if (!isOnline) {
-      console.log("🛰️ Procesando venta en modo offline...");
-      this.saveTransaction(cleanTxData);
-      for (const { productId, newStock } of stockUpdates) {
-        addToQueue('updateStockRTDB', { productId, newStock });
-      }
-      for (const entry of cleanKardexEntries) {
-        this.saveKardexEntry(entry);
-      }
-      if (cleanAccountingEntry) {
-        this.saveAccountingEntry(cleanAccountingEntry);
-      }
-      this.saveRegisterByTerminal(terminalId, { ...cleanRegisterUpdate, updatedAt: Date.now() });
-      return;
-    }
-    
-    // ✅ MODIFICADO: Transacción en Firestore SIN actualizar stock (solo guarda venta, kardex, contabilidad)
-    await runTransaction(db, async (transaction) => {
-      const txRef = doc(db, 'transactions', cleanTxData.id.toString());
-      transaction.set(txRef, { ...cleanTxData, createdAt: Date.now() });
-      for (const entry of cleanKardexEntries) {
-        const kardexRef = doc(db, 'kardex_entries', entry.id);
-        transaction.set(kardexRef, { ...entry, createdAt: Date.now() });
-      }
-      if (cleanAccountingEntry && cleanAccountingEntry.id) {
-        const accRef = doc(db, 'accounting_entries', cleanAccountingEntry.id.toString());
-        transaction.set(accRef, { ...cleanAccountingEntry, createdAt: Date.now() });
-      }
-      const registerRef = doc(db, 'registers', terminalId);
-      transaction.set(registerRef, {
-        txs: cleanRegisterUpdate.txs,
-        updatedAt: Date.now()
-      }, { merge: true });
-    });
-
-    // ✅ NUEVO: Después de la transacción exitosa, actualizar stock en RTDB
-    for (const { productId, newStock } of stockUpdates) {
-      await updateStockInRTDB(productId, newStock);
-    }
-  },
-
-  async updateProductWithWeightedAverageCost(productId: number, newQty: number, newCostUsd: number, exchangeRate: number) {
-    if (!db) throw new Error('Firebase no disponible');
-    const newCostUsdRounded = roundTo4(newCostUsd);
-    const exchangeRateRounded = roundTo2(exchangeRate);
-    
-    let updatedStock: number = 0;
-    let updatedCostUsd: number = 0;
-    let updatedPriceUsd: number = 0;
-    let updatedPriceBs: number = 0;
-    
-    await runTransaction(db, async (transaction) => {
-      const prodRef = doc(db, 'products', productId.toString());
-      const prodSnap = await transaction.get(prodRef);
-      if (!prodSnap.exists()) throw new Error(`Producto ${productId} no existe`);
-      const productData = prodSnap.data();
-      const currentStock = productData.stock || 0;
-      const currentCostUsd = productData.costUsd || 0;
-      const profitPercent = productData.profitPercent || 30;
-      let newAverageCost: number;
-      if (currentStock <= 0) {
-        newAverageCost = newCostUsdRounded;
-      } else {
-        const totalCostBefore = currentStock * currentCostUsd;
-        const totalCostNew = newQty * newCostUsdRounded;
-        const newTotalStock = currentStock + newQty;
-        newAverageCost = roundTo4((totalCostBefore + totalCostNew) / newTotalStock);
-      }
-      const priceUsd = roundTo2(newAverageCost * (1 + profitPercent / 100));
-      const priceBs = roundTo2(priceUsd * exchangeRateRounded);
-      const newStock = currentStock + newQty;
-      updatedStock = newStock;
-      updatedCostUsd = newAverageCost;
-      updatedPriceUsd = priceUsd;
-      updatedPriceBs = priceBs;
-      const kardexEntry = {
-        id: `${Date.now()}_${productId}_${Math.random()}`,
-        productId: productId,
-        date: new Date().toISOString(),
-        type: 'compra',
-        quantity: newQty,
-        previousStock: currentStock,
-        newStock: newStock,
-        reference: `Compra - CPP aplicado`,
-        note: `Costo ant: $${currentCostUsd.toFixed(4)} → Nuevo: $${newAverageCost.toFixed(4)}`,
-        costUsd: newCostUsdRounded,
-        costBs: roundTo2(newCostUsdRounded * exchangeRateRounded),
-      };
-      transaction.update(prodRef, {
-        stock: newStock,
-        costUsd: newAverageCost,
-        costBs: roundTo2(newAverageCost * exchangeRateRounded),
-        priceUsd: priceUsd,
-        priceBs: priceBs,
-        updatedAt: Date.now()
-      });
-      const kardexRef = doc(db, 'kardex_entries', kardexEntry.id);
-      transaction.set(kardexRef, { ...kardexEntry, createdAt: Date.now() });
-    });
-    
-    // ✅ Actualizar stock en RTDB después de la transacción
-    if (updatedStock !== undefined && updatedStock !== null) {
-      await updateStockInRTDB(productId, updatedStock);
-    }
-    
-    return { newStock: updatedStock, newAverageCost: updatedCostUsd, newPriceUsd: updatedPriceUsd, newPriceBs: updatedPriceBs };
   },
 
   async saveSupplier(supplier: any) {
-    if (!db) return;
-    if (!isOnline) return addToQueue('saveSupplier', supplier);
-    await setDoc(doc(db, 'suppliers', supplier.id.toString()), { ...sanitizeForFirestore(supplier), updatedAt: Date.now() });
+    const suppliers = await this.getSuppliers();
+    const index = suppliers.findIndex(s => s.id === supplier.id);
+    if (index !== -1) suppliers[index] = supplier;
+    else suppliers.push(supplier);
+    await localCache.saveCollection('suppliers', suppliers);
+    await addToQueue('saveSupplier', supplier);
   },
+
   async deleteSupplier(id: number) {
-    if (!db) return;
-    await deleteDoc(doc(db, 'suppliers', id.toString()));
-  },
-  subscribeToSuppliers(callback: (data: any[]) => void) {
-    if (!db) return () => {};
-    const unsub = onSnapshot(collection(db, 'suppliers'), 
-      (snap) => callback(snap.docs.map(d => ({ id: parseInt(d.id), ...d.data() }))),
-      (err) => handleSubscriptionError(err, 'suppliers')
-    );
-    return registerUnsubscribe(unsub);
+    let suppliers = await this.getSuppliers();
+    suppliers = suppliers.filter(s => s.id !== id);
+    await localCache.saveCollection('suppliers', suppliers);
+    await addToQueue('deleteSupplier', { id });
   },
 
   async savePurchaseInvoice(invoice: any) {
-    if (!db) return;
-    if (!isOnline) return addToQueue('savePurchaseInvoice', invoice);
-    await setDoc(doc(db, 'purchase_invoices', invoice.id.toString()), sanitizeForFirestore(invoice));
+    const invoices = await this.getPurchaseInvoices();
+    const index = invoices.findIndex(i => i.id === invoice.id);
+    if (index !== -1) invoices[index] = invoice;
+    else invoices.unshift(invoice);
+    await localCache.saveCollection('purchase_invoices', invoices);
+    await addToQueue('savePurchaseInvoice', invoice);
   },
-  async getPurchaseInvoices(): Promise<any[]> {
-    if (!db || isLoggingOut) return [];
-    const snap = await getDocs(collection(db, 'purchase_invoices'));
-    return snap.docs.map(doc => ({ id: parseInt(doc.id), ...doc.data() }));
-  },
+
   async deletePurchaseInvoice(id: number) {
-    if (!db) return;
-    await deleteDoc(doc(db, 'purchase_invoices', id.toString()));
-  },
-  subscribeToPurchaseInvoices(callback: (data: any[]) => void) {
-    if (!db) return () => {};
-    const unsub = onSnapshot(query(collection(db, 'purchase_invoices'), orderBy('date', 'desc'), limit(500)), 
-      (snap) => callback(snap.docs.map(d => d.data())),
-      (err) => handleSubscriptionError(err, 'purchase_invoices')
-    );
-    return registerUnsubscribe(unsub);
+    let invoices = await this.getPurchaseInvoices();
+    invoices = invoices.filter(i => i.id !== id);
+    await localCache.saveCollection('purchase_invoices', invoices);
+    await addToQueue('deletePurchaseInvoice', { id });
   },
 
   async savePurchaseInvoiceItems(invoiceId: number, items: any[]) {
-    if (!db) return;
-    const batch = writeBatch(db);
-    items.forEach(item => {
-      batch.set(doc(db, 'purchase_items', item.id), sanitizeForFirestore(item));
-    });
-    await batch.commit();
-  },
-  subscribeToPurchaseItems(callback: (data: any[]) => void) {
-    if (!db) return () => {};
-    const unsub = onSnapshot(collection(db, 'purchase_items'), 
-      (snap) => callback(snap.docs.map(d => d.data())),
-      (err) => handleSubscriptionError(err, 'purchase_items')
-    );
-    return registerUnsubscribe(unsub);
+    // Opcional: guardar localmente si usas purchase_items
+    for (const item of items) {
+      await addToQueue('savePurchaseItem', item);
+    }
   },
 
   async saveSupplierPayment(payment: any) {
-    if (!db) return;
-    if (!isOnline) return addToQueue('saveSupplierPayment', payment);
-    await setDoc(doc(db, 'supplier_payments', payment.id.toString()), { ...sanitizeForFirestore(payment), createdAt: Date.now() });
+    const payments = await localCache.getCollection('supplier_payments') || [];
+    const index = payments.findIndex(p => p.id === payment.id);
+    if (index !== -1) payments[index] = payment;
+    else payments.unshift(payment);
+    await localCache.saveCollection('supplier_payments', payments);
+    await addToQueue('saveSupplierPayment', payment);
   },
+
   async deleteSupplierPayment(id: number) {
-    if (!db) return;
-    await deleteDoc(doc(db, 'supplier_payments', id.toString()));
-  },
-  subscribeToSupplierPayments(callback: (data: any[]) => void) {
-    if (!db) return () => {};
-    const unsub = onSnapshot(query(collection(db, 'supplier_payments'), orderBy('date', 'desc'), limit(500)), 
-      (snap) => callback(snap.docs.map(d => d.data())),
-      (err) => handleSubscriptionError(err, 'supplier_payments')
-    );
-    return registerUnsubscribe(unsub);
+    let payments = await localCache.getCollection('supplier_payments') || [];
+    payments = payments.filter(p => p.id !== id);
+    await localCache.saveCollection('supplier_payments', payments);
+    await addToQueue('deleteSupplierPayment', { id });
   },
 
   async saveKardexEntry(entry: any) {
-    if (!db) return;
-    if (!isOnline) return addToQueue('saveKardexEntry', entry);
-    await setDoc(doc(db, 'kardex_entries', entry.id), { ...sanitizeForFirestore(entry), createdAt: Date.now() });
-  },
-  subscribeToKardex(callback: (data: any[]) => void) {
-    if (!db) return () => {};
-    const unsub = onSnapshot(query(collection(db, 'kardex_entries'), orderBy('createdAt', 'desc'), limit(1000)), 
-      (snap) => callback(snap.docs.map(d => d.data())),
-      (err) => handleSubscriptionError(err, 'kardex')
-    );
-    return registerUnsubscribe(unsub);
-  },
-
-  async getAllKardexEntries(): Promise<any[]> {
-    if (!db || isLoggingOut) return [];
-    const snap = await getDocs(collection(db, 'kardex_entries'));
-    return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const entries = await this.getKardexEntries();
+    const index = entries.findIndex(e => e.id === entry.id);
+    if (index !== -1) entries[index] = entry;
+    else entries.unshift(entry);
+    await localCache.saveCollection('kardex_entries', entries);
+    await addToQueue('saveKardexEntry', entry);
   },
 
   async deleteAllKardexEntries() {
-    if (!db) return;
-    const snap = await getDocs(collection(db, 'kardex_entries'));
-    if (snap.empty) return;
-    const batch = writeBatch(db);
-    snap.docs.forEach(doc => batch.delete(doc.ref));
-    await batch.commit();
+    await localCache.saveCollection('kardex_entries', []);
+    const all = await this.getKardexEntries();
+    for (const entry of all) {
+      await addToQueue('deleteKardexEntry', { id: entry.id });
+    }
+  },
+
+  async saveKardexBatch(entries: any[]) {
+    for (const entry of entries) {
+      await this.saveKardexEntry(entry);
+    }
+    console.log(`📦 Kardex batch guardado localmente: ${entries.length} entradas`);
+  },
+
+  async saveAccountingBatch(entries: any[]) {
+    for (const entry of entries) {
+      await this.saveAccountingEntry(entry);
+    }
+    console.log(`📊 Contabilidad batch guardada localmente: ${entries.length} entradas`);
   },
 
   async saveTerminal(terminal: any) {
-    if (!db) return;
-    if (!isOnline) return addToQueue('saveTerminal', terminal);
-    await setDoc(doc(db, 'terminals', terminal.name), { ...sanitizeForFirestore(terminal), updatedAt: Date.now() });
+    const terminals = await this.getTerminals();
+    const index = terminals.findIndex(t => t.id === terminal.name);
+    if (index !== -1) terminals[index] = terminal;
+    else terminals.push(terminal);
+    await localCache.saveCollection('terminals', terminals);
+    await addToQueue('saveTerminal', terminal);
   },
+
   async deleteTerminal(id: string) {
-    if (!db) return;
-    await deleteDoc(doc(db, 'terminals', id));
+    let terminals = await this.getTerminals();
+    terminals = terminals.filter(t => t.id !== id);
+    await localCache.saveCollection('terminals', terminals);
+    await addToQueue('deleteTerminal', { id });
   },
-  subscribeToTerminals(callback: (data: any[]) => void) {
-    if (!db) return () => {};
-    const unsub = onSnapshot(collection(db, 'terminals'), 
-      (snap) => callback(snap.docs.map(d => ({ id: d.id, ...d.data() }))),
-      (err) => handleSubscriptionError(err, 'terminals')
-    );
-    return registerUnsubscribe(unsub);
-  },
-  subscribeToTerminal(id: string, callback: (terminal: any) => void) {
-    if (!db || !id) return () => {};
-    const unsub = onSnapshot(doc(db, 'terminals', id), 
-      (snap) => callback(snap.exists() ? { id: snap.id, ...snap.data() } : null),
-      (err) => handleSubscriptionError(err, `terminals/${id}`)
-    );
-    return registerUnsubscribe(unsub);
-  },
-  async saveGlobalSettings(settings: any) {
-    if (!db) return;
-    if (isLoggingOut) return;
-    const docRef = doc(db, 'global_settings', 'global');
-    const existing = await getDoc(docRef);
-    const merged = sanitizeForFirestore({ ...(existing.exists() ? existing.data() : {}), ...settings, updatedAt: Date.now() });
-    await setDoc(docRef, merged);
-  },
-  async getGlobalSettings() {
-    if (!db || isLoggingOut) return null;
-    const snap = await getDoc(doc(db, 'global_settings', 'global'));
-    return snap.exists() ? snap.data() : null;
-  },
-  subscribeToGlobalSettings(callback: (data: any) => void) {
-    if (!db) return () => {};
-    const unsub = onSnapshot(doc(db, 'global_settings', 'global'), 
-      (snap) => callback(snap.exists() ? snap.data() : null),
-      (err) => handleSubscriptionError(err, 'global_settings')
-    );
-    return registerUnsubscribe(unsub);
-  },
-  
-  async getAdminCode() {
-    if (!db || isLoggingOut) return null;
-    const snap = await getDoc(doc(db, 'global_settings', 'global'));
-    if (snap.exists()) {
-      const data = snap.data();
-      if (data.adminCode) return { code: data.adminCode };
+
+  async updateTerminalBlockStatus(terminalId: string, isBlocked: boolean) {
+    const terminals = await this.getTerminals();
+    const terminal = terminals.find(t => t.id === terminalId);
+    if (terminal) {
+      terminal.isBlocked = isBlocked;
+      await localCache.saveCollection('terminals', terminals);
+      await addToQueue('updateTerminal', { id: terminalId, updates: { isBlocked } });
     }
-    return null;
+  },
+
+  async updateTerminal(terminalId: string, updates: Record<string, any>) {
+    const terminals = await this.getTerminals();
+    const terminal = terminals.find(t => t.id === terminalId);
+    if (terminal) {
+      Object.assign(terminal, updates);
+      await localCache.saveCollection('terminals', terminals);
+      await addToQueue('updateTerminal', { id: terminalId, updates });
+    }
+  },
+
+  async updateUserTerminalId(userId: string, terminalId: string | null) {
+    await addToQueue('updateUserTerminalId', { userId, terminalId });
+  },
+
+  async saveGlobalSettings(settings: any) {
+    const current = await this.getGlobalSettings();
+    const merged = { ...current, ...settings, updatedAt: Date.now() };
+    await localCache.saveCollection('global_settings', [merged]);
+    await addToQueue('saveGlobalSettings', merged);
   },
 
   async saveCashClose(closeData: any) {
-    if (!db) return;
-    if (!isOnline) return addToQueue('saveCashClose', closeData);
-    const cleaned = sanitizeForFirestore(closeData);
-    await setDoc(doc(db, 'cash_closes', cleaned.id), { ...cleaned, createdAt: Date.now() });
-  },
-
-  async getAllCashCloses(): Promise<any[]> {
-    if (!db || isLoggingOut) return [];
-    const snap = await getDocs(collection(db, 'cash_closes'));
-    return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-  },
-
-  subscribeToCashCloses(callback: (data: any[]) => void) {
-    if (!db) return () => {};
-    const unsub = onSnapshot(query(collection(db, 'cash_closes'), orderBy('fecha', 'desc')), 
-      (snap) => callback(snap.docs.map(doc => ({ id: doc.id, ...doc.data() }))),
-      (err) => handleSubscriptionError(err, 'cash_closes')
-    );
-    return registerUnsubscribe(unsub);
+    const closes = await this.getCashCloses();
+    const index = closes.findIndex(c => c.id === closeData.id);
+    if (index !== -1) closes[index] = closeData;
+    else closes.unshift(closeData);
+    await localCache.saveCollection('cash_closes', closes);
+    await addToQueue('saveCashClose', closeData);
   },
 
   async deleteAllCashCloses() {
-    if (!db) return;
-    const snap = await getDocs(collection(db, 'cash_closes'));
-    if (snap.empty) return;
-    const batch = writeBatch(db);
-    snap.docs.forEach(doc => batch.delete(doc.ref));
-    await batch.commit();
-  },
-
-  // ========== NUEVOS MÉTODOS PARA RESETEO ==========
-  async deleteAllSupplierPayments() {
-    if (!db) return;
-    const snap = await getDocs(collection(db, 'supplier_payments'));
-    if (snap.empty) return;
-    const batch = writeBatch(db);
-    snap.docs.forEach(doc => batch.delete(doc.ref));
-    await batch.commit();
-  },
-
-  async deleteAllSuppliers() {
-    if (!db) return;
-    const snap = await getDocs(collection(db, 'suppliers'));
-    if (snap.empty) return;
-    const batch = writeBatch(db);
-    snap.docs.forEach(doc => batch.delete(doc.ref));
-    await batch.commit();
-  },
-
-  async deleteAllTerminals() {
-    if (!db) return;
-    const snap = await getDocs(collection(db, 'terminals'));
-    if (snap.empty) return;
-    const batch = writeBatch(db);
-    snap.docs.forEach(doc => batch.delete(doc.ref));
-    await batch.commit();
-  },
-
-  async deleteAllUsersExceptAdmin() {
-    if (!db) return;
-    const snap = await getDocs(collection(db, 'users'));
-    if (snap.empty) return;
-    const batch = writeBatch(db);
-    snap.docs.forEach(doc => {
-      const data = doc.data();
-      if (data.email !== 'admin@masterpos.com') {
-        batch.delete(doc.ref);
-      }
-    });
-    await batch.commit();
-  },
-
-  async getTerminal(id: string): Promise<any | null> {
-    if (!db || !id || isLoggingOut) return null;
-    const snap = await getDoc(doc(db, 'terminals', id));
-    return snap.exists() ? { id: snap.id, ...snap.data() } : null;
-  },
-
-  async getAllTerminals(): Promise<any[]> {
-    if (!db || isLoggingOut) return [];
-    const snap = await getDocs(collection(db, 'terminals'));
-    return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-  },
-
-  async updateTerminalBlockStatus(terminalId: string, isBlocked: boolean): Promise<void> {
-    if (!db || !terminalId) return;
-    const ref = doc(db, 'terminals', terminalId);
-    if (!isOnline) {
-      addToQueue('updateTerminal', { id: terminalId, updates: { isBlocked } });
-      return;
+    await localCache.saveCollection('cash_closes', []);
+    const all = await this.getCashCloses();
+    for (const close of all) {
+      await addToQueue('deleteCashClose', { id: close.id });
     }
-    await setDoc(ref, { isBlocked, updatedAt: Date.now() }, { merge: true });
   },
 
-  async updateTerminal(terminalId: string, updates: Record<string, any>): Promise<void> {
-    if (!db || !terminalId) return;
-    const ref = doc(db, 'terminals', terminalId);
-    if (!isOnline) {
-      addToQueue('updateTerminal', { id: terminalId, updates });
-      return;
-    }
-    await setDoc(ref, { ...updates, updatedAt: Date.now() }, { merge: true });
+  async saveRegister(reg: any) {
+    await addToQueue('saveRegister', reg);
   },
 
-  async updateUserTerminalId(userId: string, terminalId: string | null): Promise<void> {
-    if (!db || !userId) return;
-    const userRef = doc(db, 'users', userId);
-    const data = { terminalId: terminalId || null, updatedAt: Date.now() };
-    if (!isOnline) {
-      addToQueue('updateUserTerminalId', { userId, terminalId: terminalId || null });
-      return;
-    }
-    await updateDoc(userRef, data);
+  async clearRegister() {
+    await addToQueue('clearRegister', {});
   },
 
-  async createCashSession(terminalId: string, userId: string, initialAmountUsd: number): Promise<any> {
-    if (!db) throw new Error('Firebase no disponible');
+  async saveRegisterByTerminal(terminalId: string, reg: any) {
+    await addToQueue('saveRegister', { terminalId, reg });
+  },
+
+  async clearRegisterByTerminal(terminalId: string) {
+    await addToQueue('clearRegister', { terminalId });
+  },
+
+  async createCashSession(terminalId: string, userId: string, initialAmountUsd: number) {
     const sessionId = `SES-${Date.now()}-${terminalId}`;
     const sessionData = {
       id: sessionId,
@@ -875,89 +700,37 @@ subscribeToProducts(callback: (data: any[]) => void) {
       createdAt: Date.now(),
       updatedAt: Date.now()
     };
-    const cleaned = sanitizeForFirestore(sessionData);
-    if (!isOnline) {
-      addToQueue('saveCashSession', cleaned);
-      return sessionData;
-    }
-    await setDoc(doc(db, 'cash_sessions', sessionId), cleaned);
+    const sessions = await localCache.getCollection('cash_sessions') || [];
+    sessions.push(sessionData);
+    await localCache.saveCollection('cash_sessions', sessions);
+    await addToQueue('saveCashSession', sessionData);
     return sessionData;
   },
 
-  async getActiveSessionByTerminal(terminalId: string): Promise<any | null> {
-    if (!db || !terminalId || isLoggingOut) return null;
-    const q = query(collection(db, 'cash_sessions'), 
-      where('terminalId', '==', terminalId), 
-      where('status', '==', 'abierta'),
-      limit(1)
-    );
-    const snap = await getDocs(q);
-    if (snap.empty) return null;
-    return { id: snap.docs[0].id, ...snap.docs[0].data() };
+  async getActiveSessionByTerminal(terminalId: string) {
+    const sessions = await localCache.getCollection('cash_sessions') || [];
+    return sessions.find(s => s.terminalId === terminalId && s.status === 'abierta') || null;
   },
 
-  subscribeToActiveSession(terminalId: string, callback: (session: any | null) => void): () => void {
-    if (!db || !terminalId) return () => {};
-    const q = query(collection(db, 'cash_sessions'), 
-      where('terminalId', '==', terminalId), 
-      where('status', '==', 'abierta'),
-      limit(1)
-    );
-    const unsub = onSnapshot(q, 
-      (snap) => callback(snap.empty ? null : { id: snap.docs[0].id, ...snap.docs[0].data() }),
-      (err) => handleSubscriptionError(err, `active_session/${terminalId}`)
-    );
-    return registerUnsubscribe(unsub);
+  async closeCashSession(sessionId: string, finalAmountUsd: number) {
+    let sessions = await localCache.getCollection('cash_sessions') || [];
+    const session = sessions.find(s => s.id === sessionId);
+    if (!session) throw new Error('Sesión no encontrada');
+    session.status = 'cerrada';
+    session.closeTime = new Date().toISOString();
+    session.finalAmountUsd = roundTo2(finalAmountUsd);
+    session.updatedAt = Date.now();
+    await localCache.saveCollection('cash_sessions', sessions);
+    await addToQueue('updateCashSession', session);
+    return session;
   },
 
-  async closeCashSession(sessionId: string, finalAmountUsd: number): Promise<any> {
-    if (!db || !sessionId) throw new Error('Firebase o SessionId no disponible');
-    const sessionRef = doc(db, 'cash_sessions', sessionId);
-    const sessionSnap = await getDoc(sessionRef);
-    if (!sessionSnap.exists()) throw new Error('Sesión no encontrada');
-    const updated = {
-      ...sessionSnap.data(),
-      status: 'cerrada',
-      closeTime: new Date().toISOString(),
-      finalAmountUsd: roundTo2(finalAmountUsd),
-      updatedAt: Date.now()
-    };
-    const cleaned = sanitizeForFirestore(updated);
-    if (!isOnline) {
-      addToQueue('updateCashSession', cleaned);
-      return updated;
-    }
-    await setDoc(sessionRef, cleaned);
-    return updated;
+  async getTransactionsBySession(sessionId: string, limitCount: number = 500) {
+    const all = await this.getTransactions();
+    return all.filter(t => t.sessionId === sessionId).slice(0, limitCount);
   },
 
-  async getTransactionsBySession(sessionId: string, limitCount: number = 500): Promise<any[]> {
-    if (!db || !sessionId || isLoggingOut) return [];
-    const q = query(collection(db, 'transactions'), 
-      where('sessionId', '==', sessionId),
-      orderBy('date', 'desc'),
-      limit(limitCount)
-    );
-    const snap = await getDocs(q);
-    return snap.docs.map(doc => ({ id: parseInt(doc.id), ...doc.data() }));
-  },
-
-  subscribeToTransactionsBySession(sessionId: string, callback: (transactions: any[]) => void): () => void {
-    if (!db || !sessionId) return () => {};
-    const q = query(collection(db, 'transactions'), 
-      where('sessionId', '==', sessionId),
-      orderBy('date', 'desc'),
-      limit(500)
-    );
-    const unsub = onSnapshot(q, 
-      (snap) => callback(snap.empty ? [] : snap.docs.map(doc => ({ id: parseInt(doc.id), ...doc.data() }))),
-      (err) => handleSubscriptionError(err, `session_txs/${sessionId}`)
-    );
-    return registerUnsubscribe(unsub);
-  },
-
-  async saveTransactionWithCurrentSession(tx: any, terminalId?: string): Promise<void> {
-    if (!db) return;
+  async saveTransactionWithCurrentSession(tx: any, terminalId?: string) {
     let sessionId = tx.sessionId;
     if (!sessionId && terminalId) {
       const active = await this.getActiveSessionByTerminal(terminalId);
@@ -967,35 +740,180 @@ subscribeToProducts(callback: (data: any[]) => void) {
     await this.saveTransaction(txWithSession);
   },
 
-  // ✅ Guardar múltiples entradas de kardex en lote (al cerrar la jornada)
-  async saveKardexBatch(entries: any[]) {
-    if (!db) return;
-    if (!entries || entries.length === 0) return;
-    
-    const batch = writeBatch(db);
-    for (const entry of entries) {
-      const ref = doc(db, 'kardex_entries', entry.id);
-      batch.set(ref, { ...entry, createdAt: Date.now() });
+  // ========== VENTA ATÓMICA (ACTUALIZA STOCK EN RTDB + GUARDA LOCAL) ==========
+  async runAtomicSale(terminalId: string, txData: any, updates: {
+    products: Map<number, { newStock: number }>;
+    kardexEntries: any[];
+    accountingEntry?: any;
+    registerUpdate: { txs: any[] };
+  }) {
+    // 1. Actualizar stock localmente y en RTDB (tiempo real)
+    const products = await this.getProducts();
+    for (const [prodId, { newStock }] of updates.products.entries()) {
+      const prod = products.find(p => p.id === prodId);
+      if (prod) prod.stock = newStock;
+      await this.updateStockInRTDB(prodId, newStock);
     }
-    await batch.commit();
-    console.log(`📦 Kardex batch guardado: ${entries.length} entradas`);
+    await localCache.saveCollection('products', products);
+
+    // 2. Guardar transacción local
+    await this.saveTransaction(txData);
+
+    // 3. Guardar kardex entries local
+    for (const entry of updates.kardexEntries) {
+      await this.saveKardexEntry(entry);
+    }
+
+    // 4. Guardar accounting entry si existe
+    if (updates.accountingEntry) {
+      await this.saveAccountingEntry(updates.accountingEntry);
+    }
+
+    // 5. Actualizar register (caja) local
+    let registers = await localCache.getCollection('registers') || [];
+    const regIdx = registers.findIndex(r => r.terminalId === terminalId);
+    if (regIdx !== -1) {
+      registers[regIdx].txs.push(...updates.registerUpdate.txs);
+    } else {
+      registers.push({ terminalId, txs: updates.registerUpdate.txs });
+    }
+    await localCache.saveCollection('registers', registers);
+
+    // 6. Encolar operaciones para sincronización posterior
+    await addToQueue('saveTransaction', txData);
+    for (const entry of updates.kardexEntries) {
+      await addToQueue('saveKardexEntry', entry);
+    }
+    if (updates.accountingEntry) {
+      await addToQueue('saveAccountingEntry', updates.accountingEntry);
+    }
+    await addToQueue('saveRegister', { terminalId, reg: { txs: updates.registerUpdate.txs } });
+    // Las actualizaciones de stock RTDB ya se hicieron en tiempo real, pero las encolamos también por si acaso
+    for (const [productId, { newStock }] of updates.products.entries()) {
+      await addToQueue('updateStockRTDB', { productId, newStock });
+    }
   },
 
-  // ✅ Guardar múltiples entradas contables en lote (al cerrar la jornada)
-  async saveAccountingBatch(entries: any[]) {
-    if (!db) return;
-    if (!entries || entries.length === 0) return;
+  async updateProductWithWeightedAverageCost(productId: number, newQty: number, newCostUsd: number, exchangeRate: number) {
+    if (!db) throw new Error('Firebase no disponible');
+    const newCostUsdRounded = roundTo4(newCostUsd);
+    const exchangeRateRounded = roundTo2(exchangeRate);
     
-    const batch = writeBatch(db);
-    for (const entry of entries) {
-      const ref = doc(db, 'accounting_entries', entry.id.toString());
-      batch.set(ref, { ...entry, createdAt: Date.now() });
+    let updatedStock: number = 0;
+    let updatedCostUsd: number = 0;
+    let updatedPriceUsd: number = 0;
+    let updatedPriceBs: number = 0;
+    
+    // Obtener producto actual del caché
+    const products = await this.getProducts();
+    const product = products.find(p => p.id === productId);
+    if (!product) throw new Error(`Producto ${productId} no existe`);
+    
+    const currentStock = product.stock || 0;
+    const currentCostUsd = product.costUsd || 0;
+    const profitPercent = product.profitPercent || 30;
+    
+    let newAverageCost: number;
+    if (currentStock <= 0) {
+      newAverageCost = newCostUsdRounded;
+    } else {
+      const totalCostBefore = currentStock * currentCostUsd;
+      const totalCostNew = newQty * newCostUsdRounded;
+      const newTotalStock = currentStock + newQty;
+      newAverageCost = roundTo4((totalCostBefore + totalCostNew) / newTotalStock);
     }
-    await batch.commit();
-    console.log(`📊 Contabilidad batch guardada: ${entries.length} entradas`);
+    
+    const priceUsd = roundTo2(newAverageCost * (1 + profitPercent / 100));
+    const priceBs = roundTo2(priceUsd * exchangeRateRounded);
+    const newStock = currentStock + newQty;
+    updatedStock = newStock;
+    updatedCostUsd = newAverageCost;
+    updatedPriceUsd = priceUsd;
+    updatedPriceBs = priceBs;
+    
+    // Actualizar producto en caché
+    product.stock = newStock;
+    product.costUsd = newAverageCost;
+    product.costBs = roundTo2(newAverageCost * exchangeRateRounded);
+    product.priceUsd = priceUsd;
+    product.priceBs = priceBs;
+    product.updatedAt = Date.now();
+    await localCache.saveCollection('products', products);
+    
+    // Crear entrada de kardex
+    const kardexEntry = {
+      id: `${Date.now()}_${productId}_${Math.random()}`,
+      productId: productId,
+      date: new Date().toISOString(),
+      type: 'compra',
+      quantity: newQty,
+      previousStock: currentStock,
+      newStock: newStock,
+      reference: `Compra - CPP aplicado`,
+      note: `Costo ant: $${currentCostUsd.toFixed(4)} → Nuevo: $${newAverageCost.toFixed(4)}`,
+      costUsd: newCostUsdRounded,
+      costBs: roundTo2(newCostUsdRounded * exchangeRateRounded),
+    };
+    await this.saveKardexEntry(kardexEntry);
+    
+    // Encolar actualización en Firestore
+    await addToQueue('updateProductStock', { id: productId, newStock });
+    await addToQueue('updateProductCost', { id: productId, costUsd: newAverageCost, priceUsd, priceBs });
+    
+    // Actualizar stock en RTDB
+    await this.updateStockInRTDB(productId, newStock);
+    
+    return { newStock: updatedStock, newAverageCost: updatedCostUsd, newPriceUsd: updatedPriceUsd, newPriceBs: updatedPriceBs };
+  },
+
+  // ========== SINCRONIZACIÓN MANUAL (BOTÓN) ==========
+  async syncAllPending() {
+    if (!isOnline) {
+      console.warn("⚠️ No hay conexión a internet. No se puede sincronizar.");
+      return false;
+    }
+    console.log("🔄 Iniciando sincronización manual...");
+    await processQueue();
+    await this.loadAllDataToCache();
+    console.log("✅ Sincronización completa");
+    return true;
   },
 
   getPendingQueueLength() {
     return pendingQueue.length;
+  },
+
+  // ========== ELIMINACIONES MASIVAS (para reset) ==========
+  async deleteAllSupplierPayments() {
+    await localCache.saveCollection('supplier_payments', []);
+    // Encolar eliminaciones
+    const all = await localCache.getCollection('supplier_payments') || [];
+    for (const p of all) {
+      await addToQueue('deleteSupplierPayment', { id: p.id });
+    }
+  },
+
+  async deleteAllSuppliers() {
+    await localCache.saveCollection('suppliers', []);
+    const all = await this.getSuppliers();
+    for (const s of all) {
+      await addToQueue('deleteSupplier', { id: s.id });
+    }
+  },
+
+  async deleteAllTerminals() {
+    await localCache.saveCollection('terminals', []);
+    const all = await this.getTerminals();
+    for (const t of all) {
+      await addToQueue('deleteTerminal', { id: t.id });
+    }
+  },
+
+  async deleteAllUsersExceptAdmin() {
+    // Esto es delicado, mejor hacerlo solo en Firestore directamente
+    console.warn("deleteAllUsersExceptAdmin debe ejecutarse manualmente en Firestore");
   }
 };
+
+// Exportar funciones útiles para componentes
+export const { loadAllDataToCache, syncAllPending } = syncService;

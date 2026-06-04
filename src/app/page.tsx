@@ -83,7 +83,8 @@ export default function LicoPOSApp() {
       toast({ title: "Terminal bloqueada", description: "No se pueden realizar ventas hasta que el administrador la desbloquee.", variant: "destructive" });
       return;
     }
-    const product = state.products.find(p => p.barcode === code);
+    // ✅ Corregido: tipo explícito para el parámetro 'p'
+    const product = state.products.find((p: { barcode: string }) => p.barcode === code);
     if (product) {
       if (state.currentPage === 'pos') {
         if (!state.register?.isOpen) {

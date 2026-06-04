@@ -1,8 +1,13 @@
 import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
-  output: 'export', // Genera la carpeta '/out' con archivos estáticos para que Electron los lea offline
-  trailingSlash: true, // ✅ OBLIGATORIO: Asegura que cada ruta tenga su propio index.html para evitar errores 404 en Electron
+  // Nota: 'output: export' es necesario para generar el .exe offline de Electron,
+  // pero puede causar comportamientos inesperados en algunos entornos de desarrollo.
+  output: 'export',
+  
+  // Desactivamos trailingSlash por defecto para mejorar la compatibilidad con el proxy de la Workstation.
+  // Next.js manejará las rutas de forma estándar en desarrollo.
+  trailingSlash: false, 
   
   typescript: {
     ignoreBuildErrors: true,

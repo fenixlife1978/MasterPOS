@@ -29,13 +29,6 @@ export default function LicoPOSApp() {
   const { toast } = useToast();
   const [terminalBlocked, setTerminalBlocked] = useState(false);
 
-  // Redirigir si no hay usuario autenticado
-  useEffect(() => {
-    if (!authLoading && !user) {
-      router.replace('/login');
-    }
-  }, [user, authLoading, router]);
-
   // ✅ Suscripción en TIEMPO REAL al bloqueo de terminal para cajeros
   useEffect(() => {
     if (authLoading || !user || user.role === 'admin') {
@@ -44,7 +37,6 @@ export default function LicoPOSApp() {
     }
 
     if (!user.terminalId) {
-      console.warn('⚠️ Cajero sin terminalId asignado');
       setTerminalBlocked(false);
       return;
     }
@@ -71,12 +63,12 @@ export default function LicoPOSApp() {
       if (user.role === 'admin' && (state.currentPage === 'pos' || state.currentPage === 'caja')) {
         state.setCurrentPage('dashboard');
       }
-      const adminOnlyPages = ['dashboard', 'clientes', 'cuentas', 'contabilidad'];
+      const adminOnlyPages = ['dashboard', 'clientes', 'cuentas', 'contabilidad', 'inventario', 'registrar_compra', 'proveedores'];
       if (user.role === 'cashier' && adminOnlyPages.includes(state.currentPage)) {
         state.setCurrentPage('pos');
       }
     }
-  }, [user, state.isHydrated, state.currentPage, terminalBlocked, state.setCurrentPage]);
+  }, [user, state.isHydrated, state.currentPage, terminalBlocked]);
 
   useBarcode((code) => {
     if (terminalBlocked) {

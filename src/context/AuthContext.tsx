@@ -71,7 +71,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         try {
           const parsed = JSON.parse(storedUser);
           if (parsed.uid === firebaseUser.uid) {
-            // Usuario ya está en sessionStorage, no actualizamos
             setLoading(false);
             return;
           }
@@ -79,12 +78,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       if (firebaseUser) {
-        // Buscar el documento del usuario en Firestore
         const userRef = doc(db, 'users', firebaseUser.uid);
         const userSnap = await getDoc(userRef);
 
         if (userSnap.exists()) {
-          // Documento existe: cargar datos
           const data = userSnap.data();
           const appUser: AppUser = {
             uid: firebaseUser.uid,
@@ -97,12 +94,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setUser(appUser);
           setLoading(false);
         } else {
-          // Documento no existe: solo se permite crear si es el primer usuario del sistema
           const allUsersSnap = await getDocs(collection(db, 'users'));
           const isFirstUser = allUsersSnap.empty;
 
           if (isFirstUser) {
-            // Primer usuario: se crea como administrador
             const name = firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'Administrador';
             const newUser: AppUser = {
               uid: firebaseUser.uid,
@@ -120,18 +115,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setUser(newUser);
             setLoading(false);
           } else {
-            // No es primer usuario y no tiene documento → acceso denegado
             console.error('Usuario sin documento en Firestore:', firebaseUser.email);
-            await auth.signOut(); // Cerrar sesión forzadamente
+            await auth.signOut();
             sessionStorage.removeItem('user');
             setUser(null);
             setLoading(false);
-            // Redirigir al login con mensaje de error
-            router.replace('/login/');
           }
         }
       } else {
-        // Usuario no autenticado
         sessionStorage.removeItem('user');
         setUser(null);
         setLoading(false);
@@ -139,9 +130,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
 
     return () => unsubscribe();
-  }, [router]);
+  }, []);
 
-  // Suscripción en tiempo real a cambios del usuario en Firestore (solo si existe)
+  // Suscripción en tiempo real a cambios del usuario
   useEffect(() => {
     if (!user?.uid) return;
 
@@ -177,7 +168,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => unsubscribeSnapshot();
   }, [user?.uid]);
 
-  // Cargar sesión activa de caja cuando el usuario tiene terminalId
+  // Cargar sesión activa
   useEffect(() => {
     if (!user?.terminalId) {
       setActiveSession(null);
@@ -196,17 +187,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => { mounted = false; };
   }, [user?.terminalId]);
 
-  // Protección de rutas (evita bucle) - Ajustado para trailingSlash
+  // Redirección centralizada
   useEffect(() => {
-    // Con trailingSlash: true, las rutas suelen terminar en /
-    const isLoginPage = pathname === '/login' || pathname === '/login/';
-    const isErrorPage = pathname?.includes('error');
-    
-    if (!loading) {
-      if (!user && !isLoginPage && !isErrorPage) {
-        router.replace('/login/');
-      } else if (user && isLoginPage) {
-        router.replace('/');
+    if (loading) return;
+
+    // Normalizamos el pathname quitando la barra final si existe (excepto para la raíz)
+    const currentPath = pathname === '/' ? '/' : pathname?.replace(/\/$/, '') || '';
+    const isLoginPage = currentPath === '/login';
+    const isErrorPage = currentPath.includes('error');
+
+    if (!user) {
+      if (!isLoginPage && !isErrorPage) {
+        // Redirigir al login si no hay usuario y no estamos ya en el login
+        router.push('/login');
+      }
+    } else {
+      if (isLoginPage) {
+        // Redirigir a la raíz si hay usuario y estamos en el login
+        router.push('/');
       }
     }
   }, [user, loading, pathname, router]);
@@ -219,7 +217,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem('user');
     setUser(null);
     setActiveSession(null);
-    router.replace('/login/');
+    router.push('/login');
   };
 
   const reloadActiveSession = async () => {

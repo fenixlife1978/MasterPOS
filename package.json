@@ -87,6 +87,7 @@
     "embla-carousel-react": "^8.6.0",
     "firebase": "^11.10.0",
     "genkit": "^1.28.0",
+    "idb": "^8.0.3",
     "lucide-react": "^0.475.0",
     "moment-timezone": "^0.6.2",
     "next": "15.5.9",

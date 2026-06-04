@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { usePOSState } from '@/hooks/use-pos-state';
@@ -20,40 +20,93 @@ import InventoryModule from '@/components/inventory/inventory-module';
 import SuppliersModule from '@/components/suppliers/suppliers-module';
 import { Toaster } from '@/components/ui/toaster';
 import { syncService } from '@/services/syncService';
-import { Lock } from 'lucide-react';
+import { Lock, Cloud } from 'lucide-react';
 
-export default function LicoPOSApp() {
+export default function MasterPOSApp() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const state = usePOSState();
   const { toast } = useToast();
   const [terminalBlocked, setTerminalBlocked] = useState(false);
+  
+  const [pendingOps, setPendingOps] = useState(0);
+  
+  // Posición inicial neutra para evitar error de hidratación
+  const [buttonPosition, setButtonPosition] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const [mounted, setMounted] = useState(false);
 
-  // ✅ Suscripción en TIEMPO REAL al bloqueo de terminal para cajeros
+  useEffect(() => {
+    setMounted(true);
+    // Establecer posición real solo en el cliente
+    setButtonPosition({ x: window.innerWidth - 80, y: window.innerHeight - 80 });
+  }, []);
+  
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setPendingOps(syncService.getPendingQueueLength());
+    }, 5000);
+    return () => clearInterval(interval);
+  }, []);
+  
+  const handleMouseDown = (e: React.MouseEvent) => {
+    setIsDragging(true);
+    setDragOffset({
+      x: e.clientX - buttonPosition.x,
+      y: e.clientY - buttonPosition.y,
+    });
+  };
+  
+  const handleMouseMove = (e: MouseEvent) => {
+    if (!isDragging) return;
+    let newX = e.clientX - dragOffset.x;
+    let newY = e.clientY - dragOffset.y;
+    newX = Math.min(Math.max(newX, 20), window.innerWidth - 70);
+    newY = Math.min(Math.max(newY, 20), window.innerHeight - 70);
+    setButtonPosition({ x: newX, y: newY });
+  };
+  
+  const handleMouseUp = () => {
+    setIsDragging(false);
+  };
+  
+  useEffect(() => {
+    if (isDragging) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+      return () => {
+        window.removeEventListener('mousemove', handleMouseMove);
+        window.removeEventListener('mouseup', handleMouseUp);
+      };
+    }
+  }, [isDragging, dragOffset]);
+  
+  const handleSync = async () => {
+    if (isDragging) return;
+    await syncService.syncAllPending();
+    toast({ title: "Sincronización completada", description: "Datos enviados a la nube y actualizados localmente." });
+    setPendingOps(syncService.getPendingQueueLength());
+  };
+  
   useEffect(() => {
     if (authLoading || !user || user.role === 'admin') {
       setTerminalBlocked(false);
       return;
     }
-
+    
     if (!user.terminalId) {
       setTerminalBlocked(false);
       return;
     }
-
-    // Suscribirse al estado de la terminal en Firestore
-    const unsubscribe = syncService.subscribeToTerminal(user.terminalId, (terminal) => {
-      if (terminal) {
-        setTerminalBlocked(terminal.isBlocked === true);
-      } else {
-        setTerminalBlocked(false);
-      }
+    
+    const unsubscribe = syncService.subscribeToTerminalRealtime(user.terminalId, (terminal) => {
+      setTerminalBlocked(terminal?.isBlocked === true);
     });
-
+    
     return () => unsubscribe();
   }, [user, authLoading]);
-
-  // Redirigir según rol y bloqueo
+  
   useEffect(() => {
     if (user && state.isHydrated && !terminalBlocked) {
       const allowedPages = ['dashboard', 'pos', 'inventario', 'clientes', 'cuentas', 'proveedores', 'contabilidad', 'devoluciones', 'caja', 'registrar_compra'];
@@ -69,7 +122,7 @@ export default function LicoPOSApp() {
       }
     }
   }, [user, state.isHydrated, state.currentPage, terminalBlocked]);
-
+  
   useBarcode((code) => {
     if (terminalBlocked) {
       toast({ title: "Terminal bloqueada", description: "No se pueden realizar ventas hasta que el administrador la desbloquee.", variant: "destructive" });
@@ -91,8 +144,8 @@ export default function LicoPOSApp() {
       toast({ title: "Desconocido", description: `Código ${code} no encontrado.`, variant: "destructive" });
     }
   });
-
-  if (authLoading || !state.isHydrated || !user) {
+  
+  if (!mounted || authLoading || !state.isHydrated || !user) {
     return (
       <div className="bg-background min-h-screen flex items-center justify-center">
         <div className="text-center">
@@ -102,8 +155,7 @@ export default function LicoPOSApp() {
       </div>
     );
   }
-
-  // Pantalla de bloqueo
+  
   if (terminalBlocked) {
     return (
       <div className="fixed inset-0 bg-black/90 z-[9999] flex items-center justify-center">
@@ -122,7 +174,7 @@ export default function LicoPOSApp() {
       </div>
     );
   }
-
+  
   return (
     <div className="flex h-screen overflow-hidden bg-background text-foreground selection:bg-primary selection:text-background">
       <Sidebar 
@@ -152,6 +204,31 @@ export default function LicoPOSApp() {
           {state.currentPage === 'caja' && <CashModule state={state} />}
         </div>
       </main>
+      
+      <div
+        style={{
+          position: 'fixed',
+          left: buttonPosition.x,
+          top: buttonPosition.y,
+          cursor: isDragging ? 'grabbing' : 'grab',
+          zIndex: 9999,
+        }}
+      >
+        <button
+          onMouseDown={handleMouseDown}
+          onClick={handleSync}
+          className="relative bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-full shadow-xl hover:shadow-2xl transition-all duration-200 p-3 flex items-center justify-center group"
+          style={{ width: 56, height: 56 }}
+        >
+          <Cloud className="w-6 h-6" />
+          {pendingOps > 0 && (
+            <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full w-6 h-6 flex items-center justify-center font-bold">
+              {pendingOps > 99 ? '99+' : pendingOps}
+            </span>
+          )}
+        </button>
+      </div>
+      
       <Toaster />
     </div>
   );

@@ -1,13 +1,8 @@
 import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
-  // Nota: 'output: export' es necesario para generar el .exe offline de Electron,
-  // pero puede causar comportamientos inesperados en algunos entornos de desarrollo.
   output: 'export',
-  
-  // Desactivamos trailingSlash por defecto para mejorar la compatibilidad con el proxy de la Workstation.
-  // Next.js manejará las rutas de forma estándar en desarrollo.
-  trailingSlash: false, 
+  trailingSlash: true, 
   
   typescript: {
     ignoreBuildErrors: true,
@@ -16,7 +11,7 @@ const nextConfig: NextConfig = {
     ignoreDuringBuilds: true,
   },
   images: {
-    unoptimized: true, // Obligatorio en Next.js al usar 'output: export'
+    unoptimized: true,
     remotePatterns: [
       {
         protocol: 'https',

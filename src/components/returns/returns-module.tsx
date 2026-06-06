@@ -101,18 +101,6 @@ export default function ReturnsModule() {
         productId: i.productId, name: i.name, priceBs: i.priceBs, priceUsd: i.priceBs / exchangeRate, qty: i.returnQty, category: 'Otro' as any
       }));
 
-      // Mapear método de retorno a clave usada en el sistema
-      const getPayMethodKey = (method: ReturnMethod): string => {
-        switch (method) {
-          case 'efectivo': return 'efectivo_bs';
-          case 'pago_movil': return 'pago_movil';
-          case 'nota_credito': return 'nota_credito';
-          default: return 'efectivo_bs';
-        }
-      };
-
-      const payMethodKey = getPayMethodKey(selectedMethod);
-
       const returnTransaction = {
         id: Date.now(),
         date: new Date().toISOString(),
@@ -122,20 +110,13 @@ export default function ReturnsModule() {
         iva: 0,
         total: totalReturnAmount,
         totalUsd: totalReturnAmount / exchangeRate,
-        // ✅ CORRECCIÓN: Usar el método de retorno, no el de la venta original
-        payMethod: payMethodKey,
+        payMethod: selectedTransaction.payMethod,
         paidBs: totalReturnAmount,
         change: 0,
         clientId: selectedTransaction.clientId,
         clientName: selectedTransaction.clientName,
         originalSaleId: selectedTransaction.id,
         returnMethod: selectedMethod,
-        // ✅ Agregar payments para facilitar la lectura en el cierre final
-        payments: [{
-          method: payMethodKey,
-          amount: totalReturnAmount,
-          usdAmount: totalReturnAmount / exchangeRate
-        }]
       };
 
       // ✅ 1. Guardar la devolución en la colección dedicada (ID como string)

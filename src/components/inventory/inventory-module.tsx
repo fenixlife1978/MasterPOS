@@ -130,6 +130,47 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
   // ==================== ESTADO LOCAL PARA EL PRECIO USD EDITABLE ====================
   const [localPriceUsd, setLocalPriceUsd] = useState('');
   
+  // ==================== REFERENCIAS PARA NAVEGACIÓN POR TECLADO ====================
+  const formRef = useRef<HTMLFormElement>(null);
+  const inputRefs = useRef<(HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | null)[]>([]);
+  
+  // Función para navegar con Enter/Escape
+  const handleFormKeyDown = (e: React.KeyboardEvent<HTMLFormElement>) => {
+    const target = e.target as HTMLElement;
+    const tagName = target.tagName.toLowerCase();
+    if (tagName !== 'input' && tagName !== 'select' && tagName !== 'textarea') return;
+    
+    const currentIndex = inputRefs.current.findIndex(ref => ref === target);
+    if (currentIndex === -1) return;
+    
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const nextIndex = currentIndex + 1;
+      if (nextIndex < inputRefs.current.length) {
+        const nextEl = inputRefs.current[nextIndex];
+        if (nextEl) {
+          nextEl.focus();
+          // Si es un select, abrir el dropdown (opcional)
+          if (nextEl.tagName.toLowerCase() === 'select') {
+            (nextEl as HTMLSelectElement).size = 1;
+          }
+        }
+      } else {
+        // Si es el último, enviar el formulario
+        const submitBtn = document.querySelector('#submit-product-btn') as HTMLButtonElement;
+        if (submitBtn) submitBtn.click();
+      }
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      const prevIndex = currentIndex - 1;
+      if (prevIndex >= 0) {
+        const prevEl = inputRefs.current[prevIndex];
+        if (prevEl) prevEl.focus();
+      }
+    }
+  };
+  
+  // ==================== FUNCIONES AUXILIARES ====================
   // ✅ Función para calcular Precio Detal USD desde Costo y % de Ganancia
   const calculatePriceUsdFromCostAndProfit = (cost: number, profitPercent: number): number => {
     if (cost <= 0) return 0;
@@ -145,12 +186,9 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
     return Math.min(roundTo2(profitPercent), 99.99);
   };
   
-  // ✅ Validar código de barras duplicado
+  // ✅ Validar código de barras duplicado - AHORA SIEMPRE RETORNA FALSE PARA PERMITIR DUPLICADOS
   const isBarcodeDuplicado = (barcode: string, excludeId?: number): boolean => {
-    return products.some(p => 
-      p.barcode.toLowerCase() === barcode.toLowerCase() && 
-      (excludeId === undefined || p.id !== excludeId)
-    );
+    return false; // Se permite cualquier código de barras duplicado
   };
   
   // ✅ Función para formatear fecha de Venezuela
@@ -306,7 +344,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
             <p><strong>Costo Promedio Actual:</strong> ${formatUsd(product.costUsd || 0, 4)}</p>
             <p><strong>Fecha:</strong> ${new Date().toLocaleString('es-VE')}</p>
           </div>
-          </td>
+          <table>
             <thead>
               <tr>
                 <th>FECHA</th>
@@ -353,7 +391,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                   </tr>
                 `;
               }).join('')}
-              ${entries.length === 0 ? '<tr><td colspan="7" class="text-center">No hay movimientos registrados</td>' : ''}
+              ${entries.length === 0 ? '<tr><td colspan="7" class="text-center">No hay movimientos registrados</td></tr>' : ''}
             </tbody>
           </table>
           <div class="footer">Documento generado desde MasterPOS - Sistema de Punto de Venta</div>
@@ -420,11 +458,14 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // ✅ Validar código de barras duplicado
+    // ✅ Validación de código duplicado eliminada (siempre se permite)
+    // Si aún así quieres mantener el mensaje, puedes descomentar, pero ahora no bloquea.
+    /*
     if (isBarcodeDuplicado(formData.barcode, editingProduct?.id)) {
       toast({ title: "Error", description: `Ya existe un producto con el código ${formData.barcode}. No se puede duplicar.`, variant: "destructive" });
       return;
     }
+    */
     
     const cost = parseFloat(costUsdInput) || 0;
     const profitPercent = parseFloat(profitPercentInput) || DEFAULT_PROFIT_PERCENT;
@@ -1171,7 +1212,6 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                 <tbody>
                   {filteredAdjustments.map((adj, idx) => (
                     <tr key={`${adj.id}_${idx}`} className="border-b border-gray-100 hover:bg-gray-50">
-                      {/* ✅ Fecha formateada correctamente */}
                       <td className="p-2 whitespace-nowrap text-[11px] font-mono">{formatVenezuelaDateTime(adj.date)}</td>
                       <td className="p-2">
                         <div className="font-bold">{adj.productName}</div>
@@ -1417,44 +1457,152 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
       </Dialog>
       
       <Dialog open={isAdding} onOpenChange={(val) => { if(!val) { setIsAdding(false); setEditingProduct(null); resetForm(); } }}>
-        <DialogContent className="bg-white max-w-3xl p-0 rounded-xl max-h-[90vh] flex flex-col">
+        <DialogContent className="bg-white max-w-3xl p-0 rounded-xl max-h-[90vh] flex flex-col" onPointerDownOutside={(e) => e.preventDefault()}>
           <DialogHeader className="bg-[#1A2C4E] p-3 text-white rounded-t-xl flex-shrink-0">
             <div className="flex justify-between items-center">
               <DialogTitle className="text-sm font-black">{editingProduct ? 'Editar' : 'Nuevo'} Producto</DialogTitle>
               <button type="button" onClick={() => setIsAdding(false)}><X size={16} /></button>
             </div>
           </DialogHeader>
-          <form onSubmit={handleSave} className="flex flex-col flex-1 overflow-hidden">
+          <form ref={formRef} onSubmit={handleSave} onKeyDown={handleFormKeyDown} className="flex flex-col flex-1 overflow-hidden">
             <div className="flex-1 overflow-y-auto p-4">
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-2">
-                  <div><label className="text-[8px] font-black uppercase">Código de Barras</label><Input value={formData.barcode} onChange={e => setFormData({...formData, barcode: e.target.value})} className="h-7 text-xs" required /></div>
-                  <div><label className="text-[8px] font-black uppercase">Nombre del Producto</label><Input value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="h-7 text-xs" required /></div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div><label className="text-[8px] font-black uppercase">Departamento</label><select value={formData.department} onChange={e => setFormData({...formData, department: e.target.value})} className="w-full h-7 border rounded px-2 text-xs bg-white">{departments.map(d => <option key={d}>{d}</option>)}</select></div>
-                    <div><label className="text-[8px] font-black uppercase">Categoría</label><select value={formData.category} onChange={e => setFormData({...formData, category: e.target.value as Category})} className="w-full h-7 border rounded px-2 text-xs bg-white">{categories.map(c => <option key={c}>{c}</option>)}</select></div>
+                  <div>
+                    <label className="text-[8px] font-black uppercase">Código de Barras</label>
+                    <Input 
+                      ref={(el) => { if (el) inputRefs.current[0] = el; }}
+                      value={formData.barcode} 
+                      onChange={e => setFormData({...formData, barcode: e.target.value})} 
+                      className="h-7 text-xs" 
+                      required 
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[8px] font-black uppercase">Nombre del Producto</label>
+                    <Input 
+                      ref={(el) => { if (el) inputRefs.current[1] = el; }}
+                      value={formData.name} 
+                      onChange={e => setFormData({...formData, name: e.target.value})} 
+                      className="h-7 text-xs" 
+                      required 
+                    />
                   </div>
                   <div className="grid grid-cols-2 gap-2">
-                    <div><label className="text-[8px] font-black uppercase">Stock Inicial</label><Input type="text" inputMode="numeric" value={stockInput} onChange={(e) => setStockInput(e.target.value)} className={cn("h-7 text-xs", !!editingProduct && "bg-gray-100 opacity-70")} placeholder="0" readOnly={!!editingProduct} /></div>
-                    <div><label className="text-[8px] font-black uppercase">Stock Mínimo</label><Input type="text" inputMode="numeric" value={minStockInput} onChange={(e) => setMinStockInput(e.target.value)} className="h-7 text-xs" placeholder="5" /></div>
+                    <div>
+                      <label className="text-[8px] font-black uppercase">Departamento</label>
+                      <select 
+                        ref={(el) => { if (el) inputRefs.current[2] = el; }}
+                        value={formData.department} 
+                        onChange={e => setFormData({...formData, department: e.target.value})} 
+                        className="w-full h-7 border rounded px-2 text-xs bg-white"
+                      >
+                        {departments.map(d => <option key={d}>{d}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[8px] font-black uppercase">Categoría</label>
+                      <select 
+                        ref={(el) => { if (el) inputRefs.current[3] = el; }}
+                        value={formData.category} 
+                        onChange={e => setFormData({...formData, category: e.target.value as Category})} 
+                        className="w-full h-7 border rounded px-2 text-xs bg-white"
+                      >
+                        {categories.map(c => <option key={c}>{c}</option>)}
+                      </select>
+                    </div>
                   </div>
                   <div className="grid grid-cols-2 gap-2">
-                    <div><label className="text-[8px] font-black uppercase">Precio Mayor (USD)</label><Input type="text" inputMode="decimal" value={priceWholesaleInput} onChange={(e) => setPriceWholesaleInput(e.target.value)} className="h-7 text-xs" placeholder="0.00" /></div>
-                    <div><label className="text-[8px] font-black uppercase">Precio Costo (USD)</label><Input type="text" inputMode="decimal" value={priceCostInput} onChange={(e) => setPriceCostInput(e.target.value)} className="h-7 text-xs" placeholder="0.00" /></div>
+                    <div>
+                      <label className="text-[8px] font-black uppercase">Stock Inicial</label>
+                      <Input 
+                        ref={(el) => { if (el) inputRefs.current[4] = el; }}
+                        type="text" 
+                        inputMode="numeric" 
+                        value={stockInput} 
+                        onChange={(e) => setStockInput(e.target.value)} 
+                        className={cn("h-7 text-xs", !!editingProduct && "bg-gray-100 opacity-70")} 
+                        placeholder="0" 
+                        readOnly={!!editingProduct} 
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[8px] font-black uppercase">Stock Mínimo</label>
+                      <Input 
+                        ref={(el) => { if (el) inputRefs.current[5] = el; }}
+                        type="text" 
+                        inputMode="numeric" 
+                        value={minStockInput} 
+                        onChange={(e) => setMinStockInput(e.target.value)} 
+                        className="h-7 text-xs" 
+                        placeholder="5" 
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[8px] font-black uppercase">Precio Mayor (USD)</label>
+                      <Input 
+                        ref={(el) => { if (el) inputRefs.current[6] = el; }}
+                        type="text" 
+                        inputMode="decimal" 
+                        value={priceWholesaleInput} 
+                        onChange={(e) => setPriceWholesaleInput(e.target.value)} 
+                        className="h-7 text-xs" 
+                        placeholder="0.00" 
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[8px] font-black uppercase">Precio Costo (USD)</label>
+                      <Input 
+                        ref={(el) => { if (el) inputRefs.current[7] = el; }}
+                        type="text" 
+                        inputMode="decimal" 
+                        value={priceCostInput} 
+                        onChange={(e) => setPriceCostInput(e.target.value)} 
+                        className="h-7 text-xs" 
+                        placeholder="0.00" 
+                      />
+                    </div>
                   </div>
                   <div className="border-t pt-2 mt-1">
-                    <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={isKit} onChange={e => setIsKit(e.target.checked)} className="rounded text-primary" /><span className="text-[9px] font-black uppercase">Es kit / compuesto</span></label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input 
+                        ref={(el) => { if (el) inputRefs.current[8] = el; }}
+                        type="checkbox" 
+                        checked={isKit} 
+                        onChange={e => setIsKit(e.target.checked)} 
+                        className="rounded text-primary" 
+                      />
+                      <span className="text-[9px] font-black uppercase">Es kit / compuesto</span>
+                    </label>
                     <p className="text-[7px] text-black/40 mt-1">Al vender este producto, se descontarán las cantidades de sus componentes.</p>
                   </div>
                   {isKit && (
                     <div className="border border-dashed border-blue-300 rounded-lg p-2 bg-blue-50/30 space-y-2">
-                      <div className="flex items-center justify-between bg-white/50 rounded p-1.5"><span className="text-[8px] font-bold uppercase">Stock del kit:</span><div className="flex gap-2"><button type="button" onClick={() => setKitHasOwnStock(false)} className={cn("px-2 py-0.5 rounded text-[9px] font-bold transition-all", !containerHasOwnStock ? "bg-primary text-black" : "bg-gray-200 text-gray-600")}>Sin stock propio</button><button type="button" onClick={() => setKitHasOwnStock(true)} className={cn("px-2 py-0.5 rounded text-[9px] font-bold transition-all", containerHasOwnStock ? "bg-primary text-black" : "bg-gray-200 text-gray-600")}>Con stock propio</button></div></div>
+                      <div className="flex items-center justify-between bg-white/50 rounded p-1.5">
+                        <span className="text-[8px] font-bold uppercase">Stock del kit:</span>
+                        <div className="flex gap-2">
+                          <button type="button" onClick={() => setKitHasOwnStock(false)} className={cn("px-2 py-0.5 rounded text-[9px] font-bold transition-all", !containerHasOwnStock ? "bg-primary text-black" : "bg-gray-200 text-gray-600")}>Sin stock propio</button>
+                          <button type="button" onClick={() => setKitHasOwnStock(true)} className={cn("px-2 py-0.5 rounded text-[9px] font-bold transition-all", containerHasOwnStock ? "bg-primary text-black" : "bg-gray-200 text-gray-600")}>Con stock propio</button>
+                        </div>
+                      </div>
                       <p className="text-[7px] text-blue-700 bg-blue-100 rounded px-2 py-1">{!containerHasOwnStock ? "📦 Sin stock propio: El kit siempre se puede vender si hay suficiente stock de sus componentes. Al vender, SOLO se descuentan los componentes." : "⚠️ Con stock propio: El kit tiene su propio inventario. Al vender, se descuenta 1 del kit + las cantidades de sus componentes."}</p>
                       <p className="text-[8px] font-bold text-blue-800 mb-1 flex items-center gap-1"><Package size={10} /> Componentes del kit</p>
                       <div className="space-y-2">
                         {kitComponents.length > 0 && (<div className="max-h-24 overflow-y-auto space-y-1">{kitComponents.map(comp => { const childProd = products.find(p => p.id === comp.productId); return <div key={comp.productId} className="flex justify-between items-center bg-white rounded px-2 py-1 text-[10px]"><span>{childProd?.name || 'Producto'} x{comp.quantity}</span><button type="button" onClick={() => removeKitComponent(comp.productId)} className="text-red-500"><Trash2 size={10} /></button></div>; })}</div>)}
                         <div className="flex flex-col gap-1">
-                          <div className="relative"><Input type="text" placeholder="Buscar producto componente..." value={searchChildProduct} onChange={(e) => { setSearchChildProduct(e.target.value); setHideChildResults(false); if (selectedChildProduct && e.target.value !== selectedChildProduct.name) setSelectedChildProduct(null); }} className="h-7 text-xs pr-7" />{!hideChildResults && searchChildProduct && childProductResults.length > 0 && (<div className="absolute top-full left-0 right-0 bg-white border rounded shadow z-20 mt-1 max-h-24 overflow-y-auto">{childProductResults.map(p => (<button key={p.id} type="button" onClick={() => { setSelectedChildProduct(p); setSearchChildProduct(p.name); setHideChildResults(true); }} className="w-full text-left px-2 py-1 text-[10px] hover:bg-primary/10">{p.name} ({formatUsd(p.priceUsd)})</button>))}</div>)}</div>
+                          <div className="relative">
+                            <Input 
+                              ref={(el) => { if (el) inputRefs.current[9] = el; }}
+                              type="text" 
+                              placeholder="Buscar producto componente..." 
+                              value={searchChildProduct} 
+                              onChange={(e) => { setSearchChildProduct(e.target.value); setHideChildResults(false); if (selectedChildProduct && e.target.value !== selectedChildProduct.name) setSelectedChildProduct(null); }} 
+                              className="h-7 text-xs pr-7" 
+                            />
+                            {!hideChildResults && searchChildProduct && childProductResults.length > 0 && (<div className="absolute top-full left-0 right-0 bg-white border rounded shadow z-20 mt-1 max-h-24 overflow-y-auto">{childProductResults.map(p => (<button key={p.id} type="button" onClick={() => { setSelectedChildProduct(p); setSearchChildProduct(p.name); setHideChildResults(true); }} className="w-full text-left px-2 py-1 text-[10px] hover:bg-primary/10">{p.name} ({formatUsd(p.priceUsd)})</button>))}</div>)}
+                          </div>
                           {selectedChildProduct && (<div className="flex gap-1 items-center"><Input type="text" inputMode="numeric" value={childQuantity} onChange={e => setChildQuantity(e.target.value)} className="h-7 text-xs w-20 text-center" placeholder="Cant." /><Button type="button" onClick={addKitComponent} size="sm" className="h-7 text-[9px] bg-primary text-black">Agregar</Button></div>)}
                         </div>
                       </div>
@@ -1466,6 +1614,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                   <div className="w-3/4">
                     <label className="text-[7px] font-bold uppercase">Costo Unitario USD</label>
                     <Input 
+                      ref={(el) => { if (el) inputRefs.current[10] = el; }}
                       type="text" 
                       inputMode="decimal" 
                       value={costUsdInput} 
@@ -1493,6 +1642,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                     <label className="text-[7px] font-bold uppercase">% de Ganancia</label>
                     <div className="flex items-center gap-2">
                       <Input 
+                        ref={(el) => { if (el) inputRefs.current[11] = el; }}
                         type="text" 
                         inputMode="decimal" 
                         value={profitPercentInput} 
@@ -1523,6 +1673,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                     <div>
                       <label className="text-[7px] font-bold uppercase">Precio Detal USD</label>
                       <Input 
+                        ref={(el) => { if (el) inputRefs.current[12] = el; }}
                         type="text" 
                         inputMode="decimal" 
                         value={localPriceUsd}
@@ -1554,6 +1705,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                     <div>
                       <label className="text-[7px] font-bold uppercase">Precio Detal Bs (final)</label>
                       <Input 
+                        ref={(el) => { if (el) inputRefs.current[13] = el; }}
                         type="text" 
                         inputMode="decimal" 
                         value={priceRetailBs} 
@@ -1602,7 +1754,8 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                         setIsPriceFixed(true);
                         toast({ 
                           title: "Precio fijado", 
-                          description: "El precio actual se ha fijado manualmente. No se modificará automáticamente." 
+                          description: "El precio actual se ha fijado manualmente. No se modificará automáticamente.",
+                          duration: 2000  // ✅ Se cierra en 2 segundos
                         });
                       }} 
                       className={cn(
@@ -1616,7 +1769,14 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                       {isPriceFixed ? "PRECIO FIJADO" : "FIJAR PRECIO"}
                     </Button>
                   </div>
-                  <div className="border-t pt-2 mt-1"><label className="text-[7px] font-bold uppercase text-black/60 block mb-1">Configuración de IVA</label><div className="flex gap-2"><button type="button" onClick={() => setIvaType('con_iva')} className={cn("flex-1 py-1 text-[9px] font-bold rounded border", ivaType === 'con_iva' ? "bg-primary text-black border-primary" : "bg-white text-black/60 border-gray-300")}>Con I.V.A.</button><button type="button" onClick={() => setIvaType('sin_iva')} className={cn("flex-1 py-1 text-[9px] font-bold rounded border", ivaType === 'sin_iva' ? "bg-primary text-black border-primary" : "bg-white text-black/60 border-gray-300")}>Sin I.V.A.</button></div>{ivaType === 'con_iva' && (<div className="flex items-center gap-2 mt-2"><Percent size={10} className="text-black/40" /><Input type="text" inputMode="decimal" value={isNaN(ivaPercentage) ? '' : ivaPercentage} onChange={(e) => setIvaPercentage(e.target.value === '' ? 0 : Number(e.target.value))} className="h-6 text-[9px] w-20 text-center" /><span className="text-[8px] text-black/60">% de I.V.A.</span></div>)}</div>
+                  <div className="border-t pt-2 mt-1">
+                    <label className="text-[7px] font-bold uppercase text-black/60 block mb-1">Configuración de IVA</label>
+                    <div className="flex gap-2">
+                      <button type="button" onClick={() => setIvaType('con_iva')} className={cn("flex-1 py-1 text-[9px] font-bold rounded border", ivaType === 'con_iva' ? "bg-primary text-black border-primary" : "bg-white text-black/60 border-gray-300")}>Con I.V.A.</button>
+                      <button type="button" onClick={() => setIvaType('sin_iva')} className={cn("flex-1 py-1 text-[9px] font-bold rounded border", ivaType === 'sin_iva' ? "bg-primary text-black border-primary" : "bg-white text-black/60 border-gray-300")}>Sin I.V.A.</button>
+                    </div>
+                    {ivaType === 'con_iva' && (<div className="flex items-center gap-2 mt-2"><Percent size={10} className="text-black/40" /><Input ref={(el) => { if (el) inputRefs.current[14] = el; }} type="text" inputMode="decimal" value={isNaN(ivaPercentage) ? '' : ivaPercentage} onChange={(e) => setIvaPercentage(e.target.value === '' ? 0 : Number(e.target.value))} className="h-6 text-[9px] w-20 text-center" /><span className="text-[8px] text-black/60">% de I.V.A.</span></div>)}
+                  </div>
                   <div className="bg-white rounded p-1.5 border mt-2">
                     <div className="flex justify-between text-[10px]">
                       <span className="text-black/60">Precio Base USD (sin IVA):</span>
@@ -1637,7 +1797,9 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                 </div>
               </div>
             </div>
-            <div className="bg-[#F5F5F5] p-3 border-t flex justify-end gap-2 flex-shrink-0"><Button type="submit" className="bg-primary text-black font-black px-6 h-8 text-xs">GUARDAR PRODUCTO</Button></div>
+            <div className="bg-[#F5F5F5] p-3 border-t flex justify-end gap-2 flex-shrink-0">
+              <Button id="submit-product-btn" type="submit" className="bg-primary text-black font-black px-6 h-8 text-xs">GUARDAR PRODUCTO</Button>
+            </div>
           </form>
         </DialogContent>
       </Dialog>

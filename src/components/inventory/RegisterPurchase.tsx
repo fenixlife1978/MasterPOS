@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
-import { Product, SupplierInvoice, PurchaseInvoiceItem, Category, KitComponent, AccountingEntry } from '@/lib/types';
+import { Product, SupplierInvoice, PurchaseInvoiceItem, Category, KitComponent, AccountingEntry, SupplierPayment } from '@/lib/types';
 import { syncService } from '@/services/syncService';
 import { formatBs, formatUsd, formatBsNumber, formatUsdNumber } from '@/lib/currency-formatter';
 
@@ -31,13 +31,34 @@ const DEFAULT_PROFIT_PERCENT = 30;
 const DEFAULT_CATEGORIES: Category[] = ['Whisky', 'Ron', 'Cerveza', 'Vino', 'Vodka', 'Tequila', 'Licor', 'Gin', 'Otro'];
 const DEFAULT_DEPARTMENTS = ['Polar', 'Munchy', 'Otros'];
 
-// ✅ Función para obtener fecha local de Venezuela en formato YYYY-MM-DD (sin desfase horario)
+// ✅ Función para obtener fecha/hora local de Venezuela en ISO string con offset -04:00
+function getVenezuelaISOString(): string {
+  const formatter = new Intl.DateTimeFormat('sv-SE', {
+    timeZone: 'America/Caracas',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    fractionalSecondDigits: 3,
+  });
+  const parts = formatter.formatToParts(new Date());
+  const partMap = Object.fromEntries(parts.map(p => [p.type, p.value]));
+  return `${partMap.year}-${partMap.month}-${partMap.day}T${partMap.hour}:${partMap.minute}:${partMap.second}.${partMap.fractionalSecond}-04:00`;
+}
+
+// ✅ Función para obtener fecha local YYYY-MM-DD (sin hora)
 function getLocalDate(): string {
   const now = new Date();
   const year = now.getFullYear();
   const month = String(now.getMonth() + 1).padStart(2, '0');
   const day = String(now.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+}
+
+function generateUniquePaymentId(): number {
+  return Date.now() + Math.floor(Math.random() * 10000);
 }
 
 export default function RegisterPurchase() {
@@ -63,7 +84,7 @@ export default function RegisterPurchase() {
   const [creditTermDays, setCreditTermDays] = useState<number>(30);
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // Estados para el modal de nuevo producto
+  // Estados para el modal de nuevo producto (sin cambios)
   const [showProductModal, setShowProductModal] = useState(false);
   const [modalPosition, setModalPosition] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
@@ -71,7 +92,7 @@ export default function RegisterPurchase() {
   const modalRef = useRef<HTMLDivElement>(null);
   const dragHandleRef = useRef<HTMLDivElement>(null);
 
-  // Estados para el formulario de producto (copiados de InventoryModule)
+  // Estados para el formulario de producto (sin cambios)
   const [productForm, setProductForm] = useState({
     barcode: '',
     name: '',
@@ -108,12 +129,10 @@ export default function RegisterPurchase() {
 
   const searchRef = useRef<HTMLDivElement>(null);
 
-  // Actualizar tasa cuando cambie en el sistema
   useEffect(() => {
     setExchangeRate(state.exchangeRate.toFixed(2));
   }, [state.exchangeRate]);
 
-  // Cargar categorías y departamentos desde settings al iniciar
   useEffect(() => {
     const loadSettings = async () => {
       const settings = await syncService.getGlobalSettings();
@@ -125,18 +144,16 @@ export default function RegisterPurchase() {
     loadSettings();
   }, []);
 
-  // Cerrar dropdown al hacer clic fuera
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
-        // no hacer nada, solo mantener el dropdown
+        // no hacer nada
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Funciones de arrastre para el modal
   const handleMouseDown = (e: React.MouseEvent) => {
     if (!modalRef.current) return;
     setIsDragging(true);
@@ -262,7 +279,7 @@ export default function RegisterPurchase() {
     try {
       const subtotal = totalInvoiceUsd / 1.16;
       const iva = totalInvoiceUsd - subtotal;
-      const timestamp = new Date().toISOString();
+      const timestamp = getVenezuelaISOString(); // ✅ fecha/hora exacta de Venezuela
       const invoiceId = Date.now();
       
       const paymentNotes = `Tipo de pago: ${paymentType === 'contado' ? 'Contado' : paymentType === 'credito' ? `Crédito a ${creditTermDays} días` : `Mixto (USD: ${formatUsdNumber(paidUsd)} / Bs: ${formatBsNumber(paidBs)})`}. Saldo pendiente: ${formatUsd(remainingUsd, 4)}`;
@@ -311,21 +328,42 @@ export default function RegisterPurchase() {
       }
       
       const supplier = suppliers.find(s => s.id === parseInt(selectedSupplierId));
-      if (supplier && remainingUsd > 0) {
+      
+      // ✅ Crear el pago automático si la compra es al contado o mixta
+      if (paymentType !== 'credito') {
+        const paymentMethod = paymentType === 'contado' ? 'efectivo' : 'mixto';
+        const totalPaidUsdAmount = paymentType === 'contado' ? totalInvoiceUsd : paidUsd;
+        if (totalPaidUsdAmount > 0) {
+          const payment: SupplierPayment = {
+            id: generateUniquePaymentId(),
+            supplierId: parseInt(selectedSupplierId),
+            invoiceId: invoiceId,
+            date: getLocalDate(),
+            amount: totalPaidUsdAmount,
+            method: paymentMethod,
+            reference: `Pago automático - Factura ${invoiceNumber}`,
+            bank: '',
+            notes: `Pago realizado al momento de la compra. Tasa: ${rateNum} Bs/USD`
+          };
+          await syncService.saveSupplierPayment(payment);
+        }
+      }
+      
+      // ✅ Actualizar la deuda del proveedor correctamente
+      if (supplier) {
+        const newDebt = (supplier.totalDebt || 0) + remainingUsd;
         await syncService.saveSupplier({
           ...supplier,
-          totalDebt: parseFloat(((supplier.totalDebt || 0) + remainingUsd).toFixed(2))
+          totalDebt: parseFloat(newDebt.toFixed(2))
         });
       }
       
       // ✅ Crear entrada contable SOLO para la parte pagada de contado (NO para crédito)
       if (paymentType !== 'credito') {
-        const paidAmountBs = totalPaidUsd * rateNum; // Monto en Bs pagado de contado
-        const localDate = getLocalDate(); // Fecha local sin desfase
-        
+        const paidAmountBs = totalPaidUsd * rateNum;
         const accountingEntry: AccountingEntry = {
           id: Date.now(),
-          date: localDate,
+          date: timestamp, // ✅ fecha/hora exacta, no solo la fecha
           type: 'egreso',
           category: 'compra_mercancia',
           subcategory: 'compra',
@@ -357,7 +395,7 @@ export default function RegisterPurchase() {
     setIsProcessing(false);
   };
 
-  // ==================== Funciones para el formulario de producto ====================
+  // ==================== Funciones para el formulario de producto (sin cambios) ====================
   const calculatePriceUsdFromCostAndProfit = (cost: number, profitPercent: number): number => {
     if (cost <= 0) return 0;
     const marginDecimal = profitPercent / 100;
@@ -492,11 +530,10 @@ export default function RegisterPurchase() {
     setIsSubmittingProduct(true);
     try {
       await syncService.saveProduct(productData);
-      // Crear entrada de kardex inicial
       const kardexEntry = {
         id: `${Date.now()}_${Math.random()}`,
         productId: productData.id,
-        date: new Date().toLocaleString('es-VE'),
+        date: getVenezuelaISOString(),
         type: 'ajuste_inicial',
         quantity: productData.stock,
         previousStock: 0,
@@ -532,9 +569,8 @@ export default function RegisterPurchase() {
 
         <div className="flex-1 overflow-y-auto scrollbar-thin mt-3">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            {/* Columna izquierda */}
+            {/* Columna izquierda - sin cambios */}
             <div className="lg:col-span-1 space-y-4">
-              {/* Datos de la factura */}
               <div className="bg-white border border-[#9E9E9E] rounded-xl p-4 shadow-sm">
                 <h3 className="text-[11px] font-black uppercase text-black/60 mb-3 flex items-center gap-2">
                   <Receipt size={13} /> Datos de la Factura
@@ -581,7 +617,6 @@ export default function RegisterPurchase() {
                 </div>
               </div>
 
-              {/* Condiciones de pago */}
               <div className="bg-white border border-[#9E9E9E] rounded-xl p-4 shadow-sm">
                 <h3 className="text-[11px] font-black uppercase text-black/60 mb-3 flex items-center gap-2">
                   <HandCoins size={13} /> Condiciones de Pago
@@ -694,7 +729,6 @@ export default function RegisterPurchase() {
                 </div>
               </div>
 
-              {/* Añadir productos */}
               <div className="bg-white border border-[#9E9E9E] rounded-xl p-4 shadow-sm">
                 <h3 className="text-[11px] font-black uppercase text-black/60 mb-3 flex items-center gap-2">
                   <Package size={13} /> Añadir Productos al Lote
@@ -832,7 +866,7 @@ export default function RegisterPurchase() {
         </div>
       </div>
 
-      {/* Modal arrastrable para crear nuevo producto */}
+      {/* Modal arrastrable para crear nuevo producto - sin cambios */}
       {showProductModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowProductModal(false)}>
           <div
@@ -841,7 +875,6 @@ export default function RegisterPurchase() {
             style={{ position: 'absolute', left: modalPosition.x || 'auto', top: modalPosition.y || 'auto' }}
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Header arrastrable */}
             <div
               ref={dragHandleRef}
               onMouseDown={handleMouseDown}
@@ -856,7 +889,6 @@ export default function RegisterPurchase() {
               </button>
             </div>
 
-            {/* Formulario de producto */}
             <form onSubmit={handleSaveProduct} className="flex-1 overflow-y-auto p-4">
               <div className="grid grid-cols-2 gap-3">
                 {/* Columna izquierda */}

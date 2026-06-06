@@ -2,14 +2,18 @@
 
 import React, { useState } from 'react';
 import { usePOSState } from '@/hooks/use-pos-state';
-import { Download, ChevronDown, ChevronRight, Wallet, Eye, X, HandCoins, History, DollarSign } from 'lucide-react';
+import { Download, ChevronDown, ChevronRight, Wallet, Eye, X, HandCoins, History, DollarSign, Trash2, PlusCircle, AlertCircle } from 'lucide-react';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import FloatingPaymentModal from '../pos/FloatingPaymentModal';
 import { CartItem } from '@/lib/types';
 import { formatBs, formatUsd, formatBsNumber, formatUsdNumber } from '@/lib/currency-formatter';
+import { syncService } from '@/services/syncService';
+import { db } from '@/lib/firebase';
+import { doc, deleteDoc } from 'firebase/firestore';
+import { useToast } from '@/hooks/use-toast';
 
 interface AccountsModuleProps {
   state: ReturnType<typeof usePOSState>;
@@ -23,11 +27,25 @@ interface ProductItem {
 }
 
 export default function AccountsModule({ state }: AccountsModuleProps) {
+  const { toast } = useToast();
   const [expandedClient, setExpandedClient] = useState<number | null>(null);
-  const [showPaymentModal, setShowPaymentModal] = useState(false);
-  const [selectedClient, setSelectedClient] = useState<{ id: number; name: string; debt: number } | null>(null);
   const [selectedTransaction, setSelectedTransaction] = useState<any>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
+
+  // ========== Modal para registrar deuda inicial ==========
+  const [showInitialDebtModal, setShowInitialDebtModal] = useState(false);
+  const [initialDebtForm, setInitialDebtForm] = useState({
+    clientId: '',
+    clientName: '',
+    clientCedula: '',
+    clientPhone: '',
+    clientAddress: '',
+    amountBs: '',
+    amountUsd: '',
+    date: new Date().toISOString().split('T')[0],
+    reason: '',
+  });
+  const [isSubmittingInitial, setIsSubmittingInitial] = useState(false);
 
   const groupedAccounts = state.accounts.reduce((acc, account) => {
     if (!acc[account.clientId]) {
@@ -51,20 +69,6 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
 
   const clientsList = Object.values(groupedAccounts);
   const totalGeneralDebt = clientsList.reduce((sum, c) => sum + c.totalDebt, 0);
-
-  const handlePayDebt = (clientId: number, clientName: string, debtAmount: number) => {
-    if (debtAmount <= 0) return;
-    setSelectedClient({ id: clientId, name: clientName, debt: debtAmount });
-    setShowPaymentModal(true);
-  };
-
-  const handlePaymentConfirm = (paymentData: any) => {
-    if (selectedClient) {
-      state.applyAbono(selectedClient.id, paymentData.totalPaid);
-      setShowPaymentModal(false);
-      setSelectedClient(null);
-    }
-  };
 
   const handleTransactionClick = (account: any) => {
     const transaction = state.transactions.find(t => t.id === account.txId);
@@ -136,6 +140,136 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
 
   const historicalRate = getHistoricalExchangeRate();
 
+  // ========== ELIMINAR CLIENTE ==========
+  const handleDeleteClient = async (clientId: number, clientName: string) => {
+    if (!confirm(`¿Eliminar al cliente "${clientName}" y todas sus cuentas pendientes? Esta acción es irreversible.`)) return;
+    
+    try {
+      const clientAccounts = state.accounts.filter(acc => acc.clientId === clientId);
+      for (const account of clientAccounts) {
+        const accountRef = doc(db, 'accounts', account.id.toString());
+        await deleteDoc(accountRef);
+      }
+      await syncService.deleteClient(clientId);
+      if (state.refreshAllData) await state.refreshAllData();
+      toast({
+        title: "Cliente eliminado",
+        description: `${clientName} y sus ${clientAccounts.length} cuenta(s) han sido eliminadas.`,
+      });
+    } catch (error) {
+      console.error("Error al eliminar cliente:", error);
+      toast({
+        title: "Error",
+        description: "No se pudo eliminar el cliente. Intente de nuevo.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // ========== REGISTRAR DEUDA INICIAL ==========
+  const handleInitialDebtChange = (field: string, value: string) => {
+    setInitialDebtForm(prev => ({ ...prev, [field]: value }));
+    
+    if (field === 'amountBs') {
+      const bs = parseFloat(value) || 0;
+      const usd = bs / state.exchangeRate;
+      setInitialDebtForm(prev => ({ ...prev, amountUsd: usd.toFixed(2) }));
+    }
+    if (field === 'amountUsd') {
+      const usd = parseFloat(value) || 0;
+      const bs = usd * state.exchangeRate;
+      setInitialDebtForm(prev => ({ ...prev, amountBs: bs.toFixed(2) }));
+    }
+  };
+
+  const handleSubmitInitialDebt = async () => {
+    const amountBs = parseFloat(initialDebtForm.amountBs);
+    if (isNaN(amountBs) || amountBs <= 0) {
+      toast({ title: "Error", description: "Ingrese un monto válido en Bolívares", variant: "destructive" });
+      return;
+    }
+    let clientId: number;
+    if (initialDebtForm.clientId === 'new') {
+      if (!initialDebtForm.clientName.trim()) {
+        toast({ title: "Error", description: "Ingrese el nombre del cliente", variant: "destructive" });
+        return;
+      }
+      const newClient = {
+        id: Date.now(),
+        name: initialDebtForm.clientName,
+        cedula: initialDebtForm.clientCedula,
+        phone: initialDebtForm.clientPhone,
+        address: initialDebtForm.clientAddress,
+        debt: 0,
+        createdAt: new Date().toISOString(),
+      };
+      await syncService.saveClient(newClient);
+      clientId = newClient.id;
+      toast({ title: "Cliente creado", description: `${newClient.name} agregado correctamente.` });
+    } else {
+      clientId = parseInt(initialDebtForm.clientId);
+    }
+
+    const exchangeRateAtMoment = state.exchangeRate;
+    const accountId = Date.now();
+    const newAccount = {
+      id: accountId,
+      clientId: clientId,
+      clientName: initialDebtForm.clientName,
+      clientCedula: initialDebtForm.clientCedula,
+      amountBs: amountBs,
+      amountUsd: amountBs / exchangeRateAtMoment,
+      paidAmount: 0,
+      status: 'pendiente',
+      date: initialDebtForm.date || new Date().toISOString(),
+      products: `Deuda inicial: ${initialDebtForm.reason || 'Sin motivo'}`,
+      exchangeRate: exchangeRateAtMoment,
+      createdAt: new Date().toISOString(),
+    };
+    await syncService.saveAccount(newAccount);
+
+    const txId = Date.now() + 1;
+    const creditTransaction = {
+      id: txId,
+      date: initialDebtForm.date || new Date().toISOString(),
+      type: 'credito',
+      items: [],
+      subtotal: amountBs,
+      iva: 0,
+      total: amountBs,
+      totalUsd: amountBs / exchangeRateAtMoment,
+      payMethod: 'credito',
+      clientId: clientId,
+      clientName: initialDebtForm.clientName,
+      exchangeRate: exchangeRateAtMoment,
+      notes: `Deuda inicial: ${initialDebtForm.reason || 'Sin motivo'}`,
+      sessionId: null,
+      createdAt: new Date().toISOString(),
+    };
+    await syncService.saveTransaction(creditTransaction);
+    
+    const client = (await syncService.getClients()).find(c => c.id === clientId);
+    if (client) {
+      const updatedClient = { ...client, debt: (client.debt || 0) + amountBs };
+      await syncService.saveClient(updatedClient);
+    }
+
+    if (state.refreshAllData) await state.refreshAllData();
+    toast({ title: "Deuda registrada", description: `Se cargó ${formatBs(amountBs)} al cliente.` });
+    setShowInitialDebtModal(false);
+    setInitialDebtForm({
+      clientId: '',
+      clientName: '',
+      clientCedula: '',
+      clientPhone: '',
+      clientAddress: '',
+      amountBs: '',
+      amountUsd: '',
+      date: new Date().toISOString().split('T')[0],
+      reason: '',
+    });
+  };
+
   return (
     <>
       <div className="p-6 h-full overflow-y-auto scrollbar-thin">
@@ -153,9 +287,14 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
               </div>
             </div>
           </div>
-          <Button onClick={handleExport} className="bg-[#E8E8E8] hover:bg-[#D4A017] text-black border border-black/20 font-black h-9 px-4">
-            <Download size={16} className="mr-2" /> EXPORTAR CSV
-          </Button>
+          <div className="flex gap-2">
+            <Button onClick={() => setShowInitialDebtModal(true)} className="bg-green-600 hover:bg-green-700 text-white font-black h-9 px-4">
+              <PlusCircle size={16} className="mr-2" /> REGISTRAR DEUDA INICIAL
+            </Button>
+            <Button onClick={handleExport} className="bg-[#E8E8E8] hover:bg-[#D4A017] text-black border border-black/20 font-black h-9 px-4">
+              <Download size={16} className="mr-2" /> EXPORTAR CSV
+            </Button>
+          </div>
         </div>
 
         <div className="bg-white border border-[#9E9E9E] rounded-xl overflow-hidden shadow-md">
@@ -168,7 +307,7 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
                 <TableHead className="text-[10px] font-black uppercase text-right">Total Original</TableHead>
                 <TableHead className="text-[10px] font-black uppercase text-right">Pagado</TableHead>
                 <TableHead className="text-[10px] font-black uppercase text-right">Saldo Pendiente</TableHead>
-                <TableHead className="text-[10px] font-black uppercase text-center">Acción</TableHead>
+                <TableHead className="text-[10px] font-black uppercase text-center">Acciones</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -188,11 +327,15 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
                         <TableCell className="text-right font-bold text-[#2ECC71]">{formatBs(client.totalPaid)}</TableCell>
                         <TableCell className="text-right"><span className={cn("font-black", hasDebt ? "text-[#E74C3C]" : "text-[#2ECC71]")}>{formatBs(client.totalDebt)}</span></TableCell>
                         <TableCell className="text-center">
-                          {hasDebt && (
-                            <button onClick={(e) => { e.stopPropagation(); handlePayDebt(client.clientId, client.clientName, client.totalDebt); }} className="px-3 py-1.5 bg-[#D4A017] text-black text-[10px] font-bold rounded-lg hover:brightness-110 transition-all flex items-center gap-1 mx-auto">
-                              <Wallet size={12} /> PAGAR
+                          <div className="flex items-center justify-center gap-2">
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handleDeleteClient(client.clientId, client.clientName); }}
+                              className="px-3 py-1.5 bg-red-600 text-white text-[10px] font-bold rounded-lg hover:bg-red-700 transition-all flex items-center gap-1"
+                              title="Eliminar cliente y todas sus cuentas"
+                            >
+                              <Trash2 size={12} /> ELIMINAR
                             </button>
-                          )}
+                          </div>
                         </TableCell>
                       </TableRow>
                       {isExpanded && (
@@ -245,15 +388,6 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
           </Table>
         </div>
       </div>
-
-      {showPaymentModal && selectedClient && (
-        <FloatingPaymentModal
-          total={selectedClient.debt}
-          exchangeRate={state.exchangeRate}
-          onClose={() => { setShowPaymentModal(false); setSelectedClient(null); }}
-          onConfirm={handlePaymentConfirm}
-        />
-      )}
 
       <Dialog open={showDetailModal} onOpenChange={setShowDetailModal}>
         <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-2xl p-0 overflow-hidden rounded-2xl shadow-xl max-h-[85vh] overflow-y-auto">
@@ -413,6 +547,128 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal para registrar deuda inicial */}
+      <Dialog open={showInitialDebtModal} onOpenChange={setShowInitialDebtModal}>
+        <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-md p-0 overflow-hidden rounded-2xl shadow-xl">
+          <DialogHeader className="p-4 bg-[#1A2C4E] text-white">
+            <DialogTitle className="text-lg font-black">Registrar Deuda Inicial</DialogTitle>
+          </DialogHeader>
+          <div className="p-5 space-y-4">
+            <div>
+              <label className="text-[10px] font-bold text-black/60 uppercase block mb-1">Cliente</label>
+              <select 
+                value={initialDebtForm.clientId} 
+                onChange={(e) => handleInitialDebtChange('clientId', e.target.value)}
+                className="w-full h-9 border border-[#9E9E9E] rounded-lg px-3 text-sm bg-white"
+              >
+                <option value="">Seleccionar cliente existente</option>
+                <option value="new">➕ Nuevo cliente</option>
+                {clientsList.map(c => (
+                  <option key={c.clientId} value={c.clientId.toString()}>{c.clientName} (Cédula: {c.clientCedula})</option>
+                ))}
+              </select>
+            </div>
+            {initialDebtForm.clientId === 'new' && (
+              <>
+                <div>
+                  <label className="text-[10px] font-bold text-black/60 uppercase block mb-1">Nombre *</label>
+                  <Input 
+                    value={initialDebtForm.clientName} 
+                    onChange={(e) => handleInitialDebtChange('clientName', e.target.value)} 
+                    className="h-9 text-sm"
+                    placeholder="Ej: Juan Pérez"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] font-bold text-black/60 uppercase block mb-1">Cédula</label>
+                    <Input 
+                      value={initialDebtForm.clientCedula} 
+                      onChange={(e) => handleInitialDebtChange('clientCedula', e.target.value)} 
+                      className="h-9 text-sm"
+                      placeholder="Ej: V-12345678"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-black/60 uppercase block mb-1">Teléfono</label>
+                    <Input 
+                      value={initialDebtForm.clientPhone} 
+                      onChange={(e) => handleInitialDebtChange('clientPhone', e.target.value)} 
+                      className="h-9 text-sm"
+                      placeholder="Ej: 0412-1234567"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-black/60 uppercase block mb-1">Dirección</label>
+                  <Input 
+                    value={initialDebtForm.clientAddress} 
+                    onChange={(e) => handleInitialDebtChange('clientAddress', e.target.value)} 
+                    className="h-9 text-sm"
+                    placeholder="Ej: Av. Principal, Local 5"
+                  />
+                </div>
+              </>
+            )}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-[10px] font-bold text-black/60 uppercase block mb-1">Monto (Bs) *</label>
+                <Input 
+                  type="number" 
+                  step="0.01"
+                  value={initialDebtForm.amountBs} 
+                  onChange={(e) => handleInitialDebtChange('amountBs', e.target.value)} 
+                  className="h-9 text-sm font-mono text-right"
+                  placeholder="0.00"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-black/60 uppercase block mb-1">Monto (USD)</label>
+                <Input 
+                  type="number" 
+                  step="0.01"
+                  value={initialDebtForm.amountUsd} 
+                  onChange={(e) => handleInitialDebtChange('amountUsd', e.target.value)} 
+                  className="h-9 text-sm font-mono text-right"
+                  placeholder="0.00"
+                />
+                <p className="text-[8px] text-black/40 mt-1">Tasa actual: {formatBs(state.exchangeRate)}</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-[10px] font-bold text-black/60 uppercase block mb-1">Fecha (opcional)</label>
+                <Input 
+                  type="date" 
+                  value={initialDebtForm.date} 
+                  onChange={(e) => handleInitialDebtChange('date', e.target.value)} 
+                  className="h-9 text-sm"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-black/60 uppercase block mb-1">Motivo (opcional)</label>
+                <Input 
+                  value={initialDebtForm.reason} 
+                  onChange={(e) => handleInitialDebtChange('reason', e.target.value)} 
+                  className="h-9 text-sm"
+                  placeholder="Ej: Saldo anterior"
+                />
+              </div>
+            </div>
+          </div>
+          <div className="bg-[#F5F5F5] p-4 border-t flex justify-end gap-3">
+            <Button variant="ghost" onClick={() => setShowInitialDebtModal(false)} className="text-black">CANCELAR</Button>
+            <Button 
+              onClick={handleSubmitInitialDebt} 
+              disabled={isSubmittingInitial}
+              className="bg-primary text-black font-black"
+            >
+              REGISTRAR DEUDA
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </>

@@ -16,7 +16,7 @@ import { cn } from '@/lib/utils';
 import { useAuth } from '@/context/AuthContext';
 
 interface Terminal {
-  id: string;        // ahora es el nombre (string)
+  id: string;
   name: string;
   description: string;
   location: string;
@@ -56,14 +56,17 @@ export default function TerminalManager() {
   useEffect(() => {
     if (!user) return;
 
-    const unsub = syncService.subscribeToTerminals((data: any[]) => {
-      // Asegurar que cada terminal tenga isBlocked y que id sea string (el nombre)
-      const terminalsWithBlock = data.map(t => ({ 
+    // Usar suscripción en tiempo real
+    const unsub = syncService.subscribeToTerminalsRealtime((data: any[]) => {
+      // Asegurar que cada terminal tenga propiedades básicas
+      const terminalsWithDefaults = data.map(t => ({ 
         ...t, 
         id: t.id || t.name,
+        name: t.name || 'Sin nombre',
+        location: t.location || '',
         isBlocked: t.isBlocked ?? false 
       }));
-      setTerminals(terminalsWithBlock);
+      setTerminals(terminalsWithDefaults);
     });
     
     const loadUsers = async () => {
@@ -90,7 +93,7 @@ export default function TerminalManager() {
     return () => unsub();
   }, [user]);
 
-  // Actualizar terminalId del usuario (ahora recibe string)
+  // Actualizar terminalId del usuario
   const updateUserTerminalAssignment = async (userId: string | null, terminalId: string | null) => {
     if (!userId) return;
     try {
@@ -100,7 +103,6 @@ export default function TerminalManager() {
     }
   };
 
-  // Validar que el nombre sea único (solo para nuevos)
   const isNameUnique = (name: string, excludeId?: string) => {
     return !terminals.some(t => t.name.toLowerCase() === name.toLowerCase() && t.id !== excludeId);
   };
@@ -111,7 +113,6 @@ export default function TerminalManager() {
       return;
     }
 
-    // Validar nombre único al crear nueva
     if (!editingTerminal && !isNameUnique(formData.name)) {
       setNameError('Ya existe una terminal con este nombre');
       return;
@@ -120,9 +121,8 @@ export default function TerminalManager() {
 
     const oldAssignedTo = editingTerminal ? editingTerminal.assignedTo : null;
     const newAssignedTo = formData.assignedTo || null;
-    const terminalId = formData.name; // El nombre será el ID del documento
+    const terminalId = formData.name;
 
-    // Si está editando y el nombre cambió, no permitir (o se podría migrar, pero mejor deshabilitar)
     if (editingTerminal && editingTerminal.name !== formData.name) {
       alert('No se puede cambiar el nombre de la terminal. Cree una nueva terminal y elimine esta.');
       return;
@@ -212,9 +212,10 @@ export default function TerminalManager() {
     return found ? found.name : 'Usuario no encontrado';
   };
 
+  // ✅ Filtrado seguro (con validación para evitar undefined)
   const filteredTerminals = terminals.filter(t => 
-    t.name.toLowerCase().includes(search.toLowerCase()) ||
-    t.location.toLowerCase().includes(search.toLowerCase())
+    (t.name && t.name.toLowerCase().includes(search.toLowerCase())) ||
+    (t.location && t.location.toLowerCase().includes(search.toLowerCase()))
   );
 
   const cashiers = users.filter(u => u.role === 'cashier');

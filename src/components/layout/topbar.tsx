@@ -2,11 +2,12 @@
 
 import { useState, useEffect } from 'react';
 import { CashRegister } from '@/lib/types';
-import { RefreshCw, Clock, Wifi, WifiOff } from 'lucide-react';
+import { RefreshCw, Clock, Wifi, WifiOff, UploadCloud } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { syncService } from '@/services/syncService';
 import InvoiceNotifications from '@/components/ui/InvoiceNotifications';
 import { useAuth } from '@/context/AuthContext';
+import { useToast } from '@/hooks/use-toast';
 import { formatBs, formatUsd, formatBsNumber, formatUsdNumber } from '@/lib/currency-formatter';
 
 interface TopbarProps {
@@ -17,9 +18,11 @@ interface TopbarProps {
 
 export default function Topbar({ register, rate, onRateChange }: TopbarProps) {
   const { user, loading } = useAuth();
+  const { toast } = useToast();
   const [time, setTime] = useState(new Date());
   const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
   const [pendingSync, setPendingSync] = useState(0);
+  const [isSyncing, setIsSyncing] = useState(false);
   
   // Verificar si es admin
   const isAdmin = user?.role === 'admin';
@@ -53,6 +56,30 @@ export default function Topbar({ register, rate, onRateChange }: TopbarProps) {
       clearInterval(interval);
     };
   }, []);
+
+  const handleSync = async () => {
+    if (!isOnline) {
+      toast({ title: "Sin conexión", description: "No hay conexión a internet. No se puede sincronizar.", variant: "destructive" });
+      return;
+    }
+    if (isSyncing) return;
+    setIsSyncing(true);
+    toast({ title: "Sincronizando", description: "Subiendo operaciones pendientes..." });
+    try {
+      const success = await syncService.syncAllPending();
+      if (success) {
+        toast({ title: "Sincronización completada", description: "Todas las operaciones han sido enviadas a la nube." });
+        setPendingSync(syncService.getPendingQueueLength());
+      } else {
+        toast({ title: "Error", description: "No se pudo completar la sincronización.", variant: "destructive" });
+      }
+    } catch (error) {
+      console.error('Error en sincronización manual:', error);
+      toast({ title: "Error", description: "Ocurrió un error al sincronizar.", variant: "destructive" });
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
   const isOpen = register?.isOpen;
 
@@ -117,6 +144,18 @@ export default function Topbar({ register, rate, onRateChange }: TopbarProps) {
               {pendingSync}
             </span>
           )}
+          {/* Botón de sincronización manual */}
+          <button
+            onClick={handleSync}
+            disabled={isSyncing}
+            className="relative flex items-center justify-center w-6 h-6 rounded-full hover:bg-white/10 transition-colors"
+            title="Sincronizar operaciones pendientes"
+          >
+            <UploadCloud size={14} className={cn(
+              "text-white/80 hover:text-white transition-colors",
+              isSyncing && "animate-spin"
+            )} />
+          </button>
         </div>
 
         <InvoiceNotifications variant="cashier" />

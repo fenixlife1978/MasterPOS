@@ -7,7 +7,7 @@ import { getLocalDateString, formatLocalDate } from '@/lib/date-utils';
 import { 
   Computer, DollarSign, CreditCard, Smartphone, Fingerprint, 
   Plane, Receipt, TrendingUp, TrendingDown, Eye, Loader2,
-  Banknote, Clock, AlertCircle
+  Banknote, Clock, AlertCircle, CloudUpload
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -61,8 +61,9 @@ export default function CashSupervision() {
   const [selectedRegister, setSelectedRegister] = useState<CashRegisterData | null>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [totals, setTotals] = useState<TotalsByMethod | null>(null);
+  const [isSyncingAll, setIsSyncingAll] = useState(false);
 
-  // Suscribirse a terminales
+  // Suscribirse a terminales (usando tiempo real)
   useEffect(() => {
     if (!user || user.role !== 'admin') {
       setLoadingTerminals(false);
@@ -79,7 +80,7 @@ export default function CashSupervision() {
     };
   }, [user]);
 
-  // Suscribirse a los registros de caja de cada terminal (se ejecuta cuando cambian los terminales)
+  // Suscribirse a los registros de caja de cada terminal (en tiempo real)
   useEffect(() => {
     if (terminals.length === 0) return;
 
@@ -88,7 +89,8 @@ export default function CashSupervision() {
     terminals.forEach(terminal => {
       const terminalId = terminal.id.toString();
       
-      const unsub = syncService.subscribeToRegisterByTerminal(terminalId, (data: CashRegisterData | null) => {
+      // ✅ CAMBIO: Usar suscripción en tiempo real
+      const unsub = syncService.subscribeToRegisterRealtime(terminalId, (data: CashRegisterData | null) => {
         setRegisters(prev => ({
           ...prev,
           [terminalId]: data
@@ -183,6 +185,26 @@ export default function CashSupervision() {
     return { bs: reg.openAmountBs, usd: reg.openAmountUsd };
   };
 
+  // ✅ NUEVA FUNCIÓN: Sincronizar todas las cajas remotamente
+  const handleSyncAllTerminals = async () => {
+    if (isSyncingAll) return;
+    
+    if (!confirm('¿Enviar comando de sincronización a TODAS las cajas abiertas? Las cajas ejecutarán la sincronización en segundo plano.')) {
+      return;
+    }
+    
+    setIsSyncingAll(true);
+    try {
+      await syncService.sendSyncCommandToAllTerminals();
+      alert('✅ Comando enviado a todas las terminales. Las cajas sincronizarán sus operaciones pendientes.');
+    } catch (error) {
+      console.error('Error al enviar comandos de sincronización:', error);
+      alert('❌ Error al enviar comandos. Verifique la conexión a internet.');
+    } finally {
+      setIsSyncingAll(false);
+    }
+  };
+
   if (loadingTerminals) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -214,9 +236,28 @@ export default function CashSupervision() {
   return (
     <div className="space-y-6">
       <div className="bg-white border border-[#9E9E9E] rounded-xl p-5 shadow-md">
-        <div className="flex items-center gap-2 mb-4">
-          <Computer size={20} className="text-primary" />
-          <h3 className="text-lg font-black text-black">Supervisión de Cajas en Tiempo Real</h3>
+        <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
+          <div className="flex items-center gap-2">
+            <Computer size={20} className="text-primary" />
+            <h3 className="text-lg font-black text-black">Supervisión de Cajas en Tiempo Real</h3>
+          </div>
+          <Button
+            onClick={handleSyncAllTerminals}
+            disabled={isSyncingAll}
+            className="bg-[#1A2C4E] hover:bg-[#2c3e66] text-white font-black h-9 px-4 text-xs"
+          >
+            {isSyncingAll ? (
+              <>
+                <Loader2 size={14} className="animate-spin mr-2" />
+                ENVIANDO...
+              </>
+            ) : (
+              <>
+                <CloudUpload size={14} className="mr-2" />
+                SINCRONIZAR TODAS LAS CAJAS
+              </>
+            )}
+          </Button>
         </div>
         
         <div className="overflow-x-auto">

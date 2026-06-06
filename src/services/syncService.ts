@@ -203,7 +203,7 @@ const updateStockInRTDB = async (productId: number, newStock: number) => {
   await set(stockRef, newStock);
 };
 
-// ========== FUNCIONES DE COMANDOS REMOTOS (SYNC DESDE ADMINISTRADOR) ==========
+// ========== NUEVAS FUNCIONES PARA COMANDOS REMOTOS (SYNC DESDE ADMINISTRADOR) ==========
 async function sendSyncCommandToTerminal(terminalId: string): Promise<void> {
   if (!rtdb) {
     console.warn("⚠️ RTDB no disponible, no se puede enviar comando");
@@ -246,6 +246,7 @@ function listenForSyncCommands(terminalId: string, callback: () => void): () => 
     if (data && data.command === 'sync') {
       console.log(`📢 Terminal ${terminalId} recibió comando sync`);
       callback();
+      // Limpiar el comando después de ejecutarlo (para no repetir)
       set(commandRef, null).catch(err => console.warn("Error al limpiar comando:", err));
     }
   });
@@ -731,6 +732,7 @@ export const syncService = {
 
   // ✅ CORREGIDO: Actualiza el bloqueo directamente en Firestore (además de caché local)
   async updateTerminalBlockStatus(terminalId: string, isBlocked: boolean) {
+    // 1. Actualizar caché local inmediatamente
     const terminals = await this.getTerminals();
     const terminalIndex = terminals.findIndex(t => t.id === terminalId);
     if (terminalIndex !== -1) {
@@ -738,11 +740,13 @@ export const syncService = {
       await localCache.saveCollection('terminals', terminals);
     }
     
+    // 2. Si online, escribir directamente en Firestore
     if (db && isOnline && !isLoggingOut) {
       const terminalRef = doc(db, 'terminals', terminalId);
       await updateDoc(terminalRef, { isBlocked, updatedAt: Date.now() });
       console.log(`✅ Terminal ${terminalId} bloqueo actualizado a ${isBlocked} en Firestore`);
     } else {
+      // 3. Offline: encolar para después
       await addToQueue('updateTerminal', { id: terminalId, updates: { isBlocked } });
     }
   },
@@ -785,6 +789,7 @@ export const syncService = {
     }
   },
 
+  // ✅ Método para guardar o actualizar el registro de caja (inmediato)
   async saveRegisterByTerminal(terminalId: string, reg: any) {
     if (!db || !terminalId) return;
     const registerRef = doc(db, 'registers', terminalId);
@@ -795,6 +800,7 @@ export const syncService = {
     await setDoc(registerRef, { ...reg, updatedAt: Date.now() }, { merge: true });
   },
 
+  // ✅ Método para eliminar el registro de caja (cierre de caja) - inmediato
   async deleteRegisterByTerminal(terminalId: string) {
     if (!db || !terminalId) return;
     if (!isOnline) {
@@ -805,6 +811,7 @@ export const syncService = {
     await deleteDoc(registerRef);
   },
 
+  // Mantener clearRegisterByTerminal por compatibilidad (ahora llama a deleteRegisterByTerminal)
   async clearRegisterByTerminal(terminalId: string) {
     await this.deleteRegisterByTerminal(terminalId);
   },
@@ -864,38 +871,46 @@ export const syncService = {
     await this.saveTransaction(txWithSession);
   },
 
+  // ========== VENTA ATÓMICA (ACTUALIZA STOCK EN RTDB + GUARDA LOCAL + FIRESTORE DIRECTO) ==========
   async runAtomicSale(terminalId: string, txData: any, updates: {
     products: Map<number, { newStock: number }>;
     kardexEntries: any[];
     accountingEntry?: any;
     registerUpdate: { txs: any[] };
   }) {
+    // 1. Actualizar caché local y RTDB
     const products = await this.getProducts();
     for (const [prodId, { newStock }] of updates.products.entries()) {
       const prod = products.find(p => p.id === prodId);
       if (prod) prod.stock = newStock;
       await this.updateStockInRTDB(prodId, newStock);
       
+      // ✅ NUEVO: Actualizar Firestore directamente (sin depender de cola)
       if (db && isOnline && !isLoggingOut) {
         const productRef = doc(db, 'products', prodId.toString());
         await updateDoc(productRef, { stock: newStock, updatedAt: Date.now() });
         console.log(`✅ Producto ${prodId} stock actualizado a ${newStock} en Firestore`);
       } else {
+        // Offline: encolar la actualización
         await addToQueue('updateProductStock', { id: prodId, newStock });
       }
     }
     await localCache.saveCollection('products', products);
     
+    // 2. Guardar transacción
     await this.saveTransaction(txData);
     
+    // 3. Guardar kardex entries individualmente (inmediato)
     for (const entry of updates.kardexEntries) {
       await this.saveKardexEntry(entry);
     }
     
+    // 4. Guardar asiento contable si existe
     if (updates.accountingEntry) {
       await this.saveAccountingEntry(updates.accountingEntry);
     }
     
+    // 5. Actualizar registro de caja
     let registers = await localCache.getCollection('registers') || [];
     const regIdx = registers.findIndex(r => r.terminalId === terminalId);
     if (regIdx !== -1) {
@@ -905,6 +920,7 @@ export const syncService = {
     }
     await localCache.saveCollection('registers', registers);
     
+    // 6. Encolar operaciones adicionales (por si offline)
     await addToQueue('saveTransaction', txData);
     for (const entry of updates.kardexEntries) {
       await addToQueue('saveKardexEntry', entry);
@@ -977,6 +993,7 @@ export const syncService = {
     };
     await this.saveKardexEntry(kardexEntry);
     
+    // Actualizar Firestore directamente
     if (db && isOnline && !isLoggingOut) {
       const productRef = doc(db, 'products', productId.toString());
       await updateDoc(productRef, { 
@@ -996,6 +1013,7 @@ export const syncService = {
     return { newStock: updatedStock, newAverageCost: updatedCostUsd, newPriceUsd: updatedPriceUsd, newPriceBs: updatedPriceBs };
   },
 
+  // ========== SINCRONIZACIÓN MANUAL (BOTÓN) ==========
   async syncAllPending() {
     if (!isOnline) {
       console.warn("⚠️ No hay conexión a internet. No se puede sincronizar.");
@@ -1015,7 +1033,7 @@ export const syncService = {
     return pendingQueue.length;
   },
 
-  // ========== EXPORTAR FUNCIONES DE COMANDOS REMOTOS ==========
+  // ========== NUEVAS FUNCIONES EXPORTADAS PARA COMANDOS REMOTOS ==========
   sendSyncCommandToTerminal,
   sendSyncCommandToAllTerminals,
   listenForSyncCommands,
@@ -1050,4 +1068,5 @@ export const syncService = {
   }
 };
 
+// Exportar funciones útiles
 export const { loadAllDataToCache, syncAllPending } = syncService;

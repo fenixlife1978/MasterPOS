@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { Page } from '@/lib/types';
-import { Store, Boxes, Users, ReceiptText, Vault, LayoutDashboard, Truck, BookOpen, ArrowLeftRight, ChevronLeft, ChevronRight, ShoppingBag, LogOut } from 'lucide-react';
+import { Store, Boxes, ReceiptText, Vault, LayoutDashboard, Truck, BookOpen, ArrowLeftRight, ChevronLeft, ChevronRight, ShoppingBag } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import LogoutButton from './LogoutButton';
 import Image from 'next/image';
@@ -24,7 +24,7 @@ export default function Sidebar({ currentPage, onPageChange, userRole }: Sidebar
     { id: 'pos' as Page, icon: Store, label: 'Punto de Venta', adminOnly: false },
     { id: 'inventario' as Page, icon: Boxes, label: 'Inventario', adminOnly: true },
     { id: 'registrar_compra' as Page, icon: ShoppingBag, label: 'Entrada x Compra', adminOnly: true },
-    { id: 'clientes' as Page, icon: Users, label: 'Clientes', adminOnly: true },
+    // { id: 'clientes' as Page, icon: Users, label: 'Clientes', adminOnly: true }, // ✅ ELIMINADO: se quita del menú lateral
     { id: 'cuentas' as Page, icon: ReceiptText, label: 'Cuentas', adminOnly: true },
     { id: 'proveedores' as Page, icon: Truck, label: 'Proveedores', adminOnly: true },
     { id: 'contabilidad' as Page, icon: BookOpen, label: 'Contabilidad', adminOnly: true },
@@ -48,7 +48,6 @@ export default function Sidebar({ currentPage, onPageChange, userRole }: Sidebar
     <aside className={cn(
       "bg-primary border-r border-black/10 flex flex-col h-full transition-all duration-200",
       collapsed ? "w-[56px] min-w-[56px]" : "w-[200px] min-w-[200px]",
-      // ✅ Agregamos overflow-y-auto para permitir scroll cuando el contenido excede la altura
       "overflow-y-auto"
     )}>
       {/* Logo y botón colapsar - sticky para que siempre esté visible */}

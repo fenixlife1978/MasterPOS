@@ -1,4 +1,3 @@
-"use client";
 
 import { useState, useEffect } from 'react';
 import { usePOSState } from '@/hooks/use-pos-state';
@@ -67,13 +66,15 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
     loadAdminCode();
   }, []);
 
+  // ✅ Convertir ingresos del mes de Bs a USD
   const calculateMonthlyRevenue = () => {
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    const revenue = state.transactions
+    const revenueBs = state.transactions
       .filter(t => t.type === 'contado' && new Date(t.date) >= startOfMonth)
-      .reduce((sum, t) => sum + t.total, 0);
-    setMonthlyRevenue(revenue);
+      .reduce((sum, t) => sum + (t.total || 0), 0);
+    const revenueUsd = revenueBs / state.exchangeRate;
+    setMonthlyRevenue(roundTo2(revenueUsd));
   };
 
   const calculateMonthlyExpenses = () => {
@@ -88,7 +89,9 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
   useEffect(() => {
     calculateMonthlyRevenue();
     calculateMonthlyExpenses();
-  }, [state.transactions, invoices]);
+  }, [state.transactions, invoices, state.exchangeRate]);
+
+  const roundTo2 = (num: number) => Math.round(num * 100) / 100;
 
   const handleUpdateExchangeRate = async () => {
     const newRate = parseFloat(exchangeRateInput);
@@ -218,7 +221,8 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
   const totalClients = state.clients.length;
   const totalSales = state.transactions.filter(t => t.type === 'contado').length;
   const totalRevenue = state.transactions.filter(t => t.type === 'contado').reduce((sum, t) => sum + t.total, 0);
-  const totalCredit = state.clients.reduce((sum, c) => sum + (c.debt || 0), 0);
+  const totalCreditBs = state.clients.reduce((sum, c) => sum + (c.debt || 0), 0);
+  const totalCreditUsd = totalCreditBs / state.exchangeRate; // ✅ Convertir a USD
   const totalPayable = invoices.reduce((sum, inv) => sum + (inv.total - inv.paidAmount), 0);
   const outOfStock = state.products.filter(p => p.stock === 0).length;
   const lowStock = state.products.filter(p => p.stock > 0 && p.stock <= 5).length;
@@ -412,7 +416,7 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
                   <CreditCard size={18} className="text-orange-500" />
                   <p className="text-sm font-black text-black uppercase">Cuentas por Cobrar</p>
                 </div>
-                <p className="text-2xl font-black text-red-600">{formatUsd(totalCredit)}</p>
+                <p className="text-2xl font-black text-red-600">{formatUsd(totalCreditUsd)}</p>
                 <p className="text-[10px] text-black/50">Total de créditos pendientes de clientes</p>
               </div>
               <div className="bg-white rounded-xl border border-[#9E9E9E] p-4">

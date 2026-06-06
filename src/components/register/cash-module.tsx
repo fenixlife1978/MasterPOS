@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import { usePOSState } from '@/hooks/use-pos-state';
 import { 
-  Vault, Lock, Unlock, Banknote, Smartphone, Fingerprint, 
-  Plane, DollarSign, Archive, CreditCard, Receipt, 
+  Vault, Banknote, Smartphone, Fingerprint, 
+  Plane, DollarSign, CreditCard, Receipt, 
   BarChart3, Clock, Percent
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -50,26 +50,10 @@ export default function CashModule({ state }: CashModuleProps) {
   const [showCambioTasaModal, setShowCambioTasaModal] = useState(false);
   const [nuevaTasaInput, setNuevaTasaInput] = useState(state.exchangeRate.toString());
   const [isUpdatingRate, setIsUpdatingRate] = useState(false);
-  
-  const [isTerminalBlocked, setIsTerminalBlocked] = useState(false);
-  const [checkingBlock, setCheckingBlock] = useState(true);
-
-  useEffect(() => {
-    if (!user || user.role === 'admin' || !user.terminalId) {
-      setCheckingBlock(false);
-      return;
-    }
-    const unsubscribe = syncService.subscribeToTerminal(user.terminalId, (terminal) => {
-      setIsTerminalBlocked(terminal?.isBlocked === true);
-      setCheckingBlock(false);
-    });
-    return () => unsubscribe();
-  }, [user]);
 
   // Actualizar el valor del modal cuando cambie la tasa global
-  useEffect(() => {
-    setNuevaTasaInput(state.exchangeRate.toString());
-  }, [state.exchangeRate]);
+  const [_, setNuevaTasaInputIgnore] = useState(state.exchangeRate.toString());
+  // Nota: no se usa _ pero se mantiene por si se necesita
 
   const reg = state.register;
   const isClosed = !reg || !reg.isOpen;
@@ -162,21 +146,12 @@ export default function CashModule({ state }: CashModuleProps) {
   const totalEnCajaUSD = (reg?.openAmountUsd || 0) + totalContadoUsd;
 
   const handleOpenCash = () => {
-    if (isTerminalBlocked) {
-      alert('Terminal bloqueada. No se puede abrir la caja.');
-      return;
-    }
     const bsAmount = parseFloat(openAmountBs) || 0;
     const usdAmount = parseFloat(openAmountUsd) || 0;
     state.openCashRegister(bsAmount, usdAmount, state.exchangeRate);
   };
 
-  // ✅ CORREGIDO: handleCambioTasa ahora actualiza la tasa local sin perder el estado de la caja
   const handleCambioTasa = async () => {
-    if (isTerminalBlocked) {
-      alert('Terminal bloqueada. No se puede cambiar la tasa.');
-      return;
-    }
     const newRate = parseFloat(nuevaTasaInput);
     if (isNaN(newRate) || newRate <= 0) {
       alert("Ingrese una tasa válida");
@@ -184,18 +159,12 @@ export default function CashModule({ state }: CashModuleProps) {
     }
     setIsUpdatingRate(true);
     try {
-      // Primero actualizamos la tasa en el estado global (esto actualiza state.exchangeRate y los precios)
       await state.setExchangeRate(newRate);
       
-      // Luego, si la caja está abierta, actualizamos el registro local con la nueva tasa
-      // para mantener consistencia (sin esperar a Firestore)
       if (reg && reg.isOpen) {
         const updatedRegister = { ...reg, exchangeRate: newRate };
-        // Actualizar el estado local inmediatamente
         state.setRegister(updatedRegister);
-        // Guardar en localStorage para persistencia offline
         localStorage.setItem(`pos_register_${terminalId}`, JSON.stringify(updatedRegister));
-        // Intentar sincronizar con Firestore en segundo plano (sin bloquear)
         syncService.saveRegisterByTerminal(terminalId, updatedRegister).catch((e) => {
           console.warn("No se pudo sincronizar la tasa en el registro de caja (modo offline)", e);
         });
@@ -209,36 +178,6 @@ export default function CashModule({ state }: CashModuleProps) {
       setIsUpdatingRate(false);
     }
   };
-
-  if (checkingBlock) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <div className="text-center">
-          <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-2" />
-          <p className="text-xs text-black/50">Verificando terminal...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (isTerminalBlocked) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full bg-gray-50 p-6">
-        <div className="bg-red-50 border-2 border-red-300 rounded-2xl p-8 text-center max-w-md">
-          <div className="bg-red-100 rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-4">
-            <Lock size={32} className="text-red-600" />
-          </div>
-          <h2 className="text-xl font-black text-red-700 mb-2">TERMINAL BLOQUEADA</h2>
-          <p className="text-sm text-red-600 mb-4">
-            Esta estación de trabajo ha sido bloqueada por el administrador.
-          </p>
-          <p className="text-xs text-red-500">
-            Para desbloquear, comuníquese con su supervisor.
-          </p>
-        </div>
-      </div>
-    );
-  }
 
   if (showCierreFinal) {
     return <CierreFinalForm 
@@ -290,7 +229,7 @@ export default function CashModule({ state }: CashModuleProps) {
 
         {isClosed ? (
           <div className="bg-white border-x border-b border-slate-200 rounded-b-xl p-6 shadow-md">
-            <h2 className="text-sm font-black uppercase mb-4 text-[#1E3A8A] flex items-center gap-2"><Unlock size={14} /> APERTURA DE CAJA</h2>
+            <h2 className="text-sm font-black uppercase mb-4 text-[#1E3A8A] flex items-center gap-2"><Banknote size={14} /> APERTURA DE CAJA</h2>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
                 <label className="text-[9px] font-bold uppercase block mb-1 text-slate-500">Apertura BS (Efectivo)</label>
@@ -302,7 +241,7 @@ export default function CashModule({ state }: CashModuleProps) {
               </div>
               <div className="flex items-end gap-2">
                 <Button onClick={handleOpenCash} className="w-full bg-[#2ECC71] hover:bg-[#27AE60] text-white font-black h-8 text-xs">
-                  <Unlock size={12} className="mr-1" /> ABRIR CAJA
+                  <Banknote size={12} className="mr-1" /> ABRIR CAJA
                 </Button>
               </div>
             </div>
@@ -350,7 +289,6 @@ export default function CashModule({ state }: CashModuleProps) {
                       </tr>
                     );
                   })}
-                  {/* ✅ Fila de VENTAS A CRÉDITO */}
                   <tr className="border-t-2 border-slate-300 bg-blue-50/30">
                     <td className="p-2 font-bold text-blue-700"><div className="flex items-center gap-2"><CreditCard size={12} className="text-blue-700" /> VENTAS A CRÉDITO</div></td>
                     <td className="p-2 text-right font-mono font-bold text-blue-700">{formatBs(totalCreditoBs)}</td>

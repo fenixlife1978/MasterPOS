@@ -78,10 +78,19 @@ function extractDevolucionesFromCuadre(cuadre: any[]): number {
   return total;
 }
 
+// Función auxiliar para obtener la fecha local en formato YYYY-MM-DD
+function getLocalDateString(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 export default function CloseHistoryModal({ open, onClose }: CloseHistoryModalProps) {
   const [records, setRecords] = useState<UnifiedCloseRecord[]>([]);
   const [filterType, setFilterType] = useState<FilterType>('day');
-  const [dateFilter, setDateFilter] = useState<string>(() => new Date().toISOString().split('T')[0]);
+  // Fecha local actual para el filtro por día
+  const [dateFilter, setDateFilter] = useState<string>(() => getLocalDateString(new Date()));
   const [monthFilter, setMonthFilter] = useState<string>(() => {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -191,7 +200,13 @@ export default function CloseHistoryModal({ open, onClose }: CloseHistoryModalPr
     try {
       const firestoreCloses = await syncService.getAllCashCloses();
       for (const docData of firestoreCloses) {
-        const data = docData; // ya es el objeto guardado
+        const data = docData;
+        // Asegurar que tenemos el ID del documento
+        const docId = data.id || data.docId;
+        if (!docId) {
+          console.warn('Documento de Firestore sin ID:', data);
+          continue;
+        }
         if (data.tipo === 'parcial') {
           const diff = data.diferenciaNetaGlobal ?? (data.cuadre?.reduce((sum: number, r: any) => sum + (r.diff ?? r.diferencia), 0) ?? 0);
           const totalSistema = data.cuadre?.reduce((sum: number, r: any) => sum + (r.sistema ?? 0), 0) ?? 0;
@@ -208,7 +223,7 @@ export default function CloseHistoryModal({ open, onClose }: CloseHistoryModalPr
           const devoluciones = getNumericValue(data, ['devoluciones.total', 'totalDevoluciones', 'devoluciones']);
           const usdEfectivo = getNumericValue(data, ['usdEfectivo', 'efectivoUsd', 'totalUsdEfectivo']);
           loadedRecords.push({
-            id: data.id,
+            id: docId,
             fecha: data.fecha,
             tipo: 'parcial',
             fechaDisplay: new Date(data.fecha).toLocaleString('es-VE', { dateStyle: 'full', timeStyle: 'medium' }),
@@ -246,7 +261,7 @@ export default function CloseHistoryModal({ open, onClose }: CloseHistoryModalPr
           const creditos = getNumericValue(data, ['totalCreditoBs', 'creditos.total', 'totalCreditos', 'creditos']);
           const usdEfectivo = getNumericValue(data, ['usdEfectivo', 'efectivoUsd', 'totalUsdEfectivo']);
           loadedRecords.push({
-            id: data.id,
+            id: docId,
             fecha: data.fecha,
             tipo: 'final',
             fechaDisplay: new Date(data.fecha).toLocaleString('es-VE', { dateStyle: 'full', timeStyle: 'medium' }),
@@ -286,10 +301,17 @@ export default function CloseHistoryModal({ open, onClose }: CloseHistoryModalPr
     return records.filter(record => {
       const recordDate = new Date(record.fecha);
       switch (filterType) {
-        case 'day':
+        case 'day': {
           if (!dateFilter) return true;
-          const filterDay = new Date(dateFilter);
-          return recordDate.toDateString() === filterDay.toDateString();
+          // Extraer componentes de fecha local del registro
+          const recordYear = recordDate.getFullYear();
+          const recordMonth = recordDate.getMonth();
+          const recordDay = recordDate.getDate();
+          // Parsear la fecha del filtro (YYYY-MM-DD) en zona local
+          const [filterYear, filterMonth, filterDay] = dateFilter.split('-').map(Number);
+          // Comparar año, mes y día numéricamente (sin zona horaria)
+          return recordYear === filterYear && recordMonth === filterMonth - 1 && recordDay === filterDay;
+        }
         case 'month':
           if (!monthFilter) return true;
           const [year, month] = monthFilter.split('-').map(Number);
@@ -305,9 +327,10 @@ export default function CloseHistoryModal({ open, onClose }: CloseHistoryModalPr
 
   const handleClearFilters = () => {
     setFilterType('day');
-    setDateFilter(new Date().toISOString().split('T')[0]);
-    setMonthFilter(`${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`);
-    setYearFilter(new Date().getFullYear().toString());
+    const today = new Date();
+    setDateFilter(getLocalDateString(today));
+    setMonthFilter(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`);
+    setYearFilter(today.getFullYear().toString());
   };
 
   const handleDeleteRecord = async (record: UnifiedCloseRecord) => {
@@ -315,18 +338,29 @@ export default function CloseHistoryModal({ open, onClose }: CloseHistoryModalPr
     if (!confirm(confirmMsg)) return;
 
     try {
-      if (record.source === 'local') {
-        // Eliminar de localStorage
-        localStorage.removeItem(record.id);
-      } else if (record.source === 'firestore') {
-        // Eliminar de Firestore (colección cash_closes)
-        await deleteDoc(doc(db, 'cash_closes', record.id));
+      // Determinar el ID correcto para eliminar
+      let idToDelete = record.id;
+      if (!idToDelete && record.rawData) {
+        idToDelete = record.rawData.id || record.rawData.docId;
       }
-      // Recargar la lista sin recargar la página
+      if (!idToDelete) {
+        console.error('No se pudo determinar el ID del cierre a eliminar', record);
+        alert('Error: No se pudo identificar el cierre para eliminar.');
+        return;
+      }
+
+      console.log(`Eliminando cierre: ${idToDelete} (fuente: ${record.source})`);
+
+      if (record.source === 'local') {
+        localStorage.removeItem(idToDelete);
+      } else if (record.source === 'firestore') {
+        await deleteDoc(doc(db, 'cash_closes', idToDelete));
+      }
+      // Recargar la lista después de eliminar
       await loadAllCloses();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error al eliminar cierre:', error);
-      alert('No se pudo eliminar el cierre. Verifique su conexión o permisos.');
+      alert(`No se pudo eliminar el cierre: ${error.message || 'Error desconocido'}`);
     }
   };
 
@@ -361,15 +395,19 @@ export default function CloseHistoryModal({ open, onClose }: CloseHistoryModalPr
           <p><strong>Créditos:</strong> ${formatBs(record.creditos)}</p>
           <p><strong>USD en efectivo:</strong> ${formatUsd(record.usdEfectivo)}</p>
           <h3>Cuadre por Método</h3>
-          <table><thead><tr><th>Método</th><th>Sistema (Bs)</th><th>Real (Bs)</th><th>Diferencia</th></td></thead>
-          <tbody>${record.cuadre.map(c => `
-            <tr>
-              <td>${c.metodo}</td>
-              <td class="right">${formatBsNumber(c.sistema)}</td>
-              <td class="right">${formatBsNumber(c.real)}</td>
-              <td class="right ${c.diferencia > 0 ? 'warning' : c.diferencia < 0 ? 'error' : 'success'}">${c.diferencia > 0 ? '+' : ''}${formatBsNumber(c.diferencia)}</td>
-            </tr>`).join('')}
-          </tbody></table>
+          <table>
+            <thead>
+              <tr><th>Método</th><th>Sistema (Bs)</th><th>Real (Bs)</th><th>Diferencia</th></tr>
+            </thead>
+            <tbody>${record.cuadre.map(c => `
+              <tr>
+                <td>${c.metodo}</td>
+                <td class="right">${formatBsNumber(c.sistema)}</td>
+                <td class="right">${formatBsNumber(c.real)}</td>
+                <td class="right ${c.diferencia > 0 ? 'warning' : c.diferencia < 0 ? 'error' : 'success'}">${c.diferencia > 0 ? '+' : ''}${formatBsNumber(c.diferencia)}</td>
+              </tr>`).join('')}
+            </tbody>
+          </table>
           <h3>Resumen Final</h3>
           <p><strong>Total Sistema:</strong> ${formatBs(record.totalSistema)}</p>
           <p><strong>Total Real:</strong> ${formatBs(record.totalReal)}</p>
@@ -422,7 +460,15 @@ export default function CloseHistoryModal({ open, onClose }: CloseHistoryModalPr
                 <Button onClick={handleClearFilters} variant="outline" className="h-8 text-xs border-gray-300">
                   <Eraser size={12} className="mr-1" /> Limpiar Filtros
                 </Button>
-                <Button onClick={() => { setFilterType('day'); setDateFilter(new Date().toISOString().split('T')[0]); }} variant="outline" className="h-8 text-xs border-gray-300">
+                <Button
+                  onClick={() => {
+                    const today = new Date();
+                    setFilterType('day');
+                    setDateFilter(getLocalDateString(today));
+                  }}
+                  variant="outline"
+                  className="h-8 text-xs border-gray-300"
+                >
                   <Calendar size={12} className="mr-1" /> Hoy
                 </Button>
               </div>

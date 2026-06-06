@@ -176,15 +176,15 @@ export default function ReturnsModule() {
         await syncService.saveKardexEntry(entry);
       }
 
-      // ✅ 3. Registrar egreso de caja según el método
+      // ✅ 3. Registrar egreso de caja según el método (ahora ambos métodos usan registerCashEgress)
       if (selectedMethod === 'efectivo') {
-        // Restar dinero de la caja física
-        await registerCashEgress(totalReturnAmount, `Devolución - Venta #${selectedTransaction.id}`, selectedTransaction.id);
+        // Restar dinero de la caja física con método 'efectivo_bs'
+        await registerCashEgress(totalReturnAmount, `Devolución - Venta #${selectedTransaction.id}`, selectedTransaction.id, 'efectivo_bs');
       } else if (selectedMethod === 'pago_movil') {
-        // Solo registrar asiento contable (no afecta efectivo físico)
-        await registerReturnEntry(returnTransaction as any, selectedTransaction.id);
+        // Registrar egreso bancario con método 'pago_movil' (aparecerá en DEVOLUCIONES del cierre)
+        await registerCashEgress(totalReturnAmount, `Devolución - Venta #${selectedTransaction.id}`, selectedTransaction.id, 'pago_movil');
       } else if (selectedMethod === 'nota_credito') {
-        // Crear nota de crédito (saldo a favor del cliente)
+        // Nota de crédito: solo asiento contable, no afecta caja
         await registerReturnEntry(returnTransaction as any, selectedTransaction.id);
       }
 

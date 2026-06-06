@@ -15,7 +15,6 @@ interface CierreFinalFormProps {
   tasaActual: number;
 }
 
-// Obtener fecha actual en Venezuela en formato YYYY-MM-DD
 function getVenezuelaToday(): string {
   const now = new Date();
   const formatter = new Intl.DateTimeFormat('fr-CA', {
@@ -27,7 +26,6 @@ function getVenezuelaToday(): string {
   return formatter.format(now);
 }
 
-// Obtener hora en Venezuela (0-23)
 function getVenezuelaHour(dateStr: string): number {
   try {
     const d = new Date(dateStr);
@@ -51,7 +49,6 @@ function getVenezuelaTimeString(dateStr: string): string {
   }
 }
 
-// Helper para renderizar una celda con USD y su equivalente en Bs
 const renderCurrencyCell = (value: number, isUsd: boolean, rate: number, showBsEquivalent: boolean = true) => {
   if (isUsd) {
     const usdFormatted = formatUsd(value);
@@ -167,28 +164,70 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
       const isMorning = hour < 12;
 
       if (tx.type === 'devolucion') {
+        let methodDetected = null;
+        let amountBs = 0;
+        let amountUsd = 0;
+
+        // 1) Intentar desde payments
         if (tx.payments && Array.isArray(tx.payments) && tx.payments.length > 0) {
           for (const payment of tx.payments) {
             const method = payment.method;
-            if (!method) continue;
-            const isUsd = method === 'usd_efectivo' || method === 'zelle';
-            if (isUsd) {
-              const usdAmount = payment.usdAmount !== undefined ? payment.usdAmount : payment.amount;
-              devolucionesTotales[method].usd += usdAmount;
-            } else {
-              const bsAmount = payment.amount || 0;
-              devolucionesTotales[method].bs += bsAmount;
+            if (method) {
+              methodDetected = method;
+              if (method === 'usd_efectivo' || method === 'zelle') {
+                amountUsd += payment.usdAmount !== undefined ? payment.usdAmount : (payment.amount || 0);
+              } else {
+                amountBs += payment.amount || 0;
+              }
             }
           }
-        } else {
-          const method = tx.payMethod || 'efectivo_bs';
-          const isUsd = method === 'usd_efectivo' || method === 'zelle';
-          if (isUsd) {
-            devolucionesTotales[method].usd += tx.totalUsd || 0;
+        }
+        
+        // 2) Si no hay payments, usar payMethod
+        if (!methodDetected && tx.payMethod) {
+          methodDetected = tx.payMethod;
+          if (methodDetected === 'usd_efectivo' || methodDetected === 'zelle') {
+            amountUsd = tx.totalUsd || 0;
           } else {
-            devolucionesTotales[method].bs += tx.total || 0;
+            amountBs = tx.total || 0;
           }
         }
+        
+        // 3) Si aún no hay método, inferir por moneda
+        if (!methodDetected) {
+          if (tx.totalUsd && tx.totalUsd > 0) {
+            methodDetected = 'usd_efectivo';
+            amountUsd = tx.totalUsd;
+          } else if (tx.total && tx.total > 0) {
+            methodDetected = 'efectivo_bs';
+            amountBs = tx.total;
+          }
+        }
+
+        // 4) Último recurso: efectivo_bs
+        if (!methodDetected) {
+          methodDetected = 'efectivo_bs';
+          amountBs = tx.total || 0;
+        }
+
+        // ✅ Asegurar que el método existe en devolucionesTotales (crear si no existe)
+        if (!devolucionesTotales[methodDetected]) {
+          devolucionesTotales[methodDetected] = { bs: 0, usd: 0 };
+          // También extender ventasAM y ventasPM para que aparezcan en la tabla
+          if (!ventasAM[methodDetected]) ventasAM[methodDetected] = { bs: 0, usd: 0 };
+          if (!ventasPM[methodDetected]) ventasPM[methodDetected] = { bs: 0, usd: 0 };
+          if (vueltosAM[methodDetected] === undefined) vueltosAM[methodDetected] = 0;
+          if (vueltosPM[methodDetected] === undefined) vueltosPM[methodDetected] = 0;
+        }
+
+        // Sumar al método detectado
+        if (methodDetected === 'usd_efectivo' || methodDetected === 'zelle') {
+          devolucionesTotales[methodDetected].usd += amountUsd;
+        } else {
+          devolucionesTotales[methodDetected].bs += amountBs;
+        }
+
+        console.log(`[CIERRE] Devolución detectada: método=${methodDetected}, Bs=${amountBs}, USD=${amountUsd}`);
         continue;
       }
 
@@ -280,14 +319,32 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
     return total;
   }, [reg, aperturaUsd]);
 
-  const paymentMethods = [
-    { metodo: 'EFECTIVO BS', key: 'efectivo_bs', isUsd: false, saldoInicialVal: aperturaBs },
-    { metodo: 'EFECTIVO USD', key: 'usd_efectivo', isUsd: true, saldoInicialVal: aperturaUsd },
-    { metodo: 'TARJETA', key: 'tarjeta', isUsd: false, saldoInicialVal: 0 },
-    { metodo: 'BIOPAGO', key: 'biopago', isUsd: false, saldoInicialVal: 0 },
-    { metodo: 'PAGO MÓVIL', key: 'pago_movil', isUsd: false, saldoInicialVal: 0 },
-    { metodo: 'ZELLE', key: 'zelle', isUsd: true, saldoInicialVal: 0 },
-  ];
+  // Generar dinámicamente la lista de métodos a partir de las devoluciones y ventas
+  const allMethodsSet = new Set<string>();
+  Object.keys(devoluciones).forEach(m => allMethodsSet.add(m));
+  Object.keys(ventasManana).forEach(m => allMethodsSet.add(m));
+  Object.keys(ventasTarde).forEach(m => allMethodsSet.add(m));
+  // Métodos fijos base
+  const baseMethods = ['efectivo_bs', 'usd_efectivo', 'tarjeta', 'biopago', 'pago_movil', 'zelle'];
+  baseMethods.forEach(m => allMethodsSet.add(m));
+  
+  const paymentMethods = Array.from(allMethodsSet).map(key => {
+    let metodo = '';
+    let isUsd = false;
+    let saldoInicialVal = 0;
+    if (key === 'efectivo_bs') { metodo = 'EFECTIVO BS'; isUsd = false; saldoInicialVal = aperturaBs; }
+    else if (key === 'usd_efectivo') { metodo = 'EFECTIVO USD'; isUsd = true; saldoInicialVal = aperturaUsd; }
+    else if (key === 'tarjeta') { metodo = 'TARJETA'; isUsd = false; saldoInicialVal = 0; }
+    else if (key === 'biopago') { metodo = 'BIOPAGO'; isUsd = false; saldoInicialVal = 0; }
+    else if (key === 'pago_movil') { metodo = 'PAGO MÓVIL'; isUsd = false; saldoInicialVal = 0; }
+    else if (key === 'zelle') { metodo = 'ZELLE'; isUsd = true; saldoInicialVal = 0; }
+    else { 
+      metodo = key.toUpperCase(); 
+      isUsd = false; 
+      saldoInicialVal = 0; 
+    }
+    return { metodo, key, isUsd, saldoInicialVal };
+  });
 
   const rows = paymentMethods.map(pm => {
     const isUsd = pm.isUsd;
@@ -392,19 +449,14 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
     if (closeReportData) {
       setIsSubmitting(true);
       try {
-        // ✅ NUEVO: Guardar kardex pendiente en lote
         const pendingKardex = state.getPendingKardexEntries();
         if (pendingKardex && pendingKardex.length > 0) {
           await syncService.saveKardexBatch(pendingKardex);
         }
-
-        // ✅ NUEVO: Guardar contabilidad pendiente en lote
         const pendingAccounting = state.getPendingAccountingEntries();
         if (pendingAccounting && pendingAccounting.length > 0) {
           await syncService.saveAccountingBatch(pendingAccounting);
         }
-
-        // ✅ NUEVO: Limpiar acumuladores
         state.clearPendingEntries();
 
         const timestamp = Date.now();

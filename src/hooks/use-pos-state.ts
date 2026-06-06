@@ -631,13 +631,42 @@ export function usePOSState() {
     await syncService.saveClient({ ...client, debt: newDebt });
   }, [register, clients, accounts, exchangeRate, terminalId, saveRegisterToLocalStorage, currentSession]);
 
-  const registerCashEgress = useCallback(async (amount: number, reason: string, referenceId: number) => {
+  // ✅ FUNCIÓN CORREGIDA: Ahora incluye ID en payments
+  const registerCashEgress = useCallback(async (
+    amount: number,
+    reason: string,
+    referenceId: number,
+    payMethod: string = 'efectivo_bs',
+    usdAmount?: number
+  ) => {
     if (!register?.isOpen) throw new Error('Caja no abierta');
+
+    const isUsd = payMethod === 'usd_efectivo' || payMethod === 'zelle';
+    const totalBs = isUsd ? (usdAmount || 0) * exchangeRate : amount;
+    const totalUsd = isUsd ? (usdAmount || 0) : amount / exchangeRate;
+
     const tx: Transaction = {
-      id: getVenezuelaTimestamp(), date: getVenezuelaISOString(), type: 'devolucion', items: [],
-      subtotal: amount, iva: 0, total: amount, totalUsd: roundTo2(amount / exchangeRate),
-      payMethod: 'efectivo_bs', paidBs: amount, change: 0, clientName: 'DEVOLUCIÓN',
-      exchangeRate, notes: reason, sessionId: currentSession?.id || null,
+      id: getVenezuelaTimestamp(),
+      date: getVenezuelaISOString(),
+      type: 'devolucion',
+      items: [],
+      subtotal: totalBs,
+      iva: 0,
+      total: totalBs,
+      totalUsd: roundTo2(totalUsd),
+      payMethod: payMethod,
+      paidBs: totalBs,
+      change: 0,
+      clientName: 'DEVOLUCIÓN',
+      exchangeRate,
+      notes: reason,
+      sessionId: currentSession?.id || null,
+      payments: [{
+        id: crypto.randomUUID(),
+        method: payMethod,
+        amount: isUsd ? (usdAmount || 0) : amount,
+        usdAmount: isUsd ? (usdAmount || 0) : undefined,
+      }],
     };
 
     const accountingEntry = {
@@ -647,15 +676,20 @@ export function usePOSState() {
       category: 'devolucion',
       concept: 'Devolución de venta',
       description: reason,
-      amount: amount,
+      amount: totalBs,
       referenceId: tx.id,
       referenceType: 'return',
       createdAt: getVenezuelaISOString(),
     };
 
     const newTxs = [...(register.txs || []), tx];
-    await syncService.runAtomicSale(terminalId, tx, { products: new Map(), kardexEntries: [], accountingEntry: accountingEntry, registerUpdate: { txs: newTxs } });
-    
+    await syncService.runAtomicSale(terminalId, tx, {
+      products: new Map(),
+      kardexEntries: [],
+      accountingEntry: accountingEntry,
+      registerUpdate: { txs: newTxs }
+    });
+
     setRegister({ ...register, txs: newTxs });
     registerRef.current = { ...register, txs: newTxs };
     saveRegisterToLocalStorage({ ...register, txs: newTxs });

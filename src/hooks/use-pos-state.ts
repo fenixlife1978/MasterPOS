@@ -9,7 +9,6 @@ import { rtdb } from '@/lib/firebase';
 const roundTo2 = (num: number): number => Math.round(num * 100) / 100;
 const roundTo4 = (num: number): number => Math.round(num * 10000) / 10000;
 
-// ✅ CORREGIDO DEFINITIVAMENTE: Obtiene fecha/hora ISO de Venezuela sin retraso
 function getVenezuelaISOString(): string {
   const formatter = new Intl.DateTimeFormat('sv-SE', {
     timeZone: 'America/Caracas',
@@ -23,11 +22,9 @@ function getVenezuelaISOString(): string {
   });
   const parts = formatter.formatToParts(new Date());
   const partMap = Object.fromEntries(parts.map(p => [p.type, p.value]));
-  // Venezuela tiene offset fijo -04:00 (UTC-4)
   return `${partMap.year}-${partMap.month}-${partMap.day}T${partMap.hour}:${partMap.minute}:${partMap.second}.${partMap.fractionalSecond}-04:00`;
 }
 
-// ✅ CORREGIDO DEFINITIVAMENTE: Obtiene fecha YYYY-MM-DD de Venezuela sin retraso
 function getVenezuelaDate(): string {
   const formatter = new Intl.DateTimeFormat('sv-SE', {
     timeZone: 'America/Caracas',
@@ -68,7 +65,6 @@ export function usePOSState() {
   const [adminCode, setAdminCode] = useState<string>('');
   const [currentSession, setCurrentSession] = useState<any | null>(authActiveSession);
 
-  // ✅ NUEVO: Acumuladores para guardar en lote al final del día
   const pendingKardexEntries = useRef<any[]>([]);
   const pendingAccountingEntries = useRef<any[]>([]);
 
@@ -158,11 +154,7 @@ export function usePOSState() {
 
   useEffect(() => {
     if (!user) return;
-    const unsubRegister = syncService.subscribeToRegisterByTerminal(terminalId, (registerData) => {
-      if (!registerData && registerRef.current?.isOpen === true) {
-        console.warn("Suscripción devolvió null pero la caja local está abierta. Ignorando actualización.");
-        return;
-      }
+    const unsubRegister = syncService.subscribeToRegisterRealtime(terminalId, (registerData) => {
       setRegister(registerData);
       registerRef.current = registerData;
       saveRegisterToLocalStorage(registerData);
@@ -227,7 +219,6 @@ export function usePOSState() {
 
   useEffect(() => {
     if (!user || !rtdb) return;
-
     const unsubscribeStock = syncService.subscribeToStockRTDB((stockData: Record<string, number>) => {
       setProducts(prevProducts => 
         prevProducts.map(product => {
@@ -239,9 +230,43 @@ export function usePOSState() {
         })
       );
     });
-
     return () => unsubscribeStock();
-  }, [user]);
+  }, [user?.uid]);
+
+  const refreshAllData = useCallback(async () => {
+    console.log("🔄 Refrescando datos desde caché local...");
+    const [newProducts, newClients, newTransactions, newAccounts] = await Promise.all([
+      syncService.getProducts(),
+      syncService.getClients(),
+      syncService.getTransactions(),
+      syncService.getAccounts(),
+    ]);
+    setProducts(newProducts);
+    setClients(newClients);
+    setTransactions(newTransactions);
+    setAccounts(newAccounts);
+    console.log("✅ Datos actualizados después de sincronización.");
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleSyncComplete = () => {
+      refreshAllData();
+    };
+    window.addEventListener('sync-complete', handleSyncComplete);
+    return () => window.removeEventListener('sync-complete', handleSyncComplete);
+  }, [refreshAllData]);
+
+  // ✅ NUEVO: Escuchar comandos remotos de sincronización desde el administrador
+  useEffect(() => {
+    if (!terminalId || terminalId === 'default') return;
+    const unsubscribe = syncService.listenForSyncCommands(terminalId, async () => {
+      console.log(`📢 Terminal ${terminalId} ejecutando sincronización remota...`);
+      await syncService.syncAllPending();
+      await refreshAllData();
+    });
+    return () => unsubscribe();
+  }, [terminalId, refreshAllData]);
 
   const addProduct = useCallback((p: Product) => {
     setProducts(prev => {
@@ -469,36 +494,42 @@ export function usePOSState() {
     let accountingEntry: any = null;
     if (isSpecial && costoTotalOperacion > 0) {
       accountingEntry = {
-        id: getVenezuelaTimestamp(), date: tx.date, type: 'egreso', category: 'otros',
+        id: getVenezuelaTimestamp(),
+        date: getVenezuelaISOString(),
+        type: 'egreso',
+        category: 'otros',
         subcategory: type === 'colaboracion' ? 'Donaciones' : 'Consumo Interno',
-        concept: `Salida por ${type}`, description: paymentData.notes || 'Sin motivo',
-        amount: costoTotalOperacion, referenceId: tx.id, referenceType: type, createdAt: tx.date,
+        concept: `Salida por ${type}`,
+        description: paymentData.notes || 'Sin motivo',
+        amount: costoTotalOperacion,
+        referenceId: tx.id,
+        referenceType: type,
+        createdAt: getVenezuelaISOString(),
       };
     } else if (type === 'contado' || type === 'credito' || type === 'cobro_deuda') {
       accountingEntry = {
-        id: getVenezuelaTimestamp() + 1, date: getVenezuelaDate(), type: 'ingreso',
+        id: getVenezuelaTimestamp() + 1,
+        date: getVenezuelaISOString(),
+        type: 'ingreso',
         category: type === 'credito' ? 'cuenta_por_cobrar' : (type === 'cobro_deuda' ? 'cobro_deuda' : 'ventas'),
         concept: type === 'cobro_deuda' ? 'Cobro de deuda' : (type === 'credito' ? 'Venta a crédito' : 'Venta'),
         description: `Cliente: ${tx.clientName || 'Cliente Final'} - Pago: ${tx.payMethod}`,
-        amount: tx.total, referenceId: tx.id, referenceType: type, createdAt: tx.date,
+        amount: tx.total,
+        referenceId: tx.id,
+        referenceType: type,
+        createdAt: getVenezuelaISOString(),
       };
     }
 
     const newTxs = [...(register.txs || []), tx];
     
-    // ✅ NUEVO: Acumular kardex y contabilidad para guardar en lote al final del día
-    if (kardexEntries.length > 0) {
-      pendingKardexEntries.current.push(...kardexEntries);
-    }
-    if (accountingEntry) {
-      pendingAccountingEntries.current.push(accountingEntry);
-    }
-    
+    // ✅ IMPORTANTE: Guardar kardex inmediatamente, no solo en batch
+    // Enviamos los kardexEntries a runAtomicSale para que se guarden ahora
     try {
       await syncService.runAtomicSale(terminalId, tx, { 
         products: stockUpdates, 
-        kardexEntries: [], // Ya no enviamos kardex individual
-        accountingEntry: null, // Ya no enviamos contabilidad individual
+        kardexEntries, // ✅ pasamos los kardex para que se guarden inmediatamente
+        accountingEntry: accountingEntry,
         registerUpdate: { txs: newTxs } 
       });
     } catch (syncError) {
@@ -525,44 +556,79 @@ export function usePOSState() {
     return tx;
   }, [cart, register, exchangeRate, clients, products, terminalId, saveRegisterToLocalStorage, getItemsToDiscount, currentSession]);
 
-  const applyAbono = useCallback(async (clientId: number, amount: number) => {
-    if (!register?.isOpen) return;
+  const applyAbono = useCallback(async (clientId: number, amount: number, method: string = 'efectivo_bs') => {
+    if (!register?.isOpen) {
+      console.warn("Caja no abierta, no se puede registrar el pago");
+      return;
+    }
     const client = clients.find(c => c.id === clientId);
-    if (!client) return;
+    if (!client) {
+      console.warn("Cliente no encontrado");
+      return;
+    }
 
     let remaining = amount;
-    const clientAccounts = accounts.filter(a => a.clientId === clientId && a.status !== 'pagada').sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    const clientAccounts = accounts
+      .filter(a => a.clientId === clientId && a.status !== 'pagada')
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
     for (const acc of clientAccounts) {
       if (remaining <= 0) break;
       const owed = acc.amountBs - (acc.paidAmount || 0);
       const pay = Math.min(remaining, owed);
-      await syncService.saveAccount({ ...acc, paidAmount: (acc.paidAmount || 0) + pay, status: (acc.paidAmount || 0) + pay >= acc.amountBs ? 'pagada' : 'parcial' });
+      const newPaid = (acc.paidAmount || 0) + pay;
+      const newStatus = newPaid >= acc.amountBs ? 'pagada' : 'parcial';
+      await syncService.saveAccount({ ...acc, paidAmount: newPaid, status: newStatus });
       remaining -= pay;
     }
 
-    const tx: Transaction = { 
-      id: getVenezuelaTimestamp(), date: getVenezuelaISOString(), type: 'cobro_deuda', items: [], 
-      subtotal: amount, iva: 0, total: amount, totalUsd: roundTo2(amount / exchangeRate), 
-      payMethod: 'efectivo_bs', paidBs: amount, change: 0, clientId, clientName: client.name,
-      exchangeRate, sessionId: currentSession?.id || null,
-    };
-    
-    const accountingEntry = {
-      id: getVenezuelaTimestamp() + 2, date: getVenezuelaDate(), type: 'ingreso',
-      category: 'cobro_deuda', concept: 'Cobro de deuda', description: `Abono Cliente: ${client.name}`,
-      amount: amount, referenceId: tx.id, referenceType: 'cobro_deuda', createdAt: tx.date,
+    const txId = getVenezuelaTimestamp();
+    const tx: Transaction = {
+      id: txId,
+      date: getVenezuelaISOString(),
+      type: 'cobro_deuda',
+      items: [],
+      subtotal: amount,
+      iva: 0,
+      total: amount,
+      totalUsd: roundTo2(amount / exchangeRate),
+      payMethod: method,
+      paidBs: amount,
+      change: 0,
+      clientId,
+      clientName: client.name,
+      exchangeRate,
+      sessionId: currentSession?.id || null,
+      notes: `Abono de Bs ${amount.toFixed(2)}`,
     };
 
-    // ✅ Acumular contabilidad para batch
-    pendingAccountingEntries.current.push(accountingEntry);
+    const accountingEntry = {
+      id: getVenezuelaTimestamp() + 2,
+      date: getVenezuelaISOString(),
+      type: 'ingreso',
+      category: 'cobro_deuda',
+      concept: 'Cobro de deuda',
+      description: `Abono Cliente: ${client.name} - ${method}`,
+      amount: amount,
+      referenceId: tx.id,
+      referenceType: 'cobro_deuda',
+      createdAt: getVenezuelaISOString(),
+    };
 
     const newTxs = [...(register.txs || []), tx];
-    await syncService.runAtomicSale(terminalId, tx, { products: new Map(), kardexEntries: [], accountingEntry: null, registerUpdate: { txs: newTxs } });
-    
+    await syncService.runAtomicSale(terminalId, tx, {
+      products: new Map(),
+      kardexEntries: [],
+      accountingEntry: accountingEntry,
+      registerUpdate: { txs: newTxs }
+    });
+
     setRegister({ ...register, txs: newTxs });
     registerRef.current = { ...register, txs: newTxs };
     saveRegisterToLocalStorage({ ...register, txs: newTxs });
-    await syncService.saveClient({ ...client, debt: Math.max(0, (client.debt || 0) - amount) });
+
+    const newDebt = Math.max(0, (client.debt || 0) - amount);
+    await syncService.saveClient({ ...client, debt: newDebt });
   }, [register, clients, accounts, exchangeRate, terminalId, saveRegisterToLocalStorage, currentSession]);
 
   const registerCashEgress = useCallback(async (amount: number, reason: string, referenceId: number) => {
@@ -575,16 +641,20 @@ export function usePOSState() {
     };
 
     const accountingEntry = {
-      id: getVenezuelaTimestamp() + 3, date: getVenezuelaDate(), type: 'egreso',
-      category: 'devolucion', concept: 'Devolución de venta', description: reason,
-      amount: amount, referenceId: tx.id, referenceType: 'return', createdAt: tx.date,
+      id: getVenezuelaTimestamp() + 3,
+      date: getVenezuelaISOString(),
+      type: 'egreso',
+      category: 'devolucion',
+      concept: 'Devolución de venta',
+      description: reason,
+      amount: amount,
+      referenceId: tx.id,
+      referenceType: 'return',
+      createdAt: getVenezuelaISOString(),
     };
 
-    // ✅ Acumular contabilidad para batch
-    pendingAccountingEntries.current.push(accountingEntry);
-
     const newTxs = [...(register.txs || []), tx];
-    await syncService.runAtomicSale(terminalId, tx, { products: new Map(), kardexEntries: [], accountingEntry: null, registerUpdate: { txs: newTxs } });
+    await syncService.runAtomicSale(terminalId, tx, { products: new Map(), kardexEntries: [], accountingEntry: accountingEntry, registerUpdate: { txs: newTxs } });
     
     setRegister({ ...register, txs: newTxs });
     registerRef.current = { ...register, txs: newTxs };
@@ -603,15 +673,8 @@ export function usePOSState() {
     }
   }, [recalcAllPricesWithNewRate]);
 
-  // ✅ NUEVAS FUNCIONES PARA BATCH (usar al cerrar la jornada)
-  const getPendingKardexEntries = useCallback(() => {
-    return pendingKardexEntries.current;
-  }, []);
-
-  const getPendingAccountingEntries = useCallback(() => {
-    return pendingAccountingEntries.current;
-  }, []);
-
+  const getPendingKardexEntries = useCallback(() => pendingKardexEntries.current, []);
+  const getPendingAccountingEntries = useCallback(() => pendingAccountingEntries.current, []);
   const clearPendingEntries = useCallback(() => {
     pendingKardexEntries.current = [];
     pendingAccountingEntries.current = [];
@@ -627,7 +690,7 @@ export function usePOSState() {
     finalizeSale, applyAbono, registerCashEgress,
     isHydrated, globalIvaPercentage, adminCode, checkProductStock, refreshProducts,
     currentSession, setCurrentSession, reloadSession, createCashSession, closeCashSession,
-    // ✅ NUEVAS EXPORTACIONES
     getPendingKardexEntries, getPendingAccountingEntries, clearPendingEntries,
+    refreshAllData,
   };
 }

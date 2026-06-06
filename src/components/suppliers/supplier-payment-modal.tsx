@@ -17,6 +17,7 @@ interface SupplierPaymentModalProps {
   supplierName: string;
   invoiceNumber: string;
   exchangeRate?: number;
+  allowExcess?: boolean; // ✅ Nueva prop: permite pagar más del saldo pendiente
 }
 
 // Métodos de pago disponibles
@@ -38,7 +39,8 @@ export default function SupplierPaymentModal({
   currentPaid, 
   supplierName, 
   invoiceNumber, 
-  exchangeRate = 36.50 
+  exchangeRate = 36.50,
+  allowExcess = false // ✅ por defecto false (comportamiento original)
 }: SupplierPaymentModalProps) {
   const [amount, setAmount] = useState('0');
   const [method, setMethod] = useState('efectivo_bs');
@@ -126,7 +128,8 @@ export default function SupplierPaymentModal({
       finalUsdAmount = bsAmount / finalExchangeRate;
     }
 
-    if (finalUsdAmount > remaining) {
+    // ✅ Si allowExcess es true, no limitamos el monto (se permite pagar más del saldo)
+    if (!allowExcess && finalUsdAmount > remaining) {
       const confirmPartial = confirm(`El monto excede el saldo pendiente (${formatUsd(remaining)}). ¿Desea registrar solo el saldo pendiente como pago parcial?`);
       if (confirmPartial) {
         finalUsdAmount = remaining;
@@ -285,9 +288,14 @@ export default function SupplierPaymentModal({
               </div>
             )}
 
-            {remaining > 0 && (
+            {remaining > 0 && !allowExcess && (
               <p className="text-[9px] text-black/50 italic text-center mt-3">
                 Saldo pendiente: <span className="font-bold text-red-600">{formatUsd(remaining)}</span>
+              </p>
+            )}
+            {allowExcess && (
+              <p className="text-[9px] text-blue-600 italic text-center mt-3">
+                Puede pagar un monto mayor al saldo; el excedente se aplicará a otras facturas.
               </p>
             )}
           </div>

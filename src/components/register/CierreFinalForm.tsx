@@ -167,28 +167,76 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
       const isMorning = hour < 12;
 
       if (tx.type === 'devolucion') {
+        // ============================================================
+        // MEJORA: Capturar devoluciones de TODAS las formas posibles
+        // ============================================================
+        let methodDetected = null;
+        let amountBs = 0;
+        let amountUsd = 0;
+
+        // 1) Intentar desde payments (estructura moderna)
         if (tx.payments && Array.isArray(tx.payments) && tx.payments.length > 0) {
           for (const payment of tx.payments) {
             const method = payment.method;
-            if (!method) continue;
-            const isUsd = method === 'usd_efectivo' || method === 'zelle';
-            if (isUsd) {
-              const usdAmount = payment.usdAmount !== undefined ? payment.usdAmount : payment.amount;
-              devolucionesTotales[method].usd += usdAmount;
-            } else {
-              const bsAmount = payment.amount || 0;
-              devolucionesTotales[method].bs += bsAmount;
+            if (method) {
+              methodDetected = method;
+              if (method === 'usd_efectivo' || method === 'zelle') {
+                amountUsd += payment.usdAmount !== undefined ? payment.usdAmount : (payment.amount || 0);
+              } else {
+                amountBs += payment.amount || 0;
+              }
             }
           }
-        } else {
-          const method = tx.payMethod || 'efectivo_bs';
-          const isUsd = method === 'usd_efectivo' || method === 'zelle';
-          if (isUsd) {
-            devolucionesTotales[method].usd += tx.totalUsd || 0;
+        }
+        
+        // 2) Si no hay payments, usar payMethod
+        if (!methodDetected && tx.payMethod) {
+          methodDetected = tx.payMethod;
+          if (methodDetected === 'usd_efectivo' || methodDetected === 'zelle') {
+            amountUsd = tx.totalUsd || 0;
           } else {
-            devolucionesTotales[method].bs += tx.total || 0;
+            amountBs = tx.total || 0;
           }
         }
+        
+        // 3) Si aún no hay método, inferir por moneda
+        if (!methodDetected) {
+          if (tx.totalUsd && tx.totalUsd > 0) {
+            methodDetected = 'usd_efectivo';
+            amountUsd = tx.totalUsd;
+          } else if (tx.total && tx.total > 0) {
+            methodDetected = 'efectivo_bs';
+            amountBs = tx.total;
+          }
+        }
+
+        // 4) Último recurso: efectivo_bs
+        if (!methodDetected) {
+          methodDetected = 'efectivo_bs';
+          amountBs = tx.total || 0;
+        }
+
+        // ✅ CORRECCIÓN: Asegurar que el método existe en devolucionesTotales
+        if (!devolucionesTotales[methodDetected]) {
+          devolucionesTotales[methodDetected] = { bs: 0, usd: 0 };
+        }
+
+        // Sumar al método detectado
+        if (methodDetected === 'usd_efectivo' || methodDetected === 'zelle') {
+          devolucionesTotales[methodDetected].usd += amountUsd;
+        } else {
+          devolucionesTotales[methodDetected].bs += amountBs;
+        }
+
+        // DEPURACIÓN: Mostrar en consola para verificar
+        console.log(`[CIERRE] Devolución detectada: método=${methodDetected}, Bs=${amountBs}, USD=${amountUsd}, tx:`, {
+          id: tx.id,
+          payMethod: tx.payMethod,
+          total: tx.total,
+          totalUsd: tx.totalUsd,
+          payments: tx.payments
+        });
+        
         continue;
       }
 
@@ -309,8 +357,10 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
     
     let sistemaMoneda: number;
     if (isUsd) {
+      // Para USD: fondo + ventas - devoluciones (no se restan vueltos porque no aplican en USD efectivo)
       sistemaMoneda = saldoInicial + totalVentasMoneda - totalDevolucionesMoneda;
     } else {
+      // Para Bs: fondo + ventas - vueltos - devoluciones
       sistemaMoneda = saldoInicial + totalVentasMoneda - totalVueltos - totalDevolucionesMoneda;
     }
     

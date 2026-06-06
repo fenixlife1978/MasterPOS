@@ -4,10 +4,11 @@ import { db, rtdb } from '@/lib/firebase';
 import { 
   doc, setDoc, deleteDoc, 
   collection, getDocs, writeBatch, runTransaction, updateDoc, query, where, orderBy, limit, getDoc,
-  onSnapshot  // ✅ NUEVA IMPORTACIÓN (para tiempo real)
+  onSnapshot
 } from 'firebase/firestore';
 import { ref, set, onValue } from 'firebase/database';
 import { localCache } from '@/lib/localCache';
+import { Supplier } from '@/lib/types';
 
 // ========== INTERFACES ==========
 interface PendingOperation {
@@ -23,6 +24,7 @@ let pendingQueue: PendingOperation[] = [];
 let isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
 let isSyncing = false;
 let isLoggingOut = false;
+let isStockInitialized = false;
 
 // ========== INICIALIZACIÓN ==========
 async function loadPendingQueue() {
@@ -201,6 +203,56 @@ const updateStockInRTDB = async (productId: number, newStock: number) => {
   await set(stockRef, newStock);
 };
 
+// ========== NUEVAS FUNCIONES PARA COMANDOS REMOTOS (SYNC DESDE ADMINISTRADOR) ==========
+async function sendSyncCommandToTerminal(terminalId: string): Promise<void> {
+  if (!rtdb) {
+    console.warn("⚠️ RTDB no disponible, no se puede enviar comando");
+    return;
+  }
+  const commandRef = ref(rtdb, `sync_commands/${terminalId}`);
+  await set(commandRef, { command: 'sync', timestamp: Date.now() });
+  console.log(`📡 Comando sync enviado a terminal ${terminalId}`);
+}
+
+async function sendSyncCommandToAllTerminals(): Promise<void> {
+  if (!db) {
+    console.warn("⚠️ Firestore no disponible, no se pueden obtener terminales");
+    return;
+  }
+  try {
+    const terminalsSnap = await getDocs(collection(db, 'terminals'));
+    const terminals = terminalsSnap.docs.map(doc => doc.id);
+    if (terminals.length === 0) {
+      console.log("ℹ️ No hay terminales registradas");
+      return;
+    }
+    for (const terminalId of terminals) {
+      await sendSyncCommandToTerminal(terminalId);
+    }
+    console.log(`📡 Comando sync enviado a ${terminals.length} terminales`);
+  } catch (error) {
+    console.error("❌ Error al enviar comandos a todas las terminales:", error);
+  }
+}
+
+function listenForSyncCommands(terminalId: string, callback: () => void): () => void {
+  if (!rtdb) {
+    console.warn("⚠️ RTDB no disponible, no se puede escuchar comandos");
+    return () => {};
+  }
+  const commandRef = ref(rtdb, `sync_commands/${terminalId}`);
+  const unsubscribe = onValue(commandRef, (snapshot) => {
+    const data = snapshot.val();
+    if (data && data.command === 'sync') {
+      console.log(`📢 Terminal ${terminalId} recibió comando sync`);
+      callback();
+      // Limpiar el comando después de ejecutarlo (para no repetir)
+      set(commandRef, null).catch(err => console.warn("Error al limpiar comando:", err));
+    }
+  });
+  return unsubscribe;
+}
+
 // ========== FUNCIONES DE CARGA INICIAL Y REFRESCO ==========
 async function fetchAndCacheCollection(name: string, queryFn?: () => Promise<any[]>) {
   if (!db) return [];
@@ -328,6 +380,8 @@ export const syncService = {
   async getAllAccountingEntries() { return await this.getAccountingEntries(); },
   async getSuppliers() { return await localCache.getCollection('suppliers'); },
   async getPurchaseInvoices() { return await localCache.getCollection('purchase_invoices'); },
+  async getPurchaseItems() { return await localCache.getCollection('purchase_items'); },
+  async getSupplierPayments() { return await localCache.getCollection('supplier_payments') || []; },
   async getKardexEntries() { return await localCache.getCollection('kardex_entries'); },
   async getAllKardexEntries() { return await this.getKardexEntries(); },
   async getTerminals() { return await localCache.getCollection('terminals'); },
@@ -356,6 +410,8 @@ export const syncService = {
   subscribeToAccounting(cb: (data: any[]) => void) { this.getAccountingEntries().then(cb); return () => {}; },
   subscribeToSuppliers(cb: (data: any[]) => void) { this.getSuppliers().then(cb); return () => {}; },
   subscribeToPurchaseInvoices(cb: (data: any[]) => void) { this.getPurchaseInvoices().then(cb); return () => {}; },
+  subscribeToPurchaseItems(cb: (data: any[]) => void) { this.getPurchaseItems().then(cb); return () => {}; },
+  subscribeToSupplierPayments(cb: (data: any[]) => void) { this.getSupplierPayments().then(cb); return () => {}; },
   subscribeToKardex(cb: (data: any[]) => void) { this.getKardexEntries().then(cb); return () => {}; },
   subscribeToTerminals(cb: (data: any[]) => void) { this.getTerminals().then(cb); return () => {}; },
   subscribeToTerminal(id: string, cb: (terminal: any) => void) { this.getTerminal(id).then(cb); return () => {}; },
@@ -366,7 +422,7 @@ export const syncService = {
   subscribeToActiveSession(terminalId: string, cb: (session: any | null) => void) { cb(null); return () => {}; },
   subscribeToTransactionsBySession(sessionId: string, cb: (transactions: any[]) => void) { cb([]); return () => {}; },
 
-  // ✅ NUEVO: Suscripción en TIEMPO REAL para una terminal (usa onSnapshot de Firestore)
+  // ✅ Suscripción en TIEMPO REAL para una terminal (bloqueo)
   subscribeToTerminalRealtime(terminalId: string, callback: (terminal: any) => void): () => void {
     if (!db || !terminalId) return () => {};
     const terminalRef = doc(db, 'terminals', terminalId);
@@ -374,6 +430,46 @@ export const syncService = {
       callback(snap.exists() ? { id: snap.id, ...snap.data() } : null);
     }, (error) => {
       console.warn('⚠️ Error en suscripción tiempo real de terminal:', error);
+    });
+    return unsub;
+  },
+
+  // ✅ Suscripción en TIEMPO REAL para proveedores (lista completa)
+  subscribeToSuppliersRealtime(callback: (suppliers: Supplier[]) => void): () => void {
+    if (!db) return () => {};
+    const q = collection(db, 'suppliers');
+    const unsub = onSnapshot(q, (snapshot) => {
+      const data = snapshot.docs.map(doc => {
+        return { id: parseInt(doc.id), ...doc.data() } as Supplier;
+      });
+      callback(data);
+    }, (error) => {
+      console.warn('⚠️ Error en suscripción tiempo real de proveedores:', error);
+    });
+    return unsub;
+  },
+
+  // ✅ Suscripción en TIEMPO REAL para todas las terminales (lista completa)
+  subscribeToTerminalsRealtime(callback: (terminals: any[]) => void): () => void {
+    if (!db) return () => {};
+    const q = collection(db, 'terminals');
+    const unsub = onSnapshot(q, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      callback(data);
+    }, (error) => {
+      console.warn('⚠️ Error en suscripción tiempo real de terminales:', error);
+    });
+    return unsub;
+  },
+
+  // ✅ Suscripción en TIEMPO REAL para el registro de caja de una terminal
+  subscribeToRegisterRealtime(terminalId: string, callback: (register: any) => void): () => void {
+    if (!db || !terminalId) return () => {};
+    const registerRef = doc(db, 'registers', terminalId);
+    const unsub = onSnapshot(registerRef, (snap) => {
+      callback(snap.exists() ? snap.data() : null);
+    }, (error) => {
+      console.warn(`⚠️ Error en suscripción real de register/${terminalId}:`, error);
     });
     return unsub;
   },
@@ -400,11 +496,26 @@ export const syncService = {
   },
 
   async initializeStockRTDB(products: any[]) {
+    if (isStockInitialized) {
+      console.log("📦 Stock ya inicializado, omitiendo nueva llamada.");
+      console.trace("🔍 Llamada a initializeStockRTDB ignorada desde:");
+      return;
+    }
     if (!rtdb || !isOnline) return;
+    const stockRef = ref(rtdb, 'stock');
+    const snapshot = await new Promise<any>((resolve) => {
+      onValue(stockRef, resolve, { onlyOnce: true });
+    });
+    if (snapshot.exists()) {
+      console.log("📦 Stock ya existe en RTDB, omitiendo inicialización.");
+      isStockInitialized = true;
+      return;
+    }
     const stockData: Record<string, number> = {};
     products.forEach(p => { stockData[p.id.toString()] = p.stock; });
-    await set(ref(rtdb, 'stock'), stockData);
+    await set(stockRef, stockData);
     console.log(`📦 Stock inicializado en RTDB: ${products.length} productos`);
+    isStockInitialized = true;
   },
 
   async updateStockInRTDB(productId: number, newStock: number) {
@@ -515,7 +626,7 @@ export const syncService = {
     }
   },
 
-  async saveSupplier(supplier: any) {
+  async saveSupplier(supplier: Supplier) {
     const suppliers = await this.getSuppliers();
     const index = suppliers.findIndex(s => s.id === supplier.id);
     if (index !== -1) suppliers[index] = supplier;
@@ -548,14 +659,16 @@ export const syncService = {
   },
 
   async savePurchaseInvoiceItems(invoiceId: number, items: any[]) {
-    // Opcional: guardar localmente si usas purchase_items
+    const existing = await this.getPurchaseItems() || [];
+    const updated = [...existing, ...items];
+    await localCache.saveCollection('purchase_items', updated);
     for (const item of items) {
       await addToQueue('savePurchaseItem', item);
     }
   },
 
   async saveSupplierPayment(payment: any) {
-    const payments = await localCache.getCollection('supplier_payments') || [];
+    const payments = await this.getSupplierPayments();
     const index = payments.findIndex(p => p.id === payment.id);
     if (index !== -1) payments[index] = payment;
     else payments.unshift(payment);
@@ -564,7 +677,7 @@ export const syncService = {
   },
 
   async deleteSupplierPayment(id: number) {
-    let payments = await localCache.getCollection('supplier_payments') || [];
+    let payments = await this.getSupplierPayments();
     payments = payments.filter(p => p.id !== id);
     await localCache.saveCollection('supplier_payments', payments);
     await addToQueue('deleteSupplierPayment', { id });
@@ -617,12 +730,23 @@ export const syncService = {
     await addToQueue('deleteTerminal', { id });
   },
 
+  // ✅ CORREGIDO: Actualiza el bloqueo directamente en Firestore (además de caché local)
   async updateTerminalBlockStatus(terminalId: string, isBlocked: boolean) {
+    // 1. Actualizar caché local inmediatamente
     const terminals = await this.getTerminals();
-    const terminal = terminals.find(t => t.id === terminalId);
-    if (terminal) {
-      terminal.isBlocked = isBlocked;
+    const terminalIndex = terminals.findIndex(t => t.id === terminalId);
+    if (terminalIndex !== -1) {
+      terminals[terminalIndex].isBlocked = isBlocked;
       await localCache.saveCollection('terminals', terminals);
+    }
+    
+    // 2. Si online, escribir directamente en Firestore
+    if (db && isOnline && !isLoggingOut) {
+      const terminalRef = doc(db, 'terminals', terminalId);
+      await updateDoc(terminalRef, { isBlocked, updatedAt: Date.now() });
+      console.log(`✅ Terminal ${terminalId} bloqueo actualizado a ${isBlocked} en Firestore`);
+    } else {
+      // 3. Offline: encolar para después
       await addToQueue('updateTerminal', { id: terminalId, updates: { isBlocked } });
     }
   },
@@ -665,20 +789,31 @@ export const syncService = {
     }
   },
 
-  async saveRegister(reg: any) {
-    await addToQueue('saveRegister', reg);
-  },
-
-  async clearRegister() {
-    await addToQueue('clearRegister', {});
-  },
-
+  // ✅ Método para guardar o actualizar el registro de caja (inmediato)
   async saveRegisterByTerminal(terminalId: string, reg: any) {
-    await addToQueue('saveRegister', { terminalId, reg });
+    if (!db || !terminalId) return;
+    const registerRef = doc(db, 'registers', terminalId);
+    if (!isOnline) {
+      await addToQueue('saveRegister', { terminalId, reg });
+      return;
+    }
+    await setDoc(registerRef, { ...reg, updatedAt: Date.now() }, { merge: true });
   },
 
+  // ✅ Método para eliminar el registro de caja (cierre de caja) - inmediato
+  async deleteRegisterByTerminal(terminalId: string) {
+    if (!db || !terminalId) return;
+    if (!isOnline) {
+      await addToQueue('clearRegister', { terminalId });
+      return;
+    }
+    const registerRef = doc(db, 'registers', terminalId);
+    await deleteDoc(registerRef);
+  },
+
+  // Mantener clearRegisterByTerminal por compatibilidad (ahora llama a deleteRegisterByTerminal)
   async clearRegisterByTerminal(terminalId: string) {
-    await addToQueue('clearRegister', { terminalId });
+    await this.deleteRegisterByTerminal(terminalId);
   },
 
   async createCashSession(terminalId: string, userId: string, initialAmountUsd: number) {
@@ -736,36 +871,46 @@ export const syncService = {
     await this.saveTransaction(txWithSession);
   },
 
-  // ========== VENTA ATÓMICA (ACTUALIZA STOCK EN RTDB + GUARDA LOCAL) ==========
+  // ========== VENTA ATÓMICA (ACTUALIZA STOCK EN RTDB + GUARDA LOCAL + FIRESTORE DIRECTO) ==========
   async runAtomicSale(terminalId: string, txData: any, updates: {
     products: Map<number, { newStock: number }>;
     kardexEntries: any[];
     accountingEntry?: any;
     registerUpdate: { txs: any[] };
   }) {
-    // 1. Actualizar stock localmente y en RTDB (tiempo real)
+    // 1. Actualizar caché local y RTDB
     const products = await this.getProducts();
     for (const [prodId, { newStock }] of updates.products.entries()) {
       const prod = products.find(p => p.id === prodId);
       if (prod) prod.stock = newStock;
       await this.updateStockInRTDB(prodId, newStock);
+      
+      // ✅ NUEVO: Actualizar Firestore directamente (sin depender de cola)
+      if (db && isOnline && !isLoggingOut) {
+        const productRef = doc(db, 'products', prodId.toString());
+        await updateDoc(productRef, { stock: newStock, updatedAt: Date.now() });
+        console.log(`✅ Producto ${prodId} stock actualizado a ${newStock} en Firestore`);
+      } else {
+        // Offline: encolar la actualización
+        await addToQueue('updateProductStock', { id: prodId, newStock });
+      }
     }
     await localCache.saveCollection('products', products);
-
-    // 2. Guardar transacción local
+    
+    // 2. Guardar transacción
     await this.saveTransaction(txData);
-
-    // 3. Guardar kardex entries local
+    
+    // 3. Guardar kardex entries individualmente (inmediato)
     for (const entry of updates.kardexEntries) {
       await this.saveKardexEntry(entry);
     }
-
-    // 4. Guardar accounting entry si existe
+    
+    // 4. Guardar asiento contable si existe
     if (updates.accountingEntry) {
       await this.saveAccountingEntry(updates.accountingEntry);
     }
-
-    // 5. Actualizar register (caja) local
+    
+    // 5. Actualizar registro de caja
     let registers = await localCache.getCollection('registers') || [];
     const regIdx = registers.findIndex(r => r.terminalId === terminalId);
     if (regIdx !== -1) {
@@ -774,8 +919,8 @@ export const syncService = {
       registers.push({ terminalId, txs: updates.registerUpdate.txs });
     }
     await localCache.saveCollection('registers', registers);
-
-    // 6. Encolar operaciones para sincronización posterior
+    
+    // 6. Encolar operaciones adicionales (por si offline)
     await addToQueue('saveTransaction', txData);
     for (const entry of updates.kardexEntries) {
       await addToQueue('saveKardexEntry', entry);
@@ -784,7 +929,6 @@ export const syncService = {
       await addToQueue('saveAccountingEntry', updates.accountingEntry);
     }
     await addToQueue('saveRegister', { terminalId, reg: { txs: updates.registerUpdate.txs } });
-    // Las actualizaciones de stock RTDB ya se hicieron en tiempo real, pero las encolamos también por si acaso
     for (const [productId, { newStock }] of updates.products.entries()) {
       await addToQueue('updateStockRTDB', { productId, newStock });
     }
@@ -800,7 +944,6 @@ export const syncService = {
     let updatedPriceUsd: number = 0;
     let updatedPriceBs: number = 0;
     
-    // Obtener producto actual del caché
     const products = await this.getProducts();
     const product = products.find(p => p.id === productId);
     if (!product) throw new Error(`Producto ${productId} no existe`);
@@ -827,7 +970,6 @@ export const syncService = {
     updatedPriceUsd = priceUsd;
     updatedPriceBs = priceBs;
     
-    // Actualizar producto en caché
     product.stock = newStock;
     product.costUsd = newAverageCost;
     product.costBs = roundTo2(newAverageCost * exchangeRateRounded);
@@ -836,7 +978,6 @@ export const syncService = {
     product.updatedAt = Date.now();
     await localCache.saveCollection('products', products);
     
-    // Crear entrada de kardex
     const kardexEntry = {
       id: `${Date.now()}_${productId}_${Math.random()}`,
       productId: productId,
@@ -852,11 +993,21 @@ export const syncService = {
     };
     await this.saveKardexEntry(kardexEntry);
     
-    // Encolar actualización en Firestore
-    await addToQueue('updateProductStock', { id: productId, newStock });
-    await addToQueue('updateProductCost', { id: productId, costUsd: newAverageCost, priceUsd, priceBs });
-    
-    // Actualizar stock en RTDB
+    // Actualizar Firestore directamente
+    if (db && isOnline && !isLoggingOut) {
+      const productRef = doc(db, 'products', productId.toString());
+      await updateDoc(productRef, { 
+        stock: newStock, 
+        costUsd: newAverageCost, 
+        costBs: roundTo2(newAverageCost * exchangeRateRounded),
+        priceUsd: priceUsd,
+        priceBs: priceBs,
+        updatedAt: Date.now()
+      });
+    } else {
+      await addToQueue('updateProductStock', { id: productId, newStock });
+      await addToQueue('updateProductCost', { id: productId, costUsd: newAverageCost, priceUsd, priceBs });
+    }
     await this.updateStockInRTDB(productId, newStock);
     
     return { newStock: updatedStock, newAverageCost: updatedCostUsd, newPriceUsd: updatedPriceUsd, newPriceBs: updatedPriceBs };
@@ -872,6 +1023,9 @@ export const syncService = {
     await processQueue();
     await this.loadAllDataToCache();
     console.log("✅ Sincronización completa");
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('sync-complete'));
+    }
     return true;
   },
 
@@ -879,11 +1033,15 @@ export const syncService = {
     return pendingQueue.length;
   },
 
-  // ========== ELIMINACIONES MASIVAS (para reset) ==========
+  // ========== NUEVAS FUNCIONES EXPORTADAS PARA COMANDOS REMOTOS ==========
+  sendSyncCommandToTerminal,
+  sendSyncCommandToAllTerminals,
+  listenForSyncCommands,
+
+  // ========== ELIMINACIONES MASIVAS ==========
   async deleteAllSupplierPayments() {
     await localCache.saveCollection('supplier_payments', []);
-    // Encolar eliminaciones
-    const all = await localCache.getCollection('supplier_payments') || [];
+    const all = await this.getSupplierPayments();
     for (const p of all) {
       await addToQueue('deleteSupplierPayment', { id: p.id });
     }
@@ -906,10 +1064,9 @@ export const syncService = {
   },
 
   async deleteAllUsersExceptAdmin() {
-    // Esto es delicado, mejor hacerlo solo en Firestore directamente
     console.warn("deleteAllUsersExceptAdmin debe ejecutarse manualmente en Firestore");
   }
 };
 
-// Exportar funciones útiles para componentes
+// Exportar funciones útiles
 export const { loadAllDataToCache, syncAllPending } = syncService;

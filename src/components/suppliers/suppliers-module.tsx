@@ -2,7 +2,6 @@
 
 import React, { useState, useMemo, useEffect, useCallback, memo } from 'react';
 import { usePOSState } from '@/hooks/use-pos-state';
-import { useSuppliers } from '@/hooks/use-suppliers';
 import { 
   Plus, Search, Pencil, Trash2, X, Truck, 
   Receipt, DollarSign, Calendar, FileText, 
@@ -19,24 +18,27 @@ import { cn } from '@/lib/utils';
 import { Supplier, SupplierInvoice, PurchaseInvoiceItem, SupplierPayment } from '@/lib/types';
 import { syncService } from '@/services/syncService';
 import SupplierPaymentModal from './supplier-payment-modal';
-import InvoiceDetailModal from './InvoiceDetailModal'; // ✅ nuevo import
+import InvoiceDetailModal from './InvoiceDetailModal';
 import { formatBs, formatUsd, formatBsNumber, formatUsdNumber } from '@/lib/currency-formatter';
 
-// ✅ Función para obtener fecha y hora local de Venezuela
-function getVenezuelaDateTime(): string {
-  const now = new Date();
-  const formatter = new Intl.DateTimeFormat('es-VE', {
+// ✅ Función para obtener fecha/hora exacta de Venezuela con offset -04:00
+function getVenezuelaISOString(): string {
+  const formatter = new Intl.DateTimeFormat('sv-SE', {
     timeZone: 'America/Caracas',
-    year: '2-digit',
+    year: 'numeric',
     month: '2-digit',
     day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
-    hour12: true
+    second: '2-digit',
+    fractionalSecondDigits: 3,
   });
-  return formatter.format(now);
+  const parts = formatter.formatToParts(new Date());
+  const partMap = Object.fromEntries(parts.map(p => [p.type, p.value]));
+  return `${partMap.year}-${partMap.month}-${partMap.day}T${partMap.hour}:${partMap.minute}:${partMap.second}.${partMap.fractionalSecond}-04:00`;
 }
 
+// ✅ Función para obtener solo la fecha (formato YYYY-MM-DD)
 function getVenezuelaDateForFirestore(): string {
   const now = new Date();
   const formatter = new Intl.DateTimeFormat('sv-SE', {
@@ -72,7 +74,7 @@ function generateUniquePaymentId(): number {
 
 export default function SuppliersModule() {
   const state = usePOSState();
-  const { suppliers, addSupplier, updateSupplier, deleteSupplier } = useSuppliers();
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [search, setSearch] = useState('');
   const [isAdding, setIsAdding] = useState(false);
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
@@ -88,7 +90,6 @@ export default function SuppliersModule() {
   const [viewingPayments, setViewingPayments] = useState<Supplier | null>(null);
   const [supplierPayments, setSupplierPayments] = useState<SupplierPayment[]>([]);
 
-  // ✅ Nuevos estados para expansión y modal de factura
   const [expandedSupplierId, setExpandedSupplierId] = useState<number | null>(null);
   const [selectedInvoiceModal, setSelectedInvoiceModal] = useState<{
     invoice: SupplierInvoice | null;
@@ -107,6 +108,14 @@ export default function SuppliersModule() {
 
   const [invoices, setInvoices] = useState<SupplierInvoice[]>([]);
   const [purchaseItems, setPurchaseItems] = useState<Record<number, PurchaseInvoiceItem[]>>({});
+
+  // ✅ Suscripción en tiempo real a proveedores
+  useEffect(() => {
+    const unsubscribe = syncService.subscribeToSuppliersRealtime((data) => {
+      setSuppliers(data);
+    });
+    return () => unsubscribe();
+  }, []);
 
   useEffect(() => {
     const unsubscribePayments = syncService.subscribeToSupplierPayments((data) => {
@@ -133,6 +142,292 @@ export default function SuppliersModule() {
       unsubscribeItems();
     };
   }, []);
+
+  // ✅ Funciones para operaciones con proveedores usando syncService directamente
+  const addSupplier = async (supplier: Supplier) => {
+    await syncService.saveSupplier(supplier);
+  };
+
+  const updateSupplier = async (supplier: Supplier) => {
+    await syncService.saveSupplier(supplier);
+  };
+
+  const deleteSupplier = async (id: number) => {
+    setSuppliers(prev => prev.filter(s => s.id !== id));
+    await syncService.deleteSupplier(id);
+  };
+
+  // ✅ Calcular total pagado al proveedor (suma de todos sus pagos)
+  const getTotalPaid = useCallback((supplierId: number) => {
+    return supplierPayments
+      .filter(p => p.supplierId === supplierId)
+      .reduce((sum, p) => sum + p.amount, 0);
+  }, [supplierPayments]);
+
+  // ✅ Calcular total comprado (suma de todas las facturas)
+  const getTotalPurchases = useCallback((supplierId: number) => {
+    return invoices
+      .filter(i => i.supplierId === supplierId)
+      .reduce((sum, i) => sum + i.total, 0);
+  }, [invoices]);
+
+  // ✅ Calcular deuda real = total compras - total pagos
+  const getSupplierDebt = useCallback((supplierId: number) => {
+    const totalPurchases = getTotalPurchases(supplierId);
+    const totalPaid = getTotalPaid(supplierId);
+    return Math.max(0, totalPurchases - totalPaid);
+  }, [getTotalPurchases, getTotalPaid]);
+
+  // ✅ Abrir modal de pago (para proveedor o para factura específica)
+  const handleOpenPaymentModal = (supplier: Supplier, invoice?: SupplierInvoice) => {
+    setSelectedSupplierForPayment(supplier);
+    setSelectedInvoiceForPayment(invoice || null);
+    setShowPaymentModal(true);
+  };
+
+  // ✅ Distribuir pago entre facturas (orden cronológico ascendente)
+  const distributePayment = async (
+    supplierId: number,
+    totalPaidUsd: number,
+    exchangeRate: number,
+    paymentMethod: string,
+    reference?: string,
+    bank?: string,
+    excludeInvoiceIds: number[] = []
+  ): Promise<void> => {
+    const pendingInvoices = invoices
+      .filter(inv => inv.supplierId === supplierId && inv.status !== 'pagada' && !excludeInvoiceIds.includes(inv.id))
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    let remaining = totalPaidUsd;
+    const updatedInvoices = [...invoices];
+    for (const invoice of pendingInvoices) {
+      if (remaining <= 0) break;
+      const owed = invoice.total - invoice.paidAmount;
+      const payAmount = Math.min(remaining, owed);
+      const updatedInvoice: SupplierInvoice = {
+        ...invoice,
+        paidAmount: invoice.paidAmount + payAmount,
+        status: (invoice.paidAmount + payAmount) >= invoice.total ? 'pagada' : 'parcial'
+      };
+      await syncService.savePurchaseInvoice(updatedInvoice);
+      const index = updatedInvoices.findIndex(i => i.id === invoice.id);
+      if (index !== -1) updatedInvoices[index] = updatedInvoice;
+      const newPayment: SupplierPayment = {
+        id: generateUniquePaymentId(),
+        supplierId: supplierId,
+        invoiceId: invoice.id,
+        date: getVenezuelaDateForFirestore(),
+        amount: payAmount,
+        method: paymentMethod,
+        reference: reference || '',
+        bank: bank || '',
+        notes: `Pago parcial distribuido. Tasa: ${formatBsNumber(exchangeRate)} Bs/USD`
+      };
+      await syncService.saveSupplierPayment(newPayment);
+      const amountBs = payAmount * exchangeRate;
+      // ✅ Asiento contable con fecha/hora exacta
+      await syncService.saveAccountingEntry({
+        id: generateUniquePaymentId(),
+        date: getVenezuelaISOString(),
+        type: 'egreso',
+        category: 'pagos_proveedores',
+        subcategory: 'abono',
+        concept: `Pago a proveedor (Factura ${invoice.invoiceNumber})`,
+        description: `Abono de ${formatUsd(payAmount)} USD (tasa ${formatBsNumber(exchangeRate)}) = ${formatBs(amountBs)}`,
+        amount: amountBs,
+        referenceId: newPayment.id,
+        referenceType: 'supplier_payment',
+        createdAt: getVenezuelaISOString(),
+      });
+      remaining -= payAmount;
+    }
+    setInvoices(updatedInvoices);
+  };
+
+  const handlePaymentConfirm = async (paymentData: { amount: number; method: string; reference?: string; bank?: string; usdAmount?: number; exchangeRate?: number }) => {
+    if (!selectedSupplierForPayment) return;
+    setIsProcessing(true);
+    try {
+      const exchangeRateUsed = paymentData.exchangeRate || state.exchangeRate;
+      if (selectedInvoiceForPayment) {
+        const invoice = selectedInvoiceForPayment;
+        const owed = invoice.total - invoice.paidAmount;
+        const totalPaid = paymentData.amount;
+        
+        if (totalPaid > owed) {
+          // 1. Pagar la factura seleccionada completamente
+          const updatedInvoice: SupplierInvoice = {
+            ...invoice,
+            paidAmount: invoice.total,
+            status: 'pagada'
+          };
+          await syncService.savePurchaseInvoice(updatedInvoice);
+          setInvoices(prev => prev.map(i => i.id === invoice.id ? updatedInvoice : i));
+          
+          // 2. Crear pago por el monto owed
+          const paymentForThisInvoice: SupplierPayment = {
+            id: generateUniquePaymentId(),
+            supplierId: selectedSupplierForPayment.id,
+            invoiceId: invoice.id,
+            date: getVenezuelaDateForFirestore(),
+            amount: owed,
+            method: paymentData.method,
+            reference: paymentData.reference || '',
+            bank: paymentData.bank || '',
+            notes: `Pago completo de factura ${invoice.invoiceNumber}. Tasa: ${formatBsNumber(exchangeRateUsed)}`
+          };
+          await syncService.saveSupplierPayment(paymentForThisInvoice);
+          setSupplierPayments(prev => [paymentForThisInvoice, ...prev]);
+          
+          const amountBs = owed * exchangeRateUsed;
+          // ✅ Asiento contable con fecha/hora exacta
+          await syncService.saveAccountingEntry({
+            id: generateUniquePaymentId(),
+            date: getVenezuelaISOString(),
+            type: 'egreso',
+            category: 'pagos_proveedores',
+            subcategory: 'abono',
+            concept: `Pago a proveedor (Factura ${invoice.invoiceNumber})`,
+            description: `Pago completo de ${formatUsd(owed)} USD (tasa ${formatBsNumber(exchangeRateUsed)}) = ${formatBs(amountBs)}`,
+            amount: amountBs,
+            referenceId: paymentForThisInvoice.id,
+            referenceType: 'supplier_payment',
+            createdAt: getVenezuelaISOString(),
+          });
+          
+          // 3. Distribuir el excedente
+          const remainingAmount = totalPaid - owed;
+          if (remainingAmount > 0) {
+            await distributePayment(
+              selectedSupplierForPayment.id,
+              remainingAmount,
+              exchangeRateUsed,
+              paymentData.method,
+              paymentData.reference,
+              paymentData.bank,
+              [invoice.id]
+            );
+          }
+          
+          toast({ title: "Pago registrado", description: `Factura #${invoice.invoiceNumber} pagada completamente. El excedente se distribuyó a otras facturas.` });
+        } else {
+          // Pago parcial o total sin excedente
+          const payAmount = totalPaid;
+          const updatedInvoice: SupplierInvoice = {
+            ...invoice,
+            paidAmount: invoice.paidAmount + payAmount,
+            status: (invoice.paidAmount + payAmount) >= invoice.total ? 'pagada' : 'parcial'
+          };
+          await syncService.savePurchaseInvoice(updatedInvoice);
+          setInvoices(prev => prev.map(i => i.id === invoice.id ? updatedInvoice : i));
+          const newPayment: SupplierPayment = {
+            id: generateUniquePaymentId(),
+            supplierId: selectedSupplierForPayment.id,
+            invoiceId: invoice.id,
+            date: getVenezuelaDateForFirestore(),
+            amount: payAmount,
+            method: paymentData.method,
+            reference: paymentData.reference || '',
+            bank: paymentData.bank || '',
+            notes: `Pago registrado. Tasa: ${formatBsNumber(exchangeRateUsed)}`
+          };
+          await syncService.saveSupplierPayment(newPayment);
+          setSupplierPayments(prev => [newPayment, ...prev]);
+          const amountBs = payAmount * exchangeRateUsed;
+          // ✅ Asiento contable con fecha/hora exacta
+          await syncService.saveAccountingEntry({
+            id: generateUniquePaymentId(),
+            date: getVenezuelaISOString(),
+            type: 'egreso',
+            category: 'pagos_proveedores',
+            subcategory: 'abono',
+            concept: `Pago a proveedor ${selectedSupplierForPayment.name} (Factura ${invoice.invoiceNumber})`,
+            description: `Pago de ${formatUsd(payAmount)} USD (tasa ${formatBsNumber(exchangeRateUsed)}) = ${formatBs(amountBs)}`,
+            amount: amountBs,
+            referenceId: newPayment.id,
+            referenceType: 'supplier_payment',
+            createdAt: getVenezuelaISOString(),
+          });
+          toast({ title: "Pago registrado", description: `Pago de ${formatUsd(payAmount)} a ${selectedSupplierForPayment.name}` });
+        }
+      } else {
+        // Pago global
+        await distributePayment(
+          selectedSupplierForPayment.id,
+          paymentData.amount,
+          exchangeRateUsed,
+          paymentData.method,
+          paymentData.reference,
+          paymentData.bank
+        );
+        toast({ title: "Pago global aplicado", description: `Distribuido ${formatUsd(paymentData.amount)} entre facturas pendientes de ${selectedSupplierForPayment.name}` });
+      }
+      
+      // ✅ ACTUALIZACIÓN INSTANTÁNEA del saldo deudor del proveedor
+      const paidUsd = paymentData.amount;
+      setSuppliers(prevSuppliers => 
+        prevSuppliers.map(s => 
+          s.id === selectedSupplierForPayment.id 
+            ? { ...s, totalDebt: Math.max(0, (s.totalDebt || 0) - paidUsd) }
+            : s
+        )
+      );
+      
+      setShowPaymentModal(false);
+      setSelectedSupplierForPayment(null);
+      setSelectedInvoiceForPayment(null);
+    } catch (error) {
+      console.error('Error al procesar el pago:', error);
+      toast({ title: "Error", description: "No se pudo procesar el pago", variant: "destructive" });
+    }
+    setIsProcessing(false);
+  };
+
+  const handleReversePayment = useCallback(async (payment: SupplierPayment) => {
+    if (!confirm(`¿Anular pago de ${formatUsd(payment.amount)}?`)) return;
+    setIsProcessing(true);
+    try {
+      const invoice = invoices.find(i => i.id === payment.invoiceId);
+      if (invoice) {
+        const newPaidAmount = Math.max(0, invoice.paidAmount - payment.amount);
+        const updatedInvoice: SupplierInvoice = {
+          ...invoice,
+          paidAmount: newPaidAmount,
+          status: newPaidAmount <= 0 ? 'pendiente' : (newPaidAmount >= invoice.total ? 'pagada' : 'parcial')
+        };
+        await syncService.savePurchaseInvoice(updatedInvoice);
+        setInvoices(prev => prev.map(i => i.id === invoice.id ? updatedInvoice : i));
+      }
+      await syncService.deleteSupplierPayment(payment.id);
+      const amountBs = payment.amount * state.exchangeRate;
+      // ✅ Asiento contable de reversión con fecha/hora exacta
+      await syncService.saveAccountingEntry({
+        id: generateUniquePaymentId(),
+        date: getVenezuelaISOString(),
+        type: 'ingreso',
+        category: 'reversiones_pagos',
+        subcategory: 'anulacion_pago',
+        concept: `ANULACIÓN de pago a proveedor`,
+        description: `Reversión de pago de ${formatUsd(payment.amount)} USD (tasa ${formatBsNumber(state.exchangeRate)}) = ${formatBs(amountBs)}`,
+        amount: amountBs,
+        referenceId: payment.id,
+        referenceType: 'payment_reversal',
+        createdAt: getVenezuelaISOString(),
+      });
+      // Actualizar deuda del proveedor (sumando el monto anulado)
+      const supplier = suppliers.find(s => s.id === payment.supplierId);
+      if (supplier) {
+        const newDebt = (supplier.totalDebt || 0) + payment.amount;
+        setSuppliers(prev => prev.map(s => s.id === supplier.id ? { ...s, totalDebt: newDebt } : s));
+        await updateSupplier({ ...supplier, totalDebt: newDebt });
+      }
+      toast({ title: "Pago anulado", description: `Se anuló pago de ${formatUsd(payment.amount)}` });
+    } catch (error) {
+      console.error('Error al anular pago:', error);
+      toast({ title: "Error", description: "No se pudo anular el pago", variant: "destructive" });
+    }
+    setIsProcessing(false);
+  }, [invoices, suppliers, updateSupplier, state.exchangeRate]);
 
   const filteredSuppliers = useMemo(() => {
     if (!search.trim()) return suppliers;
@@ -229,214 +524,6 @@ export default function SuppliersModule() {
     });
   };
 
-  const getTotalPurchases = (supplierId: number) => {
-    return invoices
-      .filter(i => i.supplierId === supplierId)
-      .reduce((sum, i) => sum + i.total, 0);
-  };
-
-  const getTotalPaid = (supplierId: number) => {
-    const payments = supplierPayments.filter(p => p.supplierId === supplierId);
-    return payments.reduce((sum, p) => sum + p.amount, 0);
-  };
-
-  const getPendingInvoices = (supplierId: number) => {
-    return invoices.filter(i => i.supplierId === supplierId && i.status !== 'pagada');
-  };
-
-  const handleOpenPaymentModal = (supplier: Supplier, invoice?: SupplierInvoice) => {
-    setSelectedSupplierForPayment(supplier);
-    setSelectedInvoiceForPayment(invoice || null);
-    setShowPaymentModal(true);
-  };
-
-  const distributePayment = async (
-    supplierId: number,
-    totalPaidUsd: number,
-    exchangeRate: number,
-    paymentMethod: string,
-    reference?: string,
-    bank?: string
-  ): Promise<void> => {
-    const pendingInvoices = invoices
-      .filter(inv => inv.supplierId === supplierId && inv.status !== 'pagada')
-      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-    let remaining = totalPaidUsd;
-    const updatedInvoices = [...invoices];
-    for (const invoice of pendingInvoices) {
-      if (remaining <= 0) break;
-      const owed = invoice.total - invoice.paidAmount;
-      const payAmount = Math.min(remaining, owed);
-      const updatedInvoice: SupplierInvoice = {
-        ...invoice,
-        paidAmount: invoice.paidAmount + payAmount,
-        status: (invoice.paidAmount + payAmount) >= invoice.total ? 'pagada' : 'parcial'
-      };
-      await syncService.savePurchaseInvoice(updatedInvoice);
-      const index = updatedInvoices.findIndex(i => i.id === invoice.id);
-      if (index !== -1) updatedInvoices[index] = updatedInvoice;
-      const newPayment: SupplierPayment = {
-        id: generateUniquePaymentId(),
-        supplierId: supplierId,
-        invoiceId: invoice.id,
-        date: getVenezuelaDateForFirestore(),
-        amount: payAmount,
-        method: paymentMethod,
-        reference: reference || '',
-        bank: bank || '',
-        notes: `Pago parcial distribuido. Tasa: ${formatBsNumber(exchangeRate)} Bs/USD`
-      };
-      await syncService.saveSupplierPayment(newPayment);
-      const amountBs = payAmount * exchangeRate;
-      await syncService.saveAccountingEntry({
-        id: generateUniquePaymentId(),
-        date: getVenezuelaDateForFirestore(),
-        type: 'egreso',
-        category: 'pagos_proveedores',
-        subcategory: 'abono',
-        concept: `Pago a proveedor (Factura ${invoice.invoiceNumber})`,
-        description: `Abono de ${formatUsd(payAmount)} USD (tasa ${formatBsNumber(exchangeRate)}) = ${formatBs(amountBs)}`,
-        amount: amountBs,
-        referenceId: newPayment.id,
-        referenceType: 'supplier_payment',
-        createdAt: getVenezuelaDateTime()
-      });
-      remaining -= payAmount;
-    }
-    setInvoices(updatedInvoices);
-    const supplier = suppliers.find(s => s.id === supplierId);
-    if (supplier) {
-      const totalDebt = updatedInvoices
-        .filter(i => i.supplierId === supplierId)
-        .reduce((sum, i) => sum + (i.total - i.paidAmount), 0);
-      await updateSupplier({ ...supplier, totalDebt });
-    }
-  };
-
-  const handlePaymentConfirm = async (paymentData: { amount: number; method: string; reference?: string; bank?: string; usdAmount?: number; exchangeRate?: number }) => {
-    if (!selectedSupplierForPayment) return;
-    setIsProcessing(true);
-    try {
-      const exchangeRateUsed = paymentData.exchangeRate || state.exchangeRate;
-      if (selectedInvoiceForPayment) {
-        const invoice = selectedInvoiceForPayment;
-        const owed = invoice.total - invoice.paidAmount;
-        const payAmount = Math.min(paymentData.amount, owed);
-        const updatedInvoice: SupplierInvoice = {
-          ...invoice,
-          paidAmount: invoice.paidAmount + payAmount,
-          status: (invoice.paidAmount + payAmount) >= invoice.total ? 'pagada' : 'parcial'
-        };
-        await syncService.savePurchaseInvoice(updatedInvoice);
-        const updatedInvoices = [...invoices];
-        const index = updatedInvoices.findIndex(i => i.id === invoice.id);
-        if (index !== -1) updatedInvoices[index] = updatedInvoice;
-        setInvoices(updatedInvoices);
-        const newPayment: SupplierPayment = {
-          id: generateUniquePaymentId(),
-          supplierId: selectedSupplierForPayment.id,
-          invoiceId: invoice.id,
-          date: getVenezuelaDateForFirestore(),
-          amount: payAmount,
-          method: paymentData.method,
-          reference: paymentData.reference || '',
-          bank: paymentData.bank || '',
-          notes: `Pago registrado. Tasa: ${formatBsNumber(exchangeRateUsed)} Bs/USD`
-        };
-        await syncService.saveSupplierPayment(newPayment);
-        const amountBs = payAmount * exchangeRateUsed;
-        await syncService.saveAccountingEntry({
-          id: generateUniquePaymentId(),
-          date: getVenezuelaDateForFirestore(),
-          type: 'egreso',
-          category: 'pagos_proveedores',
-          subcategory: 'abono',
-          concept: `Pago a proveedor ${selectedSupplierForPayment.name} (Factura ${invoice.invoiceNumber})`,
-          description: `Pago de ${formatUsd(payAmount)} USD (tasa ${formatBsNumber(exchangeRateUsed)}) = ${formatBs(amountBs)}`,
-          amount: amountBs,
-          referenceId: newPayment.id,
-          referenceType: 'supplier_payment',
-          createdAt: getVenezuelaDateTime()
-        });
-        const totalDebt = updatedInvoices
-          .filter(i => i.supplierId === selectedSupplierForPayment.id)
-          .reduce((sum, i) => sum + (i.total - i.paidAmount), 0);
-        await updateSupplier({ ...selectedSupplierForPayment, totalDebt });
-        toast({ title: "Pago registrado", description: `Pago de ${formatUsd(payAmount)} a ${selectedSupplierForPayment.name}` });
-      } else {
-        await distributePayment(
-          selectedSupplierForPayment.id,
-          paymentData.amount,
-          exchangeRateUsed,
-          paymentData.method,
-          paymentData.reference,
-          paymentData.bank
-        );
-        toast({ title: "Pago global aplicado", description: `Distribuido ${formatUsd(paymentData.amount)} entre facturas pendientes de ${selectedSupplierForPayment.name}` });
-      }
-      setShowPaymentModal(false);
-      setSelectedSupplierForPayment(null);
-      setSelectedInvoiceForPayment(null);
-    } catch (error) {
-      console.error('Error al procesar el pago:', error);
-      toast({ title: "Error", description: "No se pudo procesar el pago", variant: "destructive" });
-    }
-    setIsProcessing(false);
-  };
-
-  const handleReversePayment = useCallback(async (payment: SupplierPayment) => {
-    if (!confirm(`¿Anular pago de ${formatUsd(payment.amount)}?`)) return;
-    setIsProcessing(true);
-    try {
-      const affectedInvoices = invoices.filter(inv => inv.supplierId === payment.supplierId);
-      let remainingAmount = payment.amount;
-      const sortedInvoices = [...affectedInvoices].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-      const updatedInvoices = [...invoices];
-      for (const invoice of sortedInvoices) {
-        if (remainingAmount <= 0) break;
-        const paidOnInvoice = Math.min(invoice.paidAmount, remainingAmount);
-        if (paidOnInvoice <= 0) continue;
-        const updatedInvoice: SupplierInvoice = {
-          ...invoice,
-          paidAmount: Math.max(0, invoice.paidAmount - paidOnInvoice),
-          status: (invoice.paidAmount - paidOnInvoice) <= 0 ? 'pendiente' : 'parcial'
-        };
-        await syncService.savePurchaseInvoice(updatedInvoice);
-        const index = updatedInvoices.findIndex(i => i.id === invoice.id);
-        if (index !== -1) updatedInvoices[index] = updatedInvoice;
-        remainingAmount -= paidOnInvoice;
-      }
-      const amountBs = payment.amount * state.exchangeRate;
-      await syncService.saveAccountingEntry({
-        id: generateUniquePaymentId(),
-        date: getVenezuelaDateForFirestore(),
-        type: 'ingreso',
-        category: 'reversiones_pagos',
-        subcategory: 'anulacion_pago',
-        concept: `ANULACIÓN de pago a proveedor`,
-        description: `Reversión de pago de ${formatUsd(payment.amount)} USD (tasa ${formatBsNumber(state.exchangeRate)}) = ${formatBs(amountBs)}`,
-        amount: amountBs,
-        referenceId: payment.id,
-        referenceType: 'payment_reversal',
-        createdAt: getVenezuelaDateTime()
-      });
-      await syncService.deleteSupplierPayment(payment.id);
-      const supplier = suppliers.find(s => s.id === payment.supplierId);
-      if (supplier) {
-        const totalDebt = updatedInvoices
-          .filter(i => i.supplierId === payment.supplierId)
-          .reduce((sum, i) => sum + (i.total - i.paidAmount), 0);
-        await updateSupplier({ ...supplier, totalDebt });
-      }
-      setInvoices(updatedInvoices);
-      toast({ title: "Pago anulado", description: `Se anuló pago de ${formatUsd(payment.amount)}` });
-    } catch (error) {
-      console.error('Error al anular pago:', error);
-      toast({ title: "Error", description: "No se pudo anular el pago", variant: "destructive" });
-    }
-    setIsProcessing(false);
-  }, [invoices, suppliers, updateSupplier, state.exchangeRate]);
-
   const PaymentHistoryModal = memo(({ supplier, onClose }: { supplier: Supplier; onClose: () => void }) => {
     const payments = useMemo(() => {
       return supplierPayments
@@ -529,7 +616,6 @@ export default function SuppliersModule() {
             <Table>
               <TableHeader className="bg-[#E8E8E8] sticky top-0 z-10">
                 <TableRow>
-                  {/* Agregamos una columna extra para el ícono de expansión */}
                   <TableHead className="w-[30px]"></TableHead>
                   <TableHead className="text-[9px] font-black uppercase">Proveedor</TableHead>
                   <TableHead className="text-[9px] font-black uppercase">RIF</TableHead>
@@ -547,14 +633,12 @@ export default function SuppliersModule() {
                 ) : (
                   filteredSuppliers.map(s => {
                     const totalPurchases = getTotalPurchases(s.id);
-                    const totalPaid = getTotalPaid(s.id);
-                    const debt = totalPurchases - totalPaid;
+                    const debt = getSupplierDebt(s.id);
                     const isExpanded = expandedSupplierId === s.id;
                     const supplierInvoices = filteredInvoices.filter(inv => inv.supplierId === s.id);
                     
                     return (
                       <React.Fragment key={s.id}>
-                        {/* Fila principal del proveedor (clickeable) */}
                         <TableRow 
                           className="border-b border-[#9E9E9E]/40 hover:bg-[#F5F5F5] cursor-pointer"
                           onClick={() => setExpandedSupplierId(isExpanded ? null : s.id)}
@@ -583,7 +667,6 @@ export default function SuppliersModule() {
                           </TableCell>
                         </TableRow>
 
-                        {/* Fila expandible con la lista de facturas */}
                         {isExpanded && (
                           <TableRow>
                             <TableCell colSpan={7} className="p-0 bg-gray-50">
@@ -599,11 +682,13 @@ export default function SuppliersModule() {
                                       return (
                                         <div
                                           key={inv.id}
-                                          className="border rounded-lg p-3 bg-white hover:bg-gray-100 cursor-pointer transition-colors"
-                                          onClick={() => setSelectedInvoiceModal({ invoice: inv, isOpen: true })}
+                                          className="border rounded-lg p-3 bg-white hover:bg-gray-100 transition-colors"
                                         >
-                                          <div className="flex justify-between items-center">
-                                            <div>
+                                          <div className="flex justify-between items-start">
+                                            <div 
+                                              className="flex-1 cursor-pointer"
+                                              onClick={() => setSelectedInvoiceModal({ invoice: inv, isOpen: true })}
+                                            >
                                               <p className="font-medium text-sm">Factura #{inv.invoiceNumber}</p>
                                               <p className="text-xs text-gray-500">{formatDate(inv.date)} • {itemsCount} items</p>
                                             </div>
@@ -615,6 +700,20 @@ export default function SuppliersModule() {
                                                   {" "}Saldo: {formatUsd(owed)}
                                                 </span>
                                               </p>
+                                            </div>
+                                            <div className="ml-3">
+                                              {owed > 0 && (
+                                                <Button
+                                                  onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    handleOpenPaymentModal(s, inv);
+                                                  }}
+                                                  disabled={isProcessing}
+                                                  className="bg-green-600 hover:bg-green-700 text-white h-7 text-[10px] px-2"
+                                                >
+                                                  Pagar ahora
+                                                </Button>
+                                              )}
                                             </div>
                                           </div>
                                         </div>
@@ -674,7 +773,7 @@ export default function SuppliersModule() {
       {/* Modal de historial de pagos */}
       {viewingPayments && <PaymentHistoryModal supplier={viewingPayments} onClose={() => setViewingPayments(null)} />}
       
-      {/* Modal de pago */}
+      {/* Modal de pago - con allowExcess cuando hay factura específica */}
       {showPaymentModal && selectedSupplierForPayment && (
         <SupplierPaymentModal
           open={showPaymentModal}
@@ -685,10 +784,11 @@ export default function SuppliersModule() {
           supplierName={selectedSupplierForPayment.name}
           invoiceNumber={selectedInvoiceForPayment?.invoiceNumber || 'MÚLTIPLES FACTURAS'}
           exchangeRate={state.exchangeRate}
+          allowExcess={!!selectedInvoiceForPayment}
         />
       )}
 
-      {/* ✅ Nuevo modal para detalles de factura */}
+      {/* Modal de detalles de factura */}
       {selectedInvoiceModal.invoice && (
         <InvoiceDetailModal
           invoice={selectedInvoiceModal.invoice}

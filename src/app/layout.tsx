@@ -1,7 +1,6 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import { AuthWrapper } from '@/context/AuthWrapper';
-import { ClientInitializer } from '@/components/ClientInitializer';
 
 export const metadata: Metadata = {
   title: 'MasterPOS v1.0',
@@ -19,13 +18,12 @@ export default function RootLayout({
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link
-          href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=Playfair+Display:ital,wght@0,400..900;1,400..900&display=swap"
+          href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=Playfair+Display:ital,wght@0,400..900;1,400..900&display=wrap"
           rel="stylesheet"
         />
       </head>
       <body className="font-body antialiased bg-background text-foreground">
         <AuthWrapper>
-          <ClientInitializer />
           {children}
         </AuthWrapper>
       </body>

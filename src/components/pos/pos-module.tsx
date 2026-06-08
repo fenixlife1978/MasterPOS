@@ -47,13 +47,6 @@ export default function POSModule({ state }: POSModuleProps) {
   const [pendingOperationType, setPendingOperationType] = useState<'colaboracion' | 'consumo_propio'>('colaboracion');
   const [isVerifying, setIsVerifying] = useState(false);
 
-  // ✅ INICIALIZACIÓN DE STOCK ELIMINADA (se hace en otro lugar central)
-  // useEffect(() => {
-  //   if (state.products.length > 0 && state.isHydrated) {
-  //     syncService.initializeStockRTDB(state.products);
-  //   }
-  // }, [state.products, state.isHydrated]);
-
   useEffect(() => {
     const lastReceipt = localStorage.getItem('last_receipt_number');
     if (lastReceipt) {
@@ -122,6 +115,8 @@ export default function POSModule({ state }: POSModuleProps) {
         localStorage.setItem('last_receipt_number', receiptNum.toString());
         setNextReceiptNumber(receiptNum + 1);
         setShowReceipt(true);
+        // ✅ Forzar actualización global de datos para que el dashboard refleje los cambios
+        await state.refreshAllData();
       }
     } catch (error) {
       console.error("Error al procesar venta a crédito:", error);
@@ -152,6 +147,7 @@ export default function POSModule({ state }: POSModuleProps) {
         localStorage.setItem('last_receipt_number', receiptNum.toString());
         setNextReceiptNumber(receiptNum + 1);
         setShowReceipt(true);
+        await state.refreshAllData();
       }
     } catch (error) {
       console.error("Error al procesar colaboración/consumo:", error);
@@ -216,6 +212,10 @@ export default function POSModule({ state }: POSModuleProps) {
           total={totalForCredit}
           onClose={() => setShowCredito(false)}
           onConfirm={handleCreditConfirm}
+          onNewClient={(newClient) => {
+            // ✅ Agregar el nuevo cliente al estado local inmediatamente
+            state.setClients(prev => [...prev, newClient]);
+          }}
         />
       )}
 

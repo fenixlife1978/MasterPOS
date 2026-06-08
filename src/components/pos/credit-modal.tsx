@@ -13,9 +13,10 @@ interface CreditModalProps {
   total: number; // ✅ RECIBIR EL TOTAL YA CALCULADO (con o sin IVA según el estado del POS)
   onClose: () => void;
   onConfirm: (data: any) => void;
+  onNewClient?: (client: Client) => void; // ✅ NUEVO: callback para agregar cliente al estado local
 }
 
-export default function CreditModal({ cart, clients, exchangeRate, total, onClose, onConfirm }: CreditModalProps) {
+export default function CreditModal({ cart, clients, exchangeRate, total, onClose, onConfirm, onNewClient }: CreditModalProps) {
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<Client | null>(null);
   const [isNewMode, setIsNewMode] = useState(false);
@@ -55,6 +56,19 @@ export default function CreditModal({ cart, clients, exchangeRate, total, onClos
       if (isCedulaDuplicada(newClient.cedula)) {
         alert(`Ya existe un cliente con la cédula ${newClient.cedula}. No se puede crear duplicado.`);
         return;
+      }
+      // ✅ Crear objeto cliente temporal
+      const tempClient: Client = {
+        id: Date.now(), // ID temporal, luego Firestore asignará el real, pero se actualizará en el padre
+        name: newClient.name,
+        cedula: newClient.cedula,
+        phone: newClient.phone,
+        address: newClient.address,
+        debt: 0,
+      };
+      // Notificar al padre para que agregue el cliente al estado local
+      if (onNewClient) {
+        onNewClient(tempClient);
       }
       onConfirm({
         method: 'credito',

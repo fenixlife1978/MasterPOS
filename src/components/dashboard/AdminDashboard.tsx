@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { usePOSState } from '@/hooks/use-pos-state';
 import { useSuppliers } from '@/hooks/use-suppliers';
@@ -221,7 +220,8 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
   const totalClients = state.clients.length;
   const totalSales = state.transactions.filter(t => t.type === 'contado').length;
   const totalRevenue = state.transactions.filter(t => t.type === 'contado').reduce((sum, t) => sum + t.total, 0);
-  const totalCreditBs = state.clients.reduce((sum, c) => sum + (c.debt || 0), 0);
+  // ✅ CORREGIDO: Calcular el total de deudas desde las cuentas (state.accounts) en lugar de los clientes
+  const totalCreditBs = state.accounts.reduce((sum, acc) => sum + (acc.amountBs - (acc.paidAmount || 0)), 0);
   const totalCreditUsd = totalCreditBs / state.exchangeRate; // ✅ Convertir a USD
   const totalPayable = invoices.reduce((sum, inv) => sum + (inv.total - inv.paidAmount), 0);
   const outOfStock = state.products.filter(p => p.stock === 0).length;

@@ -436,8 +436,18 @@ export function usePOSState() {
     let targetClientId = paymentData.clientId;
     if (type === 'credito' && paymentData.isNewClient) {
       const nextClientId = getVenezuelaTimestamp();
-      await syncService.saveClient({ id: nextClientId, name: paymentData.clientName, cedula: paymentData.clientCedula, phone: paymentData.clientPhone || '', address: paymentData.clientAddress || '', debt: 0 });
+      const newClient: Client = { 
+        id: nextClientId, 
+        name: paymentData.clientName, 
+        cedula: paymentData.clientCedula, 
+        phone: paymentData.clientPhone || '', 
+        address: paymentData.clientAddress || '', 
+        debt: 0,
+      };
+      await syncService.saveClient(newClient);
       targetClientId = nextClientId;
+      // Actualizar estado local de clients inmediatamente
+      setClients(prev => [...prev, newClient]);
     }
 
     const txId = getVenezuelaTimestamp();
@@ -523,12 +533,10 @@ export function usePOSState() {
 
     const newTxs = [...(register.txs || []), tx];
     
-    // ✅ IMPORTANTE: Guardar kardex inmediatamente, no solo en batch
-    // Enviamos los kardexEntries a runAtomicSale para que se guarden ahora
     try {
       await syncService.runAtomicSale(terminalId, tx, { 
         products: stockUpdates, 
-        kardexEntries, // ✅ pasamos los kardex para que se guarden inmediatamente
+        kardexEntries,
         accountingEntry: accountingEntry,
         registerUpdate: { txs: newTxs } 
       });
@@ -548,8 +556,16 @@ export function usePOSState() {
         amountBs: total, amountUsd: roundTo2(total / exchangeRate), paidAmount: 0, status: 'pendiente', exchangeRate,
       };
       await syncService.saveAccount(newAcc);
+      // Actualizar estado local de accounts inmediatamente
+      setAccounts(prev => [...prev, newAcc]);
+      
       const c = clients.find(cl => cl.id === targetClientId);
-      if (c) await syncService.saveClient({ ...c, debt: (c.debt || 0) + total });
+      if (c) {
+        const updatedClient = { ...c, debt: (c.debt || 0) + total };
+        await syncService.saveClient(updatedClient);
+        // Actualizar estado local de clients inmediatamente
+        setClients(prev => prev.map(cl => cl.id === targetClientId ? updatedClient : cl));
+      }
     }
 
     if (type !== 'cobro_deuda') setCart([]);
@@ -572,15 +588,21 @@ export function usePOSState() {
       .filter(a => a.clientId === clientId && a.status !== 'pagada')
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
+    const updatedAccounts = [...accounts];
     for (const acc of clientAccounts) {
       if (remaining <= 0) break;
       const owed = acc.amountBs - (acc.paidAmount || 0);
       const pay = Math.min(remaining, owed);
       const newPaid = (acc.paidAmount || 0) + pay;
-      const newStatus = newPaid >= acc.amountBs ? 'pagada' : 'parcial';
-      await syncService.saveAccount({ ...acc, paidAmount: newPaid, status: newStatus });
+      const newStatus: 'pagada' | 'parcial' = newPaid >= acc.amountBs ? 'pagada' : 'parcial';
+      const updatedAcc = { ...acc, paidAmount: newPaid, status: newStatus };
+      await syncService.saveAccount(updatedAcc);
+      // Actualizar estado local de accounts inmediatamente
+      const idx = updatedAccounts.findIndex(a => a.id === acc.id);
+      if (idx !== -1) updatedAccounts[idx] = updatedAcc;
       remaining -= pay;
     }
+    setAccounts(updatedAccounts);
 
     const txId = getVenezuelaTimestamp();
     const tx: Transaction = {
@@ -628,7 +650,10 @@ export function usePOSState() {
     saveRegisterToLocalStorage({ ...register, txs: newTxs });
 
     const newDebt = Math.max(0, (client.debt || 0) - amount);
-    await syncService.saveClient({ ...client, debt: newDebt });
+    const updatedClient = { ...client, debt: newDebt };
+    await syncService.saveClient(updatedClient);
+    // Actualizar estado local de clients inmediatamente
+    setClients(prev => prev.map(c => c.id === clientId ? updatedClient : c));
   }, [register, clients, accounts, exchangeRate, terminalId, saveRegisterToLocalStorage, currentSession]);
 
   // ✅ FUNCIÓN CORREGIDA: Ahora incluye ID en payments

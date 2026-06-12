@@ -8,8 +8,6 @@ import { FileText, X, Archive, Calendar, Eye, Eraser, Trash2 } from 'lucide-reac
 import { cn } from '@/lib/utils';
 import { formatBs, formatUsd, formatBsNumber } from '@/lib/currency-formatter';
 import { syncService } from '@/services/syncService';
-import { deleteDoc, doc } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
 
 interface CloseHistoryModalProps {
   open: boolean;
@@ -34,7 +32,7 @@ interface UnifiedCloseRecord {
   totalReal: number;
   diferencia: number;
   estado: string;
-  source: 'local' | 'firestore';
+  source: 'local' | 'turso';
   rawData: any;
 }
 
@@ -100,7 +98,7 @@ export default function CloseHistoryModal({ open, onClose }: CloseHistoryModalPr
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  // Cargar cierres al abrir (localStorage + Firestore)
+  // Cargar cierres al abrir (localStorage + Turso)
   const loadAllCloses = async () => {
     const loadedRecords: UnifiedCloseRecord[] = [];
 
@@ -196,15 +194,14 @@ export default function CloseHistoryModal({ open, onClose }: CloseHistoryModalPr
       }
     }
 
-    // --- Cargar cierres desde Firestore (colección cash_closes) ---
+    // --- Cargar cierres desde Turso (colección cash_closes) ---
     try {
-      const firestoreCloses = await syncService.getAllCashCloses();
-      for (const docData of firestoreCloses) {
+      const tursoCloses = await syncService.getAllCashCloses();
+      for (const docData of tursoCloses) {
         const data = docData;
-        // Asegurar que tenemos el ID del documento
-        const docId = data.id || data.docId;
+        const docId = data.id;
         if (!docId) {
-          console.warn('Documento de Firestore sin ID:', data);
+          console.warn('Documento de Turso sin ID:', data);
           continue;
         }
         if (data.tipo === 'parcial') {
@@ -237,7 +234,7 @@ export default function CloseHistoryModal({ open, onClose }: CloseHistoryModalPr
             totalReal,
             diferencia: diff,
             estado,
-            source: 'firestore',
+            source: 'turso',
             rawData: data,
           });
         } else if (data.tipo === 'final') {
@@ -275,13 +272,13 @@ export default function CloseHistoryModal({ open, onClose }: CloseHistoryModalPr
             totalReal: data.totales?.real ?? 0,
             diferencia: diff,
             estado,
-            source: 'firestore',
+            source: 'turso',
             rawData: data,
           });
         }
       }
     } catch (error) {
-      console.error('Error cargando cierres desde Firestore:', error);
+      console.error('Error cargando cierres desde Turso:', error);
     }
 
     // Ordenar por fecha descendente
@@ -303,13 +300,10 @@ export default function CloseHistoryModal({ open, onClose }: CloseHistoryModalPr
       switch (filterType) {
         case 'day': {
           if (!dateFilter) return true;
-          // Extraer componentes de fecha local del registro
           const recordYear = recordDate.getFullYear();
           const recordMonth = recordDate.getMonth();
           const recordDay = recordDate.getDate();
-          // Parsear la fecha del filtro (YYYY-MM-DD) en zona local
           const [filterYear, filterMonth, filterDay] = dateFilter.split('-').map(Number);
-          // Comparar año, mes y día numéricamente (sin zona horaria)
           return recordYear === filterYear && recordMonth === filterMonth - 1 && recordDay === filterDay;
         }
         case 'month':
@@ -333,12 +327,12 @@ export default function CloseHistoryModal({ open, onClose }: CloseHistoryModalPr
     setYearFilter(today.getFullYear().toString());
   };
 
+  // ✅ CORREGIDO: Eliminar cierre usando syncService (Turso)
   const handleDeleteRecord = async (record: UnifiedCloseRecord) => {
     const confirmMsg = `¿Eliminar este cierre del ${record.fechaDisplay}? Esta acción no se puede deshacer.`;
     if (!confirm(confirmMsg)) return;
 
     try {
-      // Determinar el ID correcto para eliminar
       let idToDelete = record.id;
       if (!idToDelete && record.rawData) {
         idToDelete = record.rawData.id || record.rawData.docId;
@@ -353,8 +347,9 @@ export default function CloseHistoryModal({ open, onClose }: CloseHistoryModalPr
 
       if (record.source === 'local') {
         localStorage.removeItem(idToDelete);
-      } else if (record.source === 'firestore') {
-        await deleteDoc(doc(db, 'cash_closes', idToDelete));
+      } else if (record.source === 'turso') {
+        // ✅ Usar syncService para eliminar de Turso
+        await syncService.deleteCashClose?.(idToDelete);
       }
       // Recargar la lista después de eliminar
       await loadAllCloses();
@@ -387,7 +382,7 @@ export default function CloseHistoryModal({ open, onClose }: CloseHistoryModalPr
           <h1>MasterPOS - Reporte de Cierre</h1>
           <p><strong>Fecha:</strong> ${record.fechaDisplay}</p>
           <p><strong>Tipo:</strong> ${record.tipo === 'parcial' ? 'CORTE PARCIAL' : 'CIERRE FINAL'}</p>
-          <p><strong>Fuente:</strong> ${record.source === 'firestore' ? 'Cloud (Firestore)' : 'Local (navegador)'}</p>
+          <p><strong>Fuente:</strong> ${record.source === 'turso' ? 'Cloud (Turso)' : 'Local (navegador)'}</p>
           <p><strong>Apertura:</strong> ${formatBs(record.apertura.bs)} + ${formatUsd(record.apertura.usd)}</p>
           ${record.apertura.tasa ? `<p><strong>Tasa BCV:</strong> ${formatBs(record.apertura.tasa)}</p>` : ''}
           <p><strong>Ventas Contado:</strong> ${formatBs(record.ventasContado)}</p>
@@ -474,8 +469,8 @@ export default function CloseHistoryModal({ open, onClose }: CloseHistoryModalPr
               </div>
             </div>
             <p className="text-[10px] text-black/40 mt-3">
-              Mostrando {filteredRecords.length} de {records.length} cierres
-              {!loading && records.some(r => r.source === 'firestore') && <span className="ml-2 text-primary">(incluye datos en la nube)</span>}
+              Mostrando ${filteredRecords.length} de ${records.length} cierres
+              {!loading && records.some(r => r.source === 'turso') && <span className="ml-2 text-primary">(incluye datos en la nube)</span>}
             </p>
           </div>
           <div className="flex-1 overflow-y-auto p-5">
@@ -493,18 +488,18 @@ export default function CloseHistoryModal({ open, onClose }: CloseHistoryModalPr
                           <span className={cn("text-[9px] font-black px-2 py-0.5 rounded-full", record.tipo === 'parcial' ? "bg-blue-100 text-blue-700" : "bg-purple-100 text-purple-700")}>
                             {record.tipo === 'parcial' ? 'CORTE PARCIAL' : 'CIERRE FINAL'}
                           </span>
-                          {record.source === 'firestore' && (
+                          {record.source === 'turso' && (
                             <span className="text-[8px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700">Cloud</span>
                           )}
                           <p className="text-xs font-mono text-black/50">{record.id}</p>
                         </div>
                         <p className="text-sm font-bold text-black mt-1">{record.fechaDisplay}</p>
-                        <p className="text-[10px] text-black/50 mt-1">Apertura: {formatBs(record.apertura.bs)} + {formatUsd(record.apertura.usd)} | Ventas: {formatBs(record.ventasContado)} | Créditos: {formatBs(record.creditos)}</p>
+                        <p className="text-[10px] text-black/50 mt-1">Apertura: ${formatBs(record.apertura.bs)} + ${formatUsd(record.apertura.usd)} | Ventas: ${formatBs(record.ventasContado)} | Créditos: ${formatBs(record.creditos)}</p>
                         <div className="flex items-center gap-2 mt-2">
                           <div className={cn("text-[10px] font-bold px-2 py-0.5 rounded-full", record.estado === 'CONCILIADO' ? "bg-green-100 text-green-700" : record.estado === 'SOBRANTE' ? "bg-yellow-100 text-yellow-700" : "bg-red-100 text-red-700")}>
-                            {record.estado} {record.diferencia !== 0 && `(${record.diferencia > 0 ? '+' : ''}${formatBsNumber(Math.abs(record.diferencia))})`}
+                            {record.estado} ${record.diferencia !== 0 && `(${record.diferencia > 0 ? '+' : ''}${formatBsNumber(Math.abs(record.diferencia))})`}
                           </div>
-                          <span className="text-[9px] text-black/40">USD en caja: {formatUsd(record.usdEfectivo)}</span>
+                          <span className="text-[9px] text-black/40">USD en caja: ${formatUsd(record.usdEfectivo)}</span>
                         </div>
                       </div>
                       <div className="flex gap-2">
@@ -521,7 +516,7 @@ export default function CloseHistoryModal({ open, onClose }: CloseHistoryModalPr
             )}
           </div>
           <div className="bg-gray-50 p-4 border-t border-gray-200 flex justify-between items-center">
-            <p className="text-[9px] text-black/40">Los cierres se almacenan localmente y en la nube (Firestore)</p>
+            <p className="text-[9px] text-black/40">Los cierres se almacenan localmente y en la nube (Turso)</p>
             <Button onClick={onClose} variant="ghost" className="text-black/60 hover:text-black text-xs">Cerrar</Button>
           </div>
         </DialogContent>

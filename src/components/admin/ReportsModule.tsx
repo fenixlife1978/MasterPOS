@@ -32,7 +32,7 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
   
   const reportContentRef = useRef<HTMLDivElement>(null);
 
-  // Cargar terminales disponibles
+  // ✅ Cargar terminales desde TURSO
   useEffect(() => {
     const loadTerminals = async () => {
       setIsLoadingTerminals(true);
@@ -40,7 +40,7 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
       try {
         const terminalsData = await syncService.getAllTerminals();
         if (terminalsData && terminalsData.length > 0) {
-          setTerminals(terminalsData.map(t => ({ id: t.id, name: t.name || t.id })));
+          setTerminals(terminalsData.map((t: any) => ({ id: t.id, name: t.name || t.id })));
         } else {
           setLoadError('No se encontraron terminales registradas.');
           setTerminals([]);
@@ -156,7 +156,7 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
               </tr>`;
             }).join('')}
           </tbody>
-          <tfoot><tr><td colspan="4" class="text-right"><strong>Total General</strong></td><td class="text-right"><strong>${formatBs(totalGeneral)}</strong></td></tr></tfoot>
+          <tfoot><tr><td colspan="4" class="text-right"><strong>Total General</strong></td><td class="text-right"><strong>${formatBs(totalGeneral)}</strong></td></tfoot>
         </table>
       `;
     } else if (activeReport === 'summary' && hasSearched) {
@@ -173,7 +173,7 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
     } else if (activeReport === 'consolidated') {
       content = `
         <table class="report-table">
-          <thead><tr><th>Mes</th><th class="text-right">Ingresos (Bs)</th><th class="text-right">Egresos (Bs)</th><th class="text-right">Balance (Bs)</th></tr></thead>
+          <thead><tr><th>Mes</th><th class="text-right">Ingresos (Bs)</th><th class="text-right">Egresos (Bs)</th><th class="text-right">Balance (Bs)</th></td></thead>
           <tbody>
             ${monthlyConsolidated.map(row => `
               <tr>

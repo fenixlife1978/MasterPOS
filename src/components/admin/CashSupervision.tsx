@@ -63,49 +63,54 @@ export default function CashSupervision() {
   const [totals, setTotals] = useState<TotalsByMethod | null>(null);
   const [isSyncingAll, setIsSyncingAll] = useState(false);
 
-  // Suscribirse a terminales (usando tiempo real)
+  // ✅ Cargar terminales desde TURSO
   useEffect(() => {
     if (!user || user.role !== 'admin') {
       setLoadingTerminals(false);
       return;
     }
 
-    const unsubTerminals = syncService.subscribeToTerminals((data: Terminal[]) => {
-      setTerminals(data);
+    const loadTerminals = async () => {
+      const data = await syncService.getAllTerminals();
+      setTerminals(data as Terminal[]);
       setLoadingTerminals(false);
-    });
-
-    return () => {
-      unsubTerminals();
     };
+    
+    loadTerminals();
+    
+    // Polling cada 3 segundos para simular tiempo real
+    const interval = setInterval(async () => {
+      const data = await syncService.getAllTerminals();
+      setTerminals(data as Terminal[]);
+    }, 3000);
+    
+    return () => clearInterval(interval);
   }, [user]);
 
-  // Suscribirse a los registros de caja de cada terminal (en tiempo real)
+  // ✅ Cargar registros de caja de cada terminal
   useEffect(() => {
     if (terminals.length === 0) return;
 
-    const unsubscribes: (() => void)[] = [];
-
-    terminals.forEach(terminal => {
-      const terminalId = terminal.id.toString();
-      
-      // ✅ CAMBIO: Usar suscripción en tiempo real
-      const unsub = syncService.subscribeToRegisterRealtime(terminalId, (data: CashRegisterData | null) => {
-        setRegisters(prev => ({
-          ...prev,
-          [terminalId]: data
-        }));
-        setRegistersLoaded(prev => ({
-          ...prev,
-          [terminalId]: true
-        }));
-      });
-      unsubscribes.push(unsub);
-    });
-
-    return () => {
-      unsubscribes.forEach(unsub => unsub());
+    const loadRegisters = async () => {
+      for (const terminal of terminals) {
+        const terminalId = terminal.id.toString();
+        try {
+          const register = await syncService.getRegisterByTerminal(terminalId);
+          setRegisters(prev => ({ ...prev, [terminalId]: register }));
+        } catch (error) {
+          console.error(`Error loading register for terminal ${terminalId}:`, error);
+          setRegisters(prev => ({ ...prev, [terminalId]: null }));
+        } finally {
+          setRegistersLoaded(prev => ({ ...prev, [terminalId]: true }));
+        }
+      }
     };
+    
+    loadRegisters();
+    
+    // Polling cada 3 segundos
+    const interval = setInterval(loadRegisters, 3000);
+    return () => clearInterval(interval);
   }, [terminals]);
 
   // ✅ Verificar si los registros de todas las terminales están cargados
@@ -185,7 +190,7 @@ export default function CashSupervision() {
     return { bs: reg.openAmountBs, usd: reg.openAmountUsd };
   };
 
-  // ✅ NUEVA FUNCIÓN: Sincronizar todas las cajas remotamente
+  // ✅ Sincronizar todas las cajas remotamente
   const handleSyncAllTerminals = async () => {
     if (isSyncingAll) return;
     
@@ -269,7 +274,7 @@ export default function CashSupervision() {
                 <th className="p-3 text-center text-[10px] font-black uppercase">Estado</th>
                 <th className="p-3 text-center text-[10px] font-black uppercase">Hora Apertura</th>
                 <th className="p-3 text-center text-[10px] font-black uppercase">Fondo Apertura</th>
-                <th className="p-3 text-center text-[10px] font-black uppercase">Acciones</th>
+                <th className="p-3 text-center text-[10px) font-black uppercase">Acciones</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">

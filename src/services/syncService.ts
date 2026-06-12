@@ -1,1072 +1,756 @@
-"use client";
+import { turso, executeQuery, getById, getAll, insert, update, remove } from '@/lib/db';
 
-import { db, rtdb } from '@/lib/firebase';
-import { 
-  doc, setDoc, deleteDoc, 
-  collection, getDocs, writeBatch, runTransaction, updateDoc, query, where, orderBy, limit, getDoc,
-  onSnapshot
-} from 'firebase/firestore';
-import { ref, set, onValue } from 'firebase/database';
-import { localCache } from '@/lib/localCache';
-import { Supplier } from '@/lib/types';
+// ============================================================
+// USUARIOS
+// ============================================================
 
-// ========== INTERFACES ==========
-interface PendingOperation {
-  id: string;
-  type: string;
-  data: any;
-  timestamp: number;
-  retries: number;
-}
-
-// ========== VARIABLES GLOBALES ==========
-let pendingQueue: PendingOperation[] = [];
-let isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
-let isSyncing = false;
-let isLoggingOut = false;
-let isStockInitialized = false;
-
-// ========== INICIALIZACIÓN ==========
-async function loadPendingQueue() {
-  pendingQueue = await localCache.getAllPending();
-}
-loadPendingQueue();
-
-if (typeof window !== 'undefined') {
-  window.addEventListener('online', () => { 
-    isOnline = true; 
-    console.log("🌐 Conexión recuperada. Procesando cola...");
-    processQueue(); 
+export async function getUserByUid(uid: string) {
+  const result = await turso.execute({
+    sql: 'SELECT uid, name, email, role, terminal_id as terminalId, status FROM users WHERE uid = ?',
+    args: [uid]
   });
-  window.addEventListener('offline', () => { 
-    isOnline = false; 
-    console.log("🔌 Modo Offline activado.");
+  return result.rows[0] || null;
+}
+
+export async function saveUser(user: any) {
+  await turso.execute({
+    sql: `INSERT OR REPLACE INTO users (uid, name, email, role, terminal_id, status) 
+          VALUES (?, ?, ?, ?, ?, ?)`,
+    args: [user.uid, user.name, user.email, user.role, user.terminalId || null, user.status || 'active']
   });
 }
 
-// ========== UTILIDADES ==========
-const deepClean = (obj: any): any => {
-  if (obj === null || obj === undefined) return null;
-  if (Array.isArray(obj)) {
-    return obj.map(v => deepClean(v)).filter(v => v !== null);
+export async function getAllUsers() {
+  const result = await turso.execute('SELECT uid, name, email, role, terminal_id as terminalId, status FROM users');
+  return result.rows;
+}
+
+export async function deleteUser(uid: string) {
+  await turso.execute({ sql: 'DELETE FROM users WHERE uid = ?', args: [uid] });
+}
+
+export async function updateUserTerminalId(userId: string, terminalId: string | null) {
+  await turso.execute({
+    sql: 'UPDATE users SET terminal_id = ? WHERE uid = ?',
+    args: [terminalId, userId]
+  });
+}
+
+// ============================================================
+// PRODUCTOS
+// ============================================================
+
+export async function getAllProducts() {
+  const result = await turso.execute(`SELECT 
+    id, barcode, name, department, category, stock, min_stock as minStock,
+    cost_usd as costUsd, cost_bs as costBs, profit_percent as profitPercent,
+    price_usd as priceUsd, price_bs as priceBs, price_retail as priceRetail,
+    price_wholesale as priceWholesale, price_cost as priceCost,
+    iva_type as ivaType, iva_percentage as ivaPercentage,
+    is_kit as isKit, kit_has_own_stock as kitHasOwnStock, kit_components as kitComponents,
+    is_price_fixed as isPriceFixed, activo
+    FROM products WHERE activo = 1`);
+  return result.rows;
+}
+
+export async function saveProduct(product: any) {
+  await turso.execute({
+    sql: `INSERT OR REPLACE INTO products (
+      id, barcode, name, department, category, stock, min_stock,
+      cost_usd, cost_bs, profit_percent, price_usd, price_bs, price_retail,
+      price_wholesale, price_cost, iva_type, iva_percentage,
+      is_kit, kit_has_own_stock, kit_components, is_price_fixed, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+    args: [
+      product.id, product.barcode, product.name, product.department || null, product.category,
+      product.stock, product.minStock || 5,
+      product.costUsd || 0, product.costBs || 0, product.profitPercent || 30,
+      product.priceUsd || 0, product.priceBs || 0, product.priceRetail || 0,
+      product.priceWholesale || 0, product.priceCost || 0,
+      product.ivaType || 'con_iva', product.ivaPercentage || 16,
+      product.isKit ? 1 : 0, product.kitHasOwnStock ? 1 : 0,
+      product.kitComponents ? JSON.stringify(product.kitComponents) : null,
+      product.isPriceFixed ? 1 : 0
+    ]
+  });
+}
+
+export async function saveProducts(products: any[]) {
+  for (const product of products) {
+    await saveProduct(product);
   }
-  if (typeof obj === 'object') {
-    const cleaned: any = {};
-    Object.keys(obj).forEach(key => {
-      const val = deepClean(obj[key]);
-      if (val !== null && val !== undefined) cleaned[key] = val;
-    });
-    return Object.keys(cleaned).length > 0 ? cleaned : null;
-  }
-  if (typeof obj === 'number' && (isNaN(obj) || !isFinite(obj))) return 0;
-  return obj;
-};
+}
 
-const sanitizeForFirestore = (obj: any) => {
-  if (obj === null || obj === undefined) return {};
-  const result = deepClean(obj);
-  return result === null ? {} : result;
-};
+export async function deleteProduct(id: number) {
+  await turso.execute({ sql: 'UPDATE products SET activo = 0 WHERE id = ?', args: [id] });
+}
 
-const roundTo2 = (num: number): number => Math.round(num * 100) / 100;
-const roundTo4 = (num: number): number => Math.round(num * 10000) / 10000;
-
-// ========== COLA DE OPERACIONES PENDIENTES ==========
-async function processQueue() {
-  if (!isOnline || isSyncing || pendingQueue.length === 0 || !db) return;
-  isSyncing = true;
-  const toRetry: PendingOperation[] = [];
+export async function updateProductWithWeightedAverageCost(productId: number, newQty: number, newCostUsd: number, exchangeRate: number) {
+  const product = await getById('products', productId);
+  if (!product) return;
   
-  console.log(`⏳ Sincronizando ${pendingQueue.length} operaciones pendientes...`);
-
-  for (const op of pendingQueue) {
-    try {
-      const data = sanitizeForFirestore(op.data);
-      switch(op.type) {
-        case 'saveProducts':
-          const pBatch = writeBatch(db);
-          (data as any[]).forEach((p: any) => pBatch.set(doc(db, 'products', p.id.toString()), { ...p, updatedAt: Date.now() }));
-          await pBatch.commit();
-          break;
-        case 'updateProductStock':
-          await updateDoc(doc(db, 'products', data.id.toString()), { stock: data.newStock, updatedAt: Date.now() });
-          break;
-        case 'updateStockRTDB':
-          if (rtdb) {
-            const stockRef = ref(rtdb, `stock/${data.productId}`);
-            await set(stockRef, data.newStock);
-          }
-          break;
-        case 'saveTransaction':
-          await setDoc(doc(db, 'transactions', data.id.toString()), { ...data, createdAt: Date.now() });
-          break;
-        case 'saveAccountingEntry':
-          await setDoc(doc(db, 'accounting_entries', data.id.toString()), { ...data, createdAt: Date.now() });
-          break;
-        case 'saveSupplier':
-          await setDoc(doc(db, 'suppliers', data.id.toString()), { ...data, updatedAt: Date.now() });
-          break;
-        case 'savePurchaseInvoice':
-          await setDoc(doc(db, 'purchase_invoices', data.id.toString()), data);
-          break;
-        case 'saveSupplierPayment':
-          await setDoc(doc(db, 'supplier_payments', data.id.toString()), { ...data, createdAt: Date.now() });
-          break;
-        case 'saveRegister':
-          if (data.terminalId) {
-            await setDoc(doc(db, 'registers', data.terminalId), { ...data.reg, updatedAt: Date.now() }, { merge: true });
-          } else {
-            await setDoc(doc(db, 'register', 'current'), { ...data, updatedAt: Date.now() }, { merge: true });
-          }
-          break;
-        case 'saveClient':
-          await setDoc(doc(db, 'clients', data.id.toString()), { ...data, updatedAt: Date.now() });
-          break;
-        case 'saveAccount':
-          await setDoc(doc(db, 'accounts', data.id.toString()), { ...data, updatedAt: Date.now() });
-          break;
-        case 'saveGlobalSettings':
-          await setDoc(doc(db, 'global_settings', 'global'), { ...data, updatedAt: Date.now() });
-          break;
-        case 'saveKardexEntry':
-          await setDoc(doc(db, 'kardex_entries', data.id), { ...data, createdAt: Date.now() });
-          break;
-        case 'saveTerminal':
-          await setDoc(doc(db, 'terminals', data.name), { ...data, updatedAt: Date.now() });
-          break;
-        case 'saveCashClose':
-          await setDoc(doc(db, 'cash_closes', data.id), { ...data, createdAt: Date.now() });
-          break;
-        case 'saveCashSession':
-          await setDoc(doc(db, 'cash_sessions', data.id), { ...data, updatedAt: Date.now() });
-          break;
-        case 'updateCashSession':
-          await setDoc(doc(db, 'cash_sessions', data.id), { ...data, updatedAt: Date.now() });
-          break;
-        case 'updateTerminal':
-          await setDoc(doc(db, 'terminals', data.id), { ...data.updates, updatedAt: Date.now() }, { merge: true });
-          break;
-        case 'updateUserTerminalId':
-          await updateDoc(doc(db, 'users', data.userId), { terminalId: data.terminalId, updatedAt: Date.now() });
-          break;
-        case 'deleteProduct':
-          await deleteDoc(doc(db, 'products', data.id.toString()));
-          if (rtdb) {
-            const stockRef = ref(rtdb, `stock/${data.id}`);
-            await set(stockRef, null);
-          }
-          break;
-        case 'deleteClient':
-          await deleteDoc(doc(db, 'clients', data.id.toString()));
-          break;
-        case 'deleteTransaction':
-          await deleteDoc(doc(db, 'transactions', data.id.toString()));
-          break;
-      }
-      await localCache.deletePending(op.id);
-    } catch (error) {
-      console.error(`❌ Error en operación ${op.type}:`, error);
-      op.retries++;
-      if (op.retries < 5) toRetry.push(op);
-    }
+  const oldStock = (product.stock as number) || 0;
+  const oldCost = (product.cost_usd as number) || 0;
+  const newStock = oldStock + newQty;
+  let newAvgCost = oldCost;
+  
+  if (newStock > 0) {
+    newAvgCost = ((oldStock * oldCost) + (newQty * newCostUsd)) / newStock;
   }
-  pendingQueue = toRetry;
-  await localCache.clearPending();
-  for (const op of pendingQueue) {
-    await localCache.savePendingOperation(op);
-  }
-  isSyncing = false;
-  console.log("✅ Sincronización completada.");
-}
-
-async function addToQueue(type: string, data: any) {
-  const op: PendingOperation = { 
-    id: `${Date.now()}_${Math.random()}`, 
-    type, 
-    data, 
-    timestamp: Date.now(), 
-    retries: 0 
-  };
-  await localCache.savePendingOperation(op);
-  pendingQueue.push(op);
-  if (isOnline) processQueue();
-}
-
-// ========== FUNCIONES DE STOCK (RTDB en tiempo real) ==========
-const updateStockInRTDB = async (productId: number, newStock: number) => {
-  if (!rtdb) return;
-  const stockRef = ref(rtdb, `stock/${productId}`);
-  if (!isOnline) {
-    await addToQueue('updateStockRTDB', { productId, newStock });
-    return;
-  }
-  await set(stockRef, newStock);
-};
-
-// ========== NUEVAS FUNCIONES PARA COMANDOS REMOTOS (SYNC DESDE ADMINISTRADOR) ==========
-async function sendSyncCommandToTerminal(terminalId: string): Promise<void> {
-  if (!rtdb) {
-    console.warn("⚠️ RTDB no disponible, no se puede enviar comando");
-    return;
-  }
-  const commandRef = ref(rtdb, `sync_commands/${terminalId}`);
-  await set(commandRef, { command: 'sync', timestamp: Date.now() });
-  console.log(`📡 Comando sync enviado a terminal ${terminalId}`);
-}
-
-async function sendSyncCommandToAllTerminals(): Promise<void> {
-  if (!db) {
-    console.warn("⚠️ Firestore no disponible, no se pueden obtener terminales");
-    return;
-  }
-  try {
-    const terminalsSnap = await getDocs(collection(db, 'terminals'));
-    const terminals = terminalsSnap.docs.map(doc => doc.id);
-    if (terminals.length === 0) {
-      console.log("ℹ️ No hay terminales registradas");
-      return;
-    }
-    for (const terminalId of terminals) {
-      await sendSyncCommandToTerminal(terminalId);
-    }
-    console.log(`📡 Comando sync enviado a ${terminals.length} terminales`);
-  } catch (error) {
-    console.error("❌ Error al enviar comandos a todas las terminales:", error);
-  }
-}
-
-function listenForSyncCommands(terminalId: string, callback: () => void): () => void {
-  if (!rtdb) {
-    console.warn("⚠️ RTDB no disponible, no se puede escuchar comandos");
-    return () => {};
-  }
-  const commandRef = ref(rtdb, `sync_commands/${terminalId}`);
-  const unsubscribe = onValue(commandRef, (snapshot) => {
-    const data = snapshot.val();
-    if (data && data.command === 'sync') {
-      console.log(`📢 Terminal ${terminalId} recibió comando sync`);
-      callback();
-      // Limpiar el comando después de ejecutarlo (para no repetir)
-      set(commandRef, null).catch(err => console.warn("Error al limpiar comando:", err));
-    }
+  
+  await turso.execute({
+    sql: `UPDATE products SET 
+      stock = ?, cost_usd = ?, cost_bs = ?, updated_at = datetime('now')
+      WHERE id = ?`,
+    args: [newStock, newAvgCost, newAvgCost * exchangeRate, productId]
   });
-  return unsubscribe;
 }
 
-// ========== FUNCIONES DE CARGA INICIAL Y REFRESCO ==========
-async function fetchAndCacheCollection(name: string, queryFn?: () => Promise<any[]>) {
-  if (!db) return [];
-  try {
-    let data: any[];
-    if (queryFn) {
-      data = await queryFn();
-    } else {
-      const snap = await getDocs(collection(db, name));
-      data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    }
-    await localCache.saveCollection(name, data);
-    console.log(`📦 Cargada colección: ${name} (${data.length} docs)`);
-    return data;
-  } catch (error) {
-    console.error(`Error cargando ${name}:`, error);
-    return [];
+// ============================================================
+// CLIENTES
+// ============================================================
+
+export async function getAllClients() {
+  const result = await turso.execute('SELECT id, name, cedula, phone, address, debt FROM clients');
+  return result.rows;
+}
+
+export async function saveClient(client: any) {
+  await turso.execute({
+    sql: `INSERT OR REPLACE INTO clients (id, name, cedula, phone, address, debt)
+          VALUES (?, ?, ?, ?, ?, ?)`,
+    args: [client.id, client.name, client.cedula, client.phone || '', client.address || '', client.debt || 0]
+  });
+}
+
+export async function deleteClient(id: number) {
+  await turso.execute({ sql: 'DELETE FROM clients WHERE id = ?', args: [id] });
+}
+
+// ============================================================
+// TRANSACCIONES
+// ============================================================
+
+export async function getAllTransactions() {
+  const result = await turso.execute(`SELECT 
+    id, date, type, items, subtotal, iva, total, total_usd as totalUsd,
+    pay_method as payMethod, paid_bs as paidBs, change,
+    client_id as clientId, client_name as clientName,
+    exchange_rate as exchangeRate, receipt_number as receiptNumber,
+    notes, session_id as sessionId, terminal_id as terminalId
+    FROM transactions ORDER BY date DESC`);
+  return result.rows;
+}
+
+export async function saveTransaction(transaction: any) {
+  await turso.execute({
+    sql: `INSERT OR REPLACE INTO transactions (
+      id, date, type, items, subtotal, iva, total, total_usd,
+      pay_method, paid_bs, change, client_id, client_name,
+      exchange_rate, receipt_number, notes, session_id, terminal_id
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    args: [
+      transaction.id, transaction.date, transaction.type,
+      transaction.items ? JSON.stringify(transaction.items) : null,
+      transaction.subtotal || 0, transaction.iva || 0, transaction.total || 0,
+      transaction.totalUsd || 0,
+      transaction.payMethod || null, transaction.paidBs || 0, transaction.change || 0,
+      transaction.clientId || null, transaction.clientName || null,
+      transaction.exchangeRate || null, transaction.receiptNumber || null,
+      transaction.notes || null, transaction.sessionId || null, transaction.terminalId || null
+    ]
+  });
+}
+
+// ============================================================
+// CUENTAS POR COBRAR
+// ============================================================
+
+export async function getAllAccounts() {
+  const result = await turso.execute(`SELECT 
+    id, client_id as clientId, client_name as clientName, client_cedula as clientCedula,
+    amount_bs as amountBs, amount_usd as amountUsd, paid_amount as paidAmount,
+    status, date, products, exchange_rate as exchangeRate, tx_id as txId
+    FROM accounts`);
+  return result.rows;
+}
+
+export async function saveAccount(account: any) {
+  await turso.execute({
+    sql: `INSERT OR REPLACE INTO accounts (
+      id, client_id, client_name, client_cedula, amount_bs, amount_usd,
+      paid_amount, status, date, products, exchange_rate, tx_id
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    args: [
+      account.id, account.clientId, account.clientName || null, account.clientCedula || null,
+      account.amountBs, account.amountUsd || account.amountBs / (account.exchangeRate || 1),
+      account.paidAmount || 0, account.status || 'pendiente',
+      account.date, account.products || null, account.exchangeRate || null, account.txId || null
+    ]
+  });
+}
+
+export async function deleteAccount(id: number) {
+  await turso.execute({ sql: 'DELETE FROM accounts WHERE id = ?', args: [id] });
+}
+
+// ============================================================
+// PROVEEDORES
+// ============================================================
+
+export async function getAllSuppliers() {
+  const result = await turso.execute('SELECT id, name, rif, phone, email, address, contact_person as contactPerson, total_debt as totalDebt FROM suppliers');
+  return result.rows;
+}
+
+export async function saveSupplier(supplier: any) {
+  await turso.execute({
+    sql: `INSERT OR REPLACE INTO suppliers (id, name, rif, phone, email, address, contact_person, total_debt)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    args: [supplier.id, supplier.name, supplier.rif, supplier.phone || '', supplier.email || '',
+           supplier.address || '', supplier.contactPerson || '', supplier.totalDebt || 0]
+  });
+}
+
+export async function deleteSupplier(id: number) {
+  await turso.execute({ sql: 'DELETE FROM suppliers WHERE id = ?', args: [id] });
+}
+
+// ============================================================
+// FACTURAS DE COMPRA
+// ============================================================
+
+export async function getAllPurchaseInvoices() {
+  const result = await turso.execute(`SELECT 
+    id, supplier_id as supplierId, invoice_number as invoiceNumber,
+    date, due_date as dueDate, subtotal, iva, total,
+    paid_amount as paidAmount, status, notes, exchange_rate as exchangeRate,
+    items_count as itemsCount
+    FROM purchase_invoices`);
+  return result.rows;
+}
+
+export async function savePurchaseInvoice(invoice: any) {
+  await turso.execute({
+    sql: `INSERT OR REPLACE INTO purchase_invoices (
+      id, supplier_id, invoice_number, date, due_date, subtotal, iva,
+      total, paid_amount, status, notes, exchange_rate, items_count
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    args: [
+      invoice.id, invoice.supplierId, invoice.invoiceNumber, invoice.date,
+      invoice.dueDate || null, invoice.subtotal || 0, invoice.iva || 0,
+      invoice.total, invoice.paidAmount || 0, invoice.status || 'pendiente',
+      invoice.notes || null, invoice.exchangeRate || null, invoice.itemsCount || 0
+    ]
+  });
+}
+
+// ============================================================
+// ITEMS DE COMPRA
+// ============================================================
+
+export async function getAllPurchaseItems() {
+  const result = await turso.execute(`SELECT 
+    id, invoice_id as invoiceId, product_id as productId,
+    product_name as productName, qty, cost_usd as costUsd, total_usd as totalUsd
+    FROM purchase_items`);
+  return result.rows;
+}
+
+export async function savePurchaseInvoiceItems(invoiceId: number, items: any[]) {
+  for (const item of items) {
+    await turso.execute({
+      sql: `INSERT OR REPLACE INTO purchase_items (
+        id, invoice_id, product_id, product_name, qty, cost_usd, total_usd
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      args: [item.id, invoiceId, item.productId, item.productName, item.qty, item.costUsd, item.totalUsd]
+    });
   }
 }
 
-// ========== SERVICIO PRINCIPAL ==========
+// ============================================================
+// PAGOS A PROVEEDORES
+// ============================================================
+
+export async function getAllSupplierPayments() {
+  const result = await turso.execute(`SELECT 
+    id, supplier_id as supplierId, invoice_id as invoiceId,
+    date, amount, method, reference, bank, notes
+    FROM supplier_payments`);
+  return result.rows;
+}
+
+export async function saveSupplierPayment(payment: any) {
+  await turso.execute({
+    sql: `INSERT OR REPLACE INTO supplier_payments (
+      id, supplier_id, invoice_id, date, amount, method, reference, bank, notes
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    args: [
+      payment.id, payment.supplierId, payment.invoiceId || null, payment.date,
+      payment.amount, payment.method, payment.reference || null, payment.bank || null,
+      payment.notes || null
+    ]
+  });
+}
+
+export async function deleteSupplierPayment(id: number) {
+  await turso.execute({ sql: 'DELETE FROM supplier_payments WHERE id = ?', args: [id] });
+}
+
+// ============================================================
+// ASIENTOS CONTABLES
+// ============================================================
+
+export async function getAllAccountingEntries() {
+  const result = await turso.execute(`SELECT 
+    id, date, type, category, subcategory, concept, description,
+    amount, reference_id as referenceId, reference_type as referenceType
+    FROM accounting_entries ORDER BY date DESC`);
+  return result.rows;
+}
+
+export async function saveAccountingEntry(entry: any) {
+  await turso.execute({
+    sql: `INSERT OR REPLACE INTO accounting_entries (
+      id, date, type, category, subcategory, concept, description,
+      amount, reference_id, reference_type
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    args: [
+      entry.id, entry.date, entry.type, entry.category, entry.subcategory || null,
+      entry.concept || null, entry.description || null, entry.amount,
+      entry.referenceId || null, entry.referenceType || null
+    ]
+  });
+}
+
+// ============================================================
+// KARDEX
+// ============================================================
+
+export async function getAllKardexEntries() {
+  const result = await turso.execute(`SELECT 
+    id, product_id as productId, date, type, quantity,
+    previous_stock as previousStock, new_stock as newStock,
+    reference, note, cost_usd as costUsd
+    FROM kardex_entries ORDER BY date DESC`);
+  return result.rows;
+}
+
+export async function saveKardexEntry(entry: any) {
+  await turso.execute({
+    sql: `INSERT OR REPLACE INTO kardex_entries (
+      id, product_id, date, type, quantity, previous_stock, new_stock,
+      reference, note, cost_usd
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    args: [
+      entry.id, entry.productId, entry.date, entry.type, entry.quantity,
+      entry.previousStock, entry.newStock, entry.reference || null,
+      entry.note || null, entry.costUsd || null
+    ]
+  });
+}
+
+// ============================================================
+// REGISTROS DE CAJA (SESIONES)
+// ============================================================
+
+export async function getRegisterByTerminal(terminalId: string) {
+  const result = await turso.execute({
+    sql: `SELECT terminal_id as terminalId, is_open as isOpen, open_time as openTime,
+          open_amount_bs as openAmountBs, open_amount_usd as openAmountUsd,
+          exchange_rate as exchangeRate, txs
+          FROM registers WHERE terminal_id = ?`,
+    args: [terminalId]
+  });
+  if (!result.rows[0]) return null;
+  const row = result.rows[0];
+  return {
+    terminalId: row.terminalId,
+    isOpen: row.isOpen === 1,
+    openTime: row.openTime,
+    openAmountBs: row.openAmountBs,
+    openAmountUsd: row.openAmountUsd,
+    exchangeRate: row.exchangeRate,
+    txs: row.txs ? JSON.parse(row.txs as string) : []
+  };
+}
+
+export async function saveRegisterByTerminal(terminalId: string, register: any) {
+  await turso.execute({
+    sql: `INSERT OR REPLACE INTO registers (
+      terminal_id, is_open, open_time, open_amount_bs, open_amount_usd,
+      exchange_rate, txs
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    args: [
+      terminalId, register.isOpen ? 1 : 0, register.openTime || null,
+      register.openAmountBs || 0, register.openAmountUsd || 0,
+      register.exchangeRate || null, register.txs ? JSON.stringify(register.txs) : '[]'
+    ]
+  });
+}
+
+// ============================================================
+// CIERRES DE CAJA
+// ============================================================
+
+export async function getAllCashCloses() {
+  const result = await turso.execute('SELECT id, fecha, tipo, data FROM cash_closes ORDER BY fecha DESC');
+  return result.rows.map((row: any) => ({ ...JSON.parse(row.data), id: row.id, fecha: row.fecha, tipo: row.tipo }));
+}
+
+export async function saveCashClose(close: any) {
+  await turso.execute({
+    sql: 'INSERT OR REPLACE INTO cash_closes (id, fecha, tipo, data) VALUES (?, ?, ?, ?)',
+    args: [close.id, close.fecha, close.tipo, JSON.stringify(close)]
+  });
+}
+
+// ============================================================
+// TERMINALES
+// ============================================================
+
+export async function getAllTerminals() {
+  const result = await turso.execute(`SELECT 
+    id, name, description, location, assigned_to as assignedTo,
+    status, is_blocked as isBlocked
+    FROM terminals`);
+  return result.rows;
+}
+
+export async function saveTerminal(terminal: any) {
+  await turso.execute({
+    sql: `INSERT OR REPLACE INTO terminals (
+      id, name, description, location, assigned_to, status, is_blocked, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+    args: [
+      terminal.id, terminal.name, terminal.description || null,
+      terminal.location || null, terminal.assignedTo || null,
+      terminal.status || 'active', terminal.isBlocked ? 1 : 0
+    ]
+  });
+}
+
+export async function deleteTerminal(id: string) {
+  await turso.execute({ sql: 'DELETE FROM terminals WHERE id = ?', args: [id] });
+}
+
+export async function updateTerminalBlockStatus(terminalId: string, isBlocked: boolean) {
+  await turso.execute({
+    sql: 'UPDATE terminals SET is_blocked = ?, updated_at = datetime("now") WHERE id = ?',
+    args: [isBlocked ? 1 : 0, terminalId]
+  });
+}
+
+// ============================================================
+// CONFIGURACIÓN GLOBAL
+// ============================================================
+
+export async function getGlobalSettings() {
+  const result = await turso.execute('SELECT key, value FROM global_settings');
+  const settings: any = {};
+  for (const row of result.rows) {
+    try {
+      settings[row.key as string] = JSON.parse(row.value as string);
+    } catch {
+      settings[row.key as string] = row.value;
+    }
+  }
+  return settings;
+}
+
+export async function saveGlobalSettings(settings: any) {
+  for (const [key, value] of Object.entries(settings)) {
+    await turso.execute({
+      sql: 'INSERT OR REPLACE INTO global_settings (key, value, updated_at) VALUES (?, ?, datetime("now"))',
+      args: [key, JSON.stringify(value)]
+    });
+  }
+}
+
+export async function getAdminCode() {
+  const result = await turso.execute({
+    sql: "SELECT value FROM global_settings WHERE key = 'admin_code'"
+  });
+  if (result.rows.length === 0) return { code: '123456' };
+  return { code: result.rows[0].value };
+}
+
+// ============================================================
+// SUSCRIPCIONES Y LOGICA DE SINCRONIZACION
+// ============================================================
+
+export function subscribeToTerminals(callback: (data: any[]) => void) {
+  const fetchData = async () => {
+    const data = await getAllTerminals();
+    callback(data);
+  };
+  fetchData();
+  const interval = setInterval(fetchData, 3000);
+  return () => clearInterval(interval);
+}
+
+export function subscribeToTerminalsRealtime(callback: (data: any[]) => void) {
+  return subscribeToTerminals(callback);
+}
+
+export function subscribeToTerminalRealtime(terminalId: string, callback: (data: any) => void) {
+  const fetchData = async () => {
+    const data = await getRegisterByTerminal(terminalId);
+    callback(data);
+  };
+  fetchData();
+  const interval = setInterval(fetchData, 3000);
+  return () => clearInterval(interval);
+}
+
+export function subscribeToRegisterRealtime(terminalId: string, callback: (data: any) => void) {
+  return subscribeToTerminalRealtime(terminalId, callback);
+}
+
+export function subscribeToPurchaseInvoices(callback: (data: any[]) => void) {
+  const fetchData = async () => {
+    const data = await getAllPurchaseInvoices();
+    callback(data);
+  };
+  fetchData();
+  const interval = setInterval(fetchData, 3000);
+  return () => clearInterval(interval);
+}
+
+export function subscribeToPurchaseItems(callback: (data: any[]) => void) {
+  const fetchData = async () => {
+    const data = await getAllPurchaseItems();
+    callback(data);
+  };
+  fetchData();
+  const interval = setInterval(fetchData, 3000);
+  return () => clearInterval(interval);
+}
+
+export function subscribeToSupplierPayments(callback: (data: any[]) => void) {
+  const fetchData = async () => {
+    const data = await getAllSupplierPayments();
+    callback(data);
+  };
+  fetchData();
+  const interval = setInterval(fetchData, 3000);
+  return () => clearInterval(interval);
+}
+
+export function subscribeToSuppliersRealtime(callback: (data: any[]) => void) {
+  const fetchData = async () => {
+    const data = await getAllSuppliers();
+    callback(data);
+  };
+  fetchData();
+  const interval = setInterval(fetchData, 3000);
+  return () => clearInterval(interval);
+}
+
+export function subscribeToGlobalSettings(callback: (data: any) => void) {
+  const fetchData = async () => {
+    const data = await getGlobalSettings();
+    callback(data);
+  };
+  fetchData();
+  const interval = setInterval(fetchData, 3000);
+  return () => clearInterval(interval);
+}
+
+export function subscribeToKardex(callback: (data: any[]) => void) {
+  const fetchData = async () => {
+    const data = await getAllKardexEntries();
+    callback(data);
+  };
+  fetchData();
+  const interval = setInterval(fetchData, 3000);
+  return () => clearInterval(interval);
+}
+
+export function subscribeToStockRTDB(callback: (data: any) => void) {
+  return () => {};
+}
+
+export async function loadAllDataToCache() {
+  console.log('Pre-carga de datos (Turso) iniciada');
+}
+
+export async function syncAllPending() {
+  return true;
+}
+
+export function getPendingQueueLength() {
+  return 0;
+}
+
+export async function createCashSession(terminalId: string, userId: string, initialAmountUsd: number) {
+  const id = `SES-${Date.now()}-${terminalId}`;
+  await turso.execute({
+    sql: `INSERT INTO cash_sessions (id, terminal_id, user_id, open_time, open_amount_usd, status)
+          VALUES (?, ?, ?, datetime('now'), ?, 'open')`,
+    args: [id, terminalId, userId, initialAmountUsd]
+  });
+  return { id, terminalId, userId, openAmountUsd: initialAmountUsd };
+}
+
+export async function closeCashSession(sessionId: string, finalAmountUsd: number) {
+  await turso.execute({
+    sql: `UPDATE cash_sessions SET close_time = datetime('now'), close_amount_usd = ?, status = 'closed'
+          WHERE id = ?`,
+    args: [finalAmountUsd, sessionId]
+  });
+}
+
+export async function getActiveSessionByTerminal(terminalId: string) {
+  const result = await turso.execute({
+    sql: `SELECT * FROM cash_sessions WHERE terminal_id = ? AND status = 'open' ORDER BY open_time DESC LIMIT 1`,
+    args: [terminalId]
+  });
+  return result.rows[0] || null;
+}
+
+export function subscribeToActiveSession(terminalId: string, callback: (session: any) => void) {
+  const interval = setInterval(async () => {
+    const session = await getActiveSessionByTerminal(terminalId);
+    callback(session);
+  }, 5000);
+  return () => clearInterval(interval);
+}
+
+export async function runAtomicSale(terminalId: string, tx: any, updates: any) {
+  await saveTransaction(tx);
+  if (updates.products) {
+    for (const [id, val] of (updates.products as Map<any, any>).entries()) {
+      await turso.execute({
+        sql: 'UPDATE products SET stock = ? WHERE id = ?',
+        args: [val.newStock, id]
+      });
+    }
+  }
+  if (updates.kardexEntries) {
+    for (const entry of updates.kardexEntries) {
+      await saveKardexEntry(entry);
+    }
+  }
+  if (updates.accountingEntry) {
+    await saveAccountingEntry(updates.accountingEntry);
+  }
+  if (updates.registerUpdate) {
+    const reg = await getRegisterByTerminal(terminalId);
+    if (reg) {
+      await saveRegisterByTerminal(terminalId, { ...reg, txs: updates.registerUpdate.txs });
+    }
+  }
+}
+
+export async function updateStockInRTDB(productId: number, stock: number) {
+}
+
+export function listenForSyncCommands(terminalId: string, callback: () => void) {
+  return () => {};
+}
+
+export function unsubscribeAll() {}
+
+export function setLoggingOut(val: boolean) {}
+
+export async function clearRegisterByTerminal(terminalId: string) {
+  await turso.execute({
+    sql: 'UPDATE registers SET is_open = 0, txs = "[]" WHERE terminal_id = ?',
+    args: [terminalId]
+  });
+}
+
+export async function sendSyncCommandToAllTerminals() {}
+
+export async function saveKardexBatch(entries: any[]) {
+  for (const e of entries) await saveKardexEntry(e);
+}
+
+export async function saveAccountingBatch(entries: any[]) {
+  for (const e of entries) await saveAccountingEntry(e);
+}
+
+// ============================================================
+// OBJETO EXPORTADO
+// ============================================================
+
 export const syncService = {
-  setLoggingOut(status: boolean) {
-    isLoggingOut = status;
-  },
-
-  unsubscribeAll() {
-    console.log("No hay suscripciones activas (modo offline-first)");
-  },
-
-  // ========== CARGA MASIVA AL INICIAR ==========
-  async loadAllDataToCache() {
-    console.log("🔄 Descargando todas las colecciones a caché local...");
-    await Promise.all([
-      this.refreshProducts(),
-      this.refreshClients(),
-      this.refreshTransactions(),
-      this.refreshAccounts(),
-      this.refreshAccountingEntries(),
-      this.refreshSuppliers(),
-      this.refreshPurchaseInvoices(),
-      this.refreshKardexEntries(),
-      this.refreshTerminals(),
-      this.refreshGlobalSettings(),
-      this.refreshCashCloses(),
-    ]);
-    console.log("✅ Caché local actualizada.");
-  },
-
-  // Métodos de refresco individuales
-  async refreshProducts() {
-    const snap = await getDocs(query(collection(db, 'products'), limit(2000)));
-    const data = snap.docs.map(d => ({ id: parseInt(d.id), ...d.data() }));
-    await localCache.saveCollection('products', data);
-    return data;
-  },
-  async refreshClients() {
-    const snap = await getDocs(collection(db, 'clients'));
-    const data = snap.docs.map(d => ({ id: parseInt(d.id), ...d.data() }));
-    await localCache.saveCollection('clients', data);
-    return data;
-  },
-  async refreshTransactions() {
-    const snap = await getDocs(query(collection(db, 'transactions'), orderBy('date', 'desc'), limit(1000)));
-    const data = snap.docs.map(d => ({ id: parseInt(d.id), ...d.data() }));
-    await localCache.saveCollection('transactions', data);
-    return data;
-  },
-  async refreshAccounts() {
-    const snap = await getDocs(collection(db, 'accounts'));
-    const data = snap.docs.map(d => d.data());
-    await localCache.saveCollection('accounts', data);
-    return data;
-  },
-  async refreshAccountingEntries() {
-    const snap = await getDocs(query(collection(db, 'accounting_entries'), orderBy('date', 'desc'), limit(2000)));
-    const data = snap.docs.map(d => d.data());
-    await localCache.saveCollection('accounting_entries', data);
-    return data;
-  },
-  async refreshSuppliers() {
-    const snap = await getDocs(collection(db, 'suppliers'));
-    const data = snap.docs.map(d => ({ id: parseInt(d.id), ...d.data() }));
-    await localCache.saveCollection('suppliers', data);
-    return data;
-  },
-  async refreshPurchaseInvoices() {
-    const snap = await getDocs(query(collection(db, 'purchase_invoices'), orderBy('date', 'desc'), limit(500)));
-    const data = snap.docs.map(d => d.data());
-    await localCache.saveCollection('purchase_invoices', data);
-    return data;
-  },
-  async refreshKardexEntries() {
-    const snap = await getDocs(query(collection(db, 'kardex_entries'), orderBy('createdAt', 'desc'), limit(2000)));
-    const data = snap.docs.map(d => d.data());
-    await localCache.saveCollection('kardex_entries', data);
-    return data;
-  },
-  async refreshTerminals() {
-    const snap = await getDocs(collection(db, 'terminals'));
-    const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    await localCache.saveCollection('terminals', data);
-    return data;
-  },
-  async refreshGlobalSettings() {
-    const snap = await getDoc(doc(db, 'global_settings', 'global'));
-    const data = snap.exists() ? snap.data() : null;
-    await localCache.saveCollection('global_settings', data ? [data] : []);
-    return data;
-  },
-  async refreshCashCloses() {
-    const snap = await getDocs(query(collection(db, 'cash_closes'), orderBy('fecha', 'desc')));
-    const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    await localCache.saveCollection('cash_closes', data);
-    return data;
-  },
-
-  // ========== LECTURAS DESDE CACHÉ LOCAL ==========
-  async getProducts() { return await localCache.getCollection('products'); },
-  async getClients() { return await localCache.getCollection('clients'); },
-  async getTransactions() { return await localCache.getCollection('transactions'); },
-  async getAllTransactions() { return await this.getTransactions(); },
-  async getAccounts() { return await localCache.getCollection('accounts'); },
-  async getAccountingEntries() { return await localCache.getCollection('accounting_entries'); },
-  async getAllAccountingEntries() { return await this.getAccountingEntries(); },
-  async getSuppliers() { return await localCache.getCollection('suppliers'); },
-  async getPurchaseInvoices() { return await localCache.getCollection('purchase_invoices'); },
-  async getPurchaseItems() { return await localCache.getCollection('purchase_items'); },
-  async getSupplierPayments() { return await localCache.getCollection('supplier_payments') || []; },
-  async getKardexEntries() { return await localCache.getCollection('kardex_entries'); },
-  async getAllKardexEntries() { return await this.getKardexEntries(); },
-  async getTerminals() { return await localCache.getCollection('terminals'); },
-  async getAllTerminals() { return await this.getTerminals(); },
-  async getTerminal(id: string) { 
-    const terminals = await this.getTerminals(); 
-    return terminals.find(t => t.id === id) || null; 
-  },
-  async getGlobalSettings() { 
-    const arr = await localCache.getCollection('global_settings'); 
-    return arr[0] || null; 
-  },
-  async getCashCloses() { return await localCache.getCollection('cash_closes'); },
-  async getAllCashCloses() { return await this.getCashCloses(); },
-  async getAdminCode() {
-    const settings = await this.getGlobalSettings();
-    if (settings && settings.adminCode) return { code: settings.adminCode };
-    return null;
-  },
-
-  // ========== SUSCRIPCIONES (COMPATIBILIDAD - DEVUELVEN DATOS UNA VEZ) ==========
-  subscribeToProducts(cb: (data: any[]) => void) { this.getProducts().then(cb); return () => {}; },
-  subscribeToClients(cb: (data: any[]) => void) { this.getClients().then(cb); return () => {}; },
-  subscribeToTransactions(cb: (data: any[]) => void) { this.getTransactions().then(cb); return () => {}; },
-  subscribeToAccounts(cb: (data: any[]) => void) { this.getAccounts().then(cb); return () => {}; },
-  subscribeToAccounting(cb: (data: any[]) => void) { this.getAccountingEntries().then(cb); return () => {}; },
-  subscribeToSuppliers(cb: (data: any[]) => void) { this.getSuppliers().then(cb); return () => {}; },
-  subscribeToPurchaseInvoices(cb: (data: any[]) => void) { this.getPurchaseInvoices().then(cb); return () => {}; },
-  subscribeToPurchaseItems(cb: (data: any[]) => void) { this.getPurchaseItems().then(cb); return () => {}; },
-  subscribeToSupplierPayments(cb: (data: any[]) => void) { this.getSupplierPayments().then(cb); return () => {}; },
-  subscribeToKardex(cb: (data: any[]) => void) { this.getKardexEntries().then(cb); return () => {}; },
-  subscribeToTerminals(cb: (data: any[]) => void) { this.getTerminals().then(cb); return () => {}; },
-  subscribeToTerminal(id: string, cb: (terminal: any) => void) { this.getTerminal(id).then(cb); return () => {}; },
-  subscribeToGlobalSettings(cb: (data: any) => void) { this.getGlobalSettings().then(cb); return () => {}; },
-  subscribeToCashCloses(cb: (data: any[]) => void) { this.getCashCloses().then(cb); return () => {}; },
-  subscribeToRegister(cb: (data: any) => void) { cb(null); return () => {}; },
-  subscribeToRegisterByTerminal(terminalId: string, cb: (data: any) => void) { cb(null); return () => {}; },
-  subscribeToActiveSession(terminalId: string, cb: (session: any | null) => void) { cb(null); return () => {}; },
-  subscribeToTransactionsBySession(sessionId: string, cb: (transactions: any[]) => void) { cb([]); return () => {}; },
-
-  // ✅ Suscripción en TIEMPO REAL para una terminal (bloqueo)
-  subscribeToTerminalRealtime(terminalId: string, callback: (terminal: any) => void): () => void {
-    if (!db || !terminalId) return () => {};
-    const terminalRef = doc(db, 'terminals', terminalId);
-    const unsub = onSnapshot(terminalRef, (snap) => {
-      callback(snap.exists() ? { id: snap.id, ...snap.data() } : null);
-    }, (error) => {
-      console.warn('⚠️ Error en suscripción tiempo real de terminal:', error);
-    });
-    return unsub;
-  },
-
-  // ✅ Suscripción en TIEMPO REAL para proveedores (lista completa)
-  subscribeToSuppliersRealtime(callback: (suppliers: Supplier[]) => void): () => void {
-    if (!db) return () => {};
-    const q = collection(db, 'suppliers');
-    const unsub = onSnapshot(q, (snapshot) => {
-      const data = snapshot.docs.map(doc => {
-        return { id: parseInt(doc.id), ...doc.data() } as Supplier;
-      });
-      callback(data);
-    }, (error) => {
-      console.warn('⚠️ Error en suscripción tiempo real de proveedores:', error);
-    });
-    return unsub;
-  },
-
-  // ✅ Suscripción en TIEMPO REAL para todas las terminales (lista completa)
-  subscribeToTerminalsRealtime(callback: (terminals: any[]) => void): () => void {
-    if (!db) return () => {};
-    const q = collection(db, 'terminals');
-    const unsub = onSnapshot(q, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      callback(data);
-    }, (error) => {
-      console.warn('⚠️ Error en suscripción tiempo real de terminales:', error);
-    });
-    return unsub;
-  },
-
-  // ✅ Suscripción en TIEMPO REAL para el registro de caja de una terminal
-  subscribeToRegisterRealtime(terminalId: string, callback: (register: any) => void): () => void {
-    if (!db || !terminalId) return () => {};
-    const registerRef = doc(db, 'registers', terminalId);
-    const unsub = onSnapshot(registerRef, (snap) => {
-      callback(snap.exists() ? snap.data() : null);
-    }, (error) => {
-      console.warn(`⚠️ Error en suscripción real de register/${terminalId}:`, error);
-    });
-    return unsub;
-  },
-
-  // ========== STOCK RTDB (TIEMPO REAL - SIN COSTO) ==========
-  subscribeToStockRTDB(callback: (stockData: Record<string, number>) => void) {
-    if (!rtdb) return () => {};
-    const stockRef = ref(rtdb, 'stock');
-    const unsub = onValue(stockRef, (snapshot) => {
-      callback(snapshot.val() || {});
-    }, (error) => {
-      console.warn('⚠️ Error en suscripción a RTDB stock:', error);
-    });
-    return unsub;
-  },
-
-  async getStockFromRTDB(productId: number): Promise<number | null> {
-    if (!rtdb || !isOnline) return null;
-    const stockRef = ref(rtdb, `stock/${productId}`);
-    const snapshot = await new Promise<any>((resolve) => {
-      onValue(stockRef, resolve, { onlyOnce: true });
-    });
-    return snapshot.val();
-  },
-
-  async initializeStockRTDB(products: any[]) {
-    if (isStockInitialized) {
-      console.log("📦 Stock ya inicializado, omitiendo nueva llamada.");
-      console.trace("🔍 Llamada a initializeStockRTDB ignorada desde:");
-      return;
-    }
-    if (!rtdb || !isOnline) return;
-    const stockRef = ref(rtdb, 'stock');
-    const snapshot = await new Promise<any>((resolve) => {
-      onValue(stockRef, resolve, { onlyOnce: true });
-    });
-    if (snapshot.exists()) {
-      console.log("📦 Stock ya existe en RTDB, omitiendo inicialización.");
-      isStockInitialized = true;
-      return;
-    }
-    const stockData: Record<string, number> = {};
-    products.forEach(p => { stockData[p.id.toString()] = p.stock; });
-    await set(stockRef, stockData);
-    console.log(`📦 Stock inicializado en RTDB: ${products.length} productos`);
-    isStockInitialized = true;
-  },
-
-  async updateStockInRTDB(productId: number, newStock: number) {
-    await updateStockInRTDB(productId, newStock);
-  },
-
-  // ========== ESCRITURAS (GUARDAN LOCAL + ENCOLAN) ==========
-  async saveProduct(product: any) {
-    const products = await this.getProducts();
-    const index = products.findIndex(p => p.id === product.id);
-    if (index !== -1) products[index] = product;
-    else products.push(product);
-    await localCache.saveCollection('products', products);
-    await addToQueue('saveProducts', [product]);
-    if (product.stock !== undefined) {
-      await this.updateStockInRTDB(product.id, product.stock);
-    }
-  },
-
-  async saveProducts(products: any[]) {
-    const current = await this.getProducts();
-    const map = new Map(current.map(p => [p.id, p]));
-    for (const p of products) map.set(p.id, p);
-    const updated = Array.from(map.values());
-    await localCache.saveCollection('products', updated);
-    await addToQueue('saveProducts', products);
-    for (const p of products) {
-      if (p.stock !== undefined) {
-        await this.updateStockInRTDB(p.id, p.stock);
-      }
-    }
-  },
-
-  async deleteProduct(id: number) {
-    let products = await this.getProducts();
-    products = products.filter(p => p.id !== id);
-    await localCache.saveCollection('products', products);
-    await addToQueue('deleteProduct', { id });
-    if (rtdb) {
-      const stockRef = ref(rtdb, `stock/${id}`);
-      await set(stockRef, null);
-    }
-  },
-
-  async saveClient(client: any) {
-    const clients = await this.getClients();
-    const index = clients.findIndex(c => c.id === client.id);
-    if (index !== -1) clients[index] = client;
-    else clients.push(client);
-    await localCache.saveCollection('clients', clients);
-    await addToQueue('saveClient', client);
-  },
-
-  async deleteClient(id: number) {
-    let clients = await this.getClients();
-    clients = clients.filter(c => c.id !== id);
-    await localCache.saveCollection('clients', clients);
-    await addToQueue('deleteClient', { id });
-  },
-
-  async saveTransaction(tx: any) {
-    const txs = await this.getTransactions();
-    const index = txs.findIndex(t => t.id === tx.id);
-    if (index !== -1) txs[index] = tx;
-    else txs.unshift(tx);
-    await localCache.saveCollection('transactions', txs);
-    await addToQueue('saveTransaction', tx);
-  },
-
-  async deleteTransaction(id: number) {
-    let txs = await this.getTransactions();
-    txs = txs.filter(t => t.id !== id);
-    await localCache.saveCollection('transactions', txs);
-    await addToQueue('deleteTransaction', { id });
-  },
-
-  async deleteAllTransactions() {
-    await localCache.saveCollection('transactions', []);
-    const all = await this.getTransactions();
-    for (const tx of all) {
-      await addToQueue('deleteTransaction', { id: tx.id });
-    }
-  },
-
-  async saveAccount(acc: any) {
-    const accounts = await this.getAccounts();
-    const index = accounts.findIndex(a => a.id === acc.id);
-    if (index !== -1) accounts[index] = acc;
-    else accounts.push(acc);
-    await localCache.saveCollection('accounts', accounts);
-    await addToQueue('saveAccount', acc);
-  },
-
-  async saveAccountingEntry(entry: any) {
-    const entries = await this.getAccountingEntries();
-    const index = entries.findIndex(e => e.id === entry.id);
-    if (index !== -1) entries[index] = entry;
-    else entries.unshift(entry);
-    await localCache.saveCollection('accounting_entries', entries);
-    await addToQueue('saveAccountingEntry', entry);
-  },
-
-  async deleteAllAccountingEntries() {
-    await localCache.saveCollection('accounting_entries', []);
-    const all = await this.getAccountingEntries();
-    for (const entry of all) {
-      await addToQueue('deleteAccountingEntry', { id: entry.id });
-    }
-  },
-
-  async saveSupplier(supplier: Supplier) {
-    const suppliers = await this.getSuppliers();
-    const index = suppliers.findIndex(s => s.id === supplier.id);
-    if (index !== -1) suppliers[index] = supplier;
-    else suppliers.push(supplier);
-    await localCache.saveCollection('suppliers', suppliers);
-    await addToQueue('saveSupplier', supplier);
-  },
-
-  async deleteSupplier(id: number) {
-    let suppliers = await this.getSuppliers();
-    suppliers = suppliers.filter(s => s.id !== id);
-    await localCache.saveCollection('suppliers', suppliers);
-    await addToQueue('deleteSupplier', { id });
-  },
-
-  async savePurchaseInvoice(invoice: any) {
-    const invoices = await this.getPurchaseInvoices();
-    const index = invoices.findIndex(i => i.id === invoice.id);
-    if (index !== -1) invoices[index] = invoice;
-    else invoices.unshift(invoice);
-    await localCache.saveCollection('purchase_invoices', invoices);
-    await addToQueue('savePurchaseInvoice', invoice);
-  },
-
-  async deletePurchaseInvoice(id: number) {
-    let invoices = await this.getPurchaseInvoices();
-    invoices = invoices.filter(i => i.id !== id);
-    await localCache.saveCollection('purchase_invoices', invoices);
-    await addToQueue('deletePurchaseInvoice', { id });
-  },
-
-  async savePurchaseInvoiceItems(invoiceId: number, items: any[]) {
-    const existing = await this.getPurchaseItems() || [];
-    const updated = [...existing, ...items];
-    await localCache.saveCollection('purchase_items', updated);
-    for (const item of items) {
-      await addToQueue('savePurchaseItem', item);
-    }
-  },
-
-  async saveSupplierPayment(payment: any) {
-    const payments = await this.getSupplierPayments();
-    const index = payments.findIndex(p => p.id === payment.id);
-    if (index !== -1) payments[index] = payment;
-    else payments.unshift(payment);
-    await localCache.saveCollection('supplier_payments', payments);
-    await addToQueue('saveSupplierPayment', payment);
-  },
-
-  async deleteSupplierPayment(id: number) {
-    let payments = await this.getSupplierPayments();
-    payments = payments.filter(p => p.id !== id);
-    await localCache.saveCollection('supplier_payments', payments);
-    await addToQueue('deleteSupplierPayment', { id });
-  },
-
-  async saveKardexEntry(entry: any) {
-    const entries = await this.getKardexEntries();
-    const index = entries.findIndex(e => e.id === entry.id);
-    if (index !== -1) entries[index] = entry;
-    else entries.unshift(entry);
-    await localCache.saveCollection('kardex_entries', entries);
-    await addToQueue('saveKardexEntry', entry);
-  },
-
-  async deleteAllKardexEntries() {
-    await localCache.saveCollection('kardex_entries', []);
-    const all = await this.getKardexEntries();
-    for (const entry of all) {
-      await addToQueue('deleteKardexEntry', { id: entry.id });
-    }
-  },
-
-  async saveKardexBatch(entries: any[]) {
-    for (const entry of entries) {
-      await this.saveKardexEntry(entry);
-    }
-    console.log(`📦 Kardex batch guardado localmente: ${entries.length} entradas`);
-  },
-
-  async saveAccountingBatch(entries: any[]) {
-    for (const entry of entries) {
-      await this.saveAccountingEntry(entry);
-    }
-    console.log(`📊 Contabilidad batch guardada localmente: ${entries.length} entradas`);
-  },
-
-  async saveTerminal(terminal: any) {
-    const terminals = await this.getTerminals();
-    const index = terminals.findIndex(t => t.id === terminal.name);
-    if (index !== -1) terminals[index] = terminal;
-    else terminals.push(terminal);
-    await localCache.saveCollection('terminals', terminals);
-    await addToQueue('saveTerminal', terminal);
-  },
-
-  async deleteTerminal(id: string) {
-    let terminals = await this.getTerminals();
-    terminals = terminals.filter(t => t.id !== id);
-    await localCache.saveCollection('terminals', terminals);
-    await addToQueue('deleteTerminal', { id });
-  },
-
-  // ✅ CORREGIDO: Actualiza el bloqueo directamente en Firestore (además de caché local)
-  async updateTerminalBlockStatus(terminalId: string, isBlocked: boolean) {
-    // 1. Actualizar caché local inmediatamente
-    const terminals = await this.getTerminals();
-    const terminalIndex = terminals.findIndex(t => t.id === terminalId);
-    if (terminalIndex !== -1) {
-      terminals[terminalIndex].isBlocked = isBlocked;
-      await localCache.saveCollection('terminals', terminals);
-    }
-    
-    // 2. Si online, escribir directamente en Firestore
-    if (db && isOnline && !isLoggingOut) {
-      const terminalRef = doc(db, 'terminals', terminalId);
-      await updateDoc(terminalRef, { isBlocked, updatedAt: Date.now() });
-      console.log(`✅ Terminal ${terminalId} bloqueo actualizado a ${isBlocked} en Firestore`);
-    } else {
-      // 3. Offline: encolar para después
-      await addToQueue('updateTerminal', { id: terminalId, updates: { isBlocked } });
-    }
-  },
-
-  async updateTerminal(terminalId: string, updates: Record<string, any>) {
-    const terminals = await this.getTerminals();
-    const terminal = terminals.find(t => t.id === terminalId);
-    if (terminal) {
-      Object.assign(terminal, updates);
-      await localCache.saveCollection('terminals', terminals);
-      await addToQueue('updateTerminal', { id: terminalId, updates });
-    }
-  },
-
-  async updateUserTerminalId(userId: string, terminalId: string | null) {
-    await addToQueue('updateUserTerminalId', { userId, terminalId });
-  },
-
-  async saveGlobalSettings(settings: any) {
-    const current = await this.getGlobalSettings();
-    const merged = { ...current, ...settings, updatedAt: Date.now() };
-    await localCache.saveCollection('global_settings', [merged]);
-    await addToQueue('saveGlobalSettings', merged);
-  },
-
-  async saveCashClose(closeData: any) {
-    const closes = await this.getCashCloses();
-    const index = closes.findIndex(c => c.id === closeData.id);
-    if (index !== -1) closes[index] = closeData;
-    else closes.unshift(closeData);
-    await localCache.saveCollection('cash_closes', closes);
-    await addToQueue('saveCashClose', closeData);
-  },
-
-  async deleteAllCashCloses() {
-    await localCache.saveCollection('cash_closes', []);
-    const all = await this.getCashCloses();
-    for (const close of all) {
-      await addToQueue('deleteCashClose', { id: close.id });
-    }
-  },
-
-  // ✅ Método para guardar o actualizar el registro de caja (inmediato)
-  async saveRegisterByTerminal(terminalId: string, reg: any) {
-    if (!db || !terminalId) return;
-    const registerRef = doc(db, 'registers', terminalId);
-    if (!isOnline) {
-      await addToQueue('saveRegister', { terminalId, reg });
-      return;
-    }
-    await setDoc(registerRef, { ...reg, updatedAt: Date.now() }, { merge: true });
-  },
-
-  // ✅ Método para eliminar el registro de caja (cierre de caja) - inmediato
-  async deleteRegisterByTerminal(terminalId: string) {
-    if (!db || !terminalId) return;
-    if (!isOnline) {
-      await addToQueue('clearRegister', { terminalId });
-      return;
-    }
-    const registerRef = doc(db, 'registers', terminalId);
-    await deleteDoc(registerRef);
-  },
-
-  // Mantener clearRegisterByTerminal por compatibilidad (ahora llama a deleteRegisterByTerminal)
-  async clearRegisterByTerminal(terminalId: string) {
-    await this.deleteRegisterByTerminal(terminalId);
-  },
-
-  async createCashSession(terminalId: string, userId: string, initialAmountUsd: number) {
-    const sessionId = `SES-${Date.now()}-${terminalId}`;
-    const sessionData = {
-      id: sessionId,
-      terminalId,
-      userId,
-      initialAmountUsd: roundTo2(initialAmountUsd),
-      currentAmountUsd: roundTo2(initialAmountUsd),
-      openTime: new Date().toISOString(),
-      status: 'abierta',
-      closeTime: null,
-      finalAmountUsd: 0,
-      createdAt: Date.now(),
-      updatedAt: Date.now()
-    };
-    const sessions = await localCache.getCollection('cash_sessions') || [];
-    sessions.push(sessionData);
-    await localCache.saveCollection('cash_sessions', sessions);
-    await addToQueue('saveCashSession', sessionData);
-    return sessionData;
-  },
-
-  async getActiveSessionByTerminal(terminalId: string) {
-    const sessions = await localCache.getCollection('cash_sessions') || [];
-    return sessions.find(s => s.terminalId === terminalId && s.status === 'abierta') || null;
-  },
-
-  async closeCashSession(sessionId: string, finalAmountUsd: number) {
-    let sessions = await localCache.getCollection('cash_sessions') || [];
-    const session = sessions.find(s => s.id === sessionId);
-    if (!session) throw new Error('Sesión no encontrada');
-    session.status = 'cerrada';
-    session.closeTime = new Date().toISOString();
-    session.finalAmountUsd = roundTo2(finalAmountUsd);
-    session.updatedAt = Date.now();
-    await localCache.saveCollection('cash_sessions', sessions);
-    await addToQueue('updateCashSession', session);
-    return session;
-  },
-
-  async getTransactionsBySession(sessionId: string, limitCount: number = 500) {
-    const all = await this.getTransactions();
-    return all.filter(t => t.sessionId === sessionId).slice(0, limitCount);
-  },
-
-  async saveTransactionWithCurrentSession(tx: any, terminalId?: string) {
-    let sessionId = tx.sessionId;
-    if (!sessionId && terminalId) {
-      const active = await this.getActiveSessionByTerminal(terminalId);
-      if (active) sessionId = active.id;
-    }
-    const txWithSession = { ...tx, sessionId: sessionId || null };
-    await this.saveTransaction(txWithSession);
-  },
-
-  // ========== VENTA ATÓMICA (ACTUALIZA STOCK EN RTDB + GUARDA LOCAL + FIRESTORE DIRECTO) ==========
-  async runAtomicSale(terminalId: string, txData: any, updates: {
-    products: Map<number, { newStock: number }>;
-    kardexEntries: any[];
-    accountingEntry?: any;
-    registerUpdate: { txs: any[] };
-  }) {
-    // 1. Actualizar caché local y RTDB
-    const products = await this.getProducts();
-    for (const [prodId, { newStock }] of updates.products.entries()) {
-      const prod = products.find(p => p.id === prodId);
-      if (prod) prod.stock = newStock;
-      await this.updateStockInRTDB(prodId, newStock);
-      
-      // ✅ NUEVO: Actualizar Firestore directamente (sin depender de cola)
-      if (db && isOnline && !isLoggingOut) {
-        const productRef = doc(db, 'products', prodId.toString());
-        await updateDoc(productRef, { stock: newStock, updatedAt: Date.now() });
-        console.log(`✅ Producto ${prodId} stock actualizado a ${newStock} en Firestore`);
-      } else {
-        // Offline: encolar la actualización
-        await addToQueue('updateProductStock', { id: prodId, newStock });
-      }
-    }
-    await localCache.saveCollection('products', products);
-    
-    // 2. Guardar transacción
-    await this.saveTransaction(txData);
-    
-    // 3. Guardar kardex entries individualmente (inmediato)
-    for (const entry of updates.kardexEntries) {
-      await this.saveKardexEntry(entry);
-    }
-    
-    // 4. Guardar asiento contable si existe
-    if (updates.accountingEntry) {
-      await this.saveAccountingEntry(updates.accountingEntry);
-    }
-    
-    // 5. Actualizar registro de caja
-    let registers = await localCache.getCollection('registers') || [];
-    const regIdx = registers.findIndex(r => r.terminalId === terminalId);
-    if (regIdx !== -1) {
-      registers[regIdx].txs.push(...updates.registerUpdate.txs);
-    } else {
-      registers.push({ terminalId, txs: updates.registerUpdate.txs });
-    }
-    await localCache.saveCollection('registers', registers);
-    
-    // 6. Encolar operaciones adicionales (por si offline)
-    await addToQueue('saveTransaction', txData);
-    for (const entry of updates.kardexEntries) {
-      await addToQueue('saveKardexEntry', entry);
-    }
-    if (updates.accountingEntry) {
-      await addToQueue('saveAccountingEntry', updates.accountingEntry);
-    }
-    await addToQueue('saveRegister', { terminalId, reg: { txs: updates.registerUpdate.txs } });
-    for (const [productId, { newStock }] of updates.products.entries()) {
-      await addToQueue('updateStockRTDB', { productId, newStock });
-    }
-  },
-
-  async updateProductWithWeightedAverageCost(productId: number, newQty: number, newCostUsd: number, exchangeRate: number) {
-    if (!db) throw new Error('Firebase no disponible');
-    const newCostUsdRounded = roundTo4(newCostUsd);
-    const exchangeRateRounded = roundTo2(exchangeRate);
-    
-    let updatedStock: number = 0;
-    let updatedCostUsd: number = 0;
-    let updatedPriceUsd: number = 0;
-    let updatedPriceBs: number = 0;
-    
-    const products = await this.getProducts();
-    const product = products.find(p => p.id === productId);
-    if (!product) throw new Error(`Producto ${productId} no existe`);
-    
-    const currentStock = product.stock || 0;
-    const currentCostUsd = product.costUsd || 0;
-    const profitPercent = product.profitPercent || 30;
-    
-    let newAverageCost: number;
-    if (currentStock <= 0) {
-      newAverageCost = newCostUsdRounded;
-    } else {
-      const totalCostBefore = currentStock * currentCostUsd;
-      const totalCostNew = newQty * newCostUsdRounded;
-      const newTotalStock = currentStock + newQty;
-      newAverageCost = roundTo4((totalCostBefore + totalCostNew) / newTotalStock);
-    }
-    
-    const priceUsd = roundTo2(newAverageCost * (1 + profitPercent / 100));
-    const priceBs = roundTo2(priceUsd * exchangeRateRounded);
-    const newStock = currentStock + newQty;
-    updatedStock = newStock;
-    updatedCostUsd = newAverageCost;
-    updatedPriceUsd = priceUsd;
-    updatedPriceBs = priceBs;
-    
-    product.stock = newStock;
-    product.costUsd = newAverageCost;
-    product.costBs = roundTo2(newAverageCost * exchangeRateRounded);
-    product.priceUsd = priceUsd;
-    product.priceBs = priceBs;
-    product.updatedAt = Date.now();
-    await localCache.saveCollection('products', products);
-    
-    const kardexEntry = {
-      id: `${Date.now()}_${productId}_${Math.random()}`,
-      productId: productId,
-      date: new Date().toISOString(),
-      type: 'compra',
-      quantity: newQty,
-      previousStock: currentStock,
-      newStock: newStock,
-      reference: `Compra - CPP aplicado`,
-      note: `Costo ant: $${currentCostUsd.toFixed(4)} → Nuevo: $${newAverageCost.toFixed(4)}`,
-      costUsd: newCostUsdRounded,
-      costBs: roundTo2(newCostUsdRounded * exchangeRateRounded),
-    };
-    await this.saveKardexEntry(kardexEntry);
-    
-    // Actualizar Firestore directamente
-    if (db && isOnline && !isLoggingOut) {
-      const productRef = doc(db, 'products', productId.toString());
-      await updateDoc(productRef, { 
-        stock: newStock, 
-        costUsd: newAverageCost, 
-        costBs: roundTo2(newAverageCost * exchangeRateRounded),
-        priceUsd: priceUsd,
-        priceBs: priceBs,
-        updatedAt: Date.now()
-      });
-    } else {
-      await addToQueue('updateProductStock', { id: productId, newStock });
-      await addToQueue('updateProductCost', { id: productId, costUsd: newAverageCost, priceUsd, priceBs });
-    }
-    await this.updateStockInRTDB(productId, newStock);
-    
-    return { newStock: updatedStock, newAverageCost: updatedCostUsd, newPriceUsd: updatedPriceUsd, newPriceBs: updatedPriceBs };
-  },
-
-  // ========== SINCRONIZACIÓN MANUAL (BOTÓN) ==========
-  async syncAllPending() {
-    if (!isOnline) {
-      console.warn("⚠️ No hay conexión a internet. No se puede sincronizar.");
-      return false;
-    }
-    console.log("🔄 Iniciando sincronización manual...");
-    await processQueue();
-    await this.loadAllDataToCache();
-    console.log("✅ Sincronización completa");
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('sync-complete'));
-    }
-    return true;
-  },
-
-  getPendingQueueLength() {
-    return pendingQueue.length;
-  },
-
-  // ========== NUEVAS FUNCIONES EXPORTADAS PARA COMANDOS REMOTOS ==========
-  sendSyncCommandToTerminal,
+  getUserByUid,
+  saveUser,
+  getAllUsers,
+  deleteUser,
+  updateUserTerminalId,
+  getAllProducts,
+  getProducts: getAllProducts,
+  saveProduct,
+  saveProducts,
+  deleteProduct,
+  updateProductWithWeightedAverageCost,
+  getAllClients,
+  getClients: getAllClients,
+  saveClient,
+  deleteClient,
+  getAllTransactions,
+  getTransactions: getAllTransactions,
+  saveTransaction,
+  getAllAccounts,
+  getAccounts: getAllAccounts,
+  saveAccount,
+  deleteAccount,
+  getAllSuppliers,
+  saveSupplier,
+  deleteSupplier,
+  getAllPurchaseInvoices,
+  savePurchaseInvoice,
+  getAllPurchaseItems,
+  savePurchaseInvoiceItems,
+  getAllSupplierPayments,
+  saveSupplierPayment,
+  deleteSupplierPayment,
+  getAllAccountingEntries,
+  saveAccountingEntry,
+  getAllKardexEntries,
+  saveKardexEntry,
+  getRegisterByTerminal,
+  saveRegisterByTerminal,
+  getAllCashCloses,
+  saveCashClose,
+  deleteCashClose: (id: string) => remove('cash_closes', id),
+  getAllTerminals,
+  saveTerminal,
+  deleteTerminal,
+  updateTerminalBlockStatus,
+  getGlobalSettings,
+  saveGlobalSettings,
+  getAdminCode,
+  subscribeToTerminals,
+  subscribeToTerminalsRealtime,
+  subscribeToTerminalRealtime,
+  subscribeToRegisterRealtime,
+  subscribeToPurchaseInvoices,
+  subscribeToPurchaseItems,
+  subscribeToSupplierPayments,
+  subscribeToSuppliersRealtime,
+  subscribeToGlobalSettings,
+  subscribeToKardex,
   sendSyncCommandToAllTerminals,
+  saveKardexBatch,
+  saveAccountingBatch,
+  loadAllDataToCache,
+  syncAllPending,
+  getPendingQueueLength,
+  createCashSession,
+  closeCashSession,
+  getActiveSessionByTerminal,
+  subscribeToActiveSession,
+  runAtomicSale,
+  updateStockInRTDB,
   listenForSyncCommands,
-
-  // ========== ELIMINACIONES MASIVAS ==========
-  async deleteAllSupplierPayments() {
-    await localCache.saveCollection('supplier_payments', []);
-    const all = await this.getSupplierPayments();
-    for (const p of all) {
-      await addToQueue('deleteSupplierPayment', { id: p.id });
-    }
-  },
-
-  async deleteAllSuppliers() {
-    await localCache.saveCollection('suppliers', []);
-    const all = await this.getSuppliers();
-    for (const s of all) {
-      await addToQueue('deleteSupplier', { id: s.id });
-    }
-  },
-
-  async deleteAllTerminals() {
-    await localCache.saveCollection('terminals', []);
-    const all = await this.getTerminals();
-    for (const t of all) {
-      await addToQueue('deleteTerminal', { id: t.id });
-    }
-  },
-
-  async deleteAllUsersExceptAdmin() {
-    console.warn("deleteAllUsersExceptAdmin debe ejecutarse manualmente en Firestore");
-  }
+  unsubscribeAll,
+  setLoggingOut,
+  clearRegisterByTerminal,
+  subscribeToStockRTDB
 };
 
-// Exportar funciones útiles
-export const { loadAllDataToCache, syncAllPending } = syncService;
+export default syncService;

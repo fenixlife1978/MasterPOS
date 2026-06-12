@@ -1,3 +1,5 @@
+"use client";
+
 import { useState, useEffect } from 'react';
 import { usePOSState } from '@/hooks/use-pos-state';
 import { useSuppliers } from '@/hooks/use-suppliers';
@@ -22,9 +24,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { formatBs, formatUsd, formatBsNumber, formatUsdNumber } from '@/lib/currency-formatter';
-import { db } from '@/lib/firebase';
-import { collection, getDocs, deleteDoc, doc, setDoc } from 'firebase/firestore';
-import { getAuth } from 'firebase/auth';
+import { turso } from '@/lib/db';
 
 interface AdminDashboardProps {
   state: ReturnType<typeof usePOSState>;
@@ -148,20 +148,8 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
     setIsResetting(true);
     
     try {
-      // Función auxiliar para vaciar una colección (sin tocar usuarios)
-      const clearCollection = async (colName: string) => {
-        try {
-          const colRef = collection(db, colName);
-          const snap = await getDocs(colRef);
-          const deletePromises = snap.docs.map(d => deleteDoc(doc(db, colName, d.id)));
-          await Promise.allSettled(deletePromises);
-        } catch (err) {
-          console.warn(`Error limpiando ${colName}:`, err);
-        }
-      };
-      
-      // Colecciones a limpiar (NO se incluye 'users')
-      const collections = [
+      // ✅ Limpiar tablas en TURSO (sin tocar users)
+      const tables = [
         'products',
         'clients',
         'transactions',
@@ -178,15 +166,16 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
         'terminals',
       ];
       
-      await Promise.allSettled(collections.map(col => clearCollection(col)));
-      
-      // Eliminar documento register/current
-      try {
-        await deleteDoc(doc(db, 'register', 'current'));
-      } catch (e) {}
+      for (const table of tables) {
+        try {
+          await turso.execute(`DELETE FROM ${table}`);
+        } catch (err) {
+          console.warn(`Error limpiando tabla ${table}:`, err);
+        }
+      }
       
       // Restablecer el código de autorización (PIN) por defecto
-      await setDoc(doc(db, 'global_settings', 'global'), { adminCode: '123456' }, { merge: true });
+      await syncService.saveGlobalSettings({ adminCode: '123456' });
       
       // Limpiar localStorage (excepto datos de sesión)
       if (typeof window !== 'undefined') {

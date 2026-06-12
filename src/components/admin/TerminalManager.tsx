@@ -9,8 +9,6 @@ import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { db } from '@/lib/firebase';
-import { collection, getDocs, query } from 'firebase/firestore';
 import { syncService } from '@/services/syncService';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/context/AuthContext';
@@ -72,16 +70,9 @@ export default function TerminalManager() {
     const loadUsers = async () => {
       setIsLoadingUsers(true);
       try {
-        const q = query(collection(db, 'users'));
-        const querySnapshot = await getDocs(q);
-        const usersList = querySnapshot.docs.map(doc => ({
-          id: doc.id,
-          name: doc.data().name,
-          email: doc.data().email,
-          role: doc.data().role,
-          terminalId: doc.data().terminalId,
-        })) as User[];
-        setUsers(usersList);
+        // ✅ CAMBIO: Usar syncService en lugar de Firestore
+        const usersList = await syncService.getAllUsers();
+        setUsers(usersList as User[]);
       } catch (error) {
         console.error('Error loading users:', error);
       } finally {

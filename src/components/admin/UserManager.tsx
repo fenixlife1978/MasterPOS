@@ -7,11 +7,11 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
-import { auth, db, firebaseConfig } from '@/lib/firebase';
+import { auth, firebaseConfig } from '@/lib/firebase';
 import { initializeApp, getApps } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, sendPasswordResetEmail, updateProfile, signOut } from 'firebase/auth';
-import { doc, setDoc, getDocs, collection, deleteDoc, updateDoc, getDoc } from 'firebase/firestore';
 import { useAuth } from '@/context/AuthContext';
+import { syncService } from '@/services/syncService';
 
 interface AppUser {
   id: string;
@@ -39,22 +39,16 @@ export default function UserManager() {
     role: 'cashier' as 'admin' | 'cashier',
   });
 
+  // ✅ Cargar usuarios desde TURSO (ya no desde Firestore)
   const loadUsers = async () => {
     try {
       setIsLoading(true);
-      const querySnapshot = await getDocs(collection(db, 'users'));
-      const usersList = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as AppUser));
-      setUsers(usersList);
+      const usersList = await syncService.getAllUsers();
+      setUsers(usersList as AppUser[]);
       setMessage(null);
     } catch (error: any) {
       console.error('Error loading users:', error);
-      let errorMsg = 'Error al cargar usuarios. ';
-      if (error.code === 'permission-denied') {
-        errorMsg += 'No tienes permisos de administrador para gestionar usuarios.';
-      } else {
-        errorMsg += error.message;
-      }
-      setMessage({ type: 'error', text: errorMsg });
+      setMessage({ type: 'error', text: error.message || 'Error al cargar usuarios' });
     } finally {
       setIsLoading(false);
     }
@@ -65,6 +59,18 @@ export default function UserManager() {
   }, []);
 
   const isAdmin = currentUser?.role === 'admin';
+
+  // ✅ Guardar usuario en TURSO (ya no en Firestore)
+  const saveUserToTurso = async (uid: string, name: string, email: string, role: string) => {
+    const userData = {
+      uid: uid,
+      name: name,
+      email: email,
+      role: role,
+      status: 'active',
+    };
+    await syncService.saveUser(userData);
+  };
 
   const handleSubmit = async () => {
     setMessage(null);
@@ -88,17 +94,20 @@ export default function UserManager() {
     
     try {
       if (editingUser) {
-        const userRef = doc(db, 'users', editingUser.id);
-        await updateDoc(userRef, {
+        // ✅ Actualizar usuario en TURSO
+        await syncService.saveUser({
+          uid: editingUser.id,
           name: formData.name,
+          email: formData.email,
           role: formData.role,
+          status: 'active',
         });
         setMessage({ type: 'success', text: 'Usuario actualizado correctamente' });
         await loadUsers();
         setShowModal(false);
         resetForm();
       } else {
-        // ✅ SOLUCIÓN TÉCNICA: Usar una instancia secundaria para evitar cerrar la sesión del admin
+        // ✅ Crear usuario en Firebase Auth usando instancia secundaria
         const secondaryApp = getApps().find(a => a.name === 'SecondaryAuth') || initializeApp(firebaseConfig, 'SecondaryAuth');
         const secondaryAuth = getAuth(secondaryApp);
         
@@ -107,19 +116,10 @@ export default function UserManager() {
         
         await updateProfile(firebaseUser, { displayName: formData.name });
         
-        // Guardamos en Firestore usando la instancia primaria (donde el admin está logueado)
-        const newUser: AppUser = {
-          id: firebaseUser.uid,
-          email: formData.email,
-          name: formData.name,
-          role: formData.role,
-          status: 'active',
-          createdAt: new Date().toISOString(),
-        };
+        // ✅ Guardar en TURSO (NO en Firestore)
+        await saveUserToTurso(firebaseUser.uid, formData.name, formData.email, formData.role);
         
-        await setDoc(doc(db, 'users', firebaseUser.uid), newUser);
-        
-        // Cerramos sesión en la instancia secundaria para limpiar memoria
+        // Cerrar sesión en la instancia secundaria
         await signOut(secondaryAuth);
         
         setMessage({ type: 'success', text: `Usuario ${formData.name} creado correctamente.` });
@@ -131,7 +131,6 @@ export default function UserManager() {
       console.error('Error en gestión de usuario:', error);
       let errorText = error.message;
       if (error.code === 'auth/email-already-in-use') errorText = 'El correo ya está registrado';
-      if (error.code === 'permission-denied') errorText = 'Permiso denegado en Firestore. Verifique sus reglas de seguridad.';
       setMessage({ type: 'error', text: errorText });
     } finally {
       setActionLoading(null);
@@ -158,7 +157,8 @@ export default function UserManager() {
     if (confirm(`¿Está seguro de eliminar a ${user.name}?`)) {
       setActionLoading(`delete-${user.id}`);
       try {
-        await deleteDoc(doc(db, 'users', user.id));
+        // ✅ Eliminar de TURSO
+        await syncService.deleteUser(user.id);
         setMessage({ type: 'success', text: `Usuario ${user.name} eliminado.` });
         await loadUsers();
       } catch (error: any) {

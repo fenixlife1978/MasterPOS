@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { usePOSState } from '@/hooks/use-pos-state';
-import { Download, ChevronDown, ChevronRight, Wallet, Eye, X, HandCoins, History, DollarSign, Trash2, PlusCircle, AlertCircle } from 'lucide-react';
+import { Download, ChevronDown, ChevronRight, Wallet, Eye, X, HandCoins, History, DollarSign, Trash2, PlusCircle, AlertTriangle } from 'lucide-react';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,8 +11,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { CartItem } from '@/lib/types';
 import { formatBs, formatUsd, formatBsNumber, formatUsdNumber } from '@/lib/currency-formatter';
 import { syncService } from '@/services/syncService';
-import { db } from '@/lib/firebase';
-import { doc, deleteDoc } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 
 interface AccountsModuleProps {
@@ -140,18 +138,25 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
 
   const historicalRate = getHistoricalExchangeRate();
 
-  // ========== ELIMINAR CLIENTE ==========
+  // ========== ELIMINAR CLIENTE (CORREGIDO PARA TURSO) ==========
   const handleDeleteClient = async (clientId: number, clientName: string) => {
     if (!confirm(`¿Eliminar al cliente "${clientName}" y todas sus cuentas pendientes? Esta acción es irreversible.`)) return;
     
     try {
+      // ✅ Obtener todas las cuentas del cliente desde state.accounts
       const clientAccounts = state.accounts.filter(acc => acc.clientId === clientId);
+      
+      // ✅ Eliminar cada cuenta usando syncService
       for (const account of clientAccounts) {
-        const accountRef = doc(db, 'accounts', account.id.toString());
-        await deleteDoc(accountRef);
+        await syncService.deleteAccount?.(account.id);
       }
+      
+      // ✅ Eliminar el cliente usando syncService
       await syncService.deleteClient(clientId);
+      
+      // ✅ Recargar datos
       if (state.refreshAllData) await state.refreshAllData();
+      
       toast({
         title: "Cliente eliminado",
         description: `${clientName} y sus ${clientAccounts.length} cuenta(s) han sido eliminadas.`,
@@ -508,7 +513,7 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
                     <div className="border border-[#9E9E9E] rounded-lg overflow-hidden">
                       <table className="w-full text-sm">
                         <thead className="bg-[#E8E8E8]">
-                          <tr>
+                          <tr className="border-b border-[#9E9E9E]">
                             <th className="text-left p-3 text-[10px] font-black uppercase">FECHA</th>
                             <th className="text-right p-3 text-[10px] font-black uppercase">MONTO</th>
                           </tr>

@@ -4,9 +4,8 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { User, Building2, Store, Key, Mail, ArrowLeft } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { auth, db } from '@/lib/firebase';
+import { auth } from '@/lib/firebase';
 import { signInWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
 import Image from 'next/image';
 
 export default function LoginPage() {
@@ -38,19 +37,22 @@ export default function LoginPage() {
     setIsLoading(true);
     
     try {
+      // 1. Autenticar con Firebase Authentication
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const firebaseUser = userCredential.user;
-      
-      const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
-      let userRole = 'cashier';
-      let userName = firebaseUser.displayName || email.split('@')[0] || 'Usuario';
-      
-      if (userDoc.exists()) {
-        const userData = userDoc.data();
-        userRole = userData.role;
-        userName = userData.name;
+      const uid = firebaseUser.uid;
+
+      // 2. Obtener el rol y nombre desde Turso (vía nuestra API)
+      const res = await fetch(`/api/user-by-uid?uid=${encodeURIComponent(uid)}`);
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || 'Usuario no encontrado en la base de datos');
       }
-      
+      const userData = await res.json();
+      const userRole = userData.role;
+      const userName = userData.name || firebaseUser.displayName || email.split('@')[0] || 'Usuario';
+
+      // 3. Verificar permisos según el modo seleccionado
       if (mode === 'admin' && userRole !== 'admin') {
         setError('Esta cuenta no tiene permisos de administrador');
         await auth.signOut();
@@ -65,7 +67,7 @@ export default function LoginPage() {
         return;
       }
       
-      // Guardamos en sessionStorage para hidratación rápida
+      // 4. Guardar en sessionStorage como antes (misma estructura)
       const appUser = { 
         name: userName, 
         role: userRole, 

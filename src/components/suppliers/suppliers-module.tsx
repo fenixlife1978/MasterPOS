@@ -16,7 +16,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { Supplier, SupplierInvoice, PurchaseInvoiceItem, SupplierPayment } from '@/lib/types';
-import { syncService } from '@/services/syncService';
+import syncService from '@/services/syncService';
 import SupplierPaymentModal from './supplier-payment-modal';
 import InvoiceDetailModal from './InvoiceDetailModal';
 import { formatBs, formatUsd, formatBsNumber, formatUsdNumber } from '@/lib/currency-formatter';

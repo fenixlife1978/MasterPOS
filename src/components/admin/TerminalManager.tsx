@@ -9,7 +9,7 @@ import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { syncService } from '@/services/syncService';
+import syncService from '@/services/syncService';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/context/AuthContext';
 

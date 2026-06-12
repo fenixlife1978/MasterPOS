@@ -6,7 +6,7 @@ import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
 import { doc, getDoc, setDoc, getDocs, collection, onSnapshot } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { syncService } from '@/services/syncService';
+import syncService from '@/services/syncService';
 
 interface AppUser {
   uid: string;

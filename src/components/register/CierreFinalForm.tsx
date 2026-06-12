@@ -5,7 +5,7 @@ import { usePOSState } from '@/hooks/use-pos-state';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
-import { syncService } from '@/services/syncService';
+import syncService from '@/services/syncService';
 import { Printer, Share2, X } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { formatBs, formatUsd, formatBsNumber } from '@/lib/currency-formatter';

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Product, Client, Transaction, Account, CashRegister, Page, CartItem, KitComponent } from '@/lib/types';
-import { syncService } from '@/services/syncService';
+import syncService from '@/services/syncService';
 import { useAuth } from '@/context/AuthContext';
 import { rtdb } from '@/lib/firebase';
 

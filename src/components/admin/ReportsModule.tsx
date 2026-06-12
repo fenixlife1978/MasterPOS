@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { Transaction } from '@/lib/types';
 import { getStartOfDay, getEndOfDay, formatLocalDate } from '@/lib/date-utils';
-import { syncService } from '@/services/syncService';
+import syncService from '@/services/syncService';
 import { formatBs, formatUsd, formatBsNumber, formatUsdNumber } from '@/lib/currency-formatter';
 
 interface ReportsModuleProps {

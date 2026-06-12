@@ -18,7 +18,7 @@ import TerminalManager from '@/components/admin/TerminalManager';
 import UserManager from '@/components/admin/UserManager';
 import ReportsModule from '@/components/admin/ReportsModule';
 import CashSupervision from '@/components/admin/CashSupervision';
-import { syncService } from '@/services/syncService';
+import syncService from '@/services/syncService';
 import { useToast } from '@/hooks/use-toast';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';

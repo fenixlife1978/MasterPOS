@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/context/AuthContext';
-import { syncService } from '@/services/syncService';
+import syncService from '@/services/syncService';
 import { getLocalDateString, formatLocalDate } from '@/lib/date-utils';
 import { 
   Computer, DollarSign, CreditCard, Smartphone, Fingerprint, 

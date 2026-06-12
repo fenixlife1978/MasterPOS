@@ -10,7 +10,7 @@ import { cn } from '@/lib/utils';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { CartItem } from '@/lib/types';
 import { formatBs, formatUsd, formatBsNumber, formatUsdNumber } from '@/lib/currency-formatter';
-import { syncService } from '@/services/syncService';
+import syncService from '@/services/syncService';
 import { useToast } from '@/hooks/use-toast';
 
 interface AccountsModuleProps {

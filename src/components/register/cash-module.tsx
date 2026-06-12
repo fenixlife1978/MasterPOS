@@ -13,7 +13,7 @@ import { cn } from '@/lib/utils';
 import { useAuth } from '@/context/AuthContext';
 import CierreFinalForm from '@/components/register/CierreFinalForm';
 import { formatBs, formatUsd } from '@/lib/currency-formatter';
-import { syncService } from '@/services/syncService';
+import syncService from '@/services/syncService';
 
 interface CashModuleProps {
   state: ReturnType<typeof usePOSState>;

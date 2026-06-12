@@ -17,7 +17,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { Product, Category, AdminCode, KitComponent, AccountingEntry } from '@/lib/types';
-import { syncService } from '@/services/syncService';
+import syncService from '@/services/syncService';
 import * as XLSX from 'xlsx';
 import { formatBs, formatUsd, formatBsNumber, formatUsdNumber } from '@/lib/currency-formatter';
 

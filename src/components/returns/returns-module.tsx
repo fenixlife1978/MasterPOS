@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { cn } from '@/lib/utils';
 import { Transaction, CartItem } from '@/lib/types';
 import { registerReturnEntry } from '@/services/accountingService';
-import { syncService } from '@/services/syncService';
+import syncService from '@/services/syncService';
 import { formatBs, formatUsd, formatBsNumber, formatUsdNumber } from '@/lib/currency-formatter';
 
 interface ReturnItem {

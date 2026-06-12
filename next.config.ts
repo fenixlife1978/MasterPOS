@@ -1,8 +1,7 @@
 import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
-  // output: 'export', // Genera la carpeta '/out' con archivos estáticos para que Electron los lea offline
-  
+  trailingSlash: true,
   typescript: {
     ignoreBuildErrors: true,
   },
@@ -10,7 +9,7 @@ const nextConfig: NextConfig = {
     ignoreDuringBuilds: true,
   },
   images: {
-    unoptimized: true, // Obligatorio en Next.js al usar 'output: export'
+    unoptimized: true,
     remotePatterns: [
       {
         protocol: 'https',

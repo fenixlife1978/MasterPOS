@@ -454,13 +454,7 @@ export async function getGlobalSettings() {
   const settings: any = {};
   for (const row of result.rows) {
     try {
-      const key = String(row.key);
-    const value = String(row.value);
-    try {
-      settings[key] = JSON.parse(value);
-    } catch {
-      settings[key] = value;
-    }
+      settings[row.key as string] = JSON.parse(row.value as string);
     } catch {
       settings[row.key as string] = row.value;
     }

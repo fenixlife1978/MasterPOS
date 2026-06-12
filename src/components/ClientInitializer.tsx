@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
-import { syncService } from '@/services/syncService';  // ✅ ruta corregida
+import syncService from '@/services/syncService';  // ✅ ruta corregida
 
 export function ClientInitializer() {
   useEffect(() => {

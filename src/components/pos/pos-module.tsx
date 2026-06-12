@@ -11,7 +11,7 @@ import SaleTypeModal from './sale-type-modal';
 import CreditModal from './credit-modal';
 import ReceiptModal from '@/components/receipt-modal';
 import AuthorizationModal from './AuthorizationModal';
-import { syncService } from '@/services/syncService';
+import syncService from '@/services/syncService';
 import { useAuth } from '@/context/AuthContext';
 
 const formatBs = (amount: number): string => {

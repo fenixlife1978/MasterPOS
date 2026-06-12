@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { FileText, X, Archive, Calendar, Eye, Eraser, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatBs, formatUsd, formatBsNumber } from '@/lib/currency-formatter';
-import { syncService } from '@/services/syncService';
+import syncService from '@/services/syncService';
 
 interface CloseHistoryModalProps {
   open: boolean;

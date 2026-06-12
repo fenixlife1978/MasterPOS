@@ -11,7 +11,7 @@ import { auth, firebaseConfig } from '@/lib/firebase';
 import { initializeApp, getApps } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, sendPasswordResetEmail, updateProfile, signOut } from 'firebase/auth';
 import { useAuth } from '@/context/AuthContext';
-import { syncService } from '@/services/syncService';
+import syncService from '@/services/syncService';
 
 interface AppUser {
   id: string;

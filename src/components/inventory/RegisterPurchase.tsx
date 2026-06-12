@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
 import { Product, SupplierInvoice, PurchaseInvoiceItem, Category, KitComponent, AccountingEntry, SupplierPayment } from '@/lib/types';
-import { syncService } from '@/services/syncService';
+import syncService from '@/services/syncService';
 import { formatBs, formatUsd, formatBsNumber, formatUsdNumber } from '@/lib/currency-formatter';
 
 interface PurchaseItemTemp {

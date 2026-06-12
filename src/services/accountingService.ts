@@ -1,6 +1,6 @@
 "use client";
 
-import { syncService } from './syncService';
+import syncService from './syncService';
 import { Transaction } from '@/lib/types';
 
 // Generar ID único para asientos contables

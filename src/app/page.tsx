@@ -19,7 +19,7 @@ import RegisterPurchase from '@/components/inventory/RegisterPurchase';
 import InventoryModule from '@/components/inventory/inventory-module';
 import SuppliersModule from '@/components/suppliers/suppliers-module';
 import { Toaster } from '@/components/ui/toaster';
-import { syncService } from '@/services/syncService';
+import syncService from '@/services/syncService';
 import { Lock } from 'lucide-react';
 
 export default function LicoPOSApp() {

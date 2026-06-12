@@ -3,7 +3,7 @@
 import { useAuth } from '@/context/AuthContext';
 import { DoorOpen } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { syncService } from '@/services/syncService';
+import syncService from '@/services/syncService';
 
 interface LogoutButtonProps {
   className?: string;

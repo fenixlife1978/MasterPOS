@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { CashRegister } from '@/lib/types';
 import { RefreshCw, Clock, Wifi, WifiOff, UploadCloud } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { syncService } from '@/services/syncService';
+import syncService from '@/services/syncService';
 import InvoiceNotifications from '@/components/ui/InvoiceNotifications';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/hooks/use-toast';

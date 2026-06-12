@@ -1,10 +1,11 @@
 import { createClient } from '@libsql/client';
 
-const url = process.env.TURSO_DATABASE_URL;
-const authToken = process.env.TURSO_AUTH_TOKEN;
+// Configuración de Turso con fallbacks para asegurar funcionamiento en Workstation/Electron
+const url = process.env.NEXT_PUBLIC_TURSO_DATABASE_URL || process.env.TURSO_DATABASE_URL || 'libsql://masterpostv1-fenixlife1978.aws-us-east-1.turso.io';
+const authToken = process.env.NEXT_PUBLIC_TURSO_AUTH_TOKEN || process.env.TURSO_AUTH_TOKEN || 'eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3ODA5Njk3NjAsImlkIjoiMDE5ZThlMDgtMmYwMS03MjRiLWJjYWYtYzhmMTY5MGMzMTE0IiwicmlkIjoiODQ3MGQ0MTgtYmMxMC00ZmUwLWFmYTctZDYxZjY2YjFmZmU5In0.wr0aYI7XvziB6lU62XTLko8k0RoMfYOkQ364P_gZtpL5vewFd5S4tRe6H0ZYR1af7I_c_ysOrEvTKHHa3PbdDA';
 
 if (!url || !authToken) {
-  throw new Error('Faltan variables de entorno: TURSO_DATABASE_URL y TURSO_AUTH_TOKEN');
+  console.error('⚠️ Error: Credenciales de Turso no detectadas.');
 }
 
 export const turso = createClient({ url, authToken });

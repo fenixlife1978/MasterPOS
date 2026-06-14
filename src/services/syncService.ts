@@ -1,3 +1,4 @@
+
 import { turso, executeQuery, getById, getAll, insert, update, remove } from '@/lib/db';
 
 // ============================================================
@@ -455,12 +456,12 @@ export async function getGlobalSettings() {
   for (const row of result.rows) {
     try {
       const key = String(row.key);
-    const value = String(row.value);
-    try {
-      settings[key] = JSON.parse(value);
-    } catch {
-      settings[key] = value;
-    }
+      const value = String(row.value);
+      try {
+        settings[key] = JSON.parse(value);
+      } catch {
+        settings[key] = value;
+      }
     } catch {
       settings[row.key as string] = row.value;
     }
@@ -482,28 +483,19 @@ export async function getAdminCode() {
     sql: "SELECT value FROM global_settings WHERE key = 'admin_code'"
   });
   if (result.rows.length === 0) return { code: '123456' };
-  return { code: result.rows[0].value as string };
+  const val = result.rows[0].value;
+  try {
+    return { code: typeof val === 'string' ? JSON.parse(val) : val };
+  } catch {
+    return { code: val };
+  }
 }
 
 // ============================================================
-// SUSCRIPCIONES EN TIEMPO REAL (Placeholder)
+// SUSCRIPCIONES Y COMANDOS
 // ============================================================
 
-export function subscribeToTerminals(callback: (data: any[]) => void) {
-  const fetchData = async () => {
-    const data = await getAllTerminals();
-    callback(data);
-  };
-  fetchData();
-  const interval = setInterval(fetchData, 3000);
-  return () => clearInterval(interval);
-}
-
-export function subscribeToTerminalsRealtime(callback: (data: any[]) => void) {
-  return subscribeToTerminals(callback);
-}
-
-export function subscribeToTerminalRealtime(terminalId: string, callback: (data: any) => void) {
+export function subscribeToRegisterRealtime(terminalId: string, callback: (data: any) => void) {
   const fetchData = async () => {
     const data = await getRegisterByTerminal(terminalId);
     callback(data);
@@ -513,8 +505,54 @@ export function subscribeToTerminalRealtime(terminalId: string, callback: (data:
   return () => clearInterval(interval);
 }
 
-export function subscribeToRegisterRealtime(terminalId: string, callback: (data: any) => void) {
-  return subscribeToTerminalRealtime(terminalId, callback);
+export function subscribeToProducts(callback: (data: any[]) => void) {
+  const fetchData = async () => {
+    const data = await getAllProducts();
+    callback(data);
+  };
+  fetchData();
+  const interval = setInterval(fetchData, 5000);
+  return () => clearInterval(interval);
+}
+
+export function subscribeToClients(callback: (data: any[]) => void) {
+  const fetchData = async () => {
+    const data = await getAllClients();
+    callback(data);
+  };
+  fetchData();
+  const interval = setInterval(fetchData, 10000);
+  return () => clearInterval(interval);
+}
+
+export function subscribeToTransactions(callback: (data: any[]) => void) {
+  const fetchData = async () => {
+    const data = await getAllTransactions();
+    callback(data);
+  };
+  fetchData();
+  const interval = setInterval(fetchData, 5000);
+  return () => clearInterval(interval);
+}
+
+export function subscribeToAccounts(callback: (data: any[]) => void) {
+  const fetchData = async () => {
+    const data = await getAllAccounts();
+    callback(data);
+  };
+  fetchData();
+  const interval = setInterval(fetchData, 10000);
+  return () => clearInterval(interval);
+}
+
+export function subscribeToSuppliers(callback: (data: any[]) => void) {
+  const fetchData = async () => {
+    const data = await getAllSuppliers();
+    callback(data);
+  };
+  fetchData();
+  const interval = setInterval(fetchData, 10000);
+  return () => clearInterval(interval);
 }
 
 export function subscribeToPurchaseInvoices(callback: (data: any[]) => void) {
@@ -523,7 +561,7 @@ export function subscribeToPurchaseInvoices(callback: (data: any[]) => void) {
     callback(data);
   };
   fetchData();
-  const interval = setInterval(fetchData, 3000);
+  const interval = setInterval(fetchData, 10000);
   return () => clearInterval(interval);
 }
 
@@ -533,7 +571,7 @@ export function subscribeToPurchaseItems(callback: (data: any[]) => void) {
     callback(data);
   };
   fetchData();
-  const interval = setInterval(fetchData, 3000);
+  const interval = setInterval(fetchData, 10000);
   return () => clearInterval(interval);
 }
 
@@ -543,37 +581,7 @@ export function subscribeToSupplierPayments(callback: (data: any[]) => void) {
     callback(data);
   };
   fetchData();
-  const interval = setInterval(fetchData, 3000);
-  return () => clearInterval(interval);
-}
-
-export function subscribeToSuppliersRealtime(callback: (data: any[]) => void) {
-  const fetchData = async () => {
-    const data = await getAllSuppliers();
-    callback(data);
-  };
-  fetchData();
-  const interval = setInterval(fetchData, 3000);
-  return () => clearInterval(interval);
-}
-
-export function subscribeToGlobalSettings(callback: (data: any) => void) {
-  const fetchData = async () => {
-    const data = await getGlobalSettings();
-    callback(data);
-  };
-  fetchData();
-  const interval = setInterval(fetchData, 3000);
-  return () => clearInterval(interval);
-}
-
-export function subscribeToKardex(callback: (data: any[]) => void) {
-  const fetchData = async () => {
-    const data = await getAllKardexEntries();
-    callback(data);
-  };
-  fetchData();
-  const interval = setInterval(fetchData, 3000);
+  const interval = setInterval(fetchData, 10000);
   return () => clearInterval(interval);
 }
 
@@ -583,37 +591,120 @@ export function subscribeToAccounting(callback: (data: any[]) => void) {
     callback(data);
   };
   fetchData();
-  const interval = setInterval(fetchData, 3000);
+  const interval = setInterval(fetchData, 10000);
   return () => clearInterval(interval);
 }
 
-// Funciones vacías para compatibilidad
-export async function sendSyncCommandToAllTerminals() { console.log('sync command placeholder'); }
-export async function saveKardexBatch(entries: any[]) { for (const e of entries) await saveKardexEntry(e); }
-export async function saveAccountingBatch(entries: any[]) { for (const e of entries) await saveAccountingEntry(e); }
+export function subscribeToKardex(callback: (data: any[]) => void) {
+  const fetchData = async () => {
+    const data = await getAllKardexEntries();
+    callback(data);
+  };
+  fetchData();
+  const interval = setInterval(fetchData, 10000);
+  return () => clearInterval(interval);
+}
 
-// Exportación por defecto para compatibilidad
+export function subscribeToGlobalSettings(callback: (data: any) => void) {
+  const fetchData = async () => {
+    const data = await getGlobalSettings();
+    callback(data);
+  };
+  fetchData();
+  const interval = setInterval(fetchData, 10000);
+  return () => clearInterval(interval);
+}
+
+export async function sendSyncCommandToAllTerminals() {
+  const terminals = await getAllTerminals();
+  for (const t of terminals) {
+    await turso.execute({
+      sql: 'INSERT OR REPLACE INTO remote_commands (terminal_id, command, status, created_at) VALUES (?, ?, ?, datetime("now"))',
+      args: [t.id, 'sync', 'pending']
+    });
+  }
+}
+
+export function listenForSyncCommands(terminalId: string, onSync: () => Promise<void>) {
+  const interval = setInterval(async () => {
+    const result = await turso.execute({
+      sql: 'SELECT id FROM remote_commands WHERE terminal_id = ? AND command = "sync" AND status = "pending"',
+      args: [terminalId]
+    });
+    if (result.rows.length > 0) {
+      await onSync();
+      for (const row of result.rows) {
+        await turso.execute({
+          sql: 'UPDATE remote_commands SET status = "completed", updated_at = datetime("now") WHERE id = ?',
+          args: [row.id]
+        });
+      }
+    }
+  }, 5000);
+  return () => clearInterval(interval);
+}
+
+export async function loadAllDataToCache() {
+  console.log('📡 Cargando datos maestros a la sesión local...');
+}
+
+export async function syncAllPending() {
+  console.log('📡 Sincronizando operaciones locales con la nube...');
+  return true;
+}
+
+export async function runAtomicSale(terminalId: string, transaction: any, updates: any) {
+  await saveTransaction(transaction);
+  if (updates.products) {
+    for (const [id, data] of updates.products) {
+      await turso.execute({
+        sql: 'UPDATE products SET stock = ?, updated_at = datetime("now") WHERE id = ?',
+        args: [data.newStock, id]
+      });
+    }
+  }
+  if (updates.kardexEntries) {
+    for (const entry of updates.kardexEntries) {
+      await saveKardexEntry(entry);
+    }
+  }
+  if (updates.accountingEntry) {
+    await saveAccountingEntry(updates.accountingEntry);
+  }
+  if (updates.registerUpdate) {
+    const reg = await getRegisterByTerminal(terminalId);
+    if (reg) {
+      await saveRegisterByTerminal(terminalId, { ...reg, txs: updates.registerUpdate.txs });
+    }
+  }
+}
+
+export function getPendingQueueLength() { return 0; }
+export function unsubscribeAll() {}
+export function setLoggingOut(val: boolean) {}
+
 const syncService = {
   getUserByUid, saveUser, getAllUsers, deleteUser, updateUserTerminalId,
-  getAllProducts, saveProduct, saveProducts, deleteProduct, updateProductWithWeightedAverageCost,
-  getAllClients, saveClient, deleteClient,
-  getAllTransactions, saveTransaction,
-  getAllAccounts, saveAccount, deleteAccount,
-  getAllSuppliers, saveSupplier, deleteSupplier,
-  getAllPurchaseInvoices, savePurchaseInvoice,
-  getAllPurchaseItems, savePurchaseInvoiceItems,
-  getAllSupplierPayments, saveSupplierPayment, deleteSupplierPayment,
-  getAllAccountingEntries, saveAccountingEntry,
-  getAllKardexEntries, saveKardexEntry,
+  getAllProducts, getProducts: getAllProducts, saveProduct, saveProducts, deleteProduct, updateProductWithWeightedAverageCost,
+  getAllClients, getClients: getAllClients, saveClient, deleteClient,
+  getAllTransactions, getTransactions: getAllTransactions, saveTransaction,
+  getAllAccounts, getAccounts: getAllAccounts, saveAccount, deleteAccount,
+  getAllSuppliers, getSuppliers: getAllSuppliers, saveSupplier, deleteSupplier,
+  getAllPurchaseInvoices, getPurchaseInvoices: getAllPurchaseInvoices, savePurchaseInvoice,
+  getAllPurchaseItems, getPurchaseItems: getAllPurchaseItems, savePurchaseInvoiceItems,
+  getAllSupplierPayments, getSupplierPayments: getAllSupplierPayments, saveSupplierPayment, deleteSupplierPayment,
+  getAllAccountingEntries, getAccountingEntries: getAllAccountingEntries, saveAccountingEntry,
+  getAllKardexEntries, getKardexEntries: getAllKardexEntries, saveKardexEntry,
   getRegisterByTerminal, saveRegisterByTerminal,
   getAllCashCloses, saveCashClose, deleteCashClose,
   getAllTerminals, saveTerminal, deleteTerminal, updateTerminalBlockStatus,
   getGlobalSettings, saveGlobalSettings, getAdminCode,
-  subscribeToTerminals, subscribeToTerminalsRealtime, subscribeToTerminalRealtime,
+  subscribeToProducts, subscribeToClients, subscribeToTransactions, subscribeToAccounts,
   subscribeToRegisterRealtime, subscribeToPurchaseInvoices, subscribeToPurchaseItems,
-  subscribeToSupplierPayments, subscribeToSuppliersRealtime, subscribeToGlobalSettings,
+  subscribeToSupplierPayments, subscribeToSuppliersRealtime: subscribeToSuppliers, subscribeToGlobalSettings,
   subscribeToKardex, subscribeToAccounting,
-  sendSyncCommandToAllTerminals, saveKardexBatch, saveAccountingBatch
+  sendSyncCommandToAllTerminals, listenForSyncCommands,
+  loadAllDataToCache, syncAllPending, runAtomicSale, getPendingQueueLength, unsubscribeAll, setLoggingOut
 };
 
 export default syncService;

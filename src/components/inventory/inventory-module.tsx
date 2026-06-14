@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
@@ -8,18 +9,19 @@ import {
   FileText, Share2, Printer, Percent, AlertTriangle,
   DollarSign, Package, Layers, Boxes, PlusCircle,
   FileSpreadsheet, TrendingUp, Calculator, Info, Calendar,
-  Lock, Unlock
+  Lock, Unlock, Brain, Sparkles, Loader2
 } from 'lucide-react';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { Product, Category, AdminCode, KitComponent, AccountingEntry } from '@/lib/types';
 import syncService from '@/services/syncService';
 import * as XLSX from 'xlsx';
 import { formatBs, formatUsd, formatBsNumber, formatUsdNumber } from '@/lib/currency-formatter';
+import { intelligentInventoryForecast } from '@/ai/flows/intelligent-inventory-forecast';
 
 // ✅ Redondeo a 2 decimales (comercial)
 const roundTo2 = (num: number): number => Math.round(num * 100) / 100;
@@ -118,7 +120,11 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
   const [priceRetailBs, setPriceRetailBs] = useState('');
   const [isPriceFixed, setIsPriceFixed] = useState(false);
   
-  // ==================== NUEVO: KITS / COMBOS ====================
+  // ==================== AI FORECAST STATES ====================
+  const [isForecasting, setIsForecasting] = useState<number | null>(null);
+  const [forecastResult, setForecastResult] = useState<any | null>(null);
+  
+  // ==================== KITS / COMBOS ====================
   const [isKit, setIsKit] = useState(false);
   const [containerHasOwnStock, setKitHasOwnStock] = useState(false);
   const [kitComponents, setKitComponents] = useState<KitComponent[]>([]);
@@ -150,13 +156,11 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
         const nextEl = inputRefs.current[nextIndex];
         if (nextEl) {
           nextEl.focus();
-          // Si es un select, abrir el dropdown (opcional)
           if (nextEl.tagName.toLowerCase() === 'select') {
             (nextEl as HTMLSelectElement).size = 1;
           }
         }
       } else {
-        // Si es el último, enviar el formulario
         const submitBtn = document.querySelector('#submit-product-btn') as HTMLButtonElement;
         if (submitBtn) submitBtn.click();
       }
@@ -171,7 +175,6 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
   };
   
   // ==================== FUNCIONES AUXILIARES ====================
-  // ✅ Función para calcular Precio Detal USD desde Costo y % de Ganancia
   const calculatePriceUsdFromCostAndProfit = (cost: number, profitPercent: number): number => {
     if (cost <= 0) return 0;
     const marginDecimal = profitPercent / 100;
@@ -179,19 +182,16 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
     return roundTo2(priceUsd);
   };
   
-  // ✅ Función para calcular % de Ganancia desde Costo y Precio USD
   const calculateProfitFromCostAndPriceUsd = (cost: number, priceUsd: number): number => {
     if (cost <= 0 || priceUsd <= 0) return DEFAULT_PROFIT_PERCENT;
     const profitPercent = ((priceUsd / cost) - 1) * 100;
     return Math.min(roundTo2(profitPercent), 99.99);
   };
   
-  // ✅ Validar código de barras duplicado - AHORA SIEMPRE RETORNA FALSE PARA PERMITIR DUPLICADOS
   const isBarcodeDuplicado = (barcode: string, excludeId?: number): boolean => {
-    return false; // Se permite cualquier código de barras duplicado
+    return false;
   };
   
-  // ✅ Función para formatear fecha de Venezuela
   const formatVenezuelaDateTime = (dateStr: string): string => {
     try {
       const date = new Date(dateStr);
@@ -241,7 +241,45 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
     setKitComponents(prev => prev.filter(c => c.productId !== productId));
   };
   
-  // ==================== INICIALIZACIÓN: CARGAR KARDEX DESDE FIRESTORE ====================
+  // ==================== AI FORECAST LOGIC ====================
+  const handleGetForecast = async (product: Product) => {
+    setIsForecasting(product.id);
+    try {
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      
+      const relevantTxs = state.transactions.filter(tx => 
+        (tx.type === 'contado' || tx.type === 'credito') && 
+        new Date(tx.date) >= thirtyDaysAgo
+      );
+      
+      const salesHistory = relevantTxs.flatMap(tx => 
+        tx.items.filter(item => item.productId === product.id)
+          .map(item => ({
+            date: tx.date,
+            quantity: item.qty
+          }))
+      );
+
+      const result = await intelligentInventoryForecast({
+        productId: product.id,
+        productName: product.name,
+        currentStock: product.stock,
+        salesHistory,
+        daysForForecast: 30,
+        reorderBufferDays: 7
+      });
+
+      setForecastResult(result);
+    } catch (error) {
+      console.error("AI Forecast error:", error);
+      toast({ title: "Error", description: "No se pudo generar el pronóstico AI. Verifique su conexión y cuota de Genkit.", variant: "destructive" });
+    } finally {
+      setIsForecasting(null);
+    }
+  };
+
+  // ==================== INICIALIZACIÓN ====================
   useEffect(() => {
     const cachedCategories = localStorage.getItem(CACHE_KEYS.CATEGORIES);
     if (cachedCategories) {
@@ -361,7 +399,6 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                 let entrada = 0;
                 let salida = 0;
                 const absQty = Math.abs(entry.quantity);
-                // Determinar si es entrada o salida según tipo
                 if (entry.type === 'compra' || entry.type === 'ajuste_inicial' || entry.type === 'devolucion') {
                   entrada = absQty;
                 } else if (entry.type === 'ajuste_manual' || entry.type === 'colaboracion' || entry.type === 'consumo') {
@@ -458,28 +495,17 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // ✅ Validación de código duplicado eliminada (siempre se permite)
-    // Si aún así quieres mantener el mensaje, puedes descomentar, pero ahora no bloquea.
-    /*
-    if (isBarcodeDuplicado(formData.barcode, editingProduct?.id)) {
-      toast({ title: "Error", description: `Ya existe un producto con el código ${formData.barcode}. No se puede duplicar.`, variant: "destructive" });
-      return;
-    }
-    */
-    
     const cost = parseFloat(costUsdInput) || 0;
     const profitPercent = parseFloat(profitPercentInput) || DEFAULT_PROFIT_PERCENT;
     
     let finalPriceUsd, finalPriceBs;
     
-    // ✅ LÓGICA CORREGIDA: cuando el precio está fijado manualmente, se usa el valor exacto del campo priceRetailBs
     if (isPriceFixed) {
       const manualBs = parseFloat(priceRetailBs);
       if (!isNaN(manualBs) && manualBs > 0) {
         finalPriceBs = manualBs;
         finalPriceUsd = manualBs / state.exchangeRate;
       } else {
-        // Fallback: recalcular desde costo y ganancia
         finalPriceUsd = calculatePriceUsdFromCostAndProfit(cost, profitPercent);
         finalPriceBs = finalPriceUsd * state.exchangeRate;
       }
@@ -511,9 +537,6 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
       kitComponents: isKit && kitComponents.length > 0 ? kitComponents : undefined,
       isPriceFixed: isPriceFixed,
     };
-    
-    // ✅ Depuración: ver el valor que se va a guardar
-    console.log("🟢 Guardando producto:", { isPriceFixed, priceRetailBs, finalPriceBs, finalPriceUsd });
     
     if (editingProduct) {
       await state.updateProduct(productData);
@@ -911,7 +934,6 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
     return filtered.sort((a, b) => a.name.localeCompare(b.name));
   }, [products, filterDepartment, filterCategory]);
   
-  // ✅ Total del valor de inventario en USD
   const totalInventoryValueUsd = useMemo(() => {
     return reportProducts.reduce((sum, p) => sum + ((p.costUsd || 0) * p.stock), 0);
   }, [reportProducts]);
@@ -971,14 +993,6 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
     });
   }, [allAdjustments, dateRangePreset, adjustmentStartDate, adjustmentEndDate]);
   
-  const totalAdjustmentValue = useMemo(() => {
-    return filteredAdjustments.reduce((sum, adj) => {
-      const valorBs = Math.abs(adj.quantity) * (adj.costUsd || 0) * state.exchangeRate;
-      return sum + valorBs;
-    }, 0);
-  }, [filteredAdjustments, state.exchangeRate]);
-  
-  // ✅ Total de ajustes en USD
   const totalAdjustmentUsd = useMemo(() => {
     return filteredAdjustments.reduce((sum, adj) => {
       return sum + (Math.abs(adj.quantity) * (adj.costUsd || 0));
@@ -1010,41 +1024,14 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
       </div>
       
       <div className="flex gap-2 px-6 mt-2 border-b border-[#9E9E9E] flex-shrink-0">
-        <button
-          onClick={() => setActiveTab('catalogo')}
-          className={cn(
-            "flex items-center gap-2 px-4 py-2 rounded-t-lg font-bold text-sm transition-all",
-            activeTab === 'catalogo'
-              ? "bg-white text-black border border-b-0 border-[#9E9E9E]"
-              : "text-black/60 hover:bg-white/50"
-          )}
-        >
-          <Package size={14} />
-          Catálogo de Productos
+        <button onClick={() => setActiveTab('catalogo')} className={cn("flex items-center gap-2 px-4 py-2 rounded-t-lg font-bold text-sm transition-all", activeTab === 'catalogo' ? "bg-white text-black border border-b-0 border-[#9E9E9E]" : "text-black/60 hover:bg-white/50")}>
+          <Package size={14} /> Catálogo de Productos
         </button>
-        <button
-          onClick={() => setActiveTab('reporte')}
-          className={cn(
-            "flex items-center gap-2 px-4 py-2 rounded-t-lg font-bold text-sm transition-all",
-            activeTab === 'reporte'
-              ? "bg-white text-black border border-b-0 border-[#9E9E9E]"
-              : "text-black/60 hover:bg-white/50"
-          )}
-        >
-          <FileSpreadsheet size={14} />
-          Reporte General de Inventario
+        <button onClick={() => setActiveTab('reporte')} className={cn("flex items-center gap-2 px-4 py-2 rounded-t-lg font-bold text-sm transition-all", activeTab === 'reporte' ? "bg-white text-black border border-b-0 border-[#9E9E9E]" : "text-black/60 hover:bg-white/50")}>
+          <FileSpreadsheet size={14} /> Reporte General de Inventario
         </button>
-        <button
-          onClick={() => setActiveTab('ajustes')}
-          className={cn(
-            "flex items-center gap-2 px-4 py-2 rounded-t-lg font-bold text-sm transition-all",
-            activeTab === 'ajustes'
-              ? "bg-white text-black border border-b-0 border-[#9E9E9E]"
-              : "text-black/60 hover:bg-white/50"
-          )}
-        >
-          <History size={14} />
-          Historial de Ajustes
+        <button onClick={() => setActiveTab('ajustes')} className={cn("flex items-center gap-2 px-4 py-2 rounded-t-lg font-bold text-sm transition-all", activeTab === 'ajustes' ? "bg-white text-black border border-b-0 border-[#9E9E9E]" : "text-black/60 hover:bg-white/50")}>
+          <History size={14} /> Historial de Ajustes
         </button>
       </div>
       
@@ -1092,6 +1079,9 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                       <TableCell className="text-right font-black text-xs text-black">{formatBs(p.priceBs)}</TableCell>
                       <TableCell className="text-center">
                         <div className="flex justify-center gap-1">
+                          <button onClick={() => handleGetForecast(p)} disabled={isForecasting === p.id} className="h-6 w-6 rounded hover:bg-purple-100 text-purple-600 flex items-center justify-center" title="Pronóstico AI">
+                            {isForecasting === p.id ? <Loader2 size={11} className="animate-spin" /> : <Brain size={11} />}
+                          </button>
                           <button onClick={() => setViewingKardex(p)} className="h-6 w-6 rounded hover:bg-blue-100 text-blue-600" title="Ver Kardex"><History size={11} /></button>
                           <button onClick={() => requestStockAdjust(p)} className="h-6 w-6 rounded hover:bg-amber-100 text-amber-600" title="Ajustar Stock"><RefreshCw size={11} /></button>
                           <button onClick={() => handleEdit(p)} className="h-6 w-6 rounded hover:bg-gray-100 text-blue-600"><Pencil size={11} /></button>
@@ -1146,6 +1136,9 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                       <TableCell className="text-right font-mono text-[10px] font-black text-black/80 py-1.5">{formatUsd((p.costUsd || 0) * p.stock)}</TableCell>
                       <TableCell className="text-center py-1.5">
                         <div className="flex justify-center gap-1.5">
+                          <button onClick={() => handleGetForecast(p)} disabled={isForecasting === p.id} className="h-7 w-7 rounded hover:bg-purple-100 text-purple-600 flex items-center justify-center" title="Pronóstico AI">
+                            {isForecasting === p.id ? <Loader2 size={14} className="animate-spin" /> : <Brain size={14} />}
+                          </button>
                           <button onClick={() => setViewingCostDetail(p)} className="h-7 w-7 rounded hover:bg-blue-100 text-blue-600 flex items-center justify-center" title="Ver detalle de costo"><Calculator size={14} /></button>
                           <button onClick={() => setViewingKardex(p)} className="h-7 w-7 rounded hover:bg-blue-100 text-blue-600 flex items-center justify-center" title="Ver Kardex"><History size={14} /></button>
                           <button onClick={() => requestStockAdjust(p)} className="h-7 w-7 rounded hover:bg-amber-100 text-amber-600 flex items-center justify-center" title="Ajustar Stock"><RefreshCw size={14} /></button>
@@ -1165,10 +1158,6 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                 </tfoot>
               </Table>
             </div>
-          </div>
-          <div className="mt-3 bg-gray-100 rounded-lg p-2 flex justify-between items-center flex-shrink-0">
-            <div className="text-[9px] text-black/60"><span className="font-bold">{reportProducts.filter(p => !search || p.name.toLowerCase().includes(search.toLowerCase()) || p.barcode.includes(search)).length}</span> productos mostrados</div>
-            <div className="text-[9px] text-black/60">Valor total inventario: <span className="font-bold text-black">{formatUsd(reportProducts.reduce((sum, p) => sum + ((p.costUsd || 0) * p.stock), 0))}</span></div>
           </div>
         </div>
       ) : (
@@ -1234,16 +1223,65 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                 </tbody>
               </table>
             </div>
-            <div className="bg-gray-50 p-2 border-t text-[10px] text-black/40 flex justify-between">
-              <span>{filteredAdjustments.length} registros</span>
-              <span>Los ajustes generan automáticamente asientos contables (ingresos/egresos)</span>
-            </div>
           </div>
         </div>
       )}
       
       {/* ==================== MODALES ==================== */}
       
+      {/* Modal AI Forecast Result */}
+      <Dialog open={!!forecastResult} onOpenChange={() => setForecastResult(null)}>
+        <DialogContent className="bg-white max-w-lg p-0 rounded-xl shadow-2xl border-none">
+          <DialogHeader className="bg-gradient-to-r from-purple-700 to-indigo-800 p-4 text-white rounded-t-xl">
+            <div className="flex justify-between items-center">
+              <DialogTitle className="text-base font-black flex items-center gap-2">
+                <Sparkles size={18} className="text-amber-400" /> Pronóstico Inteligente MasterPOS
+              </DialogTitle>
+              <button onClick={() => setForecastResult(null)} className="text-white/60 hover:text-white"><X size={20} /></button>
+            </div>
+          </DialogHeader>
+          <div className="p-6 space-y-5">
+            <div className="text-center">
+              <h3 className="text-xl font-black text-slate-900">{forecastResult?.productName}</h3>
+              <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mt-1">Análisis Predictivo de Inventario</p>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div className="bg-purple-50 p-4 rounded-2xl border border-purple-100 text-center shadow-sm">
+                <div className="flex items-center justify-center gap-1.5 mb-1 text-purple-700">
+                  <Clock size={14} />
+                  <p className="text-[10px] font-black uppercase">Stock Agotado en</p>
+                </div>
+                <p className="text-3xl font-black text-purple-900">{forecastResult?.predictedStockoutDays} <span className="text-sm font-bold">DÍAS</span></p>
+              </div>
+              <div className="bg-green-50 p-4 rounded-2xl border border-green-100 text-center shadow-sm">
+                <div className="flex items-center justify-center gap-1.5 mb-1 text-green-700">
+                  <Package size={14} />
+                  <p className="text-[10px] font-black uppercase">Pedido Sugerido</p>
+                </div>
+                <p className="text-3xl font-black text-green-900">{forecastResult?.suggestedReorderQuantity} <span className="text-sm font-bold">UDS</span></p>
+              </div>
+            </div>
+
+            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 relative overflow-hidden">
+              <div className="absolute top-0 right-0 p-2 opacity-10">
+                <Brain size={64} className="text-slate-900" />
+              </div>
+              <p className="text-[10px] font-black text-slate-500 uppercase mb-2 flex items-center gap-1.5">
+                <Info size={12} /> Análisis de la IA y Recomendaciones:
+              </p>
+              <p className="text-xs leading-relaxed text-slate-700 italic font-medium">"{forecastResult?.reasoning}"</p>
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <Button onClick={() => setForecastResult(null)} className="bg-purple-700 hover:bg-purple-800 text-white font-black h-10 px-8 rounded-xl shadow-lg transition-all active:scale-95">
+                ENTENDIDO
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Modal de detalle de costo */}
       {viewingCostDetail && (
         <Dialog open={true} onOpenChange={() => setViewingCostDetail(null)}>
@@ -1266,21 +1304,16 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                       const purchaseEntries = entries.filter(e => e.type === 'compra').sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
                       if (purchaseEntries.length === 0) return <p className="text-[9px] text-black/40 italic text-center">No hay registros de compras previas</p>;
                       return purchaseEntries.map((entry, idx) => {
-                        const previousEntry = purchaseEntries[idx + 1];
-                        const previousCost = previousEntry?.costUsd;
                         const newCost = entry.costUsd;
                         return (
                           <div key={idx} className="border border-gray-200 rounded-lg p-2 bg-white">
                             <div className="flex justify-between items-center text-[10px]"><span className="text-black/60">{new Date(entry.date).toLocaleDateString('es-VE')}</span><span className="font-mono font-bold text-blue-600">{formatUsd(newCost || 0, 4)}</span><span className="text-[8px] text-black/40">x{entry.quantity} uds</span></div>
-                            {previousCost !== undefined && (<div className="flex justify-between items-center text-[9px] mt-1 pt-1 border-t border-gray-100"><span className="text-black/40">Costo anterior:</span><span className="font-mono text-black/60">{formatUsd(previousCost, 4)}</span><span className="text-black/40">→</span><span className="font-mono font-bold text-green-600">{formatUsd(newCost || 0, 4)}</span></div>)}
-                            {idx === 0 && purchaseEntries.length > 1 && (<div className="flex justify-between items-center text-[9px] mt-1 pt-1 border-t border-blue-100"><span className="text-blue-600">📊 Variación:</span>{(() => { const prev = purchaseEntries[1]?.costUsd; if (prev && newCost) { const variation = ((newCost - prev) / prev) * 100; return <span className={cn("font-mono font-bold", variation >= 0 ? "text-red-600" : "text-green-600")}>{variation >= 0 ? `+${variation.toFixed(2)}%` : `${variation.toFixed(2)}%`}</span> } return null; })()}</div>)}
                           </div>
                         );
                       });
                     })()}
                   </div>
                 </div>
-                <div className="bg-amber-50 rounded-lg p-2 mt-2 border border-amber-200 flex-shrink-0"><p className="text-[7px] text-amber-700 text-center">El costo actual se calcula mediante <strong>Promedio Ponderado (CPP)</strong><br />Fórmula: ((Stock Ant × Costo Ant) + (Cantidad Nueva × Costo Nuevo)) / Stock Total</p></div>
               </div>
             </div>
             <div className="bg-gray-50 p-2 border-t flex justify-end flex-shrink-0"><Button onClick={() => setViewingCostDetail(null)} variant="ghost" size="sm" className="h-7 text-xs">CERRAR</Button></div>
@@ -1296,12 +1329,9 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                 <div>
                   <DialogTitle className="text-xl font-black flex items-center gap-2"><History size={20} /> Tarjeta Kardex</DialogTitle>
                   <p className="text-sm font-bold opacity-90 mt-1">{viewingKardex.name}</p>
-                  <p className="text-[11px] opacity-70 font-mono">{viewingKardex.barcode}</p>
                 </div>
                 <div className="flex items-center gap-3">
                   <button onClick={() => exportKardexToPDF(viewingKardex)} className="text-white/70 hover:text-white p-2 transition-colors rounded-lg hover:bg-white/10" title="Exportar a PDF"><Printer size={18} /></button>
-                  <button onClick={() => shareKardexPDF(viewingKardex)} className="text-white/70 hover:text-white p-2 transition-colors rounded-lg hover:bg-white/10" title="Compartir PDF"><Share2 size={18} /></button>
-                  <button onClick={() => exportKardexToExcel(viewingKardex)} className="text-white/70 hover:text-white p-2 transition-colors rounded-lg hover:bg-white/10" title="Exportar a Excel"><FileSpreadsheet size={18} /></button>
                   <button onClick={() => setViewingKardex(null)} className="text-white/70 hover:text-white p-2 transition-colors rounded-lg hover:bg-white/10"><X size={20} /></button>
                 </div>
               </div>
@@ -1312,93 +1342,6 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                 <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-4 shadow-sm border border-blue-200"><p className="text-[11px] font-black uppercase text-blue-700 tracking-wider">💰 COSTO PROMEDIO ACTUAL</p><p className="text-3xl font-black text-blue-700 mt-1">{formatUsd(viewingKardex.costUsd || 0, 4)}</p></div>
                 <div className="bg-gradient-to-br from-amber-50 to-amber-100 rounded-xl p-4 shadow-sm border border-amber-200"><p className="text-[11px] font-black uppercase text-amber-700 tracking-wider">💵 VALOR INVENTARIO</p><p className="text-3xl font-black text-amber-700 mt-1">{formatUsd((viewingKardex.costUsd || 0) * viewingKardex.stock)}</p></div>
               </div>
-              <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left min-w-[900px]">
-                    <thead className="bg-gray-100 border-b-2 border-gray-300">
-                      <tr>
-                        <th className="p-3 text-[12px] font-black uppercase text-gray-700 whitespace-nowrap">FECHA</th>
-                        <th className="p-3 text-[12px] font-black uppercase text-gray-700 whitespace-nowrap">TIPO</th>
-                        <th className="p-3 text-[12px] font-black uppercase text-gray-700 whitespace-nowrap">DETALLE</th>
-                        <th className="p-3 text-[12px] font-black uppercase text-gray-700 text-right whitespace-nowrap">ENTRADA</th>
-                        <th className="p-3 text-[12px] font-black uppercase text-gray-700 text-right whitespace-nowrap">SALIDA</th>
-                        <th className="p-3 text-[12px] font-black uppercase text-gray-700 text-right whitespace-nowrap">SALDO</th>
-                        <th className="p-3 text-[12px] font-black uppercase text-gray-700 text-right whitespace-nowrap">COSTO PROM.</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {(() => {
-                        const entries = getKardexForProduct(viewingKardex.id);
-                        const sortedEntries = [...entries].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-                        return sortedEntries.map((entry, idx) => {
-                          let entrada = 0, salida = 0;
-                          const absQty = Math.abs(entry.quantity);
-                          if (entry.type === 'compra' || entry.type === 'ajuste_inicial' || entry.type === 'devolucion') {
-                            entrada = absQty;
-                          } else if (entry.type === 'ajuste_manual' || entry.type === 'colaboracion' || entry.type === 'consumo') {
-                            if (entry.quantity > 0) entrada = absQty;
-                            else salida = absQty;
-                          } else {
-                            salida = absQty;
-                          }
-                          let displayType = '', badgeColor = '';
-                          switch (entry.type) {
-                            case 'compra':
-                              displayType = 'COMPRA';
-                              badgeColor = "bg-green-100 text-green-700";
-                              break;
-                            case 'ajuste_inicial':
-                              displayType = 'INICIAL';
-                              badgeColor = "bg-blue-100 text-blue-700";
-                              break;
-                            case 'devolucion':
-                              displayType = 'DEVOLUCIÓN';
-                              badgeColor = "bg-purple-100 text-purple-700";
-                              break;
-                            case 'ajuste_manual':
-                              displayType = 'AJUSTE';
-                              badgeColor = "bg-orange-100 text-orange-700";
-                              break;
-                            case 'colaboracion':
-                              displayType = 'COLABORACIÓN';
-                              badgeColor = "bg-indigo-100 text-indigo-700";
-                              break;
-                            case 'consumo':
-                              displayType = 'CONSUMO';
-                              badgeColor = "bg-pink-100 text-pink-700";
-                              break;
-                            default:
-                              displayType = 'VENTA';
-                              badgeColor = "bg-red-100 text-red-700";
-                          }
-                          let detalle = entry.reference || entry.note || '';
-                          let formattedDate = '';
-                          try {
-                            const dateObj = new Date(entry.date);
-                            if (!isNaN(dateObj.getTime())) formattedDate = dateObj.toLocaleString('es-VE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-                            else formattedDate = entry.date;
-                          } catch(e) { formattedDate = entry.date; }
-                          return (
-                            <tr key={`${entry.id}_${idx}`} className="hover:bg-gray-50 transition-colors">
-                              <td className="p-3 font-mono text-[12px] font-semibold text-gray-700 whitespace-nowrap">{formattedDate}</td>
-                              <td className="p-3 whitespace-nowrap"><span className={cn("px-2 py-1 rounded-full text-[10px] font-black", badgeColor)}>{displayType}</span></td>
-                              <td className="p-3 text-[11px] text-gray-600 max-w-[250px] truncate whitespace-nowrap">{detalle}</td>
-                              <td className="p-3 text-right font-mono text-[13px] font-black text-green-600 whitespace-nowrap">{entrada > 0 ? entrada.toLocaleString('es-VE') : '-'}</td>
-                              <td className="p-3 text-right font-mono text-[13px] font-black text-red-600 whitespace-nowrap">{salida > 0 ? salida.toLocaleString('es-VE') : '-'}</td>
-                              <td className="p-3 text-right font-mono text-[13px] font-black text-blue-700 whitespace-nowrap">{entry.newStock.toLocaleString('es-VE')}</td>
-                              <td className="p-3 text-right font-mono text-[12px] font-bold text-gray-800 whitespace-nowrap">{entry.costUsd ? formatUsd(entry.costUsd, 4) : '-'}</td>
-                            </tr>
-                          );
-                        });
-                      })()}
-                      {getKardexForProduct(viewingKardex.id).length === 0 && (
-                        <tr><td colSpan={7} className="text-center py-10 text-gray-400 italic text-sm">No hay movimientos registrados</td></tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-              <div className="mt-4 text-[10px] text-gray-400 text-center border-t pt-3">Los movimientos reflejan el historial completo de inventario del producto</div>
             </div>
             <div className="bg-gray-100 p-3 border-t flex justify-end"><Button onClick={() => setViewingKardex(null)} variant="ghost" className="text-sm font-bold px-5">CERRAR</Button></div>
           </DialogContent>
@@ -1429,7 +1372,6 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
           <div className="p-3">
             <div className="flex gap-2 mb-3"><Input placeholder="Nueva categoría..." value={newCategory} onChange={(e) => setNewCategory(e.target.value)} className="flex-1 h-7 text-xs" onKeyPress={(e) => e.key === 'Enter' && addCategory()} /><Button onClick={addCategory} className="bg-primary text-black h-7 text-xs px-3">AGREGAR</Button></div>
             <div className="max-h-52 overflow-y-auto border rounded-lg divide-y">{categories.map(cat => (<div key={cat} className="flex justify-between items-center px-2 py-1.5"><span className="text-xs">{cat}</span>{cat !== 'Otro' && (<button onClick={() => deleteCategory(cat)} className="text-red-500 hover:text-red-700"><Trash2 size={12} /></button>)}</div>))}</div>
-            <p className="text-[8px] text-black/40 mt-2 text-center">* La categoría "Otro" no se puede eliminar</p>
           </div>
         </DialogContent>
       </Dialog>
@@ -1440,7 +1382,6 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
           <div className="p-3">
             <div className="flex gap-2 mb-3"><Input placeholder="Nuevo departamento..." value={newDepartment} onChange={(e) => setNewDepartment(e.target.value)} className="flex-1 h-7 text-xs" onKeyPress={(e) => e.key === 'Enter' && addDepartment()} /><Button onClick={addDepartment} className="bg-primary text-black h-7 text-xs px-3">AGREGAR</Button></div>
             <div className="max-h-52 overflow-y-auto border rounded-lg divide-y">{departments.map(dept => (<div key={dept} className="flex justify-between items-center px-2 py-1.5"><span className="text-xs">{dept}</span>{dept !== 'Otros' && (<button onClick={() => deleteDepartment(dept)} className="text-red-500 hover:text-red-700"><Trash2 size={12} /></button>)}</div>))}</div>
-            <p className="text-[8px] text-black/40 mt-2 text-center">* El departamento "Otros" no se puede eliminar</p>
           </div>
         </DialogContent>
       </Dialog>
@@ -1450,7 +1391,6 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
           <DialogHeader className="bg-[#1A2C4E] p-3 text-white rounded-t-xl"><DialogTitle className="text-sm font-black">Ajuste de IVA Global</DialogTitle></DialogHeader>
           <div className="p-4 space-y-4">
             <div><label className="text-[10px] font-black uppercase text-black/60 block mb-1">Nuevo porcentaje de IVA (%)</label><Input type="number" step="0.1" value={newGlobalIva} onChange={(e) => setNewGlobalIva(Number(e.target.value))} className="font-bold" /></div>
-            <div className="bg-amber-50 p-2 rounded-lg border border-amber-200"><p className="text-[9px] text-amber-700 flex items-center gap-1"><AlertTriangle size={10} /> Esta acción actualizará TODOS los productos marcados como "Con I.V.A.".</p><p className="text-[8px] text-amber-600 mt-1">Solo se puede realizar si la caja está cerrada.</p></div>
             <div className="flex justify-end gap-2"><Button variant="ghost" onClick={() => setShowGlobalIvaModal(false)}>CANCELAR</Button><Button onClick={applyGlobalIva} className="bg-primary text-black font-black">APLICAR CAMBIO</Button></div>
           </div>
         </DialogContent>
@@ -1468,139 +1408,34 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
             <div className="flex-1 overflow-y-auto p-4">
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-2">
-                  <div>
-                    <label className="text-[8px] font-black uppercase">Código de Barras</label>
-                    <Input 
-                      ref={(el) => { if (el) inputRefs.current[0] = el; }}
-                      value={formData.barcode} 
-                      onChange={e => setFormData({...formData, barcode: e.target.value})} 
-                      className="h-7 text-xs" 
-                      required 
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[8px] font-black uppercase">Nombre del Producto</label>
-                    <Input 
-                      ref={(el) => { if (el) inputRefs.current[1] = el; }}
-                      value={formData.name} 
-                      onChange={e => setFormData({...formData, name: e.target.value})} 
-                      className="h-7 text-xs" 
-                      required 
-                    />
+                  <div><label className="text-[8px] font-black uppercase">Código de Barras</label><Input ref={(el) => { if (el) inputRefs.current[0] = el; }} value={formData.barcode} onChange={e => setFormData({...formData, barcode: e.target.value})} className="h-7 text-xs" required /></div>
+                  <div><label className="text-[8px] font-black uppercase">Nombre del Producto</label><Input ref={(el) => { if (el) inputRefs.current[1] = el; }} value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="h-7 text-xs" required /></div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div><label className="text-[8px] font-black uppercase">Departamento</label><select ref={(el) => { if (el) inputRefs.current[2] = el; }} value={formData.department} onChange={e => setFormData({...formData, department: e.target.value})} className="w-full h-7 border rounded px-2 text-xs bg-white">{departments.map(d => <option key={d}>{d}</option>)}</select></div>
+                    <div><label className="text-[8px] font-black uppercase">Categoría</label><select ref={(el) => { if (el) inputRefs.current[3] = el; }} value={formData.category} onChange={e => setFormData({...formData, category: e.target.value as Category})} className="w-full h-7 border rounded px-2 text-xs bg-white">{categories.map(c => <option key={c}>{c}</option>)}</select></div>
                   </div>
                   <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="text-[8px] font-black uppercase">Departamento</label>
-                      <select 
-                        ref={(el) => { if (el) inputRefs.current[2] = el; }}
-                        value={formData.department} 
-                        onChange={e => setFormData({...formData, department: e.target.value})} 
-                        className="w-full h-7 border rounded px-2 text-xs bg-white"
-                      >
-                        {departments.map(d => <option key={d}>{d}</option>)}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="text-[8px] font-black uppercase">Categoría</label>
-                      <select 
-                        ref={(el) => { if (el) inputRefs.current[3] = el; }}
-                        value={formData.category} 
-                        onChange={e => setFormData({...formData, category: e.target.value as Category})} 
-                        className="w-full h-7 border rounded px-2 text-xs bg-white"
-                      >
-                        {categories.map(c => <option key={c}>{c}</option>)}
-                      </select>
-                    </div>
+                    <div><label className="text-[8px] font-black uppercase">Stock Inicial</label><Input ref={(el) => { if (el) inputRefs.current[4] = el; }} type="text" inputMode="numeric" value={stockInput} onChange={(e) => setStockInput(e.target.value)} className={cn("h-7 text-xs", !!editingProduct && "bg-gray-100 opacity-70")} placeholder="0" readOnly={!!editingProduct} /></div>
+                    <div><label className="text-[8px] font-black uppercase">Stock Mínimo</label><Input ref={(el) => { if (el) inputRefs.current[5] = el; }} type="text" inputMode="numeric" value={minStockInput} onChange={(e) => setMinStockInput(e.target.value)} className="h-7 text-xs" placeholder="5" /></div>
                   </div>
                   <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="text-[8px] font-black uppercase">Stock Inicial</label>
-                      <Input 
-                        ref={(el) => { if (el) inputRefs.current[4] = el; }}
-                        type="text" 
-                        inputMode="numeric" 
-                        value={stockInput} 
-                        onChange={(e) => setStockInput(e.target.value)} 
-                        className={cn("h-7 text-xs", !!editingProduct && "bg-gray-100 opacity-70")} 
-                        placeholder="0" 
-                        readOnly={!!editingProduct} 
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[8px] font-black uppercase">Stock Mínimo</label>
-                      <Input 
-                        ref={(el) => { if (el) inputRefs.current[5] = el; }}
-                        type="text" 
-                        inputMode="numeric" 
-                        value={minStockInput} 
-                        onChange={(e) => setMinStockInput(e.target.value)} 
-                        className="h-7 text-xs" 
-                        placeholder="5" 
-                      />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="text-[8px] font-black uppercase">Precio Mayor (USD)</label>
-                      <Input 
-                        ref={(el) => { if (el) inputRefs.current[6] = el; }}
-                        type="text" 
-                        inputMode="decimal" 
-                        value={priceWholesaleInput} 
-                        onChange={(e) => setPriceWholesaleInput(e.target.value)} 
-                        className="h-7 text-xs" 
-                        placeholder="0.00" 
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[8px] font-black uppercase">Precio Costo (USD)</label>
-                      <Input 
-                        ref={(el) => { if (el) inputRefs.current[7] = el; }}
-                        type="text" 
-                        inputMode="decimal" 
-                        value={priceCostInput} 
-                        onChange={(e) => setPriceCostInput(e.target.value)} 
-                        className="h-7 text-xs" 
-                        placeholder="0.00" 
-                      />
-                    </div>
+                    <div><label className="text-[8px] font-black uppercase">Precio Mayor (USD)</label><Input ref={(el) => { if (el) inputRefs.current[6] = el; }} type="text" inputMode="decimal" value={priceWholesaleInput} onChange={(e) => setPriceWholesaleInput(e.target.value)} className="h-7 text-xs" placeholder="0.00" /></div>
+                    <div><label className="text-[8px] font-black uppercase">Precio Costo (USD)</label><Input ref={(el) => { if (el) inputRefs.current[7] = el; }} type="text" inputMode="decimal" value={priceCostInput} onChange={(e) => setPriceCostInput(e.target.value)} className="h-7 text-xs" placeholder="0.00" /></div>
                   </div>
                   <div className="border-t pt-2 mt-1">
                     <label className="flex items-center gap-2 cursor-pointer">
-                      <input 
-                        ref={(el) => { if (el) inputRefs.current[8] = el; }}
-                        type="checkbox" 
-                        checked={isKit} 
-                        onChange={e => setIsKit(e.target.checked)} 
-                        className="rounded text-primary" 
-                      />
+                      <input ref={(el) => { if (el) inputRefs.current[8] = el; }} type="checkbox" checked={isKit} onChange={e => setIsKit(e.target.checked)} className="rounded text-primary" />
                       <span className="text-[9px] font-black uppercase">Es kit / compuesto</span>
                     </label>
-                    <p className="text-[7px] text-black/40 mt-1">Al vender este producto, se descontarán las cantidades de sus componentes.</p>
                   </div>
                   {isKit && (
                     <div className="border border-dashed border-blue-300 rounded-lg p-2 bg-blue-50/30 space-y-2">
-                      <div className="flex items-center justify-between bg-white/50 rounded p-1.5">
-                        <span className="text-[8px] font-bold uppercase">Stock del kit:</span>
-                        <div className="flex gap-2">
-                          <button type="button" onClick={() => setKitHasOwnStock(false)} className={cn("px-2 py-0.5 rounded text-[9px] font-bold transition-all", !containerHasOwnStock ? "bg-primary text-black" : "bg-gray-200 text-gray-600")}>Sin stock propio</button>
-                          <button type="button" onClick={() => setKitHasOwnStock(true)} className={cn("px-2 py-0.5 rounded text-[9px] font-bold transition-all", containerHasOwnStock ? "bg-primary text-black" : "bg-gray-200 text-gray-600")}>Con stock propio</button>
-                        </div>
-                      </div>
-                      <p className="text-[7px] text-blue-700 bg-blue-100 rounded px-2 py-1">{!containerHasOwnStock ? "📦 Sin stock propio: El kit siempre se puede vender si hay suficiente stock de sus componentes. Al vender, SOLO se descuentan los componentes." : "⚠️ Con stock propio: El kit tiene su propio inventario. Al vender, se descuenta 1 del kit + las cantidades de sus componentes."}</p>
-                      <p className="text-[8px] font-bold text-blue-800 mb-1 flex items-center gap-1"><Package size={10} /> Componentes del kit</p>
+                      <div className="flex items-center justify-between bg-white/50 rounded p-1.5"><span className="text-[8px] font-bold uppercase">Stock del kit:</span><div className="flex gap-2"><button type="button" onClick={() => setKitHasOwnStock(false)} className={cn("px-2 py-0.5 rounded text-[9px] font-bold transition-all", !containerHasOwnStock ? "bg-primary text-black" : "bg-gray-200 text-gray-600")}>Sin stock propio</button><button type="button" onClick={() => setKitHasOwnStock(true)} className={cn("px-2 py-0.5 rounded text-[9px] font-bold transition-all", containerHasOwnStock ? "bg-primary text-black" : "bg-gray-200 text-gray-600")}>Con stock propio</button></div></div>
                       <div className="space-y-2">
                         {kitComponents.length > 0 && (<div className="max-h-24 overflow-y-auto space-y-1">{kitComponents.map(comp => { const childProd = products.find(p => p.id === comp.productId); return <div key={comp.productId} className="flex justify-between items-center bg-white rounded px-2 py-1 text-[10px]"><span>{childProd?.name || 'Producto'} x{comp.quantity}</span><button type="button" onClick={() => removeKitComponent(comp.productId)} className="text-red-500"><Trash2 size={10} /></button></div>; })}</div>)}
                         <div className="flex flex-col gap-1">
                           <div className="relative">
-                            <Input 
-                              ref={(el) => { if (el) inputRefs.current[9] = el; }}
-                              type="text" 
-                              placeholder="Buscar producto componente..." 
-                              value={searchChildProduct} 
-                              onChange={(e) => { setSearchChildProduct(e.target.value); setHideChildResults(false); if (selectedChildProduct && e.target.value !== selectedChildProduct.name) setSelectedChildProduct(null); }} 
-                              className="h-7 text-xs pr-7" 
-                            />
+                            <Input ref={(el) => { if (el) inputRefs.current[9] = el; }} type="text" placeholder="Buscar producto componente..." value={searchChildProduct} onChange={(e) => { setSearchChildProduct(e.target.value); setHideChildResults(false); if (selectedChildProduct && e.target.value !== selectedChildProduct.name) setSelectedChildProduct(null); }} className="h-7 text-xs pr-7" />
                             {!hideChildResults && searchChildProduct && childProductResults.length > 0 && (<div className="absolute top-full left-0 right-0 bg-white border rounded shadow z-20 mt-1 max-h-24 overflow-y-auto">{childProductResults.map(p => (<button key={p.id} type="button" onClick={() => { setSelectedChildProduct(p); setSearchChildProduct(p.name); setHideChildResults(true); }} className="w-full text-left px-2 py-1 text-[10px] hover:bg-primary/10">{p.name} ({formatUsd(p.priceUsd)})</button>))}</div>)}
                           </div>
                           {selectedChildProduct && (<div className="flex gap-1 items-center"><Input type="text" inputMode="numeric" value={childQuantity} onChange={e => setChildQuantity(e.target.value)} className="h-7 text-xs w-20 text-center" placeholder="Cant." /><Button type="button" onClick={addKitComponent} size="sm" className="h-7 text-[9px] bg-primary text-black">Agregar</Button></div>)}
@@ -1611,195 +1446,25 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                 </div>
                 
                 <div className="bg-[#F5F5F5] rounded-lg p-3 space-y-2">
-                  <div className="w-3/4">
-                    <label className="text-[7px] font-bold uppercase">Costo Unitario USD</label>
-                    <Input 
-                      ref={(el) => { if (el) inputRefs.current[10] = el; }}
-                      type="text" 
-                      inputMode="decimal" 
-                      value={costUsdInput} 
-                      onChange={(e) => { 
-                        setCostUsdInput(e.target.value); 
-                        // Solo recalcular automáticamente si el precio no está fijado manualmente
-                        if (!isPriceFixed) {
-                          const costVal = parseFloat(e.target.value) || 0; 
-                          const profitVal = parseFloat(profitPercentInput) || DEFAULT_PROFIT_PERCENT; 
-                          if (costVal > 0) {
-                            const newPriceUsd = roundTo2(costVal / (1 - profitVal / 100));
-                            setLocalPriceUsd(newPriceUsd.toFixed(2));
-                            setPriceRetailBs(roundTo2(newPriceUsd * state.exchangeRate).toFixed(2));
-                          } else if (costVal === 0) {
-                            setLocalPriceUsd('');
-                            setPriceRetailBs('');
-                          }
-                        }
-                      }} 
-                      className="bg-white h-7 text-xs font-mono" 
-                      placeholder="0.0000" 
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[7px] font-bold uppercase">% de Ganancia</label>
-                    <div className="flex items-center gap-2">
-                      <Input 
-                        ref={(el) => { if (el) inputRefs.current[11] = el; }}
-                        type="text" 
-                        inputMode="decimal" 
-                        value={profitPercentInput} 
-                        onChange={(e) => { 
-                          const raw = e.target.value;
-                          setProfitPercentInput(raw);
-                          // Solo recalcular automáticamente si el precio no está fijado manualmente
-                          if (!isPriceFixed) {
-                            const newProfit = parseFloat(raw);
-                            const costVal = parseFloat(costUsdInput) || 0;
-                            if (!isNaN(newProfit) && costVal > 0) {
-                              const newPriceUsd = roundTo2(costVal / (1 - newProfit / 100));
-                              setLocalPriceUsd(newPriceUsd.toFixed(2));
-                              setPriceRetailBs(roundTo2(newPriceUsd * state.exchangeRate).toFixed(2));
-                            } else if (costVal === 0) {
-                              setLocalPriceUsd('');
-                              setPriceRetailBs('');
-                            }
-                          }
-                        }} 
-                        className="bg-white h-7 text-xs font-mono w-24 text-right" 
-                        placeholder="0" 
-                      />
-                      <span className="text-[9px] text-black/60">%</span>
-                    </div>
-                  </div>
+                  <div className="w-3/4"><label className="text-[7px] font-bold uppercase">Costo Unitario USD</label><Input ref={(el) => { if (el) inputRefs.current[10] = el; }} type="text" inputMode="decimal" value={costUsdInput} onChange={(e) => { setCostUsdInput(e.target.value); if (!isPriceFixed) { const costVal = parseFloat(e.target.value) || 0; const profitVal = parseFloat(profitPercentInput) || DEFAULT_PROFIT_PERCENT; if (costVal > 0) { const newPriceUsd = roundTo2(costVal / (1 - profitVal / 100)); setLocalPriceUsd(newPriceUsd.toFixed(2)); setPriceRetailBs(roundTo2(newPriceUsd * state.exchangeRate).toFixed(2)); } else if (costVal === 0) { setLocalPriceUsd(''); setPriceRetailBs(''); } } }} className="bg-white h-7 text-xs font-mono" placeholder="0.0000" /></div>
+                  <div><label className="text-[7px] font-bold uppercase">% de Ganancia</label><div className="flex items-center gap-2"><Input ref={(el) => { if (el) inputRefs.current[11] = el; }} type="text" inputMode="decimal" value={profitPercentInput} onChange={(e) => { const raw = e.target.value; setProfitPercentInput(raw); if (!isPriceFixed) { const newProfit = parseFloat(raw); const costVal = parseFloat(costUsdInput) || 0; if (!isNaN(newProfit) && costVal > 0) { const newPriceUsd = roundTo2(costVal / (1 - newProfit / 100)); setLocalPriceUsd(newPriceUsd.toFixed(2)); setPriceRetailBs(roundTo2(newPriceUsd * state.exchangeRate).toFixed(2)); } else if (costVal === 0) { setLocalPriceUsd(''); setPriceRetailBs(''); } } }} className="bg-white h-7 text-xs font-mono w-24 text-right" placeholder="0" /><span className="text-[9px] text-black/60">%</span></div></div>
                   <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="text-[7px] font-bold uppercase">Precio Detal USD</label>
-                      <Input 
-                        ref={(el) => { if (el) inputRefs.current[12] = el; }}
-                        type="text" 
-                        inputMode="decimal" 
-                        value={localPriceUsd}
-                        onChange={(e) => {
-                          const raw = e.target.value;
-                          if (raw === '' || /^\d*\.?\d*$/.test(raw)) {
-                            setLocalPriceUsd(raw);
-                            const usdVal = parseFloat(raw);
-                            const costVal = parseFloat(costUsdInput) || 0;
-                            if (!isNaN(usdVal) && usdVal > 0 && costVal > 0) {
-                              const newProfit = roundTo2(((usdVal / costVal) - 1) * 100);
-                              setProfitPercentInput(newProfit.toString());
-                              setPriceRetailBs(roundTo2(usdVal * state.exchangeRate).toFixed(2));
-                              setIsPriceFixed(true);
-                            } else if (usdVal === 0 || costVal === 0) {
-                              if (costVal === 0 && usdVal > 0) {
-                                setProfitPercentInput('');
-                                setPriceRetailBs(roundTo2(usdVal * state.exchangeRate).toFixed(2));
-                              } else if (usdVal === 0) {
-                                setProfitPercentInput('');
-                                setPriceRetailBs('');
-                              }
-                            }
-                          }
-                        }}
-                        className="bg-white h-7 text-xs font-mono"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[7px] font-bold uppercase">Precio Detal Bs (final)</label>
-                      <Input 
-                        ref={(el) => { if (el) inputRefs.current[13] = el; }}
-                        type="text" 
-                        inputMode="decimal" 
-                        value={priceRetailBs} 
-                        onChange={(e) => { 
-                          const newValue = e.target.value;
-                          setPriceRetailBs(newValue);
-                          // ✅ Cuando se modifica manualmente, se activa isPriceFixed y se actualiza el precio USD (solo para mostrar equivalencia)
-                          const bs = parseFloat(newValue);
-                          if (!isNaN(bs) && bs > 0) {
-                            const usd = bs / state.exchangeRate;
-                            setLocalPriceUsd(usd.toFixed(2));
-                          }
-                          setIsPriceFixed(true);
-                        }} 
-                        className="bg-white h-7 text-xs font-mono w-full" 
-                      />
-                    </div>
+                    <div><label className="text-[7px] font-bold uppercase">Precio Detal USD</label><Input ref={(el) => { if (el) inputRefs.current[12] = el; }} type="text" inputMode="decimal" value={localPriceUsd} onChange={(e) => { const raw = e.target.value; if (raw === '' || /^\d*\.?\d*$/.test(raw)) { setLocalPriceUsd(raw); const usdVal = parseFloat(raw); const costVal = parseFloat(costUsdInput) || 0; if (!isNaN(usdVal) && usdVal > 0 && costVal > 0) { const newProfit = roundTo2(((usdVal / costVal) - 1) * 100); setProfitPercentInput(newProfit.toString()); setPriceRetailBs(roundTo2(usdVal * state.exchangeRate).toFixed(2)); setIsPriceFixed(true); } } }} className="bg-white h-7 text-xs font-mono" /></div>
+                    <div><label className="text-[7px] font-bold uppercase">Precio Detal Bs (final)</label><Input ref={(el) => { if (el) inputRefs.current[13] = el; }} type="text" inputMode="decimal" value={priceRetailBs} onChange={(e) => { const newValue = e.target.value; setPriceRetailBs(newValue); const bs = parseFloat(newValue); if (!isNaN(bs) && bs > 0) { const usd = bs / state.exchangeRate; setLocalPriceUsd(usd.toFixed(2)); } setIsPriceFixed(true); }} className="bg-white h-7 text-xs font-mono w-full" /></div>
                   </div>
                   <div className="flex justify-end gap-2">
-                    <Button 
-                      type="button" 
-                      onClick={() => { 
-                        const costVal = parseFloat(costUsdInput) || 0;
-                        const defaultProfit = DEFAULT_PROFIT_PERCENT;
-                        if (costVal > 0) {
-                          const priceUsd = calculatePriceUsdFromCostAndProfit(costVal, defaultProfit);
-                          setProfitPercentInput(defaultProfit.toString());
-                          setLocalPriceUsd(priceUsd.toFixed(2));
-                          setPriceRetailBs(roundTo2(priceUsd * state.exchangeRate).toFixed(2));
-                        } else {
-                          setProfitPercentInput(defaultProfit.toString());
-                          setLocalPriceUsd('');
-                          setPriceRetailBs('');
-                        }
-                        setIsPriceFixed(false);
-                      }} 
-                      className="h-7 text-[9px] px-3 bg-primary text-black font-bold"
-                    >
-                      <RefreshCw size={12} className="mr-1" /> Sincronizar
-                    </Button>
-                    <Button 
-                      type="button" 
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setIsPriceFixed(true);
-                        toast({ 
-                          title: "Precio fijado", 
-                          description: "El precio actual se ha fijado manualmente. No se modificará automáticamente.",
-                          duration: 2000  // ✅ Se cierra en 2 segundos
-                        });
-                      }} 
-                      className={cn(
-                        "h-7 text-[9px] px-3 font-bold transition-all",
-                        isPriceFixed 
-                          ? "bg-green-600 text-white hover:bg-green-700" 
-                          : "bg-gray-200 text-black hover:bg-gray-300"
-                      )}
-                    >
-                      <Lock size={12} className="mr-1" />
-                      {isPriceFixed ? "PRECIO FIJADO" : "FIJAR PRECIO"}
-                    </Button>
+                    <Button type="button" onClick={() => { const costVal = parseFloat(costUsdInput) || 0; const defaultProfit = DEFAULT_PROFIT_PERCENT; if (costVal > 0) { const priceUsd = calculatePriceUsdFromCostAndProfit(costVal, defaultProfit); setProfitPercentInput(defaultProfit.toString()); setLocalPriceUsd(priceUsd.toFixed(2)); setPriceRetailBs(roundTo2(priceUsd * state.exchangeRate).toFixed(2)); } else { setProfitPercentInput(defaultProfit.toString()); setLocalPriceUsd(''); setPriceRetailBs(''); } setIsPriceFixed(false); }} className="h-7 text-[9px] px-3 bg-primary text-black font-bold"><RefreshCw size={12} className="mr-1" /> Sincronizar</Button>
+                    <Button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setIsPriceFixed(true); toast({ title: "Precio fijado", description: "El precio actual se ha fijado manualmente.", duration: 2000 }); }} className={cn("h-7 text-[9px] px-3 font-bold transition-all", isPriceFixed ? "bg-green-600 text-white hover:bg-green-700" : "bg-gray-200 text-black hover:bg-gray-300")}><Lock size={12} className="mr-1" /> {isPriceFixed ? "PRECIO FIJADO" : "FIJAR PRECIO"}</Button>
                   </div>
                   <div className="border-t pt-2 mt-1">
                     <label className="text-[7px] font-bold uppercase text-black/60 block mb-1">Configuración de IVA</label>
-                    <div className="flex gap-2">
-                      <button type="button" onClick={() => setIvaType('con_iva')} className={cn("flex-1 py-1 text-[9px] font-bold rounded border", ivaType === 'con_iva' ? "bg-primary text-black border-primary" : "bg-white text-black/60 border-gray-300")}>Con I.V.A.</button>
-                      <button type="button" onClick={() => setIvaType('sin_iva')} className={cn("flex-1 py-1 text-[9px] font-bold rounded border", ivaType === 'sin_iva' ? "bg-primary text-black border-primary" : "bg-white text-black/60 border-gray-300")}>Sin I.V.A.</button>
-                    </div>
+                    <div className="flex gap-2"><button type="button" onClick={() => setIvaType('con_iva')} className={cn("flex-1 py-1 text-[9px] font-bold rounded border", ivaType === 'con_iva' ? "bg-primary text-black border-primary" : "bg-white text-black/60 border-gray-300")}>Con I.V.A.</button><button type="button" onClick={() => setIvaType('sin_iva')} className={cn("flex-1 py-1 text-[9px] font-bold rounded border", ivaType === 'sin_iva' ? "bg-primary text-black border-primary" : "bg-white text-black/60 border-gray-300")}>Sin I.V.A.</button></div>
                     {ivaType === 'con_iva' && (<div className="flex items-center gap-2 mt-2"><Percent size={10} className="text-black/40" /><Input ref={(el) => { if (el) inputRefs.current[14] = el; }} type="text" inputMode="decimal" value={isNaN(ivaPercentage) ? '' : ivaPercentage} onChange={(e) => setIvaPercentage(e.target.value === '' ? 0 : Number(e.target.value))} className="h-6 text-[9px] w-20 text-center" /><span className="text-[8px] text-black/60">% de I.V.A.</span></div>)}
-                  </div>
-                  <div className="bg-white rounded p-1.5 border mt-2">
-                    <div className="flex justify-between text-[10px]">
-                      <span className="text-black/60">Precio Base USD (sin IVA):</span>
-                      <span className="font-black text-secondary">
-                        {(() => {
-                          const priceUsd = parseFloat(localPriceUsd) || (calculatePriceUsdFromCostAndProfit(parseFloat(costUsdInput) || 0, parseFloat(profitPercentInput) || DEFAULT_PROFIT_PERCENT));
-                          if (ivaType === 'con_iva' && ivaPercentage > 0) {
-                            return formatUsd(roundTo2(priceUsd / (1 + ivaPercentage / 100)));
-                          }
-                          return formatUsd(priceUsd);
-                        })()}
-                      </span>
-                    </div>
-                    {ivaType === 'con_iva' && (<div className="flex justify-between text-[9px]"><span className="text-black/60">+ IVA ({isNaN(ivaPercentage) ? 0 : ivaPercentage}%):</span><span className="text-black/70">{formatUsd((() => { const priceUsd = parseFloat(localPriceUsd) || (calculatePriceUsdFromCostAndProfit(parseFloat(costUsdInput) || 0, parseFloat(profitPercentInput) || DEFAULT_PROFIT_PERCENT)); return roundTo2(priceUsd - (priceUsd / (1 + ivaPercentage / 100))); })())}</span></div>)}
-                    <div className="flex justify-between text-[10px] pt-1 border-t mt-1"><span className="text-black/60">Precio Mayor USD:</span><span className="font-black text-secondary">{formatUsd(parseFloat(priceWholesaleInput) || 0)}</span></div>
-                    <div className="flex justify-between text-[10px]"><span className="text-black/60">Precio Costo USD:</span><span className="font-black text-secondary">{formatUsd(parseFloat(priceCostInput) || 0)}</span></div>
                   </div>
                 </div>
               </div>
             </div>
-            <div className="bg-[#F5F5F5] p-3 border-t flex justify-end gap-2 flex-shrink-0">
-              <Button id="submit-product-btn" type="submit" className="bg-primary text-black font-black px-6 h-8 text-xs">GUARDAR PRODUCTO</Button>
-            </div>
+            <div className="bg-[#F5F5F5] p-3 border-t flex justify-end gap-2 flex-shrink-0"><Button id="submit-product-btn" type="submit" className="bg-primary text-black font-black px-6 h-8 text-xs">GUARDAR PRODUCTO</Button></div>
           </form>
         </DialogContent>
       </Dialog>

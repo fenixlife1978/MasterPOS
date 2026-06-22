@@ -120,11 +120,12 @@ export interface CashRegister {
 
 export type Page = 'dashboard' | 'pos' | 'inventario' | 'clientes' | 'cuentas' | 'caja' | 'proveedores' | 'contabilidad' | 'devoluciones' | 'registrar_compra';
 
+// ✅ CORREGIDO: Tipos unificados para kardex
 export interface KardexEntry {
   id?: string;
   productId: number;
   date: string;
-  type: 'entrada_compra' | 'salida_venta' | 'ajuste_positivo' | 'ajuste_negativo' | 'devolucion' | 'ajuste_inicial' | 'ajuste_manual';
+  type: 'entrada_compra' | 'salida_venta' | 'ajuste_positivo' | 'ajuste_negativo' | 'devolucion' | 'ajuste_inicial' | 'ajuste_manual' | 'colaboracion' | 'consumo' | 'compra' | 'venta';
   reference: string;
   qty?: number;
   quantity: number;

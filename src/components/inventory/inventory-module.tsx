@@ -58,11 +58,12 @@ const CACHE_KEYS = {
   IVA_PERCENTAGE: 'product_iva_percentage',
 };
 
+// ✅ INTERFAZ DE KARDEX CON TODOS LOS TIPOS SEGÚN types.ts
 interface KardexEntry {
   id: string;
   productId: number;
   date: string;
-  type: 'venta' | 'compra' | 'ajuste_inicial' | 'ajuste_manual' | 'devolucion' | 'colaboracion' | 'consumo' | 'INICIAL' | 'ajuste_positivo' | 'ajuste_negativo';
+  type: 'entrada_compra' | 'salida_venta' | 'ajuste_positivo' | 'ajuste_negativo' | 'devolucion' | 'ajuste_inicial' | 'ajuste_manual' | 'colaboracion' | 'consumo' | 'compra' | 'venta';
   quantity: number;
   previousStock: number;
   newStock: number;
@@ -75,6 +76,76 @@ const DEFAULT_CATEGORIES: Category[] = ['Whisky', 'Ron', 'Cerveza', 'Vino', 'Vod
 const DEFAULT_DEPARTMENTS = ['Polar', 'Munchy', 'Otros'];
 
 type InventoryTab = 'catalogo' | 'reporte' | 'ajustes';
+
+// ✅ MAPEO UNIFICADO DE TIPOS DE KARDEX (sincronizado con syncService.ts)
+// Este mapeo convierte los tipos internos a los que se muestran en la UI
+const KARDEX_TYPE_MAP: Record<string, { label: string; badgeColor: string; isEntry: boolean; isExit: boolean }> = {
+  // ✅ ENTRADAS POR COMPRA
+  'entrada_compra': { label: 'COMPRA', badgeColor: 'bg-green-100 text-green-700', isEntry: true, isExit: false },
+  'compra': { label: 'COMPRA', badgeColor: 'bg-green-100 text-green-700', isEntry: true, isExit: false },
+  
+  // ✅ SALIDAS POR VENTA
+  'salida_venta': { label: 'VENTA', badgeColor: 'bg-red-100 text-red-700', isEntry: false, isExit: true },
+  'venta': { label: 'VENTA', badgeColor: 'bg-red-100 text-red-700', isEntry: false, isExit: true },
+  
+  // ✅ AJUSTES POSITIVOS (sobrantes)
+  'ajuste_positivo': { label: 'AJUSTE (+)', badgeColor: 'bg-emerald-100 text-emerald-700', isEntry: true, isExit: false },
+  
+  // ✅ AJUSTES NEGATIVOS (mermas, roturas)
+  'ajuste_negativo': { label: 'AJUSTE (-)', badgeColor: 'bg-rose-100 text-rose-700', isEntry: false, isExit: true },
+  
+  // ✅ AJUSTES MANUALES (pueden ser + o - según la cantidad)
+  'ajuste_manual': { label: 'AJUSTE', badgeColor: 'bg-orange-100 text-orange-700', isEntry: false, isExit: false },
+  
+  // ✅ INICIAL
+  'ajuste_inicial': { label: 'INICIAL', badgeColor: 'bg-blue-100 text-blue-700', isEntry: true, isExit: false },
+  
+  // ✅ DEVOLUCIONES
+  'devolucion': { label: 'DEVOLUCIÓN', badgeColor: 'bg-purple-100 text-purple-700', isEntry: true, isExit: false },
+  
+  // ✅ COLABORACIONES
+  'colaboracion': { label: 'COLABORACIÓN', badgeColor: 'bg-indigo-100 text-indigo-700', isEntry: false, isExit: false },
+  
+  // ✅ CONSUMOS
+  'consumo': { label: 'CONSUMO', badgeColor: 'bg-pink-100 text-pink-700', isEntry: false, isExit: false },
+};
+
+// ✅ Función para obtener el label y color de un tipo de kardex
+const getKardexTypeInfo = (type: string): { label: string; badgeColor: string; isEntry: boolean; isExit: boolean } => {
+  const info = KARDEX_TYPE_MAP[type];
+  if (info) return info;
+  // Fallback: mostrar el tipo original en mayúsculas como gris
+  return { label: type.toUpperCase(), badgeColor: 'bg-gray-100 text-gray-700', isEntry: false, isExit: false };
+};
+
+// ✅ Función para determinar si un movimiento es ENTRADA o SALIDA
+const getEntryExit = (entry: KardexEntry): { entrada: number; salida: number } => {
+  const absQty = Math.abs(entry.quantity);
+  const typeInfo = getKardexTypeInfo(entry.type);
+  
+  // Si el tipo tiene definido isEntry o isExit, usamos eso
+  if (typeInfo.isEntry) {
+    return { entrada: absQty, salida: 0 };
+  }
+  if (typeInfo.isExit) {
+    return { entrada: 0, salida: absQty };
+  }
+  
+  // Para 'ajuste_manual', 'colaboracion', 'consumo': la cantidad define el signo
+  if (entry.type === 'ajuste_manual' || entry.type === 'colaboracion' || entry.type === 'consumo') {
+    if (entry.quantity > 0) {
+      return { entrada: absQty, salida: 0 };
+    } else {
+      return { entrada: 0, salida: absQty };
+    }
+  }
+  
+  // Fallback: si la cantidad es positiva es entrada, negativa es salida
+  return {
+    entrada: entry.quantity > 0 ? absQty : 0,
+    salida: entry.quantity < 0 ? absQty : 0
+  };
+};
 
 export default function InventoryModule({ state }: { state: ReturnType<typeof usePOSState> }) {
   const { toast } = useToast();
@@ -360,35 +431,17 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                 <th class="text-right">SALIDA</th>
                 <th class="text-right">SALDO</th>
                 <th class="text-right">COSTO PROM.</th>
-              </td>
+              </tr>
             </thead>
             <tbody>
               ${entries.map(entry => {
-                let entrada = 0;
-                let salida = 0;
-                const absQty = Math.abs(entry.quantity);
-                if (entry.type === 'compra' || entry.type === 'ajuste_inicial' || entry.type === 'devolucion' || entry.type === 'INICIAL') {
-                  entrada = absQty;
-                } else if (entry.type === 'ajuste_manual' || entry.type === 'colaboracion' || entry.type === 'consumo') {
-                  if (entry.quantity > 0) entrada = absQty;
-                  else salida = absQty;
-                } else {
-                  salida = absQty;
-                }
-                let displayType = '';
-                if (entry.type === 'compra') displayType = 'COMPRA';
-                else if (entry.type === 'ajuste_inicial') displayType = 'INICIAL';
-                else if (entry.type === 'INICIAL') displayType = 'INICIAL';
-                else if (entry.type === 'devolucion') displayType = 'DEVOLUCIÓN';
-                else if (entry.type === 'ajuste_manual') displayType = 'AJUSTE';
-                else if (entry.type === 'colaboracion') displayType = 'COLABORACIÓN';
-                else if (entry.type === 'consumo') displayType = 'CONSUMO';
-                else displayType = 'VENTA';
+                const { entrada, salida } = getEntryExit(entry);
+                const typeInfo = getKardexTypeInfo(entry.type);
                 let detalle = entry.reference || entry.note || '';
                 return `
                   <tr>
                     <td>${entry.date}</td>
-                    <td>${displayType}</td>
+                    <td>${typeInfo.label}</td>
                     <td>${detalle}</td>
                     <td class="text-right">${entrada > 0 ? entrada : '-'}</td>
                     <td class="text-right">${salida > 0 ? salida : '-'}</td>
@@ -397,7 +450,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                   </tr>
                 `;
               }).join('')}
-              ${entries.length === 0 ? '<tr><td colspan="7" class="text-center">No hay movimientos registrados</td>' : ''}
+              ${entries.length === 0 ? '<tr><td colspan="7" class="text-center">No hay movimientos registrados</td></tr>' : ''}
             </tbody>
           </table>
           <div class="footer">Documento generado desde MasterPOS - Sistema de Punto de Venta</div>
@@ -412,7 +465,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
   const shareKardexPDF = (product: Product) => {
     if (navigator.share) {
       const entries = getKardexForProduct(Number(product.id));
-      const content = `Kardex - ${product.name}\nStock Actual: ${product.stock} UDS\nCosto Promedio Actual: ${formatUsd(product.costUsd || 0, 4)}\n\nMovimientos:\n${entries.map(e => `${e.date} - ${e.type}: cantidad ${e.quantity} uds (Saldo: ${e.newStock})`).join('\n')}`;
+      const content = `Kardex - ${product.name}\nStock Actual: ${product.stock} UDS\nCosto Promedio Actual: ${formatUsd(product.costUsd || 0, 4)}\n\nMovimientos:\n${entries.map(e => `${e.date} - ${getKardexTypeInfo(e.type).label}: cantidad ${e.quantity} uds (Saldo: ${e.newStock})`).join('\n')}`;
       navigator.share({
         title: `Kardex - ${product.name}`,
         text: content,
@@ -425,28 +478,11 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
   const exportKardexToExcel = (product: Product) => {
     const entries = getKardexForProduct(Number(product.id));
     const data = entries.map(entry => {
-      let entrada = 0, salida = 0;
-      const absQty = Math.abs(entry.quantity);
-      if (entry.type === 'compra' || entry.type === 'ajuste_inicial' || entry.type === 'devolucion' || entry.type === 'INICIAL') {
-        entrada = absQty;
-      } else if (entry.type === 'ajuste_manual' || entry.type === 'colaboracion' || entry.type === 'consumo') {
-        if (entry.quantity > 0) entrada = absQty;
-        else salida = absQty;
-      } else {
-        salida = absQty;
-      }
-      let displayType = '';
-      if (entry.type === 'compra') displayType = 'COMPRA';
-      else if (entry.type === 'ajuste_inicial') displayType = 'INICIAL';
-      else if (entry.type === 'INICIAL') displayType = 'INICIAL';
-      else if (entry.type === 'devolucion') displayType = 'DEVOLUCIÓN';
-      else if (entry.type === 'ajuste_manual') displayType = 'AJUSTE';
-      else if (entry.type === 'colaboracion') displayType = 'COLABORACIÓN';
-      else if (entry.type === 'consumo') displayType = 'CONSUMO';
-      else displayType = 'VENTA';
+      const { entrada, salida } = getEntryExit(entry);
+      const typeInfo = getKardexTypeInfo(entry.type);
       return {
         FECHA: entry.date,
-        TIPO: displayType,
+        TIPO: typeInfo.label,
         DETALLE: entry.reference || entry.note || '',
         ENTRADA: entrada > 0 ? entrada : '-',
         SALIDA: salida > 0 ? salida : '-',
@@ -519,7 +555,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
         id: `${Date.now()}_${Math.random()}`,
         productId: Number(productData.id),
         date: new Date().toISOString(),
-        type: 'INICIAL',
+        type: 'ajuste_inicial',
         quantity: productData.stock,
         previousStock: 0,
         newStock: productData.stock,
@@ -644,20 +680,67 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
   
   const confirmStockAdjustmentRequest = () => {
     if (!adjustingStock) return;
-    const delta = parseInt(adjustmentDelta);
-    if (isNaN(delta) || delta === 0) {
-      toast({ title: "Error", description: "Ingrese una cantidad válida (distinta de cero)", variant: "destructive" });
+    
+    const rawDelta = adjustmentDelta.trim();
+    
+    if (!rawDelta) {
+      toast({ 
+        title: "Error", 
+        description: "Debe ingresar una cantidad con su signo (+ o -)", 
+        variant: "destructive" 
+      });
       return;
     }
+    
+    if (!rawDelta.startsWith('+') && !rawDelta.startsWith('-')) {
+      toast({ 
+        title: "Formato incorrecto", 
+        description: "Debe comenzar con + (para agregar) o - (para quitar). Ejemplo: +5 o -3", 
+        variant: "destructive" 
+      });
+      return;
+    }
+    
+    const numericPart = rawDelta.substring(1);
+    if (!/^\d+$/.test(numericPart)) {
+      toast({ 
+        title: "Formato incorrecto", 
+        description: "Después del signo solo debe haber números. Ejemplo: +5 o -3", 
+        variant: "destructive" 
+      });
+      return;
+    }
+    
+    const delta = parseInt(rawDelta);
+    
+    if (delta === 0) {
+      toast({ 
+        title: "Error", 
+        description: "La cantidad debe ser mayor que 0. Ejemplo: +5 o -3", 
+        variant: "destructive" 
+      });
+      return;
+    }
+    
     const newQty = adjustingStock.stock + delta;
     if (newQty < 0) {
-      toast({ title: "Error", description: "El stock no puede quedar negativo", variant: "destructive" });
+      toast({ 
+        title: "Error", 
+        description: "El stock no puede quedar negativo", 
+        variant: "destructive" 
+      });
       return;
     }
+    
     if (!adjustmentReason.trim()) {
-      toast({ title: "Error", description: "Ingrese un motivo para el ajuste", variant: "destructive" });
+      toast({ 
+        title: "Error", 
+        description: "Ingrese un motivo para el ajuste", 
+        variant: "destructive" 
+      });
       return;
     }
+    
     setPendingAdjustment({
       product: adjustingStock,
       delta,
@@ -961,12 +1044,12 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
     return reportProducts.reduce((sum, p) => sum + ((p.costUsd || 0) * p.stock), 0);
   }, [reportProducts]);
   
-  // ✅ CORREGIDO: Solo ajustes manuales (positivos y negativos)
+  // ✅ CORREGIDO: Solo ajustes manuales (positivos y negativos) usando el mapeo unificado
   const allAdjustments = useMemo(() => {
     const adjustments: (KardexEntry & { productName: string; productBarcode: string; costBsValue: number })[] = [];
     for (const product of products) {
       const entries = getKardexForProduct(Number(product.id));
-      // ✅ Solo mostrar ajustes manuales (positivos y negativos)
+      // ✅ Mostrar ajustes manuales (positivos, negativos y manuales)
       const productAdjustments = entries.filter(e => 
         e.type === 'ajuste_manual' || 
         e.type === 'ajuste_positivo' || 
@@ -1059,18 +1142,14 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
     resetForm();
   };
 
-  // ✅ CORREGIDO: handleProductSave con creación de kardex
   const handleProductSave = useCallback(async (product: Product) => {
     try {
       if (editingProduct) {
-        // Editar producto existente
         await syncService.saveProduct(product);
         toast({ title: "Actualizado", description: "Producto modificado correctamente." });
       } else {
-        // Crear nuevo producto
         await syncService.saveProduct(product);
         
-        // ✅ Crear entrada de kardex para stock inicial
         const kardexEntry: KardexEntry = {
           id: `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
           productId: product.id,
@@ -1085,7 +1164,6 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
         };
         await syncService.saveKardexEntry(kardexEntry);
         
-        // ✅ Actualizar el estado local de kardexEntries
         setKardexEntries(prev => {
           const existing = prev[product.id] || [];
           const newEntry = {
@@ -1433,7 +1511,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                   <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
                     {(() => {
                       const entries = kardexEntries[Number(viewingCostDetail.id)] || [];
-                      const purchaseEntries = entries.filter(e => e.type === 'compra').sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+                      const purchaseEntries = entries.filter(e => e.type === 'entrada_compra' || e.type === 'compra').sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
                       if (purchaseEntries.length === 0) return <p className="text-[9px] text-black/40 italic text-center">No hay registros de compras previas</p>;
                       return purchaseEntries.map((entry, idx) => {
                         const previousEntry = purchaseEntries[idx + 1];
@@ -1458,6 +1536,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
         </Dialog>
       )}
       
+      {/* ✅ MODAL DE KARDEX CORREGIDO - Usa el mapeo unificado */}
       {viewingKardex && (
         <Dialog open={true} onOpenChange={() => setViewingKardex(null)}>
           <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-6xl w-[95vw] p-0 overflow-hidden rounded-xl shadow-xl max-h-[90vh] flex flex-col">
@@ -1501,47 +1580,9 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                         const entries = getKardexForProduct(Number(viewingKardex.id));
                         const sortedEntries = [...entries].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
                         return sortedEntries.map((entry, idx) => {
-                          let entrada = 0, salida = 0;
-                          const absQty = Math.abs(entry.quantity);
-                          if (entry.type === 'compra' || entry.type === 'ajuste_inicial' || entry.type === 'devolucion' || entry.type === 'INICIAL') {
-                            entrada = absQty;
-                          } else if (entry.type === 'ajuste_manual' || entry.type === 'colaboracion' || entry.type === 'consumo') {
-                            if (entry.quantity > 0) entrada = absQty;
-                            else salida = absQty;
-                          } else {
-                            salida = absQty;
-                          }
-                          let displayType = '', badgeColor = '';
-                          switch (entry.type) {
-                            case 'compra':
-                              displayType = 'COMPRA';
-                              badgeColor = "bg-green-100 text-green-700";
-                              break;
-                            case 'ajuste_inicial':
-                            case 'INICIAL':
-                              displayType = 'INICIAL';
-                              badgeColor = "bg-blue-100 text-blue-700";
-                              break;
-                            case 'devolucion':
-                              displayType = 'DEVOLUCIÓN';
-                              badgeColor = "bg-purple-100 text-purple-700";
-                              break;
-                            case 'ajuste_manual':
-                              displayType = 'AJUSTE';
-                              badgeColor = "bg-orange-100 text-orange-700";
-                              break;
-                            case 'colaboracion':
-                              displayType = 'COLABORACIÓN';
-                              badgeColor = "bg-indigo-100 text-indigo-700";
-                              break;
-                            case 'consumo':
-                              displayType = 'CONSUMO';
-                              badgeColor = "bg-pink-100 text-pink-700";
-                              break;
-                            default:
-                              displayType = 'VENTA';
-                              badgeColor = "bg-red-100 text-red-700";
-                          }
+                          // ✅ Usar las funciones unificadas
+                          const { entrada, salida } = getEntryExit(entry);
+                          const typeInfo = getKardexTypeInfo(entry.type);
                           let detalle = entry.reference || entry.note || '';
                           let formattedDate = '';
                           try {
@@ -1552,7 +1593,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                           return (
                             <tr key={`${entry.id}_${idx}`} className="hover:bg-gray-50 transition-colors">
                               <td className="p-3 font-mono text-[12px] font-semibold text-gray-700 whitespace-nowrap">{formattedDate}</td>
-                              <td className="p-3 whitespace-nowrap"><span className={cn("px-2 py-1 rounded-full text-[10px] font-black", badgeColor)}>{displayType}</span></td>
+                              <td className="p-3 whitespace-nowrap"><span className={cn("px-2 py-1 rounded-full text-[10px] font-black", typeInfo.badgeColor)}>{typeInfo.label}</span></td>
                               <td className="p-3 text-[11px] text-gray-600 max-w-[250px] truncate whitespace-nowrap">{detalle}</td>
                               <td className="p-3 text-right font-mono text-[13px] font-black text-green-600 whitespace-nowrap">{entrada > 0 ? entrada.toLocaleString('es-VE') : '-'}</td>
                               <td className="p-3 text-right font-mono text-[13px] font-black text-red-600 whitespace-nowrap">{salida > 0 ? salida.toLocaleString('es-VE') : '-'}</td>
@@ -1581,11 +1622,59 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
       
       <Dialog open={!!adjustingStock} onOpenChange={() => setAdjustingStock(null)}>
         <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-md p-0 rounded-xl">
-          <DialogHeader className="bg-amber-500 p-3 text-white rounded-t-xl"><div className="flex justify-between items-center"><DialogTitle className="text-sm font-black">Ajustar Stock</DialogTitle><button onClick={() => setAdjustingStock(null)}><X size={16} /></button></div></DialogHeader>
+          <DialogHeader className="bg-amber-500 p-3 text-white rounded-t-xl">
+            <div className="flex justify-between items-center">
+              <DialogTitle className="text-sm font-black">Ajustar Stock</DialogTitle>
+              <button onClick={() => setAdjustingStock(null)} className="text-white/70 hover:text-white">
+                <X size={16} />
+              </button>
+            </div>
+          </DialogHeader>
           <div className="p-4 space-y-3">
-            <div><label className="text-[9px] font-black uppercase block mb-1">Cantidad a ajustar (negativa para quitar, positiva para agregar)</label><Input type="number" value={adjustmentDelta} onChange={(e) => setAdjustmentDelta(e.target.value)} className="text-sm" placeholder="Ej: +5 o -3" />{adjustingStock && <p className="text-[8px] text-black/50 mt-1">Stock actual: {adjustingStock.stock} uds → Nuevo stock: {adjustingStock.stock + (parseInt(adjustmentDelta) || 0)} uds</p>}</div>
-            <div><label className="text-[9px] font-black uppercase block mb-1">Motivo del Ajuste</label><textarea value={adjustmentReason} onChange={(e) => setAdjustmentReason(e.target.value)} rows={2} className="w-full border rounded-lg px-2 py-1 text-xs resize-none" placeholder="Ej: Rotura, merma, inventario físico, sobrante..." /></div>
-            <div className="flex justify-end gap-2"><Button variant="ghost" size="sm" onClick={() => setAdjustingStock(null)}>CANCELAR</Button><Button onClick={confirmStockAdjustmentRequest} className="bg-amber-500 text-white font-black h-7 text-xs px-4">SOLICITAR AJUSTE</Button></div>
+            <div>
+              <label className="text-[9px] font-black uppercase block mb-1">
+                Cantidad a ajustar (negativa para quitar, positiva para agregar)
+              </label>
+              <Input 
+                type="text" 
+                value={adjustmentDelta} 
+                onChange={(e) => setAdjustmentDelta(e.target.value)} 
+                className="text-sm font-mono" 
+                placeholder="Ej: +5 o -3" 
+              />
+              {adjustingStock && (
+                <p className="text-[8px] text-black/50 mt-1">
+                  Stock actual: {adjustingStock.stock} uds → Nuevo stock: {
+                    (() => {
+                      const raw = adjustmentDelta.trim();
+                      if (raw.startsWith('+') || raw.startsWith('-')) {
+                        const num = parseInt(raw);
+                        if (!isNaN(num)) {
+                          return adjustingStock.stock + num;
+                        }
+                      }
+                      return adjustingStock.stock;
+                    })()
+                  } uds
+                </p>
+              )}
+            </div>
+            <div>
+              <label className="text-[9px] font-black uppercase block mb-1">Motivo del Ajuste</label>
+              <textarea 
+                value={adjustmentReason} 
+                onChange={(e) => setAdjustmentReason(e.target.value)} 
+                rows={2} 
+                className="w-full border rounded-lg px-2 py-1 text-xs resize-none" 
+                placeholder="Ej: Rotura, merma, inventario físico, sobrante..." 
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" size="sm" onClick={() => setAdjustingStock(null)}>CANCELAR</Button>
+              <Button onClick={confirmStockAdjustmentRequest} className="bg-amber-500 text-white font-black h-7 text-xs px-4">
+                SOLICITAR AJUSTE
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>

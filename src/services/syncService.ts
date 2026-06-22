@@ -632,7 +632,7 @@ export async function saveAccountingEntry(entry: any) {
 }
 
 // ============================================================
-// KARDEX - ✅ CORREGIDO
+// KARDEX - ✅ CORREGIDO CON MAPEO UNIFICADO
 // ============================================================
 
 export async function getAllKardexEntries() {
@@ -667,32 +667,32 @@ export async function getAllKardexEntries() {
   }
 }
 
+// ✅ MAPEO UNIFICADO DE TIPOS DE KARDEX
 export async function saveKardexEntry(entry: any) {
   // Generar ID válido para Firebase
   const entryId = entry.id || `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   const cleanId = entryId.replace(/[.#$[\]]/g, '_');
   const entryRef = ref(rtdb, `kardex_entries/${cleanId}`);
   
-  // ✅ Convertir tipos para que coincidan con la definición de KardexEntry
-  let type = entry.type || 'entrada';
+  // ✅ Mapeo unificado de tipos - todos los tipos posibles se convierten a los definidos en types.ts
+  const typeMap: Record<string, string> = {
+    'INICIAL': 'ajuste_inicial',
+    'venta': 'salida_venta',
+    'compra': 'entrada_compra',
+    'colaboracion': 'colaboracion',
+    'consumo': 'consumo',
+    'devolucion': 'devolucion',
+    'ajuste_manual': 'ajuste_manual',
+    'ajuste_positivo': 'ajuste_positivo',
+    'ajuste_negativo': 'ajuste_negativo',
+    'ajuste_inicial': 'ajuste_inicial',
+    'entrada_compra': 'entrada_compra',
+    'salida_venta': 'salida_venta',
+    'consumo_propio': 'consumo',
+  };
   
-  if (type === 'INICIAL') {
-    type = 'ajuste_inicial';
-  } else if (type === 'venta') {
-    type = 'salida_venta';
-  } else if (type === 'compra') {
-    type = 'entrada_compra';
-  } else if (type === 'colaboracion' || type === 'consumo') {
-    // ✅ Colaboración y Consumo propio son SALIDAS de inventario
-    type = 'salida_venta';
-  } else if (type === 'ajuste_manual') {
-    // Si la cantidad es positiva => ajuste positivo, si es negativa => ajuste negativo
-    if (entry.quantity > 0) {
-      type = 'ajuste_positivo';
-    } else {
-      type = 'ajuste_negativo';
-    }
-  }
+  // Obtener el tipo mapeado o usar el original si no está en el mapa
+  const type = typeMap[entry.type] || entry.type || 'entrada_compra';
   
   const entryData = {
     product_id: entry.productId,

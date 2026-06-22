@@ -392,6 +392,9 @@ export default function RegisterPurchase() {
       
       await syncService.savePurchaseInvoiceItems(Number(invoiceId), items);
       
+      // ============================================================
+      // ✅ CORREGIDO: Actualizar productos Y crear entradas de kardex
+      // ============================================================
       const products = await syncService.getProducts();
       for (const item of tempItems) {
         const product = products.find(p => p.id === item.productId);
@@ -408,6 +411,22 @@ export default function RegisterPurchase() {
             costBs: roundTo2(newCost * rateNum),
           };
           await syncService.saveProduct(updatedProduct);
+          
+          // ✅ CORREGIDO: Crear entrada de kardex como COMPRA (no como "entrada_compra")
+          // El tipo debe ser 'compra' para que aparezca correctamente en la tarjeta
+          const kardexEntry = {
+            id: `${Date.now()}_${item.productId}_${Math.random().toString(36).substr(2, 6)}`,
+            productId: item.productId,
+            date: timestamp,
+            type: 'compra', // ✅ CORREGIDO: tipo COMPRA (entrada de mercancía)
+            quantity: item.qty, // ✅ Cantidad POSITIVA = ENTRADA
+            previousStock: currentStock,
+            newStock: newStock,
+            reference: `Compra ${invoiceNumber}`,
+            note: `Compra de ${item.qty} unidades a ${formatUsd(item.costUsd, 4)} USD c/u - Factura #${invoiceNumber}`,
+            costUsd: item.costUsd,
+          };
+          await syncService.saveKardexEntry(kardexEntry);
         }
       }
       

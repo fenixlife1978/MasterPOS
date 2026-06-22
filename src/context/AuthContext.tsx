@@ -168,7 +168,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => unsubscribeSnapshot();
   }, [user?.uid]);
 
-  // Cargar sesión activa
+  // ✅ Cargar sesión activa - CORREGIDO usando getRegisterByTerminal
   useEffect(() => {
     if (!user?.terminalId) {
       setActiveSession(null);
@@ -177,15 +177,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let mounted = true;
     (async () => {
       try {
-        const session = await syncService.getActiveSessionByTerminal(user.terminalId!);
-        if (mounted) setActiveSession(session);
+        // ✅ Usar getRegisterByTerminal en lugar de getActiveSessionByTerminal
+        const registerData = await syncService.getRegisterByTerminal(user.terminalId!);
+        if (mounted) {
+          // Convertir el registro en una sesión
+          if (registerData && registerData.isOpen) {
+            const session = {
+              id: `${user.terminalId}_${registerData.openTime}`,
+              terminalId: user.terminalId,
+              userId: user.uid,
+              startTime: registerData.openTime,
+              initialAmountUsd: registerData.openAmountUsd || 0,
+              finalAmountUsd: 0,
+              status: 'open',
+              totalSales: registerData.txs?.length || 0,
+              exchangeRate: registerData.exchangeRate || 0,
+            };
+            setActiveSession(session);
+          } else {
+            setActiveSession(null);
+          }
+        }
       } catch (error) {
         console.error('Error al cargar sesión activa:', error);
         if (mounted) setActiveSession(null);
       }
     })();
     return () => { mounted = false; };
-  }, [user?.terminalId]);
+  }, [user?.terminalId, user?.uid]);
 
   // Redirección centralizada
   useEffect(() => {
@@ -220,14 +239,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     router.push('/login');
   };
 
+  // ✅ Recargar sesión activa - CORREGIDO
   const reloadActiveSession = async () => {
     if (!user?.terminalId) {
       setActiveSession(null);
       return;
     }
     try {
-      const session = await syncService.getActiveSessionByTerminal(user.terminalId);
-      setActiveSession(session);
+      const registerData = await syncService.getRegisterByTerminal(user.terminalId);
+      if (registerData && registerData.isOpen) {
+        const session = {
+          id: `${user.terminalId}_${registerData.openTime}`,
+          terminalId: user.terminalId,
+          userId: user.uid,
+          startTime: registerData.openTime,
+          initialAmountUsd: registerData.openAmountUsd || 0,
+          finalAmountUsd: 0,
+          status: 'open',
+          totalSales: registerData.txs?.length || 0,
+          exchangeRate: registerData.exchangeRate || 0,
+        };
+        setActiveSession(session);
+      } else {
+        setActiveSession(null);
+      }
     } catch (error) {
       console.error('Error al recargar sesión activa:', error);
       setActiveSession(null);

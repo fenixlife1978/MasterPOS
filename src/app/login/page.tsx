@@ -4,9 +4,10 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { User, Building2, Store, Key, Mail, ArrowLeft } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { auth, rtdb } from '@/lib/firebase';
+import { auth, db, rtdb } from '@/lib/firebase';
 import { signInWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
-import { ref, get, child } from 'firebase/database';
+import { doc, getDoc, setDoc, collection, query, where, getDocs } from 'firebase/firestore';
+import { ref, get, set, child } from 'firebase/database';
 import Image from 'next/image';
 
 export default function LoginPage() {
@@ -21,43 +22,87 @@ export default function LoginPage() {
   const router = useRouter();
 
   useEffect(() => {
-    // Usamos sessionStorage para ser coherentes con el AuthContext
     const storedUser = sessionStorage.getItem('user');
     if (storedUser) {
       router.replace('/');
     }
   }, [router]);
 
-  // Función para obtener usuario de Firebase Realtime Database
-  const getUserFromFirebase = async (uid: string) => {
+  // ✅ Función para obtener usuario de Firestore (PRINCIPAL)
+  const getUserFromFirestore = async (uid: string) => {
     try {
-      const usersRef = ref(rtdb, 'users');
-      const snapshot = await get(usersRef);
+      // Buscar en la colección 'users' de Firestore por uid
+      const usersRef = collection(db, 'users');
+      const q = query(usersRef, where('uid', '==', uid));
+      const querySnapshot = await getDocs(q);
       
-      if (!snapshot.exists()) {
-        return null;
-      }
-      
-      const users = snapshot.val();
-      for (const [key, user] of Object.entries(users)) {
-        const userData = user as any;
-        if (userData.uid === uid) {
-          return {
-            id: key,
-            uid: userData.uid,
-            name: userData.name || 'Usuario',
-            email: userData.email || '',
-            role: userData.role || 'cashier',
-            terminalId: userData.terminalId || null,
-            status: userData.status || 'active'
-          };
-        }
+      if (!querySnapshot.empty) {
+        const docData = querySnapshot.docs[0];
+        const userData = docData.data();
+        return {
+          id: docData.id,
+          uid: userData.uid,
+          name: userData.name || 'Usuario',
+          email: userData.email || '',
+          role: userData.role || 'cashier',
+          terminalId: userData.terminalId || null,
+          status: userData.status || 'active'
+        };
       }
       return null;
     } catch (error) {
-      console.error('Error obteniendo usuario de Firebase:', error);
+      console.error('Error obteniendo usuario de Firestore:', error);
       return null;
     }
+  };
+
+  // ✅ Función para guardar usuario en Firestore
+  const saveUserToFirestore = async (userData: any) => {
+    try {
+      const userRef = doc(db, 'users', userData.uid);
+      await setDoc(userRef, {
+        uid: userData.uid,
+        name: userData.name,
+        email: userData.email,
+        role: userData.role,
+        terminalId: userData.terminalId || null,
+        status: userData.status || 'active',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+      return true;
+    } catch (error) {
+      console.error('Error guardando usuario en Firestore:', error);
+      return false;
+    }
+  };
+
+  // ✅ Función para guardar usuario en RTDB (respaldo)
+  const saveUserToRTDB = async (userData: any) => {
+    try {
+      const userRef = ref(rtdb, `users/${userData.uid}`);
+      await set(userRef, {
+        uid: userData.uid,
+        name: userData.name,
+        email: userData.email,
+        role: userData.role,
+        terminalId: userData.terminalId || null,
+        status: userData.status || 'active',
+        updatedAt: new Date().toISOString()
+      });
+      return true;
+    } catch (error) {
+      console.error('Error guardando usuario en RTDB:', error);
+      return false;
+    }
+  };
+
+  // ✅ Función para sincronizar usuario en ambos lugares
+  const syncUserToBoth = async (userData: any) => {
+    await Promise.all([
+      saveUserToFirestore(userData),
+      saveUserToRTDB(userData)
+    ]);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -75,14 +120,13 @@ export default function LoginPage() {
       const firebaseUser = userCredential.user;
       const uid = firebaseUser.uid;
 
-      // 2. Obtener el rol y nombre desde Firebase Realtime Database
-      const userData = await getUserFromFirebase(uid);
+      // 2. Obtener el rol y nombre desde FIRESTORE (principal)
+      let userData = await getUserFromFirestore(uid);
       
       if (!userData) {
-        // Si no existe en la base de datos, crear un usuario por defecto
-        // (esto es útil para la primera vez o para pruebas)
+        // Si no existe en Firestore, crear usuario por defecto
         const defaultRole = mode === 'admin' ? 'admin' : 'cashier';
-        const defaultUser = {
+        const newUser = {
           uid: uid,
           name: firebaseUser.displayName || email.split('@')[0] || 'Usuario',
           email: firebaseUser.email || email,
@@ -91,15 +135,14 @@ export default function LoginPage() {
           status: 'active'
         };
         
-        // Guardar el usuario en Firebase Realtime Database
-        const { saveUser } = await import('@/services/syncService');
-        await saveUser(defaultUser);
+        // Guardar en ambos lugares
+        await syncUserToBoth(newUser);
         
-        // Usar los datos por defecto
+        // Usar los datos del nuevo usuario
         const userRole = defaultRole;
-        const userName = defaultUser.name;
+        const userName = newUser.name;
 
-        // Verificar permisos según el modo seleccionado
+        // Verificar permisos
         if (mode === 'admin' && userRole !== 'admin') {
           setError('Esta cuenta no tiene permisos de administrador');
           setIsLoading(false);
@@ -112,7 +155,6 @@ export default function LoginPage() {
           return;
         }
         
-        // Guardar en sessionStorage
         const appUser = { 
           name: userName, 
           role: userRole, 
@@ -143,7 +185,17 @@ export default function LoginPage() {
         return;
       }
       
-      // 4. Guardar en sessionStorage
+      // 4. Sincronizar usuario en RTDB (actualizar si hay cambios)
+      await saveUserToRTDB({
+        uid: userData.uid,
+        name: userName,
+        email: userData.email,
+        role: userRole,
+        terminalId: userData.terminalId || null,
+        status: userData.status || 'active'
+      });
+      
+      // 5. Guardar en sessionStorage
       const appUser = { 
         name: userName, 
         role: userRole, 

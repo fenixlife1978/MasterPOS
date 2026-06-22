@@ -15,7 +15,7 @@ import { cn } from '@/lib/utils';
 import { formatBs, formatUsd, formatBsNumber, formatUsdNumber } from '@/lib/currency-formatter';
 
 interface Terminal {
-  id: number;
+  id: string;
   name: string;
   description: string;
   location: string;
@@ -63,7 +63,7 @@ export default function CashSupervision() {
   const [totals, setTotals] = useState<TotalsByMethod | null>(null);
   const [isSyncingAll, setIsSyncingAll] = useState(false);
 
-  // ✅ Cargar terminales desde TURSO
+  // Cargar terminales desde Firebase Realtime Database
   useEffect(() => {
     if (!user || user.role !== 'admin') {
       setLoadingTerminals(false);
@@ -71,23 +71,33 @@ export default function CashSupervision() {
     }
 
     const loadTerminals = async () => {
-      const data = await syncService.getAllTerminals();
-      setTerminals(data as Terminal[]);
-      setLoadingTerminals(false);
+      try {
+        const data = await syncService.getAllTerminals();
+        // Asegurar que los datos tengan la estructura correcta
+        const terminalsWithDefaults = data.map((t: any) => ({
+          ...t,
+          id: t.id || t.name || '',
+          name: t.name || 'Sin nombre',
+          location: t.location || '',
+          status: t.status || 'active'
+        }));
+        setTerminals(terminalsWithDefaults);
+      } catch (error) {
+        console.error('Error loading terminals:', error);
+      } finally {
+        setLoadingTerminals(false);
+      }
     };
     
     loadTerminals();
     
-    // Polling cada 3 segundos para simular tiempo real
-    const interval = setInterval(async () => {
-      const data = await syncService.getAllTerminals();
-      setTerminals(data as Terminal[]);
-    }, 3000);
+    // Polling cada 5 segundos para simular tiempo real
+    const interval = setInterval(loadTerminals, 5000);
     
     return () => clearInterval(interval);
   }, [user]);
 
-  // ✅ Cargar registros de caja de cada terminal
+  // Cargar registros de caja de cada terminal
   useEffect(() => {
     if (terminals.length === 0) return;
 
@@ -96,7 +106,12 @@ export default function CashSupervision() {
         const terminalId = terminal.id.toString();
         try {
           const register = await syncService.getRegisterByTerminal(terminalId);
-          setRegisters(prev => ({ ...prev, [terminalId]: register }));
+          // ✅ CORREGIDO: Asegurar que openAmount esté presente
+          const registerWithOpenAmount = register ? {
+            ...register,
+            openAmount: register.openAmountBs || 0
+          } : null;
+          setRegisters(prev => ({ ...prev, [terminalId]: registerWithOpenAmount }));
         } catch (error) {
           console.error(`Error loading register for terminal ${terminalId}:`, error);
           setRegisters(prev => ({ ...prev, [terminalId]: null }));
@@ -108,12 +123,12 @@ export default function CashSupervision() {
     
     loadRegisters();
     
-    // Polling cada 3 segundos
-    const interval = setInterval(loadRegisters, 3000);
+    // Polling cada 5 segundos
+    const interval = setInterval(loadRegisters, 5000);
     return () => clearInterval(interval);
   }, [terminals]);
 
-  // ✅ Verificar si los registros de todas las terminales están cargados
+  // Verificar si los registros de todas las terminales están cargados
   const allRegistersLoaded = useCallback(() => {
     if (terminals.length === 0) return true;
     return terminals.every(terminal => registersLoaded[terminal.id.toString()] === true);
@@ -123,7 +138,7 @@ export default function CashSupervision() {
     const register = registers[terminalId];
     if (!register || !register.isOpen) return null;
 
-    const todayTxs = (register.txs || []).filter(tx => isTodayVenezuela(tx.date));
+    const todayTxs = (register.txs || []).filter((tx: any) => isTodayVenezuela(tx.date));
     
     const totals: TotalsByMethod = {
       efectivo_bs: 0,
@@ -136,7 +151,7 @@ export default function CashSupervision() {
       colaboracion: 0,
     };
 
-    todayTxs.forEach(tx => {
+    todayTxs.forEach((tx: any) => {
       const method = tx.payMethod || 'efectivo_bs';
       
       if (tx.type === 'credito') {
@@ -190,7 +205,7 @@ export default function CashSupervision() {
     return { bs: reg.openAmountBs, usd: reg.openAmountUsd };
   };
 
-  // ✅ Sincronizar todas las cajas remotamente
+  // Sincronizar todas las cajas remotamente
   const handleSyncAllTerminals = async () => {
     if (isSyncingAll) return;
     
@@ -228,7 +243,7 @@ export default function CashSupervision() {
     );
   }
 
-  // ✅ Mientras se cargan los registros, mostrar loader
+  // Mientras se cargan los registros, mostrar loader
   if (!allRegistersLoaded()) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -274,7 +289,7 @@ export default function CashSupervision() {
                 <th className="p-3 text-center text-[10px] font-black uppercase">Estado</th>
                 <th className="p-3 text-center text-[10px] font-black uppercase">Hora Apertura</th>
                 <th className="p-3 text-center text-[10px] font-black uppercase">Fondo Apertura</th>
-                <th className="p-3 text-center text-[10px) font-black uppercase">Acciones</th>
+                <th className="p-3 text-center text-[10px] font-black uppercase">Acciones</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">

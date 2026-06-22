@@ -14,15 +14,16 @@ export function useSuppliers() {
   useEffect(() => {
     if (!user) return;
 
-    const unsubSuppliers = syncService.subscribeToSuppliers(setSuppliers);
+    // ✅ CORREGIDO: Usar subscribeToSuppliersRealtime (está en syncService)
+    const unsubSuppliers = syncService.subscribeToSuppliersRealtime(setSuppliers);
     const unsubInvoices = syncService.subscribeToPurchaseInvoices(setInvoices);
     const unsubPayments = syncService.subscribeToSupplierPayments(setPayments as any);
     setIsHydrated(true);
 
     return () => {
-      unsubSuppliers();
-      unsubInvoices();
-      unsubPayments();
+      if (typeof unsubSuppliers === 'function') unsubSuppliers();
+      if (typeof unsubInvoices === 'function') unsubInvoices();
+      if (typeof unsubPayments === 'function') unsubPayments();
     };
   }, [user]);
 

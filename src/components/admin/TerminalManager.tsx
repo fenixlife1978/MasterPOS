@@ -54,23 +54,34 @@ export default function TerminalManager() {
   useEffect(() => {
     if (!user) return;
 
-    // Usar suscripción en tiempo real
-    const unsub = syncService.subscribeToTerminalsRealtime((data: any[]) => {
-      // Asegurar que cada terminal tenga propiedades básicas
-      const terminalsWithDefaults = data.map(t => ({ 
-        ...t, 
-        id: t.id || t.name,
-        name: t.name || 'Sin nombre',
-        location: t.location || '',
-        isBlocked: t.isBlocked ?? false 
-      }));
-      setTerminals(terminalsWithDefaults);
-    });
+    // ✅ CORREGIDO: Usar subscribeToRegisterRealtime en lugar de subscribeToTerminalsRealtime
+    // Pero para obtener TODAS las terminales, usamos getAllTerminals con polling o una suscripción global
+    // Como no tenemos subscribeToTerminalsRealtime, usamos getAllTerminals con intervalo
     
+    const loadTerminals = async () => {
+      try {
+        const data = await syncService.getAllTerminals();
+        const terminalsWithDefaults = data.map((t: any) => ({ 
+          ...t, 
+          id: t.id || t.name,
+          name: t.name || 'Sin nombre',
+          location: t.location || '',
+          isBlocked: t.isBlocked ?? false 
+        }));
+        setTerminals(terminalsWithDefaults);
+      } catch (error) {
+        console.error('Error loading terminals:', error);
+      }
+    };
+
+    loadTerminals();
+
+    // Polling cada 5 segundos para actualizar en tiempo real
+    const interval = setInterval(loadTerminals, 5000);
+
     const loadUsers = async () => {
       setIsLoadingUsers(true);
       try {
-        // ✅ CAMBIO: Usar syncService en lugar de Firestore
         const usersList = await syncService.getAllUsers();
         setUsers(usersList as User[]);
       } catch (error) {
@@ -81,7 +92,7 @@ export default function TerminalManager() {
     };
 
     loadUsers();
-    return () => unsub();
+    return () => clearInterval(interval);
   }, [user]);
 
   // Actualizar terminalId del usuario
@@ -203,7 +214,7 @@ export default function TerminalManager() {
     return found ? found.name : 'Usuario no encontrado';
   };
 
-  // ✅ Filtrado seguro (con validación para evitar undefined)
+  // Filtrado seguro (con validación para evitar undefined)
   const filteredTerminals = terminals.filter(t => 
     (t.name && t.name.toLowerCase().includes(search.toLowerCase())) ||
     (t.location && t.location.toLowerCase().includes(search.toLowerCase()))

@@ -1,14 +1,79 @@
+"use client";
+
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { usePOSState } from '@/hooks/use-pos-state';
 import { useSuppliers } from '@/hooks/use-suppliers';
-import { Search, Plus, Trash2, Package, Truck, Receipt, DollarSign, Loader2, Save, CalendarDays, HandCoins, X, PlusCircle, RefreshCw, Percent } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
+import { Search, Plus, Trash2, Package, Truck, Receipt, DollarSign, Loader2, Save, CalendarDays, HandCoins, X, PlusCircle, Percent } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
-import { Product, SupplierInvoice, PurchaseInvoiceItem, Category, KitComponent, AccountingEntry, SupplierPayment } from '@/lib/types';
+import { Product, Category, KitComponent } from '@/lib/types';
 import syncService from '@/services/syncService';
 import { formatBs, formatUsd, formatBsNumber, formatUsdNumber } from '@/lib/currency-formatter';
+
+// ============================================================
+// DEFINICIONES LOCALES
+// ============================================================
+
+interface SupplierInvoiceLocal {
+  _id: string;
+  id: string;
+  supplierId: string;
+  invoiceNumber: string;
+  date: string;
+  dueDate: string;
+  subtotal: number;
+  iva: number;
+  total: number;
+  paidAmount: number;
+  status: 'pending' | 'paid' | 'cancelled';
+  notes: string;
+  exchangeRate: number;
+  itemsCount: number;
+  createdAt: string;
+}
+
+interface PurchaseInvoiceItemLocal {
+  _id: string;
+  id: string;
+  invoiceId: string;
+  productId: string;
+  productName: string;
+  quantity: number;
+  cost: number;
+  total: number;
+  createdAt: string;
+}
+
+interface SupplierPaymentLocal {
+  _id: string;
+  id: string;
+  supplierId: string;
+  invoiceId: string;
+  date: string;
+  amount: number;
+  method: string;
+  reference: string;
+  bank: string;
+  notes: string;
+}
+
+interface AccountingEntryLocal {
+  _id: string;
+  id: string;
+  date: string;
+  type: string;
+  category: string;
+  subcategory: string;
+  concept: string;
+  description: string;
+  amount: number;
+  referenceId: string;
+  referenceType: string;
+  createdAt: string;
+}
 
 interface PurchaseItemTemp {
   productId: number;
@@ -19,19 +84,12 @@ interface PurchaseItemTemp {
 
 type PaymentType = 'contado' | 'credito' | 'mixto';
 
-// ✅ Redondeo a 2 decimales (comercial)
 const roundTo2 = (num: number): number => Math.round(num * 100) / 100;
-// ✅ Redondeo a 4 decimales (para costos)
 const roundTo4 = (num: number): number => Math.round(num * 10000) / 10000;
 
-// ✅ Margen de ganancia por defecto
-const DEFAULT_PROFIT_PERCENT = 30;
-
-// ✅ Categorías por defecto (deben coincidir con las del sistema)
 const DEFAULT_CATEGORIES: Category[] = ['Whisky', 'Ron', 'Cerveza', 'Vino', 'Vodka', 'Tequila', 'Licor', 'Gin', 'Otro'];
 const DEFAULT_DEPARTMENTS = ['Polar', 'Munchy', 'Otros'];
 
-// ✅ Función para obtener fecha/hora local de Venezuela en ISO string con offset -04:00
 function getVenezuelaISOString(): string {
   const formatter = new Intl.DateTimeFormat('sv-SE', {
     timeZone: 'America/Caracas',
@@ -48,7 +106,6 @@ function getVenezuelaISOString(): string {
   return `${partMap.year}-${partMap.month}-${partMap.day}T${partMap.hour}:${partMap.minute}:${partMap.second}.${partMap.fractionalSecond}-04:00`;
 }
 
-// ✅ Función para obtener fecha local YYYY-MM-DD (sin hora)
 function getLocalDate(): string {
   const now = new Date();
   const year = now.getFullYear();
@@ -57,34 +114,51 @@ function getLocalDate(): string {
   return `${year}-${month}-${day}`;
 }
 
-function generateUniquePaymentId(): number {
-  return Date.now() + Math.floor(Math.random() * 10000);
+function generateUniquePaymentId(): string {
+  return String(Date.now() + Math.floor(Math.random() * 10000));
 }
+
+function generateLocalId(): string {
+  return `local_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+}
+
+const calculatePriceUsdFromCostAndProfit = (cost: number, profitPercent: number): number => {
+  if (cost <= 0 || profitPercent <= 0) return 0;
+  if (profitPercent >= 99.99) return cost * 100;
+  const marginDecimal = profitPercent / 100;
+  const priceUsd = cost / (1 - marginDecimal);
+  return roundTo2(priceUsd);
+};
+
+const calculateProfitFromCostAndPriceUsd = (cost: number, priceUsd: number): number => {
+  if (cost <= 0 || priceUsd <= 0) return 0;
+  if (priceUsd <= cost) return 0;
+  const profitPercent = (1 - (cost / priceUsd)) * 100;
+  if (profitPercent > 99.99) return 99.99;
+  return roundTo2(profitPercent);
+};
 
 export default function RegisterPurchase() {
   const state = usePOSState();
   const { suppliers } = useSuppliers();
+  const { toast } = useToast();
   
-  // Datos de la factura
-  const [selectedSupplierId, setSelectedSupplierId] = useState<string>('');
+  const [selectedSupplierId, setSelectedSupplierId] = useState<number>(0);
   const [invoiceNumber, setInvoiceNumber] = useState('');
   const [exchangeRate, setExchangeRate] = useState(state.exchangeRate.toFixed(2));
   
-  // Items temporales
   const [productQuery, setProductQuery] = useState('');
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [itemQty, setItemQty] = useState('1');
   const [itemCostUsd, setItemCostUsd] = useState('');
   const [tempItems, setTempItems] = useState<PurchaseItemTemp[]>([]);
   
-  // Estados para el tipo de pago
   const [paymentType, setPaymentType] = useState<PaymentType>('contado');
   const [paidUsd, setPaidUsd] = useState<number>(0);
   const [paidBs, setPaidBs] = useState<number>(0);
   const [creditTermDays, setCreditTermDays] = useState<number>(30);
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // Estados para el modal de nuevo producto (sin cambios)
   const [showProductModal, setShowProductModal] = useState(false);
   const [modalPosition, setModalPosition] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
@@ -92,7 +166,6 @@ export default function RegisterPurchase() {
   const modalRef = useRef<HTMLDivElement>(null);
   const dragHandleRef = useRef<HTMLDivElement>(null);
 
-  // Estados para el formulario de producto (sin cambios)
   const [productForm, setProductForm] = useState({
     barcode: '',
     name: '',
@@ -109,11 +182,9 @@ export default function RegisterPurchase() {
   const [priceCostInput, setPriceCostInput] = useState('');
   const [stockInput, setStockInput] = useState('');
   const [minStockInput, setMinStockInput] = useState('');
-  const [profitPercentInput, setProfitPercentInput] = useState(DEFAULT_PROFIT_PERCENT.toString());
+  const [profitPercentInput, setProfitPercentInput] = useState('');
   const [priceRetailBs, setPriceRetailBs] = useState('');
-  const [isPriceFixed, setIsPriceFixed] = useState(false);
-  const [isUpdatingFromProfit, setIsUpdatingFromProfit] = useState(false);
-  const [isUpdatingFromPriceBs, setIsUpdatingFromPriceBs] = useState(false);
+  const [localPriceUsd, setLocalPriceUsd] = useState('');
   const [ivaType, setIvaType] = useState<'con_iva' | 'sin_iva'>('con_iva');
   const [ivaPercentage, setIvaPercentage] = useState(16);
   const [isKit, setIsKit] = useState(false);
@@ -261,12 +332,12 @@ export default function RegisterPurchase() {
   const remainingUsd = parseFloat(Math.max(0, totalInvoiceUsd - totalPaidUsd).toFixed(4));
   const remainingBs = roundTo2(remainingUsd * rateNum);
 
-  const invoiceStatus = () => {
-    if (paymentType === 'contado') return 'pagada';
-    if (paymentType === 'credito') return 'pendiente';
-    if (remainingUsd <= 0) return 'pagada';
-    if (totalPaidUsd > 0 && remainingUsd > 0) return 'parcial';
-    return 'pendiente';
+  const getInvoiceStatus = (): 'pending' | 'paid' | 'cancelled' => {
+    if (paymentType === 'contado') return 'paid';
+    if (paymentType === 'credito') return 'pending';
+    if (remainingUsd <= 0) return 'paid';
+    if (totalPaidUsd > 0 && remainingUsd > 0) return 'pending';
+    return 'pending';
   };
 
   const handleProcessPurchase = async () => {
@@ -279,14 +350,16 @@ export default function RegisterPurchase() {
     try {
       const subtotal = totalInvoiceUsd / 1.16;
       const iva = totalInvoiceUsd - subtotal;
-      const timestamp = getVenezuelaISOString(); // ✅ fecha/hora exacta de Venezuela
-      const invoiceId = Date.now();
+      const timestamp = getVenezuelaISOString();
+      const invoiceId = String(Date.now());
+      const invoiceStatus = getInvoiceStatus();
       
       const paymentNotes = `Tipo de pago: ${paymentType === 'contado' ? 'Contado' : paymentType === 'credito' ? `Crédito a ${creditTermDays} días` : `Mixto (USD: ${formatUsdNumber(paidUsd)} / Bs: ${formatBsNumber(paidBs)})`}. Saldo pendiente: ${formatUsd(remainingUsd, 4)}`;
       
-      const newInvoice: SupplierInvoice = {
+      const newInvoice = {
+        _id: generateLocalId(),
         id: invoiceId,
-        supplierId: parseInt(selectedSupplierId),
+        supplierId: String(selectedSupplierId),
         invoiceNumber: invoiceNumber,
         date: timestamp,
         dueDate: paymentType === 'credito' 
@@ -296,7 +369,7 @@ export default function RegisterPurchase() {
         iva: parseFloat(iva.toFixed(4)),
         total: totalInvoiceUsd,
         paidAmount: totalPaidUsd,
-        status: invoiceStatus(),
+        status: invoiceStatus,
         notes: paymentNotes,
         exchangeRate: rateNum,
         itemsCount: tempItems.length,
@@ -305,38 +378,49 @@ export default function RegisterPurchase() {
       
       await syncService.savePurchaseInvoice(newInvoice);
       
-      const items: PurchaseInvoiceItem[] = tempItems.map((item, idx) => ({
+      const items = tempItems.map((item, idx) => ({
+        _id: generateLocalId(),
         id: `${invoiceId}_${idx}`,
         invoiceId: invoiceId,
-        productId: item.productId,
+        productId: String(item.productId),
         productName: item.name,
-        qty: item.qty,
-        costUsd: item.costUsd,
-        totalUsd: parseFloat((item.qty * item.costUsd).toFixed(4)),
+        quantity: item.qty,
+        cost: item.costUsd,
+        total: parseFloat((item.qty * item.costUsd).toFixed(4)),
         createdAt: timestamp
       }));
       
-      await syncService.savePurchaseInvoiceItems(invoiceId, items);
+      await syncService.savePurchaseInvoiceItems(Number(invoiceId), items);
       
+      const products = await syncService.getProducts();
       for (const item of tempItems) {
-        await syncService.updateProductWithWeightedAverageCost(
-          item.productId,
-          item.qty,
-          item.costUsd,
-          rateNum
-        );
+        const product = products.find(p => p.id === item.productId);
+        if (product) {
+          const currentStock = product.stock || 0;
+          const currentCost = product.costUsd || 0;
+          const newStock = currentStock + item.qty;
+          const newCost = ((currentStock * currentCost) + (item.qty * item.costUsd)) / newStock;
+          
+          const updatedProduct: Product = {
+            ...product,
+            stock: newStock,
+            costUsd: roundTo4(newCost),
+            costBs: roundTo2(newCost * rateNum),
+          };
+          await syncService.saveProduct(updatedProduct);
+        }
       }
       
-      const supplier = suppliers.find(s => s.id === parseInt(selectedSupplierId));
+      const supplier = suppliers.find(s => s.id === selectedSupplierId);
       
-      // ✅ Crear el pago automático si la compra es al contado o mixta
       if (paymentType !== 'credito') {
         const paymentMethod = paymentType === 'contado' ? 'efectivo' : 'mixto';
         const totalPaidUsdAmount = paymentType === 'contado' ? totalInvoiceUsd : paidUsd;
         if (totalPaidUsdAmount > 0) {
-          const payment: SupplierPayment = {
+          const payment = {
+            _id: generateLocalId(),
             id: generateUniquePaymentId(),
-            supplierId: parseInt(selectedSupplierId),
+            supplierId: String(selectedSupplierId),
             invoiceId: invoiceId,
             date: getLocalDate(),
             amount: totalPaidUsdAmount,
@@ -349,7 +433,6 @@ export default function RegisterPurchase() {
         }
       }
       
-      // ✅ Actualizar la deuda del proveedor correctamente
       if (supplier) {
         const newDebt = (supplier.totalDebt || 0) + remainingUsd;
         await syncService.saveSupplier({
@@ -358,12 +441,12 @@ export default function RegisterPurchase() {
         });
       }
       
-      // ✅ Crear entrada contable SOLO para la parte pagada de contado (NO para crédito)
       if (paymentType !== 'credito') {
         const paidAmountBs = totalPaidUsd * rateNum;
-        const accountingEntry: AccountingEntry = {
-          id: Date.now(),
-          date: timestamp, // ✅ fecha/hora exacta, no solo la fecha
+        const accountingEntry: AccountingEntryLocal = {
+          _id: generateLocalId(),
+          id: String(Date.now()),
+          date: timestamp,
           type: 'egreso',
           category: 'compra_mercancia',
           subcategory: 'compra',
@@ -377,12 +460,12 @@ export default function RegisterPurchase() {
         await syncService.saveAccountingEntry(accountingEntry);
       }
       
-      await state.refreshProducts?.();
+      await syncService.loadAllDataToCache();
       
-      alert(`✅ Compra registrada exitosamente\nEstado: ${invoiceStatus()}\nTotal: ${formatUsd(totalInvoiceUsd, 4)}\nPagado: ${formatUsd(totalPaidUsd)}\nSaldo: ${formatUsd(remainingUsd, 4)}`);
+      alert(`✅ Compra registrada exitosamente\nEstado: ${invoiceStatus}\nTotal: ${formatUsd(totalInvoiceUsd, 4)}\nPagado: ${formatUsd(totalPaidUsd)}\nSaldo: ${formatUsd(remainingUsd, 4)}`);
       setTempItems([]);
       setInvoiceNumber('');
-      setSelectedSupplierId('');
+      setSelectedSupplierId(0);
       setPaidUsd(0);
       setPaidBs(0);
       setPaymentType('contado');
@@ -393,40 +476,6 @@ export default function RegisterPurchase() {
     }
     
     setIsProcessing(false);
-  };
-
-  // ==================== Funciones para el formulario de producto (sin cambios) ====================
-  const calculatePriceUsdFromCostAndProfit = (cost: number, profitPercent: number): number => {
-    if (cost <= 0) return 0;
-    const marginDecimal = profitPercent / 100;
-    const priceUsd = cost / (1 - marginDecimal);
-    return roundTo2(priceUsd);
-  };
-
-  const calculateProfitFromCostAndPriceUsd = (cost: number, priceUsd: number): number => {
-    if (cost <= 0 || priceUsd <= 0) return DEFAULT_PROFIT_PERCENT;
-    const profitPercent = (1 - (cost / priceUsd)) * 100;
-    return Math.min(roundTo2(profitPercent), 99.99);
-  };
-
-  const updatePricesFromProfit = (profitPercent: number, currentCost: number) => {
-    if (isUpdatingFromPriceBs) return;
-    setIsUpdatingFromProfit(true);
-    const priceUsd = calculatePriceUsdFromCostAndProfit(currentCost, profitPercent);
-    const priceBs = priceUsd * state.exchangeRate;
-    setPriceRetailBs(roundTo2(priceBs).toFixed(2));
-    setIsPriceFixed(false);
-    setIsUpdatingFromProfit(false);
-  };
-
-  const updateProfitFromPriceBs = (priceBsValue: number, currentCost: number) => {
-    if (isUpdatingFromProfit) return;
-    setIsUpdatingFromPriceBs(true);
-    const priceUsd = priceBsValue / state.exchangeRate;
-    const newProfitPercent = calculateProfitFromCostAndPriceUsd(currentCost, priceUsd);
-    setProfitPercentInput(roundTo2(newProfitPercent).toString());
-    setIsPriceFixed(true);
-    setIsUpdatingFromPriceBs(false);
   };
 
   const childProductResults = useMemo(() => {
@@ -448,7 +497,11 @@ export default function RegisterPurchase() {
       alert('El producto ya está en la lista');
       return;
     }
-    setKitComponents(prev => [...prev, { productId: selectedChildProduct.id, quantity: qty }]);
+    const newComponent: KitComponent = {
+      productId: selectedChildProduct.id,
+      quantity: qty
+    };
+    setKitComponents(prev => [...prev, newComponent]);
     setSelectedChildProduct(null);
     setSearchChildProduct('');
     setChildQuantity('1');
@@ -476,7 +529,7 @@ export default function RegisterPurchase() {
     setPriceCostInput('');
     setStockInput('');
     setMinStockInput('');
-    setProfitPercentInput(DEFAULT_PROFIT_PERCENT.toString());
+    setProfitPercentInput('');
     setIvaType('con_iva');
     setIvaPercentage(16);
     setIsKit(false);
@@ -487,21 +540,52 @@ export default function RegisterPurchase() {
     setChildQuantity('1');
     setHideChildResults(false);
     setPriceRetailBs('');
-    setIsPriceFixed(false);
+    setLocalPriceUsd('');
   };
 
   const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
-    const cost = parseFloat(costUsdInput) || 0;
-    const profitPercent = parseFloat(profitPercentInput) || DEFAULT_PROFIT_PERCENT;
     
-    let finalPriceUsd, finalPriceBs;
-    if (isPriceFixed && priceRetailBs !== '' && priceRetailBs !== 'NaN') {
-      finalPriceBs = parseFloat(priceRetailBs) || 0;
-      finalPriceUsd = finalPriceBs / state.exchangeRate;
-    } else {
-      finalPriceUsd = calculatePriceUsdFromCostAndProfit(cost, profitPercent);
-      finalPriceBs = finalPriceUsd * state.exchangeRate;
+    const cost = parseFloat(costUsdInput) || 0;
+    let profitPercent = profitPercentInput !== '' ? parseFloat(profitPercentInput) : 0;
+    let priceUsd = localPriceUsd !== '' ? parseFloat(localPriceUsd) : 0;
+    let priceBs = priceRetailBs !== '' ? parseFloat(priceRetailBs) : 0;
+    
+    // Si no hay precio pero hay costo y porcentaje, calcular automáticamente
+    if (priceUsd === 0 && priceBs === 0 && cost > 0 && profitPercent > 0) {
+      priceUsd = calculatePriceUsdFromCostAndProfit(cost, profitPercent);
+      priceBs = priceUsd * state.exchangeRate;
+      setLocalPriceUsd(priceUsd.toFixed(2));
+      setPriceRetailBs(priceBs.toFixed(2));
+    }
+    
+    if (priceBs > 0 && priceUsd === 0) {
+      priceUsd = priceBs / state.exchangeRate;
+    }
+    
+    if (priceUsd > 0 && priceBs === 0) {
+      priceBs = priceUsd * state.exchangeRate;
+    }
+    
+    if (profitPercent >= 99.99) {
+      toast({ 
+        title: "Porcentaje no válido", 
+        description: "El porcentaje de ganancia no puede ser tan alto", 
+        variant: "destructive",
+        duration: 3000
+      });
+      return;
+    }
+    
+    // Validar código de barras duplicado
+    const existingProduct = state.products.find(p => p.barcode === productForm.barcode);
+    if (existingProduct) {
+      toast({ 
+        title: "Código de barras duplicado", 
+        description: `Ya existe un producto con el código "${productForm.barcode}" (${existingProduct.name})`, 
+        variant: "destructive" 
+      });
+      return;
     }
     
     const productData: Product = {
@@ -513,28 +597,29 @@ export default function RegisterPurchase() {
       stock: parseInt(stockInput) || 0,
       minStock: parseInt(minStockInput) || 5,
       costUsd: roundTo4(cost),
-      costBs: roundTo2(cost * state.exchangeRate),
+      costBs: cost > 0 ? roundTo2(cost * state.exchangeRate) : 0,
       profitPercent: profitPercent,
-      priceUsd: finalPriceUsd,
-      priceBs: roundTo2(finalPriceBs),
-      priceRetail: finalPriceUsd,
+      priceUsd: roundTo2(priceUsd),
+      priceBs: roundTo2(priceBs),
+      priceRetail: roundTo2(priceUsd),
       priceWholesale: roundTo2(parseFloat(priceWholesaleInput) || 0),
       priceCost: roundTo2(parseFloat(priceCostInput) || 0),
       ivaType: ivaType,
       ivaPercentage: ivaType === 'con_iva' ? ivaPercentage : undefined,
       isKit: isKit,
-      kitHasOwnStock: isKit ? kitHasOwnStock : undefined,
-      kitComponents: isKit && kitComponents.length > 0 ? kitComponents : undefined,
+      kitHasOwnStock: isKit ? kitHasOwnStock : false,
+      kitComponents: isKit && kitComponents.length > 0 ? kitComponents : [],
     };
     
     setIsSubmittingProduct(true);
     try {
       await syncService.saveProduct(productData);
       const kardexEntry = {
+        _id: generateLocalId(),
         id: `${Date.now()}_${Math.random()}`,
         productId: productData.id,
         date: getVenezuelaISOString(),
-        type: 'ajuste_inicial',
+        type: 'ajuste_inicial' as const,
         quantity: productData.stock,
         previousStock: 0,
         newStock: productData.stock,
@@ -542,14 +627,14 @@ export default function RegisterPurchase() {
         note: 'Stock inicial',
         costUsd: productData.costUsd,
       };
-      await syncService.saveKardexEntry?.(kardexEntry);
-      await state.refreshProducts?.();
-      alert(`✅ Producto "${productData.name}" creado exitosamente`);
+      await syncService.saveKardexEntry(kardexEntry);
+      await syncService.loadAllDataToCache();
+      toast({ title: "Producto creado", description: `${productData.name} registrado correctamente.` });
       setShowProductModal(false);
       resetProductForm();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error al crear producto:', error);
-      alert('❌ Error al crear el producto');
+      toast({ title: "Error", description: error.message || "No se pudo crear el producto", variant: "destructive" });
     } finally {
       setIsSubmittingProduct(false);
     }
@@ -569,7 +654,7 @@ export default function RegisterPurchase() {
 
         <div className="flex-1 overflow-y-auto scrollbar-thin mt-3">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            {/* Columna izquierda - sin cambios */}
+            {/* Columna izquierda */}
             <div className="lg:col-span-1 space-y-4">
               <div className="bg-white border border-[#9E9E9E] rounded-xl p-4 shadow-sm">
                 <h3 className="text-[11px] font-black uppercase text-black/60 mb-3 flex items-center gap-2">
@@ -580,10 +665,10 @@ export default function RegisterPurchase() {
                     <label className="text-[9px] font-bold uppercase text-black/40">Proveedor</label>
                     <select 
                       value={selectedSupplierId}
-                      onChange={(e) => setSelectedSupplierId(e.target.value)}
+                      onChange={(e) => setSelectedSupplierId(Number(e.target.value))}
                       className="w-full h-8 border border-[#9E9E9E] rounded-lg px-2 text-sm font-bold bg-white"
                     >
-                      <option value="">Seleccionar Proveedor...</option>
+                      <option value="0">Seleccionar Proveedor...</option>
                       {suppliers.map(s => (
                         <option key={s.id} value={s.id}>{s.name} ({s.rif})</option>
                       ))}
@@ -866,7 +951,7 @@ export default function RegisterPurchase() {
         </div>
       </div>
 
-      {/* Modal arrastrable para crear nuevo producto - sin cambios */}
+      {/* Modal arrastrable para crear nuevo producto */}
       {showProductModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowProductModal(false)}>
           <div
@@ -1091,46 +1176,82 @@ export default function RegisterPurchase() {
                     <Input 
                       type="text" 
                       inputMode="decimal" 
-                      value={costUsdInput} 
+                      value={costUsdInput}
+                      placeholder="0.0000"
                       onChange={(e) => {
                         setCostUsdInput(e.target.value);
                         const costVal = parseFloat(e.target.value) || 0;
-                        const profitVal = parseFloat(profitPercentInput) || DEFAULT_PROFIT_PERCENT;
-                        if (!isUpdatingFromPriceBs) {
+                        const profitVal = profitPercentInput !== '' ? parseFloat(profitPercentInput) : 0;
+                        if (costVal > 0 && profitVal > 0) {
                           const newPriceUsd = calculatePriceUsdFromCostAndProfit(costVal, profitVal);
-                          const newPriceBs = newPriceUsd * state.exchangeRate;
-                          setPriceRetailBs(roundTo2(newPriceBs).toFixed(2));
-                          setIsPriceFixed(false);
+                          setLocalPriceUsd(newPriceUsd.toFixed(2));
+                          setPriceRetailBs(roundTo2(newPriceUsd * state.exchangeRate).toFixed(2));
+                        } else if (costVal === 0) {
+                          setLocalPriceUsd('');
+                          setPriceRetailBs('');
                         }
                       }} 
                       className="bg-white h-7 text-xs font-mono" 
-                      placeholder="0.0000" 
                     />
                   </div>
                   
                   <div>
-                    <label className="text-[7px] font-bold uppercase">% de Ganancia</label>
+                    <label className="text-[7px] font-bold uppercase">% de Ganancia sobre VENTA</label>
                     <div className="flex items-center gap-2">
                       <Input 
                         type="text" 
                         inputMode="decimal" 
-                        value={profitPercentInput} 
+                        value={profitPercentInput}
+                        placeholder="0"
                         onChange={(e) => {
-                          const newProfit = parseFloat(e.target.value) || 0;
-                          setProfitPercentInput(e.target.value);
+                          let raw = e.target.value;
+                          let numValue = parseFloat(raw);
+                          
+                          if (!isNaN(numValue) && numValue > 99.99) {
+                            toast({ 
+                              title: "Porcentaje no válido", 
+                              description: "El porcentaje de ganancia no puede superar 99.99%", 
+                              variant: "destructive",
+                              duration: 3000
+                            });
+                            return;
+                          }
+                          
+                          setProfitPercentInput(raw);
+                          const newProfit = isNaN(numValue) ? 0 : numValue;
                           const costVal = parseFloat(costUsdInput) || 0;
-                          if (!isUpdatingFromPriceBs) {
+                          
+                          if (costVal > 0 && newProfit > 0 && newProfit < 100) {
                             const newPriceUsd = calculatePriceUsdFromCostAndProfit(costVal, newProfit);
-                            const newPriceBs = newPriceUsd * state.exchangeRate;
-                            setPriceRetailBs(roundTo2(newPriceBs).toFixed(2));
-                            setIsPriceFixed(false);
+                            const newPriceBs = roundTo2(newPriceUsd * state.exchangeRate);
+                            setLocalPriceUsd(newPriceUsd.toFixed(2));
+                            setPriceRetailBs(newPriceBs.toFixed(2));
+                          } 
+                          else if (costVal === 0) {
+                            setLocalPriceUsd('');
+                            setPriceRetailBs('');
                           }
                         }}
                         className="bg-white h-7 text-xs font-mono w-24 text-right"
-                        placeholder="0"
                       />
                       <span className="text-[9px] text-black/60">%</span>
                     </div>
+                  </div>
+
+                  <div className="mt-1 pt-1 border-t border-dashed border-gray-300">
+                    <div className="flex justify-between items-center">
+                      <label className="text-[7px] font-bold uppercase text-green-600">Ganancia por unidad (USD)</label>
+                      <span className="text-xs font-black text-green-700 bg-green-50 px-2 py-0.5 rounded border border-green-200">
+                        {(() => {
+                          const cost = parseFloat(costUsdInput) || 0;
+                          const priceUsd = parseFloat(localPriceUsd) || 0;
+                          if (cost <= 0 || priceUsd <= 0 || priceUsd <= cost) return '$0.00';
+                          const profitUsd = priceUsd - cost;
+                          return `$${profitUsd.toFixed(2)}`;
+                        })()}
+                      </span>
+                    </div>
+                    <p className="text-[6px] text-green-600/80 mt-0.5">Ganancia en USD por cada unidad vendida (Precio Detal - Costo)</p>
                   </div>
                   
                   <div className="grid grid-cols-2 gap-2">
@@ -1139,14 +1260,43 @@ export default function RegisterPurchase() {
                       <Input 
                         type="text" 
                         inputMode="decimal" 
-                        value={(() => {
-                          const costVal = parseFloat(costUsdInput) || 0;
-                          const profitVal = parseFloat(profitPercentInput) || DEFAULT_PROFIT_PERCENT;
-                          const priceUsd = calculatePriceUsdFromCostAndProfit(costVal, profitVal);
-                          return priceUsd.toFixed(2);
-                        })()}
+                        value={localPriceUsd}
+                        placeholder="0.00"
+                        onChange={(e) => {
+                          const raw = e.target.value;
+                          if (raw === '' || /^\d*\.?\d*$/.test(raw)) {
+                            const usdVal = parseFloat(raw);
+                            const costVal = parseFloat(costUsdInput) || 0;
+                            
+                            if (!isNaN(usdVal) && usdVal > 0 && costVal > 0) {
+                              let newProfit = calculateProfitFromCostAndPriceUsd(costVal, usdVal);
+                              if (newProfit > 99.99) {
+                                toast({ 
+                                  title: "Precio no válido", 
+                                  description: "El precio implicaría una ganancia superior al 99.99%", 
+                                  variant: "destructive",
+                                  duration: 3000
+                                });
+                                return;
+                              }
+                              setLocalPriceUsd(raw);
+                              setProfitPercentInput(newProfit.toString());
+                              setPriceRetailBs(roundTo2(usdVal * state.exchangeRate).toFixed(2));
+                            } else if (usdVal === 0 || costVal === 0) {
+                              setLocalPriceUsd(raw);
+                              if (costVal === 0 && usdVal > 0) {
+                                setProfitPercentInput('');
+                                setPriceRetailBs(roundTo2(usdVal * state.exchangeRate).toFixed(2));
+                              } else if (usdVal === 0) {
+                                setProfitPercentInput('');
+                                setPriceRetailBs('');
+                              }
+                            } else {
+                              setLocalPriceUsd(raw);
+                            }
+                          }
+                        }}
                         className="bg-white h-7 text-xs font-mono"
-                        readOnly
                       />
                     </div>
                     <div>
@@ -1154,40 +1304,48 @@ export default function RegisterPurchase() {
                       <Input 
                         type="text" 
                         inputMode="decimal" 
-                        value={priceRetailBs === 'NaN' || isNaN(parseFloat(priceRetailBs)) ? '' : priceRetailBs}
-                        onChange={(e) => {
+                        value={priceRetailBs}
+                        placeholder="0.00"
+                        onChange={(e) => { 
                           const newValue = e.target.value;
-                          setPriceRetailBs(newValue);
-                          setIsPriceFixed(true);
-                          const bsValue = parseFloat(newValue) || 0;
-                          const costVal = parseFloat(costUsdInput) || 0;
-                          if (bsValue > 0 && costVal > 0) {
-                            const priceUsd = bsValue / state.exchangeRate;
-                            const newProfitPercent = calculateProfitFromCostAndPriceUsd(costVal, priceUsd);
-                            setProfitPercentInput(roundTo2(newProfitPercent).toString());
+                          const bs = parseFloat(newValue);
+                          
+                          if (!isNaN(bs) && bs > 0) {
+                            const usd = bs / state.exchangeRate;
+                            const costVal = parseFloat(costUsdInput) || 0;
+                            
+                            if (costVal > 0 && usd > 0) {
+                              let newProfit = calculateProfitFromCostAndPriceUsd(costVal, usd);
+                              if (newProfit > 99.99) {
+                                toast({ 
+                                  title: "Precio no válido", 
+                                  description: "El precio implicaría una ganancia superior al 99.99%", 
+                                  variant: "destructive",
+                                  duration: 3000
+                                });
+                                return;
+                              }
+                              setPriceRetailBs(newValue);
+                              setLocalPriceUsd(usd.toFixed(2));
+                              setProfitPercentInput(newProfit.toString());
+                            } else {
+                              setPriceRetailBs(newValue);
+                              if (costVal === 0 && usd > 0) {
+                                setLocalPriceUsd(usd.toFixed(2));
+                                setProfitPercentInput('');
+                              }
+                            }
+                          } else {
+                            setPriceRetailBs(newValue);
+                            if (bs === 0) {
+                              setLocalPriceUsd('');
+                              setProfitPercentInput('');
+                            }
                           }
-                        }}
-                        className="bg-white h-7 text-xs font-mono w-full"
+                        }} 
+                        className="bg-white h-7 text-xs font-mono w-full" 
                       />
                     </div>
-                  </div>
-                  
-                  <div className="flex justify-end">
-                    <Button
-                      type="button"
-                      onClick={() => {
-                        const costVal = parseFloat(costUsdInput) || 0;
-                        const profitVal = parseFloat(profitPercentInput) || DEFAULT_PROFIT_PERCENT;
-                        const priceUsd = calculatePriceUsdFromCostAndProfit(costVal, profitVal);
-                        const calculatedBs = priceUsd * state.exchangeRate;
-                        setPriceRetailBs(roundTo2(calculatedBs).toFixed(2));
-                        setIsPriceFixed(false);
-                      }}
-                      className="h-7 text-[9px] px-3 bg-primary text-black font-bold"
-                    >
-                      <RefreshCw size={12} className="mr-1" />
-                      Sincronizar
-                    </Button>
                   </div>
                   
                   <div className="border-t pt-2 mt-1">
@@ -1233,11 +1391,13 @@ export default function RegisterPurchase() {
                     <div className="flex justify-between text-[10px]">
                       <span className="text-black/60">Precio Base USD (sin IVA):</span>
                       <span className="font-black text-secondary">
-                        {formatUsd((() => {
-                          const costVal = parseFloat(costUsdInput) || 0;
-                          const profitVal = parseFloat(profitPercentInput) || DEFAULT_PROFIT_PERCENT;
-                          return calculatePriceUsdFromCostAndProfit(costVal, profitVal);
-                        })())}
+                        {(() => {
+                          const priceUsd = parseFloat(localPriceUsd) || (calculatePriceUsdFromCostAndProfit(parseFloat(costUsdInput) || 0, parseFloat(profitPercentInput) || 0));
+                          if (ivaType === 'con_iva' && ivaPercentage > 0 && priceUsd > 0) {
+                            return formatUsd(roundTo2(priceUsd / (1 + ivaPercentage / 100)));
+                          }
+                          return formatUsd(priceUsd);
+                        })()}
                       </span>
                     </div>
                     {ivaType === 'con_iva' && (
@@ -1245,10 +1405,11 @@ export default function RegisterPurchase() {
                         <span className="text-black/60">+ IVA ({isNaN(ivaPercentage) ? 0 : ivaPercentage}%):</span>
                         <span className="text-black/70">
                           {formatUsd((() => {
-                            const costVal = parseFloat(costUsdInput) || 0;
-                            const profitVal = parseFloat(profitPercentInput) || DEFAULT_PROFIT_PERCENT;
-                            const priceUsd = calculatePriceUsdFromCostAndProfit(costVal, profitVal);
-                            return priceUsd * (isNaN(ivaPercentage) ? 0 : ivaPercentage) / 100;
+                            const priceUsd = parseFloat(localPriceUsd) || (calculatePriceUsdFromCostAndProfit(parseFloat(costUsdInput) || 0, parseFloat(profitPercentInput) || 0));
+                            if (priceUsd > 0) {
+                              return roundTo2(priceUsd * (isNaN(ivaPercentage) ? 0 : ivaPercentage) / 100);
+                            }
+                            return 0;
                           })())}
                         </span>
                       </div>

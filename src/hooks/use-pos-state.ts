@@ -1,10 +1,10 @@
+// src/hooks/use-pos-state.ts
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Product, Client, Transaction, Account, CashRegister, Page, CartItem, KitComponent } from '@/lib/types';
 import syncService from '@/services/syncService';
 import { useAuth } from '@/context/AuthContext';
-import { rtdb } from '@/lib/firebase';
 
 const roundTo2 = (num: number): number => Math.round(num * 100) / 100;
 const roundTo4 = (num: number): number => Math.round(num * 10000) / 10000;
@@ -50,6 +50,7 @@ export function usePOSState() {
   const { user, activeSession: authActiveSession, setActiveSession } = useAuth();
   const terminalId = user?.terminalId || 'default';
   const registerRef = useRef<CashRegister | null>(null);
+  const stockUnsubscribeRef = useRef<(() => void) | null>(null);
   
   const [products, setProducts] = useState<Product[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -67,6 +68,7 @@ export function usePOSState() {
 
   const pendingKardexEntries = useRef<any[]>([]);
   const pendingAccountingEntries = useRef<any[]>([]);
+  const isUpdatingRef = useRef(false);
 
   const saveRegisterToLocalStorage = useCallback((registerData: CashRegister | null) => {
     if (typeof window !== 'undefined') {
@@ -78,7 +80,10 @@ export function usePOSState() {
     }
   }, [terminalId]);
 
+  // ✅ CORREGIDO: Solo recalcula precios si hay productos y si el rate cambió realmente
   const recalcAllPricesWithNewRate = useCallback((newRate: number) => {
+    if (products.length === 0) return;
+    
     setProducts(prevProducts => 
       prevProducts.map(product => {
         if (product.isPriceFixed) {
@@ -94,6 +99,7 @@ export function usePOSState() {
         };
       })
     );
+    
     setCart(prevCart =>
       prevCart.map(item => {
         const product = products.find(p => p.id === item.productId);
@@ -108,8 +114,13 @@ export function usePOSState() {
     );
   }, [products]);
 
+  // Limpiar cuando el usuario se desconecta
   useEffect(() => {
     if (!user) {
+      if (stockUnsubscribeRef.current) {
+        stockUnsubscribeRef.current();
+        stockUnsubscribeRef.current = null;
+      }
       syncService.unsubscribeAll();
       setProducts([]);
       setClients([]);
@@ -123,7 +134,11 @@ export function usePOSState() {
     }
   }, [user, terminalId]);
 
+  // Cargar caché local - SOLO UNA VEZ
   useEffect(() => {
+    if (isUpdatingRef.current) return;
+    isUpdatingRef.current = true;
+    
     const cachedRegister = localStorage.getItem(`${STORAGE_KEYS.POS_REGISTER}_${terminalId}`);
     if (cachedRegister) {
       try { 
@@ -137,21 +152,42 @@ export function usePOSState() {
       const rate = parseFloat(cachedRate);
       if (!isNaN(rate)) setExchangeRate(rate);
     }
+    
+    isUpdatingRef.current = false;
   }, [terminalId]);
 
+  // Sincronizar sesión activa con AuthContext
   useEffect(() => {
     setCurrentSession(authActiveSession);
   }, [authActiveSession]);
 
+  // Suscripción a cambios de sesión
   useEffect(() => {
     if (!user?.terminalId) return;
-    const unsubscribe = syncService.subscribeToActiveSession(user.terminalId, (session) => {
-      setCurrentSession(session);
-      if (setActiveSession) setActiveSession(session);
+    const unsubscribe = syncService.subscribeToRegisterRealtime(terminalId, (registerData) => {
+      if (registerData && registerData.isOpen) {
+        const session = {
+          id: `${terminalId}_${registerData.openTime}`,
+          terminalId: terminalId,
+          userId: user?.uid || 'unknown',
+          startTime: registerData.openTime,
+          initialAmountUsd: registerData.openAmountUsd || 0,
+          finalAmountUsd: 0,
+          status: 'open',
+          totalSales: registerData.txs?.length || 0,
+          exchangeRate: registerData.exchangeRate || exchangeRate,
+        };
+        setCurrentSession(session);
+        if (setActiveSession) setActiveSession(session);
+      } else {
+        setCurrentSession(null);
+        if (setActiveSession) setActiveSession(null);
+      }
     });
     return () => unsubscribe();
-  }, [user?.terminalId, setActiveSession]);
+  }, [user?.terminalId, terminalId, user?.uid, exchangeRate, setActiveSession]);
 
+  // Suscripción al registro de caja
   useEffect(() => {
     if (!user) return;
     const unsubRegister = syncService.subscribeToRegisterRealtime(terminalId, (registerData) => {
@@ -162,16 +198,18 @@ export function usePOSState() {
     return () => unsubRegister();
   }, [user, terminalId, saveRegisterToLocalStorage]);
 
+  // ✅ CORREGIDO: Suscripción a productos - SIN dependencia de exchangeRate para evitar bucles
   useEffect(() => {
     if (!user) return;
 
     const unsubProducts = syncService.subscribeToProducts((data: Product[]) => {
+      const currentRate = exchangeRate;
       const productsWithFixed = data.map(product => {
         if (product.isPriceFixed) return product;
         return {
           ...product,
-          priceBs: roundTo2(product.priceUsd * exchangeRate),
-          costBs: product.costUsd ? roundTo2(product.costUsd * exchangeRate) : undefined,
+          priceBs: roundTo2(product.priceUsd * currentRate),
+          costBs: product.costUsd ? roundTo2(product.costUsd * currentRate) : undefined,
         };
       });
       setProducts(productsWithFixed);
@@ -183,30 +221,45 @@ export function usePOSState() {
     
     const unsubSettings = syncService.subscribeToGlobalSettings?.((settings: any) => {
       if (settings) {
-        if (typeof settings.defaultIvaPercentage === 'number') setGlobalIvaPercentage(settings.defaultIvaPercentage);
+        if (typeof settings.defaultIvaPercentage === 'number') {
+          setGlobalIvaPercentage(settings.defaultIvaPercentage);
+        }
         if (typeof settings.exchangeRate === 'number' && settings.exchangeRate !== exchangeRate) {
-          setExchangeRate(settings.exchangeRate);
-          localStorage.setItem(STORAGE_KEYS.EXCHANGE_RATE, settings.exchangeRate.toString());
-          recalcAllPricesWithNewRate(settings.exchangeRate);
+          if (!isUpdatingRef.current) {
+            isUpdatingRef.current = true;
+            setExchangeRate(settings.exchangeRate);
+            localStorage.setItem(STORAGE_KEYS.EXCHANGE_RATE, settings.exchangeRate.toString());
+            isUpdatingRef.current = false;
+          }
         }
       }
     }) || (() => {});
     
     const loadGlobalSettings = async () => {
-      const settings = await syncService.getGlobalSettings();
-      if (settings) {
-        if (typeof settings.defaultIvaPercentage === 'number') setGlobalIvaPercentage(settings.defaultIvaPercentage);
-        if (typeof settings.exchangeRate === 'number' && settings.exchangeRate !== exchangeRate) {
-          setExchangeRate(settings.exchangeRate);
-          localStorage.setItem(STORAGE_KEYS.EXCHANGE_RATE, settings.exchangeRate.toString());
-          recalcAllPricesWithNewRate(settings.exchangeRate);
+      try {
+        const settings = await syncService.getGlobalSettings();
+        if (settings) {
+          if (typeof settings.defaultIvaPercentage === 'number') {
+            setGlobalIvaPercentage(settings.defaultIvaPercentage);
+          }
+          if (typeof settings.exchangeRate === 'number' && settings.exchangeRate !== exchangeRate) {
+            if (!isUpdatingRef.current) {
+              isUpdatingRef.current = true;
+              setExchangeRate(settings.exchangeRate);
+              localStorage.setItem(STORAGE_KEYS.EXCHANGE_RATE, settings.exchangeRate.toString());
+              isUpdatingRef.current = false;
+            }
+          }
         }
+        const code = await syncService.getAdminCode();
+        if (code) setAdminCode(code.code);
+        setIsHydrated(true);
+      } catch (error) {
+        console.error('Error loading global settings:', error);
+        setIsHydrated(true);
       }
-      const code = await syncService.getAdminCode();
-      if (code) setAdminCode(code.code);
     };
     loadGlobalSettings();
-    setIsHydrated(true);
 
     return () => {
       unsubProducts(); 
@@ -215,11 +268,18 @@ export function usePOSState() {
       unsubAccounts(); 
       if (typeof unsubSettings === 'function') unsubSettings();
     };
-  }, [user, terminalId, exchangeRate, recalcAllPricesWithNewRate]);
+  }, [user, exchangeRate]);
 
+  // ✅ CORREGIDO: Suscripción a stock
   useEffect(() => {
-    if (!user || !rtdb) return;
-    const unsubscribeStock = syncService.subscribeToStockRTDB((stockData: Record<string, number>) => {
+    if (!user) return;
+
+    if (stockUnsubscribeRef.current) {
+      stockUnsubscribeRef.current();
+      stockUnsubscribeRef.current = null;
+    }
+
+    const unsubscribe = syncService.subscribeToStockRTDB((stockData: Record<string, number>) => {
       setProducts(prevProducts => 
         prevProducts.map(product => {
           const newStock = stockData[product.id.toString()];
@@ -230,8 +290,27 @@ export function usePOSState() {
         })
       );
     });
-    return () => unsubscribeStock();
-  }, [user?.uid]);
+
+    stockUnsubscribeRef.current = unsubscribe;
+
+    return () => {
+      if (stockUnsubscribeRef.current) {
+        stockUnsubscribeRef.current();
+        stockUnsubscribeRef.current = null;
+      }
+    };
+  }, [user]);
+
+  // ✅ CORREGIDO: Recalcular precios cuando cambia exchangeRate - con protección contra bucles
+  useEffect(() => {
+    if (products.length > 0 && !isUpdatingRef.current) {
+      // Solo recalcular si los precios actuales no coinciden con la tasa actual
+      const sampleProduct = products[0];
+      if (sampleProduct && sampleProduct.priceBs !== roundTo2(sampleProduct.priceUsd * exchangeRate)) {
+        recalcAllPricesWithNewRate(exchangeRate);
+      }
+    }
+  }, [exchangeRate, products.length]);
 
   const refreshAllData = useCallback(async () => {
     console.log("🔄 Refrescando datos desde caché local...");
@@ -257,7 +336,7 @@ export function usePOSState() {
     return () => window.removeEventListener('sync-complete', handleSyncComplete);
   }, [refreshAllData]);
 
-  // ✅ NUEVO: Escuchar comandos remotos de sincronización desde el administrador
+  // Escuchar comandos remotos de sincronización
   useEffect(() => {
     if (!terminalId || terminalId === 'default') return;
     const unsubscribe = syncService.listenForSyncCommands(terminalId, async () => {
@@ -278,11 +357,6 @@ export function usePOSState() {
 
   const updateProduct = useCallback(async (p: Product) => {
     setProducts(prev => prev.map(prod => prod.id === p.id ? p : prod));
-    if (p.stock !== undefined) {
-      if (syncService.updateStockInRTDB) {
-        await syncService.updateStockInRTDB(p.id, p.stock);
-      }
-    }
     return syncService.saveProduct(p);
   }, []);
 
@@ -348,28 +422,69 @@ export function usePOSState() {
     setCart(prevCart => prevCart.map(item => item.productId === productId ? { ...item, priceUsd: roundTo2(newPriceUsd), priceBs: roundTo2(newPriceBs) } : item));
   }, []);
 
+  // Crear sesión de caja
   const createCashSession = useCallback(async (initialAmountUsd: number): Promise<any> => {
     if (!user || !terminalId) throw new Error('Usuario o Terminal no autenticado');
-    const session = await syncService.createCashSession(terminalId, user.uid, initialAmountUsd);
-    setCurrentSession(session);
-    if (setActiveSession) setActiveSession(session);
-    return session;
-  }, [user, terminalId, setActiveSession]);
+    
+    const registerData = await syncService.getRegisterByTerminal(terminalId);
+    if (registerData && registerData.isOpen) {
+      const session = {
+        id: `${terminalId}_${registerData.openTime}`,
+        terminalId: terminalId,
+        userId: user.uid,
+        startTime: registerData.openTime,
+        initialAmountUsd: registerData.openAmountUsd || 0,
+        finalAmountUsd: 0,
+        status: 'open',
+        totalSales: registerData.txs?.length || 0,
+        exchangeRate: registerData.exchangeRate || exchangeRate,
+      };
+      setCurrentSession(session);
+      if (setActiveSession) setActiveSession(session);
+      return session;
+    }
+    return null;
+  }, [user, terminalId, exchangeRate, setActiveSession]);
 
+  // Cerrar sesión de caja
   const closeCashSession = useCallback(async (finalAmountUsd: number): Promise<any> => {
     if (!currentSession) throw new Error('No hay sesión activa');
-    const closed = await syncService.closeCashSession(currentSession.id, finalAmountUsd);
+    
+    const closed = {
+      ...currentSession,
+      finalAmountUsd: finalAmountUsd,
+      status: 'closed',
+      closeTime: new Date().toISOString(),
+    };
+    
     setCurrentSession(null);
     if (setActiveSession) setActiveSession(null);
     return closed;
   }, [currentSession, setActiveSession]);
 
+  // Recargar sesión
   const reloadSession = useCallback(async () => {
     if (!terminalId) return;
-    const session = await syncService.getActiveSessionByTerminal(terminalId);
-    setCurrentSession(session);
-    if (setActiveSession) setActiveSession(session);
-  }, [terminalId, setActiveSession]);
+    const registerData = await syncService.getRegisterByTerminal(terminalId);
+    if (registerData && registerData.isOpen) {
+      const session = {
+        id: `${terminalId}_${registerData.openTime}`,
+        terminalId: terminalId,
+        userId: user?.uid || 'unknown',
+        startTime: registerData.openTime,
+        initialAmountUsd: registerData.openAmountUsd || 0,
+        finalAmountUsd: 0,
+        status: 'open',
+        totalSales: registerData.txs?.length || 0,
+        exchangeRate: registerData.exchangeRate || exchangeRate,
+      };
+      setCurrentSession(session);
+      if (setActiveSession) setActiveSession(session);
+    } else {
+      setCurrentSession(null);
+      if (setActiveSession) setActiveSession(null);
+    }
+  }, [terminalId, user?.uid, exchangeRate, setActiveSession]);
 
   const openCashRegister = useCallback(async (bsAmount: number, usdAmount: number, rate: number) => {
     const registerData: CashRegister = {
@@ -385,7 +500,7 @@ export function usePOSState() {
 
   const closeCashRegister = useCallback(() => {
     if (currentSession) closeCashSession(0).catch(console.error);
-    syncService.clearRegisterByTerminal(terminalId);
+    syncService.saveRegisterByTerminal(terminalId, { isOpen: false, openTime: null, openAmountBs: 0, openAmountUsd: 0, txs: [], exchangeRate: null });
     setRegister(null);
     registerRef.current = null;
     saveRegisterToLocalStorage(null);
@@ -446,7 +561,6 @@ export function usePOSState() {
       };
       await syncService.saveClient(newClient);
       targetClientId = nextClientId;
-      // Actualizar estado local de clients inmediatamente
       setClients(prev => [...prev, newClient]);
     }
 
@@ -556,14 +670,12 @@ export function usePOSState() {
         amountBs: total, amountUsd: roundTo2(total / exchangeRate), paidAmount: 0, status: 'pendiente', exchangeRate,
       };
       await syncService.saveAccount(newAcc);
-      // Actualizar estado local de accounts inmediatamente
       setAccounts(prev => [...prev, newAcc]);
       
       const c = clients.find(cl => cl.id === targetClientId);
       if (c) {
         const updatedClient = { ...c, debt: (c.debt || 0) + total };
         await syncService.saveClient(updatedClient);
-        // Actualizar estado local de clients inmediatamente
         setClients(prev => prev.map(cl => cl.id === targetClientId ? updatedClient : cl));
       }
     }
@@ -597,7 +709,6 @@ export function usePOSState() {
       const newStatus: 'pagada' | 'parcial' = newPaid >= acc.amountBs ? 'pagada' : 'parcial';
       const updatedAcc = { ...acc, paidAmount: newPaid, status: newStatus };
       await syncService.saveAccount(updatedAcc);
-      // Actualizar estado local de accounts inmediatamente
       const idx = updatedAccounts.findIndex(a => a.id === acc.id);
       if (idx !== -1) updatedAccounts[idx] = updatedAcc;
       remaining -= pay;
@@ -652,11 +763,9 @@ export function usePOSState() {
     const newDebt = Math.max(0, (client.debt || 0) - amount);
     const updatedClient = { ...client, debt: newDebt };
     await syncService.saveClient(updatedClient);
-    // Actualizar estado local de clients inmediatamente
     setClients(prev => prev.map(c => c.id === clientId ? updatedClient : c));
   }, [register, clients, accounts, exchangeRate, terminalId, saveRegisterToLocalStorage, currentSession]);
 
-  // ✅ FUNCIÓN CORREGIDA: Ahora incluye ID en payments
   const registerCashEgress = useCallback(async (
     amount: number,
     reason: string,

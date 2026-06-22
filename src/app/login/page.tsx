@@ -4,8 +4,9 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { User, Building2, Store, Key, Mail, ArrowLeft } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { auth } from '@/lib/firebase';
+import { auth, rtdb } from '@/lib/firebase';
 import { signInWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
+import { ref, get, child } from 'firebase/database';
 import Image from 'next/image';
 
 export default function LoginPage() {
@@ -27,6 +28,38 @@ export default function LoginPage() {
     }
   }, [router]);
 
+  // Función para obtener usuario de Firebase Realtime Database
+  const getUserFromFirebase = async (uid: string) => {
+    try {
+      const usersRef = ref(rtdb, 'users');
+      const snapshot = await get(usersRef);
+      
+      if (!snapshot.exists()) {
+        return null;
+      }
+      
+      const users = snapshot.val();
+      for (const [key, user] of Object.entries(users)) {
+        const userData = user as any;
+        if (userData.uid === uid) {
+          return {
+            id: key,
+            uid: userData.uid,
+            name: userData.name || 'Usuario',
+            email: userData.email || '',
+            role: userData.role || 'cashier',
+            terminalId: userData.terminalId || null,
+            status: userData.status || 'active'
+          };
+        }
+      }
+      return null;
+    } catch (error) {
+      console.error('Error obteniendo usuario de Firebase:', error);
+      return null;
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!auth) {
@@ -42,20 +75,63 @@ export default function LoginPage() {
       const firebaseUser = userCredential.user;
       const uid = firebaseUser.uid;
 
-      // 2. Obtener el rol y nombre desde Turso (vía nuestra API)
-      const res = await fetch(`/api/user-by-uid?uid=${encodeURIComponent(uid)}`);
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || 'Usuario no encontrado en la base de datos');
+      // 2. Obtener el rol y nombre desde Firebase Realtime Database
+      const userData = await getUserFromFirebase(uid);
+      
+      if (!userData) {
+        // Si no existe en la base de datos, crear un usuario por defecto
+        // (esto es útil para la primera vez o para pruebas)
+        const defaultRole = mode === 'admin' ? 'admin' : 'cashier';
+        const defaultUser = {
+          uid: uid,
+          name: firebaseUser.displayName || email.split('@')[0] || 'Usuario',
+          email: firebaseUser.email || email,
+          role: defaultRole,
+          terminalId: null,
+          status: 'active'
+        };
+        
+        // Guardar el usuario en Firebase Realtime Database
+        const { saveUser } = await import('@/services/syncService');
+        await saveUser(defaultUser);
+        
+        // Usar los datos por defecto
+        const userRole = defaultRole;
+        const userName = defaultUser.name;
+
+        // Verificar permisos según el modo seleccionado
+        if (mode === 'admin' && userRole !== 'admin') {
+          setError('Esta cuenta no tiene permisos de administrador');
+          setIsLoading(false);
+          return;
+        }
+        
+        if (mode === 'cashier' && userRole !== 'cashier') {
+          setError('Esta cuenta no tiene permisos de cajero');
+          setIsLoading(false);
+          return;
+        }
+        
+        // Guardar en sessionStorage
+        const appUser = { 
+          name: userName, 
+          role: userRole, 
+          email: firebaseUser.email || email,
+          uid: firebaseUser.uid,
+          terminalId: null
+        };
+        
+        sessionStorage.setItem('user', JSON.stringify(appUser));
+        router.replace('/');
+        return;
       }
-      const userData = await res.json();
+
       const userRole = userData.role;
       const userName = userData.name || firebaseUser.displayName || email.split('@')[0] || 'Usuario';
 
       // 3. Verificar permisos según el modo seleccionado
       if (mode === 'admin' && userRole !== 'admin') {
         setError('Esta cuenta no tiene permisos de administrador');
-        await auth.signOut();
         setIsLoading(false);
         return;
       }
@@ -67,12 +143,13 @@ export default function LoginPage() {
         return;
       }
       
-      // 4. Guardar en sessionStorage como antes (misma estructura)
+      // 4. Guardar en sessionStorage
       const appUser = { 
         name: userName, 
         role: userRole, 
-        email: firebaseUser.email,
-        uid: firebaseUser.uid
+        email: firebaseUser.email || email,
+        uid: firebaseUser.uid,
+        terminalId: userData.terminalId || null
       };
       
       sessionStorage.setItem('user', JSON.stringify(appUser));
@@ -84,8 +161,10 @@ export default function LoginPage() {
         setError('Credenciales inválidas o usuario no encontrado');
       } else if (firebaseError.code === 'auth/wrong-password') {
         setError('Contraseña incorrecta');
+      } else if (firebaseError.message) {
+        setError(firebaseError.message);
       } else {
-        setError(firebaseError.message || 'Error al iniciar sesión');
+        setError('Error al iniciar sesión');
       }
       setIsLoading(false);
     }

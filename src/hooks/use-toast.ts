@@ -93,8 +93,6 @@ export const reducer = (state: State, action: Action): State => {
     case "DISMISS_TOAST": {
       const { toastId } = action
 
-      // ! Side effects ! - This could be extracted into a dismissToast() action,
-      // but I'll keep it here for simplicity
       if (toastId) {
         addToRemoveQueue(toastId)
       } else {
@@ -174,6 +172,7 @@ function toast({ ...props }: Toast) {
 function useToast() {
   const [state, setState] = React.useState<State>(memoryState)
 
+  // ✅ CORREGIDO: Eliminar dependencia de 'state' para evitar bucles
   React.useEffect(() => {
     listeners.push(setState)
     return () => {
@@ -182,7 +181,7 @@ function useToast() {
         listeners.splice(index, 1)
       }
     }
-  }, [state])
+  }, []) // ✅ Array vacío - solo se ejecuta una vez
 
   return {
     ...state,

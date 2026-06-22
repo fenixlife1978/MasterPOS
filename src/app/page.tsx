@@ -28,10 +28,10 @@ export default function LicoPOSApp() {
   const state = usePOSState();
   const { toast } = useToast();
   const [terminalBlocked, setTerminalBlocked] = useState(false);
-  const [checkingBlock, setCheckingBlock] = useState(true); // ✅ nuevo estado
+  const [checkingBlock, setCheckingBlock] = useState(true);
   const [dataLoaded, setDataLoaded] = useState(false);
 
-  // ✅ Cargar datos a caché local SOLO una vez cuando el usuario está autenticado
+  // Cargar datos a caché local SOLO una vez cuando el usuario está autenticado
   useEffect(() => {
     if (user && !authLoading && !dataLoaded) {
       syncService.loadAllDataToCache().catch(console.error);
@@ -46,7 +46,7 @@ export default function LicoPOSApp() {
     }
   }, [user, authLoading, router]);
 
-  // ✅ Suscripción en TIEMPO REAL al bloqueo de terminal para cajeros
+  // ✅ CORREGIDO: Verificar bloqueo de terminal usando getAllTerminals + polling
   useEffect(() => {
     if (authLoading || !user || user.role === 'admin') {
       setTerminalBlocked(false);
@@ -61,17 +61,30 @@ export default function LicoPOSApp() {
       return;
     }
 
-    // Mostrar spinner mientras se obtiene el estado inicial
-    setCheckingBlock(true);
-    
-    const unsubscribe = syncService.subscribeToTerminalRealtime(user.terminalId, (terminal) => {
-      console.log("📡 Cambio en estado de terminal:", terminal?.isBlocked);
-      setTerminalBlocked(terminal?.isBlocked === true);
-      setCheckingBlock(false);
-    });
+    // Función para verificar el estado de bloqueo de la terminal
+    const checkTerminalBlocked = async () => {
+      try {
+        const terminals = await syncService.getAllTerminals();
+        const terminal = terminals.find((t: any) => t.id === user.terminalId);
+        console.log("🔍 Estado de terminal:", terminal);
+        setTerminalBlocked(terminal?.isBlocked === true);
+      } catch (error) {
+        console.error('Error checking terminal block status:', error);
+      } finally {
+        setCheckingBlock(false);
+      }
+    };
 
-    return () => unsubscribe();
-  }, [user?.terminalId, authLoading]);
+    // Verificar estado inicial
+    checkTerminalBlocked();
+
+    // Polling cada 3 segundos para actualizar el estado de bloqueo
+    const interval = setInterval(checkTerminalBlocked, 3000);
+
+    return () => {
+      clearInterval(interval);
+    };
+  }, [user?.terminalId, authLoading, user]);
 
   // Redirigir según rol y bloqueo
   useEffect(() => {

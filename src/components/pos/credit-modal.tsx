@@ -13,10 +13,9 @@ interface CreditModalProps {
   total: number; // ✅ RECIBIR EL TOTAL YA CALCULADO (con o sin IVA según el estado del POS)
   onClose: () => void;
   onConfirm: (data: any) => void;
-  onNewClient?: (client: Client) => void; // ✅ NUEVO: callback para agregar cliente al estado local
 }
 
-export default function CreditModal({ cart, clients, exchangeRate, total, onClose, onConfirm, onNewClient }: CreditModalProps) {
+export default function CreditModal({ cart, clients, exchangeRate, total, onClose, onConfirm }: CreditModalProps) {
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<Client | null>(null);
   const [isNewMode, setIsNewMode] = useState(false);
@@ -26,10 +25,11 @@ export default function CreditModal({ cart, clients, exchangeRate, total, onClos
 
   // ✅ Verificar si la cédula ya existe
   const isCedulaDuplicada = (cedula: string): boolean => {
-    return clients.some(c => c.cedula.toLowerCase() === cedula.toLowerCase());
+    return clients.some(c => c.cedula?.toLowerCase() === cedula.toLowerCase());
   };
 
-  const totalUsd = total / exchangeRate;
+  // Calcular total en USD
+  const totalUsd = exchangeRate > 0 ? total / exchangeRate : 0;
 
   // ✅ Mostrar todos los clientes cuando el campo de búsqueda recibe foco y no hay query
   const results = useMemo(() => {
@@ -38,7 +38,10 @@ export default function CreditModal({ cart, clients, exchangeRate, total, onClos
     }
     if (!query.trim()) return [];
     const q = query.toLowerCase();
-    return clients.filter(c => c.name.toLowerCase().includes(q) || c.cedula.toLowerCase().includes(q));
+    return clients.filter(c => 
+      c.name?.toLowerCase().includes(q) || 
+      c.cedula?.toLowerCase().includes(q)
+    );
   }, [query, clients, showAllOnFocus]);
 
   const handleFocus = () => {
@@ -52,31 +55,24 @@ export default function CreditModal({ cart, clients, exchangeRate, total, onClos
 
   const handleConfirm = () => {
     if (isNewMode) {
-      if (!newClient.name || !newClient.cedula) return;
+      if (!newClient.name || !newClient.cedula) {
+        alert('Por favor complete el nombre y cédula del cliente');
+        return;
+      }
+      
+      // Verificar duplicado por cédula
       if (isCedulaDuplicada(newClient.cedula)) {
         alert(`Ya existe un cliente con la cédula ${newClient.cedula}. No se puede crear duplicado.`);
         return;
       }
-      // ✅ Crear objeto cliente temporal
-      const tempClient: Client = {
-        id: Date.now(), // ID temporal, luego Firestore asignará el real, pero se actualizará en el padre
-        name: newClient.name,
-        cedula: newClient.cedula,
-        phone: newClient.phone,
-        address: newClient.address,
-        debt: 0,
-      };
-      // Notificar al padre para que agregue el cliente al estado local
-      if (onNewClient) {
-        onNewClient(tempClient);
-      }
+      
       onConfirm({
         method: 'credito',
         isNewClient: true,
-        clientName: newClient.name,
-        clientCedula: newClient.cedula,
-        clientPhone: newClient.phone,
-        clientAddress: newClient.address,
+        clientName: newClient.name.trim(),
+        clientCedula: newClient.cedula.trim(),
+        clientPhone: newClient.phone?.trim() || '',
+        clientAddress: newClient.address?.trim() || '',
         exchangeRate: exchangeRate,
         totalBs: total,
         totalUsd: totalUsd
@@ -94,14 +90,31 @@ export default function CreditModal({ cart, clients, exchangeRate, total, onClos
     }
   };
 
+  // Manejar Enter para confirmar
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && (isNewMode ? (newClient.name && newClient.cedula) : selected)) {
+      handleConfirm();
+    }
+    if (e.key === 'Escape') {
+      onClose();
+    }
+  };
+
   return (
-    <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4">
+    <div 
+      className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4"
+      onKeyDown={handleKeyDown}
+    >
       <div className="bg-[#1A2C4E] border border-white/20 rounded-2xl w-full max-w-xl p-6 shadow-2xl animate-in zoom-in-95">
         <div className="flex justify-between items-center mb-6">
           <h3 className="text-xl font-headline font-black flex items-center gap-2 text-white">
             <Handshake size={24} className="text-primary" /> Venta a Crédito
           </h3>
-          <button onClick={onClose} className="text-white/60 hover:text-white transition-colors">
+          <button 
+            onClick={onClose} 
+            className="text-white/60 hover:text-white transition-colors"
+            aria-label="Cerrar"
+          >
             <X size={20} />
           </button>
         </div>
@@ -133,6 +146,7 @@ export default function CreditModal({ cart, clients, exchangeRate, total, onClos
                 onBlur={handleBlur}
                 placeholder="Buscar cliente por nombre o cédula..."
                 className="flex-1 bg-transparent border-none text-sm px-3 py-2.5 focus:outline-none text-white placeholder:text-white/40"
+                aria-label="Buscar cliente"
               />
             </div>
 
@@ -161,14 +175,18 @@ export default function CreditModal({ cart, clients, exchangeRate, total, onClos
                     selected?.id === c.id ? "bg-primary/20 border border-primary" : "bg-[#0F1E3A] border border-white/10 hover:border-white/30"
                   )}
                 >
-                  <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center">
+                  <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0">
                     <UserCheck size={14} className="text-primary" />
                   </div>
-                  <div className="flex-1">
-                    <div className="text-sm font-bold text-white">{c.name}</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-bold text-white truncate">{c.name}</div>
                     <div className="text-[10px] text-white/50">{c.cedula}</div>
                   </div>
-                  {c.debt > 0 && <div className="text-xs text-[#FF6B6B] font-bold">Deuda: {formatBs(c.debt)}</div>}
+                  {(c.debt || 0) > 0 && (
+                    <div className="text-xs text-[#FF6B6B] font-bold flex-shrink-0">
+                      Deuda: {formatBs(c.debt || 0)}
+                    </div>
+                  )}
                 </button>
               ))}
             </div>
@@ -186,22 +204,32 @@ export default function CreditModal({ cart, clients, exchangeRate, total, onClos
           <div className="space-y-3 mb-6 animate-in fade-in slide-in-from-top-2">
             <div className="flex justify-between items-center mb-2">
               <span className="text-[10px] font-black text-primary tracking-widest uppercase">Datos del Nuevo Cliente</span>
-              <button onClick={() => setIsNewMode(false)} className="text-[10px] text-white/50 font-bold hover:text-white">VOLVER A BUSCAR</button>
+              <button 
+                onClick={() => {
+                  setIsNewMode(false);
+                  setNewClient({ name: '', cedula: '', phone: '', address: '' });
+                }} 
+                className="text-[10px] text-white/50 font-bold hover:text-white"
+              >
+                VOLVER A BUSCAR
+              </button>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <input 
                 type="text" 
-                placeholder="Nombre Completo" 
+                placeholder="Nombre Completo *" 
                 value={newClient.name}
                 onChange={e => setNewClient({...newClient, name: e.target.value})}
                 className="bg-[#0F1E3A] border border-white/20 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-primary text-white placeholder:text-white/40"
+                required
               />
               <input 
                 type="text" 
-                placeholder="Cédula / RIF" 
+                placeholder="Cédula / RIF *" 
                 value={newClient.cedula}
                 onChange={e => setNewClient({...newClient, cedula: e.target.value})}
                 className="bg-[#0F1E3A] border border-white/20 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-primary text-white placeholder:text-white/40"
+                required
               />
               <input 
                 type="text" 
@@ -224,14 +252,14 @@ export default function CreditModal({ cart, clients, exchangeRate, total, onClos
         <div className="bg-[#0F1E3A] border border-white/20 rounded-xl p-4 mb-6">
           <div className="flex justify-between text-xs mb-1">
             <span className="text-white/60">Cliente:</span>
-            <span className="font-bold text-white">
+            <span className="font-bold text-white truncate max-w-[200px]">
               {isNewMode ? (newClient.name || 'Nuevo Cliente...') : (selected ? selected.name : 'No seleccionado')}
             </span>
           </div>
-          {!isNewMode && selected && (
+          {!isNewMode && selected && (selected.debt || 0) > 0 && (
             <div className="flex justify-between text-xs mb-1">
               <span className="text-white/60">Deuda actual:</span>
-              <span className="font-bold text-[#FF6B6B]">{formatBs(selected?.debt || 0)}</span>
+              <span className="font-bold text-[#FF6B6B]">{formatBs(selected.debt || 0)}</span>
             </div>
           )}
           <div className="flex justify-between text-xs pt-2 mt-2 border-t border-white/20">

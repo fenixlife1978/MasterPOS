@@ -1,7 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from 'react';
-import Image from 'next/image';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { usePOSState } from '@/hooks/use-pos-state';
 import { UserCircle } from 'lucide-react';
 import ProductSearch from './product-search';
@@ -36,6 +35,8 @@ interface POSModuleProps {
 
 export default function POSModule({ state }: POSModuleProps) {
   const { user } = useAuth();
+  const terminalId = user?.terminalId || 'default';
+  
   const [showSaleType, setShowSaleType] = useState(false);
   const [showContado, setShowContado] = useState(false);
   const [showCredito, setShowCredito] = useState(false);
@@ -46,9 +47,52 @@ export default function POSModule({ state }: POSModuleProps) {
   const [showAuthorizationModal, setShowAuthorizationModal] = useState(false);
   const [pendingOperationType, setPendingOperationType] = useState<'colaboracion' | 'consumo_propio'>('colaboracion');
   const [isVerifying, setIsVerifying] = useState(false);
+  
+  const [isProcessingContado, setIsProcessingContado] = useState(false);
+  const [isProcessingCredito, setIsProcessingCredito] = useState(false);
+  const [isProcessingAutorizacion, setIsProcessingAutorizacion] = useState(false);
+  
+  const lastClickTimeRef = useRef<number>(0);
+  const DEBOUNCE_MS = 2000;
+
+  const getStorageKey = () => `last_receipt_number_${terminalId}`;
+
+  const canExecuteOperation = useCallback((): boolean => {
+    const now = Date.now();
+    if (now - lastClickTimeRef.current < DEBOUNCE_MS) {
+      console.log('⏱️ Operación bloqueada por debounce');
+      return false;
+    }
+    lastClickTimeRef.current = now;
+    return true;
+  }, []);
+
+  const checkAndGetNextTicketNumber = useCallback(async (): Promise<number> => {
+    const usedNumbers = new Set<number>();
+    for (const t of state.transactions) {
+      if (t.receiptNumber && (t.terminalId === terminalId || (t.sessionId && t.sessionId.includes(terminalId)))) {
+        usedNumbers.add(t.receiptNumber);
+      }
+    }
+    
+    let number = nextReceiptNumber;
+    let attempts = 0;
+    while (usedNumbers.has(number) && attempts < 100) {
+      number++;
+      attempts++;
+    }
+    
+    if (attempts >= 100) {
+      console.error('❌ No se pudo encontrar número de ticket disponible');
+      return Date.now() % 1000000;
+    }
+    
+    return number;
+  }, [nextReceiptNumber, state.transactions, terminalId]);
 
   useEffect(() => {
-    const lastReceipt = localStorage.getItem('last_receipt_number');
+    const storageKey = getStorageKey();
+    const lastReceipt = localStorage.getItem(storageKey);
     if (lastReceipt) {
       const lastNum = parseInt(lastReceipt);
       if (lastNum > 10000000) {
@@ -62,7 +106,8 @@ export default function POSModule({ state }: POSModuleProps) {
       setNextReceiptNumber(1);
       lastReceiptNumberRef.current = 1;
     }
-  }, []);
+    console.log(`📋 Terminal ${terminalId} - Próximo ticket: ${nextReceiptNumber}`);
+  }, [terminalId]);
 
   const subtotal = state.cart.reduce((s, i) => s + (i.priceBs * i.qty), 0);
   const iva = state.cart.reduce((total, item) => {
@@ -77,26 +122,55 @@ export default function POSModule({ state }: POSModuleProps) {
   const totalForCredit = totalWithIva;
 
   const handlePaymentConfirm = async (data: any) => {
+    if (isProcessingContado || !canExecuteOperation()) {
+      console.log('⚠️ Operación bloqueada');
+      return;
+    }
+    
+    setIsProcessingContado(true);
+    
     try {
-      const receiptNum = nextReceiptNumber;
-      const tx = await state.finalizeSale('contado', { ...data, receiptNumber: receiptNum });
+      const safeReceiptNum = await checkAndGetNextTicketNumber();
+      
+      const tx = await state.finalizeSale('contado', { 
+        ...data, 
+        receiptNumber: safeReceiptNum,
+        terminalId: terminalId 
+      });
+      
       if (tx) {
-        lastReceiptNumberRef.current = receiptNum;
+        // ✅ Limpiar carrito
+        if ((state as any).setCart) {
+          (state as any).setCart([]);
+        } else {
+          state.cart.length = 0;
+        }
+        lastReceiptNumberRef.current = safeReceiptNum;
         setLastTransaction(tx);
-        localStorage.setItem('last_receipt_number', receiptNum.toString());
-        setNextReceiptNumber(receiptNum + 1);
+        localStorage.setItem(getStorageKey(), safeReceiptNum.toString());
+        setNextReceiptNumber(safeReceiptNum + 1);
         setShowReceipt(true);
       }
     } catch (error) {
       console.error("Error al procesar venta al contado:", error);
+      alert('Error al procesar la venta. Por favor, verifique e intente nuevamente.');
     } finally {
+      setIsProcessingContado(false);
       setShowContado(false);
     }
   };
 
   const handleCreditConfirm = async (data: any) => {
+    if (isProcessingCredito || !canExecuteOperation()) {
+      console.log('⚠️ Operación bloqueada');
+      return;
+    }
+    
+    setIsProcessingCredito(true);
+    
     try {
-      const receiptNum = nextReceiptNumber;
+      const safeReceiptNum = await checkAndGetNextTicketNumber();
+      
       const tx = await state.finalizeSale('credito', {
         clientId: data.clientId,
         clientName: data.clientName,
@@ -107,55 +181,90 @@ export default function POSModule({ state }: POSModuleProps) {
         exchangeRate: data.exchangeRate,
         totalBs: data.totalBs,
         totalUsd: data.totalUsd,
-        receiptNumber: receiptNum
+        receiptNumber: safeReceiptNum,
+        terminalId: terminalId
       });
+      
       if (tx) {
-        lastReceiptNumberRef.current = receiptNum;
+        if ((state as any).setCart) {
+          (state as any).setCart([]);
+        } else {
+          state.cart.length = 0;
+        }
+        lastReceiptNumberRef.current = safeReceiptNum;
         setLastTransaction(tx);
-        localStorage.setItem('last_receipt_number', receiptNum.toString());
-        setNextReceiptNumber(receiptNum + 1);
+        localStorage.setItem(getStorageKey(), safeReceiptNum.toString());
+        setNextReceiptNumber(safeReceiptNum + 1);
         setShowReceipt(true);
-        // ✅ Forzar actualización global de datos para que el dashboard refleje los cambios
-        await state.refreshAllData();
       }
     } catch (error) {
       console.error("Error al procesar venta a crédito:", error);
+      alert('Error al procesar la venta a crédito. Por favor, verifique e intente nuevamente.');
     } finally {
+      setIsProcessingCredito(false);
       setShowCredito(false);
     }
   };
 
   const handleAuthorizationConfirm = async (type: 'colaboracion' | 'consumo_propio', motivo: string, pin: string) => {
+    if (isProcessingAutorizacion || !canExecuteOperation()) {
+      console.log('⚠️ Operación bloqueada');
+      return;
+    }
+    
+    setIsProcessingAutorizacion(true);
     setIsVerifying(true);
+    
     try {
       const adminCodeData = await syncService.getAdminCode();
       if (!adminCodeData || adminCodeData.code !== pin) {
         alert('PIN de autorización incorrecto');
         setIsVerifying(false);
+        setIsProcessingAutorizacion(false);
         return;
       }
 
-      const receiptNum = nextReceiptNumber;
+      const safeReceiptNum = await checkAndGetNextTicketNumber();
+      
       const tx = await state.finalizeSale(type, {
-        receiptNumber: receiptNum,
+        receiptNumber: safeReceiptNum,
         notes: motivo,
         authorizedBy: user?.name || 'Supervisor',
+        terminalId: terminalId
       });
+      
       if (tx) {
-        lastReceiptNumberRef.current = receiptNum;
+        if ((state as any).setCart) {
+          (state as any).setCart([]);
+        } else {
+          state.cart.length = 0;
+        }
+        lastReceiptNumberRef.current = safeReceiptNum;
         setLastTransaction(tx);
-        localStorage.setItem('last_receipt_number', receiptNum.toString());
-        setNextReceiptNumber(receiptNum + 1);
+        localStorage.setItem(getStorageKey(), safeReceiptNum.toString());
+        setNextReceiptNumber(safeReceiptNum + 1);
         setShowReceipt(true);
-        await state.refreshAllData();
       }
     } catch (error) {
       console.error("Error al procesar colaboración/consumo:", error);
       alert('Error al procesar la solicitud');
     } finally {
       setIsVerifying(false);
+      setIsProcessingAutorizacion(false);
       setShowAuthorizationModal(false);
     }
+  };
+
+  const handleOpenSaleType = () => {
+    if (isProcessingContado || isProcessingCredito || isProcessingAutorizacion) {
+      console.log('⚠️ Ya hay una operación en curso');
+      return;
+    }
+    if (state.cart.length === 0) {
+      alert('No hay productos en el carrito');
+      return;
+    }
+    setShowSaleType(true);
   };
 
   return (
@@ -169,7 +278,7 @@ export default function POSModule({ state }: POSModuleProps) {
           cart={state.cart} 
           onUpdateQty={state.updateCartQty} 
           onRemove={state.removeFromCart}
-          onCobrar={() => setShowSaleType(true)}
+          onCobrar={handleOpenSaleType}
           exchangeRate={state.exchangeRate}
           isRegisterOpen={!!state.register?.isOpen}
           isIvaEnabled={state.isIvaEnabled}
@@ -177,6 +286,7 @@ export default function POSModule({ state }: POSModuleProps) {
           nextReceiptNumber={nextReceiptNumber}
           products={state.products}
           onUpdatePrice={state.updateCartItemPrice}
+          terminalId={terminalId}
         />
       </div>
 
@@ -212,10 +322,6 @@ export default function POSModule({ state }: POSModuleProps) {
           total={totalForCredit}
           onClose={() => setShowCredito(false)}
           onConfirm={handleCreditConfirm}
-          onNewClient={(newClient) => {
-            // ✅ Agregar el nuevo cliente al estado local inmediatamente
-            state.setClients(prev => [...prev, newClient]);
-          }}
         />
       )}
 

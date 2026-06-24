@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Calculator, X, CreditCard, DollarSign, Fingerprint, Smartphone, Plane, ChevronDown, ChevronUp, Wallet, Plus, Undo, Eraser } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatBs, formatUsd, formatBsNumber, formatUsdNumber } from '@/lib/currency-formatter';
@@ -21,6 +21,22 @@ interface PaymentModalProps {
   onConfirm: (data: { payments: PaymentItem[]; totalPaid: number; change: number; method: string }) => void;
 }
 
+// Constantes fuera del componente para evitar recreaciones
+const METHODS = [
+  { id: 'efectivo_bs', icon: DollarSign, label: 'BS', color: '#D4A017', textColor: 'black' },
+  { id: 'tarjeta', icon: CreditCard, label: 'TARJETA', color: '#1A2C4E', textColor: 'white' },
+  { id: 'usd_efectivo', icon: DollarSign, label: 'USD', color: '#2ECC71', textColor: 'black' },
+  { id: 'biopago', icon: Fingerprint, label: 'BIOPAGO', color: '#9B59B6', textColor: 'white' },
+  { id: 'pago_movil', icon: Smartphone, label: 'PAGO MÓVIL', color: '#E67E22', textColor: 'white' },
+  { id: 'zelle', icon: Plane, label: 'ZELLE', color: '#E74C3C', textColor: 'white' },
+];
+
+const BANKS = [
+  'BANCO DE VENEZUELA', 'BANCO BANESCO', 'BANCO PROVINCIAL', 'BANCO MERCANTIL',
+  'BANCO NACIONAL DE CRÉDITO', 'BANCO DEL TESORO', 'BANCO EXTERIOR', 'BANCO PLAZA',
+  'BANCO ACTIVO', 'BANCO CARONÍ', 'BANCO SOFITASA', 'BANCAMIGO', 'BANFANB', '100% BANCO'
+];
+
 export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }: PaymentModalProps) {
   const [showCompoundModal, setShowCompoundModal] = useState(false);
   const [showMethodsDropdown, setShowMethodsDropdown] = useState(false);
@@ -37,17 +53,9 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
   // Refs para inputs del modal de Pago Móvil
   const pagoMovilInputRef = useRef<HTMLInputElement>(null);
   const pagoMovilSelectRef = useRef<HTMLSelectElement>(null);
-  
-  const methods = [
-    { id: 'efectivo_bs', icon: DollarSign, label: 'BS', color: '#D4A017', textColor: 'black' },
-    { id: 'tarjeta', icon: CreditCard, label: 'TARJETA', color: '#1A2C4E', textColor: 'white' },
-    { id: 'usd_efectivo', icon: DollarSign, label: 'USD', color: '#2ECC71', textColor: 'black' },
-    { id: 'biopago', icon: Fingerprint, label: 'BIOPAGO', color: '#9B59B6', textColor: 'white' },
-    { id: 'pago_movil', icon: Smartphone, label: 'PAGO MÓVIL', color: '#E67E22', textColor: 'white' },
-    { id: 'zelle', icon: Plane, label: 'ZELLE', color: '#E74C3C', textColor: 'white' },
-  ];
+  const modalRef = useRef<HTMLDivElement>(null);
 
-  const currentMethodInfo = methods.find(m => m.id === currentMethod);
+  const currentMethodInfo = METHODS.find(m => m.id === currentMethod);
   const isUsd = currentMethod === 'usd_efectivo' || currentMethod === 'zelle';
   
   // Modo simple
@@ -63,30 +71,30 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
   const compoundChange = Math.max(0, compoundTotalPaid - total);
 
   // Función para borrar el último dígito
-  const handleDeleteDigit = () => {
+  const handleDeleteDigit = useCallback(() => {
     setBuffer(prev => prev.slice(0, -1));
-  };
+  }, []);
 
   // Función para borrar todo
-  const handleClearAll = () => {
+  const handleClearAll = useCallback(() => {
     setBuffer('');
-  };
+  }, []);
 
   // Función para deshacer la última acción en modo compuesto
-  const handleUndoLastPayment = () => {
+  const handleUndoLastPayment = useCallback(() => {
     if (compoundPayments.length === 0) return;
     const lastPayment = compoundPayments[compoundPayments.length - 1];
     setLastAction({ type: 'remove', data: lastPayment });
     setCompoundPayments(prev => prev.slice(0, -1));
-  };
+  }, [compoundPayments]);
 
   // Función para deshacer en modo simple
-  const handleUndoSimple = () => {
+  const handleUndoSimple = useCallback(() => {
     setCurrentAmount(0);
     setBuffer('');
-  };
+  }, []);
 
-  const handleInput = (val: string) => {
+  const handleInput = useCallback((val: string) => {
     if (val === 'del') {
       handleDeleteDigit();
     } else if (val === 'clear') {
@@ -102,9 +110,9 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
     } else {
       setBuffer(prev => prev + val);
     }
-  };
+  }, [buffer, handleDeleteDigit, handleClearAll, handleUndoLastPayment, handleUndoSimple, showCompoundModal]);
 
-  const handleSetAmount = () => {
+  const handleSetAmount = useCallback(() => {
     const enteredAmount = parseFloat(buffer) || 0;
     let amountToSet = enteredAmount;
     
@@ -122,9 +130,9 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
       setCurrentAmount(amountToSet);
       setBuffer('');
     }
-  };
+  }, [buffer, isUsd, exchangeRate, total]);
 
-  const handleCompoundAddPayment = () => {
+  const handleCompoundAddPayment = useCallback(() => {
     const enteredAmount = parseFloat(buffer) || 0;
     let amountToAdd = enteredAmount;
     
@@ -139,9 +147,16 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
       const existingIndex = compoundPayments.findIndex(p => p.method === currentMethod);
       let updatedPayments = [...compoundPayments];
       if (existingIndex >= 0) {
-        updatedPayments[existingIndex] = { ...updatedPayments[existingIndex], amount: updatedPayments[existingIndex].amount + amountToAdd };
+        updatedPayments[existingIndex] = { 
+          ...updatedPayments[existingIndex], 
+          amount: updatedPayments[existingIndex].amount + amountToAdd 
+        };
       } else {
-        updatedPayments.push({ id: crypto.randomUUID(), method: currentMethod, amount: amountToAdd });
+        updatedPayments.push({ 
+          id: crypto.randomUUID(), 
+          method: currentMethod, 
+          amount: amountToAdd 
+        });
       }
       setCompoundPayments(updatedPayments);
       setShowChangeDialog(true);
@@ -149,28 +164,68 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
       const existingIndex = compoundPayments.findIndex(p => p.method === currentMethod);
       if (existingIndex >= 0) {
         const updatedPayments = [...compoundPayments];
-        updatedPayments[existingIndex] = { ...updatedPayments[existingIndex], amount: updatedPayments[existingIndex].amount + amountToAdd };
+        updatedPayments[existingIndex] = { 
+          ...updatedPayments[existingIndex], 
+          amount: updatedPayments[existingIndex].amount + amountToAdd 
+        };
         setCompoundPayments(updatedPayments);
       } else {
-        setCompoundPayments([...compoundPayments, { id: crypto.randomUUID(), method: currentMethod, amount: amountToAdd }]);
+        setCompoundPayments([...compoundPayments, { 
+          id: crypto.randomUUID(), 
+          method: currentMethod, 
+          amount: amountToAdd 
+        }]);
       }
     }
     setBuffer('');
-  };
+  }, [buffer, isUsd, exchangeRate, total, compoundTotalPaid, compoundPayments, currentMethod]);
 
   // Manejar teclado
-  const handleKeyDown = (e: KeyboardEvent) => {
-    if (showPagoMovilModal || showChangeDialog) return;
-    
-    if (showCompoundModal) {
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignorar teclas si hay modales abiertos
+      if (showPagoMovilModal || showChangeDialog) return;
+      
+      // Si el foco está en un input, no interferir
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
+      
+      if (showCompoundModal) {
+        if (e.key >= '0' && e.key <= '9') {
+          e.preventDefault();
+          handleInput(e.key);
+        } else if (e.key === '.') {
+          e.preventDefault();
+          handleInput('.');
+        } else if (e.key === 'Enter') {
+          e.preventDefault();
+          handleCompoundAddPayment();
+        } else if (e.key === 'Backspace') {
+          e.preventDefault();
+          handleDeleteDigit();
+        } else if (e.key === 'Delete') {
+          e.preventDefault();
+          handleClearAll();
+        } else if (e.key === 'u' && (e.ctrlKey || e.metaKey)) {
+          e.preventDefault();
+          handleUndoLastPayment();
+        } else if (e.key === 'Escape') {
+          setShowCompoundModal(false);
+          setCompoundPayments([]);
+          setBuffer('');
+        }
+        return;
+      }
+      
+      // Modo simple
       if (e.key >= '0' && e.key <= '9') {
+        e.preventDefault();
         handleInput(e.key);
       } else if (e.key === '.') {
         e.preventDefault();
         handleInput('.');
       } else if (e.key === 'Enter') {
         e.preventDefault();
-        handleCompoundAddPayment();
+        handleSetAmount();
       } else if (e.key === 'Backspace') {
         e.preventDefault();
         handleDeleteDigit();
@@ -179,44 +234,21 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
         handleClearAll();
       } else if (e.key === 'u' && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
-        handleUndoLastPayment();
+        handleUndoSimple();
       } else if (e.key === 'Escape') {
-        setShowCompoundModal(false);
-        setCompoundPayments([]);
-        setBuffer('');
+        onClose();
       }
-      return;
-    }
-    
-    // Modo simple
-    if (e.key >= '0' && e.key <= '9') {
-      handleInput(e.key);
-    } else if (e.key === '.') {
-      e.preventDefault();
-      handleInput('.');
-    } else if (e.key === 'Enter') {
-      e.preventDefault();
-      handleSetAmount();
-    } else if (e.key === 'Backspace') {
-      e.preventDefault();
-      handleDeleteDigit();
-    } else if (e.key === 'Delete') {
-      e.preventDefault();
-      handleClearAll();
-    } else if (e.key === 'u' && (e.ctrlKey || e.metaKey)) {
-      e.preventDefault();
-      handleUndoSimple();
-    } else if (e.key === 'Escape') {
-      onClose();
-    }
-  };
+    };
 
-  useEffect(() => {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [buffer, currentMethod, showCompoundModal, showChangeDialog, showPagoMovilModal, compoundPayments]);
+  }, [
+    handleInput, handleSetAmount, handleDeleteDigit, handleClearAll, 
+    handleUndoSimple, handleUndoLastPayment, handleCompoundAddPayment,
+    showCompoundModal, showChangeDialog, showPagoMovilModal, onClose
+  ]);
 
-  const handleFinalConfirm = () => {
+  const handleFinalConfirm = useCallback(() => {
     if (showCompoundModal) {
       if (compoundTotalPaid < total) {
         alert(`Falta pagar: ${formatBs(compoundRemaining)}`);
@@ -241,39 +273,50 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
         method: currentMethod 
       });
     }
-  };
+  }, [
+    showCompoundModal, compoundTotalPaid, total, compoundRemaining, 
+    compoundPayments, compoundChange, onConfirm, currentAmount, 
+    currentMethod, changeAmount, remaining
+  ]);
 
-  const handleMontoExacto = () => {
+  const handleMontoExacto = useCallback(() => {
     if (showCompoundModal) {
       const amountToAdd = compoundRemaining;
       if (amountToAdd > 0) {
         const existingIndex = compoundPayments.findIndex(p => p.method === currentMethod);
         if (existingIndex >= 0) {
           const updatedPayments = [...compoundPayments];
-          updatedPayments[existingIndex] = { ...updatedPayments[existingIndex], amount: updatedPayments[existingIndex].amount + amountToAdd };
+          updatedPayments[existingIndex] = { 
+            ...updatedPayments[existingIndex], 
+            amount: updatedPayments[existingIndex].amount + amountToAdd 
+          };
           setCompoundPayments(updatedPayments);
         } else {
-          setCompoundPayments([...compoundPayments, { id: crypto.randomUUID(), method: currentMethod, amount: amountToAdd }]);
+          setCompoundPayments([...compoundPayments, { 
+            id: crypto.randomUUID(), 
+            method: currentMethod, 
+            amount: amountToAdd 
+          }]);
         }
       }
     } else {
       setCurrentAmount(total);
     }
     setBuffer('');
-  };
+  }, [showCompoundModal, compoundRemaining, compoundPayments, currentMethod, total]);
 
-  const handleConfirmChange = () => {
+  const handleConfirmChange = useCallback(() => {
     setShowChangeDialog(false);
     setPendingChange(0);
     setPendingSimpleChange(0);
-  };
+  }, []);
 
   const getMethodLabel = (methodId: string) => {
-    return methods.find(m => m.id === methodId)?.label || methodId;
+    return METHODS.find(m => m.id === methodId)?.label || methodId;
   };
 
   const MethodIcon = ({ methodId }: { methodId: string }) => {
-    const Icon = methods.find(m => m.id === methodId)?.icon || DollarSign;
+    const Icon = METHODS.find(m => m.id === methodId)?.icon || DollarSign;
     return <Icon size={14} />;
   };
 
@@ -281,11 +324,6 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
   const PagoMovilModal = () => {
     const [reference, setReference] = useState('');
     const [bank, setBank] = useState('');
-    const banks = [
-      'BANCO DE VENEZUELA', 'BANCO BANESCO', 'BANCO PROVINCIAL', 'BANCO MERCANTIL',
-      'BANCO NACIONAL DE CRÉDITO', 'BANCO DEL TESORO', 'BANCO EXTERIOR', 'BANCO PLAZA',
-      'BANCO ACTIVO', 'BANCO CARONÍ', 'BANCO SOFITASA', 'BANCAMIGO', 'BANFANB', '100% BANCO'
-    ];
 
     const handleReferenceChange = (e: React.ChangeEvent<HTMLInputElement>) => {
       const value = e.target.value.replace(/\D/g, '').slice(0, 6);
@@ -321,23 +359,44 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
 
     const handleKeyDownCapture = (e: React.KeyboardEvent) => {
       e.stopPropagation();
+      if (e.key === 'Escape') {
+        setShowPagoMovilModal(false);
+        setReference('');
+        setBank('');
+      }
     };
+
+    useEffect(() => {
+      if (showPagoMovilModal && pagoMovilInputRef.current) {
+        setTimeout(() => pagoMovilInputRef.current?.focus(), 100);
+      }
+    }, [showPagoMovilModal]);
 
     return (
       <div 
-        className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-sm flex items-center justify-start p-4 ml-6"
+        className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4"
         onKeyDownCapture={handleKeyDownCapture}
+        onClick={(e) => {
+          if (e.target === e.currentTarget) {
+            setShowPagoMovilModal(false);
+            setReference('');
+            setBank('');
+          }
+        }}
       >
         <div className="bg-[#D9D9D9] border border-black/20 rounded-2xl w-full max-w-md p-4 shadow-2xl">
           <div className="flex justify-between items-center mb-4">
             <h3 className="text-lg font-headline font-black flex items-center gap-2 text-black">
               <Smartphone size={20} className="text-[#E67E22]" /> Pago Móvil
             </h3>
-            <button onClick={() => {
-              setShowPagoMovilModal(false);
-              setReference('');
-              setBank('');
-            }} className="text-black/50 hover:text-black">
+            <button 
+              onClick={() => {
+                setShowPagoMovilModal(false);
+                setReference('');
+                setBank('');
+              }} 
+              className="text-black/50 hover:text-black"
+            >
               <X size={18} />
             </button>
           </div>
@@ -354,8 +413,6 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
                 value={reference}
                 onChange={handleReferenceChange}
                 placeholder="Ej: 123456"
-                autoFocus
-                onKeyDown={(e) => e.stopPropagation()}
                 className="w-full bg-white border border-black/20 rounded-lg px-3 py-2 text-sm font-bold text-black text-center tracking-widest focus:outline-none focus:border-[#E67E22] focus:ring-2 focus:ring-[#E67E22]/50"
               />
               <p className="text-[9px] text-black/40 mt-1 text-center">
@@ -371,11 +428,10 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
                 ref={pagoMovilSelectRef}
                 value={bank}
                 onChange={(e) => setBank(e.target.value)}
-                onKeyDown={(e) => e.stopPropagation()}
                 className="w-full bg-white border border-black/20 rounded-lg px-3 py-2 text-sm font-medium text-black focus:outline-none focus:border-[#E67E22] focus:ring-2 focus:ring-[#E67E22]/50"
               >
                 <option value="">Seleccione un banco</option>
-                {banks.map(b => <option key={b} value={b}>{b}</option>)}
+                {BANKS.map(b => <option key={b} value={b}>{b}</option>)}
               </select>
             </div>
           </div>
@@ -406,8 +462,31 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
   // Diálogo de vuelto (funciona para ambos modos)
   const ChangeDialog = () => {
     const changeAmountToShow = showCompoundModal ? pendingChange : pendingSimpleChange;
+    
+    useEffect(() => {
+      const handleKeyDown = (e: KeyboardEvent) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          handleConfirmChange();
+        } else if (e.key === 'Escape') {
+          setShowChangeDialog(false);
+          if (showCompoundModal) {
+            setCompoundPayments([]);
+            setPendingChange(0);
+          } else {
+            setCurrentAmount(0);
+            setPendingSimpleChange(0);
+          }
+          setBuffer('');
+        }
+      };
+      
+      window.addEventListener('keydown', handleKeyDown);
+      return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [handleConfirmChange, showCompoundModal]);
+
     return (
-      <div className="fixed inset-0 z-[300] bg-black/90 backdrop-blur-sm flex items-center justify-start p-4 ml-6">
+      <div className="fixed inset-0 z-[300] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4">
         <div className="bg-[#1A2C4E] border-2 border-[#2ECC71] rounded-2xl w-full max-w-sm p-6 shadow-2xl text-center">
           <div className="w-16 h-16 mx-auto mb-2 rounded-full bg-[#2ECC71]/20 flex items-center justify-center">
             <span className="text-3xl">💰</span>
@@ -464,13 +543,20 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
 
   // Modal de pago compuesto
   const CompoundModal = () => (
-    <div className="fixed inset-0 z-[150] bg-black/80 backdrop-blur-sm flex items-center justify-start p-4 ml-6">
+    <div className="fixed inset-0 z-[150] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
       <div className="bg-[#D9D9D9] border border-black/20 rounded-2xl w-full max-w-lg p-4 shadow-2xl">
         <div className="flex justify-between items-center mb-2">
           <h3 className="text-sm font-headline font-black flex items-center gap-2 text-black">
             <Wallet size={16} className="text-[#D4A017]" /> Pago Compuesto
           </h3>
-          <button onClick={() => setShowCompoundModal(false)} className="text-black/50 hover:text-black">
+          <button 
+            onClick={() => {
+              setShowCompoundModal(false);
+              setCompoundPayments([]);
+              setBuffer('');
+            }} 
+            className="text-black/50 hover:text-black"
+          >
             <X size={16} />
           </button>
         </div>
@@ -483,7 +569,7 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
             </div>
           ) : (
             <div className="space-y-1">
-              {compoundPayments.map((p, idx) => {
+              {compoundPayments.map((p) => {
                 const isUsdPay = p.method === 'usd_efectivo' || p.method === 'zelle';
                 const displayAmount = isUsdPay ? p.amount / exchangeRate : p.amount;
                 const currency = isUsdPay ? 'USD' : 'BS';
@@ -541,7 +627,7 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
             </button>
             {showMethodsDropdown && (
               <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-black/20 rounded-lg shadow-lg z-10">
-                {methods.map(m => (
+                {METHODS.map(m => (
                   <button
                     key={m.id}
                     onClick={() => {
@@ -653,8 +739,13 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
   return (
     <>
       {/* Modal principal */}
-      <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-start">
-        <div className="bg-[#D9D9D9] border border-black/20 rounded-2xl shadow-2xl w-full max-w-md p-4 ml-6">
+      <div 
+        className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+        onClick={(e) => {
+          if (e.target === e.currentTarget) onClose();
+        }}
+      >
+        <div className="bg-[#D9D9D9] border border-black/20 rounded-2xl shadow-2xl w-full max-w-md p-4">
           <div className="flex justify-between items-center mb-2">
             <h3 className="text-sm font-headline font-black flex items-center gap-2 text-black">
               <Calculator size={18} className="text-[#D4A017]" /> Cobro Contado
@@ -726,7 +817,7 @@ export default function PaymentModal({ total, exchangeRate, onClose, onConfirm }
             </button>
             {showMethodsDropdown && (
               <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-black/20 rounded-lg shadow-lg z-10">
-                {methods.map(m => (
+                {METHODS.map(m => (
                   <button
                     key={m.id}
                     onClick={() => {

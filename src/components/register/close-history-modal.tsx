@@ -32,7 +32,7 @@ interface UnifiedCloseRecord {
   totalReal: number;
   diferencia: number;
   estado: string;
-  source: 'local' | 'turso';
+  source: 'local' | 'firebase';
   rawData: any;
 }
 
@@ -98,7 +98,7 @@ export default function CloseHistoryModal({ open, onClose }: CloseHistoryModalPr
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  // Cargar cierres al abrir (localStorage + Turso)
+  // Cargar cierres al abrir (localStorage + Firebase)
   const loadAllCloses = async () => {
     const loadedRecords: UnifiedCloseRecord[] = [];
 
@@ -194,14 +194,14 @@ export default function CloseHistoryModal({ open, onClose }: CloseHistoryModalPr
       }
     }
 
-    // --- Cargar cierres desde Turso (colección cash_closes) ---
+    // --- Cargar cierres desde Firebase (colección cash_closes) ---
     try {
-      const tursoCloses = await syncService.getAllCashCloses();
-      for (const docData of tursoCloses) {
+      const firebaseCloses = await syncService.getAllCashCloses();
+      for (const docData of firebaseCloses) {
         const data = docData;
         const docId = data.id;
         if (!docId) {
-          console.warn('Documento de Turso sin ID:', data);
+          console.warn('Documento de Firebase sin ID:', data);
           continue;
         }
         if (data.tipo === 'parcial') {
@@ -234,7 +234,7 @@ export default function CloseHistoryModal({ open, onClose }: CloseHistoryModalPr
             totalReal,
             diferencia: diff,
             estado,
-            source: 'turso',
+            source: 'firebase',
             rawData: data,
           });
         } else if (data.tipo === 'final') {
@@ -272,13 +272,13 @@ export default function CloseHistoryModal({ open, onClose }: CloseHistoryModalPr
             totalReal: data.totales?.real ?? 0,
             diferencia: diff,
             estado,
-            source: 'turso',
+            source: 'firebase',
             rawData: data,
           });
         }
       }
     } catch (error) {
-      console.error('Error cargando cierres desde Turso:', error);
+      console.error('Error cargando cierres desde Firebase:', error);
     }
 
     // Ordenar por fecha descendente
@@ -327,7 +327,7 @@ export default function CloseHistoryModal({ open, onClose }: CloseHistoryModalPr
     setYearFilter(today.getFullYear().toString());
   };
 
-  // ✅ CORREGIDO: Eliminar cierre usando syncService (Turso)
+  // Eliminar cierre usando syncService (Firebase)
   const handleDeleteRecord = async (record: UnifiedCloseRecord) => {
     const confirmMsg = `¿Eliminar este cierre del ${record.fechaDisplay}? Esta acción no se puede deshacer.`;
     if (!confirm(confirmMsg)) return;
@@ -347,8 +347,8 @@ export default function CloseHistoryModal({ open, onClose }: CloseHistoryModalPr
 
       if (record.source === 'local') {
         localStorage.removeItem(idToDelete);
-      } else if (record.source === 'turso') {
-        // ✅ Usar syncService para eliminar de Turso
+      } else if (record.source === 'firebase') {
+        // Usar syncService para eliminar de Firebase
         await syncService.deleteCashClose?.(idToDelete);
       }
       // Recargar la lista después de eliminar
@@ -382,7 +382,7 @@ export default function CloseHistoryModal({ open, onClose }: CloseHistoryModalPr
           <h1>MasterPOS - Reporte de Cierre</h1>
           <p><strong>Fecha:</strong> ${record.fechaDisplay}</p>
           <p><strong>Tipo:</strong> ${record.tipo === 'parcial' ? 'CORTE PARCIAL' : 'CIERRE FINAL'}</p>
-          <p><strong>Fuente:</strong> ${record.source === 'turso' ? 'Cloud (Turso)' : 'Local (navegador)'}</p>
+          <p><strong>Fuente:</strong> ${record.source === 'firebase' ? 'Cloud (Firebase)' : 'Local (navegador)'}</p>
           <p><strong>Apertura:</strong> ${formatBs(record.apertura.bs)} + ${formatUsd(record.apertura.usd)}</p>
           ${record.apertura.tasa ? `<p><strong>Tasa BCV:</strong> ${formatBs(record.apertura.tasa)}</p>` : ''}
           <p><strong>Ventas Contado:</strong> ${formatBs(record.ventasContado)}</p>
@@ -470,7 +470,7 @@ export default function CloseHistoryModal({ open, onClose }: CloseHistoryModalPr
             </div>
             <p className="text-[10px] text-black/40 mt-3">
               Mostrando ${filteredRecords.length} de ${records.length} cierres
-              {!loading && records.some(r => r.source === 'turso') && <span className="ml-2 text-primary">(incluye datos en la nube)</span>}
+              {!loading && records.some(r => r.source === 'firebase') && <span className="ml-2 text-primary">(incluye datos en la nube)</span>}
             </p>
           </div>
           <div className="flex-1 overflow-y-auto p-5">
@@ -488,7 +488,7 @@ export default function CloseHistoryModal({ open, onClose }: CloseHistoryModalPr
                           <span className={cn("text-[9px] font-black px-2 py-0.5 rounded-full", record.tipo === 'parcial' ? "bg-blue-100 text-blue-700" : "bg-purple-100 text-purple-700")}>
                             {record.tipo === 'parcial' ? 'CORTE PARCIAL' : 'CIERRE FINAL'}
                           </span>
-                          {record.source === 'turso' && (
+                          {record.source === 'firebase' && (
                             <span className="text-[8px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700">Cloud</span>
                           )}
                           <p className="text-xs font-mono text-black/50">{record.id}</p>
@@ -516,7 +516,7 @@ export default function CloseHistoryModal({ open, onClose }: CloseHistoryModalPr
             )}
           </div>
           <div className="bg-gray-50 p-4 border-t border-gray-200 flex justify-between items-center">
-            <p className="text-[9px] text-black/40">Los cierres se almacenan localmente y en la nube (Turso)</p>
+            <p className="text-[9px] text-black/40">Los cierres se almacenan localmente y en la nube (Firebase)</p>
             <Button onClick={onClose} variant="ghost" className="text-black/60 hover:text-black text-xs">Cerrar</Button>
           </div>
         </DialogContent>

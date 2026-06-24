@@ -24,7 +24,16 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { formatBs, formatUsd, formatBsNumber, formatUsdNumber } from '@/lib/currency-formatter';
-import { turso } from '@/lib/db';
+import { db, rtdb } from '@/lib/firebase';
+import { 
+  collection, 
+  getDocs, 
+  doc, 
+  setDoc, 
+  writeBatch,
+  deleteDoc
+} from 'firebase/firestore';
+import { ref, get, set } from 'firebase/database';
 
 interface AdminDashboardProps {
   state: ReturnType<typeof usePOSState>;
@@ -133,7 +142,7 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
     }
   };
 
-  // ==================== RESET COMPLETO (CONSERVANDO USUARIOS) ====================
+  // ==================== RESET COMPLETO (CONSERVANDO USUARIOS Y PIN) ====================
   const handleResetSystem = async () => {
     if (!resetPinInput) {
       toast({ title: "Error", description: "Ingrese el PIN de autorización", variant: "destructive" });
@@ -148,55 +157,185 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
     setIsResetting(true);
     
     try {
-      // ✅ Limpiar tablas en TURSO (sin tocar users)
-      const tables = [
-        'products',
-        'clients',
+      // ✅ Obtener usuarios para conservarlos (Firestore)
+      let usersToKeep: any[] = [];
+      try {
+        const usersSnapshot = await getDocs(collection(db, 'users'));
+        usersSnapshot.forEach(doc => {
+          usersToKeep.push({ id: doc.id, ...doc.data() });
+        });
+        console.log(`👥 ${usersToKeep.length} usuarios a conservar`);
+      } catch (e) {
+        console.warn('No se pudieron obtener usuarios:', e);
+      }
+
+      // ✅ Obtener código de administrador (RTDB)
+      let adminCode = '123456';
+      try {
+        const settingsRef = ref(rtdb, 'global_settings');
+        const settingsSnapshot = await get(settingsRef);
+        if (settingsSnapshot.exists()) {
+          const data = settingsSnapshot.val();
+          if (data.admin_code) {
+            adminCode = data.admin_code;
+          }
+        }
+      } catch (e) {
+        console.warn('No se pudo obtener el código de administrador, usando default');
+      }
+      console.log(`🔑 Código de administrador conservado: ${adminCode}`);
+
+      // ============================================================
+      // 1. BORRAR FIRESTORE (TODAS LAS COLECCIONES)
+      // ============================================================
+      const firestoreCollections = [
         'transactions',
         'accounts',
+        'products',
+        'clients',
+        'suppliers',
         'purchase_invoices',
         'purchase_items',
         'supplier_payments',
-        'suppliers',
         'accounting_entries',
         'kardex_entries',
+        'terminals',
+        'registers',
         'cash_closes',
         'cash_sessions',
-        'registers',
-        'terminals',
+        'global_settings',
+        'register',
       ];
-      
-      for (const table of tables) {
+
+      console.log('🗑️ Borrando colecciones de Firestore...');
+      for (const collectionName of firestoreCollections) {
         try {
-          await turso.execute(`DELETE FROM ${table}`);
-        } catch (err) {
-          console.warn(`Error limpiando tabla ${table}:`, err);
+          const colRef = collection(db, collectionName);
+          const snapshot = await getDocs(colRef);
+          if (!snapshot.empty) {
+            const batch = writeBatch(db);
+            snapshot.forEach(doc => {
+              batch.delete(doc.ref);
+            });
+            await batch.commit();
+            console.log(`✅ Colección ${collectionName} borrada (${snapshot.size} documentos)`);
+          } else {
+            console.log(`⚠️ Colección ${collectionName} ya estaba vacía`);
+          }
+        } catch (error) {
+          console.error(`❌ Error borrando ${collectionName}:`, error);
         }
       }
-      
-      // Restablecer el código de autorización (PIN) por defecto
-      await syncService.saveGlobalSettings({ adminCode: '123456' });
-      
-      // Limpiar localStorage (excepto datos de sesión)
-      if (typeof window !== 'undefined') {
-        localStorage.removeItem('last_receipt_number');
-        localStorage.removeItem('bcv_exchange_rate');
-        localStorage.removeItem('pos_register_default');
+
+      // ============================================================
+      // 2. BORRAR RTDB (TODOS LOS NODOS)
+      // ============================================================
+      const rtdbNodes = [
+        'transactions',
+        'accounts',
+        'products',
+        'clients',
+        'suppliers',
+        'purchase_invoices',
+        'purchase_items',
+        'supplier_payments',
+        'accounting_entries',
+        'kardex_entries',
+        'terminals',
+        'registers',
+        'cash_closes',
+        'global_settings',
+        'register',
+        'terminal_transactions',
+      ];
+
+      console.log('🗑️ Borrando nodos de RTDB...');
+      for (const nodeName of rtdbNodes) {
+        try {
+          const nodeRef = ref(rtdb, nodeName);
+          await set(nodeRef, null);
+          console.log(`✅ Nodo ${nodeName} borrado`);
+        } catch (error) {
+          console.error(`❌ Error borrando ${nodeName}:`, error);
+        }
       }
-      
+
+      // ============================================================
+      // 3. RESTAURAR DATOS A CONSERVAR
+      // ============================================================
+      console.log('♻️ Restaurando datos a conservar...');
+
+      // ✅ Restaurar usuarios en Firestore
+      for (const user of usersToKeep) {
+        try {
+          await setDoc(doc(db, 'users', user.id), user);
+          console.log(`✅ Usuario ${user.name || user.id} restaurado en Firestore`);
+        } catch (error) {
+          console.error(`❌ Error restaurando usuario ${user.id}:`, error);
+        }
+      }
+
+      // ✅ Restaurar usuarios en RTDB
+      for (const user of usersToKeep) {
+        try {
+          const rtdbUserData = {
+            uid: user.uid || user.id,
+            name: user.name || '',
+            email: user.email || '',
+            role: user.role || 'user',
+            terminalId: user.terminalId || null,
+            terminalName: user.terminalName || null,
+            status: user.status || 'active',
+            createdAt: user.createdAt || new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          };
+          await set(ref(rtdb, `users/${user.id}`), rtdbUserData);
+          console.log(`✅ Usuario ${user.name || user.id} restaurado en RTDB`);
+        } catch (error) {
+          console.error(`❌ Error restaurando usuario ${user.id} en RTDB:`, error);
+        }
+      }
+
+      // ✅ Restaurar código de administrador
+      try {
+        await set(ref(rtdb, 'global_settings/admin_code'), adminCode);
+        console.log(`✅ Código de administrador restaurado: ${adminCode}`);
+      } catch (error) {
+        console.error('❌ Error restaurando código de administrador:', error);
+      }
+
+      // ============================================================
+      // 4. LIMPIAR CACHÉ LOCAL
+      // ============================================================
+      console.log('🗑️ Limpiando caché local...');
+      try {
+        const keys = Object.keys(localStorage);
+        for (const key of keys) {
+          if (key.startsWith('pos_cache_')) {
+            localStorage.removeItem(key);
+            console.log(`✅ Caché ${key} eliminado`);
+          }
+        }
+        localStorage.removeItem('bcv_exchange_rate');
+        localStorage.removeItem('last_receipt_number');
+        localStorage.removeItem('pos_register_default');
+      } catch (error) {
+        console.error('❌ Error limpiando caché:', error);
+      }
+
       toast({ 
-        title: "Sistema reseteado", 
-        description: "Todos los datos de negocio han sido eliminados. Los usuarios se conservan. Recargando página...",
+        title: "✅ Sistema reseteado", 
+        description: `Todos los datos eliminados. ${usersToKeep.length} usuarios conservados. PIN: ${adminCode}. Recargando página...`,
         variant: "default"
       });
-      
+
       setTimeout(() => {
         window.location.reload();
-      }, 2000);
-      
+      }, 3000);
+
       setShowResetModal(false);
       setResetPinInput('');
-      
+
     } catch (error) {
       console.error("Error al resetear el sistema:", error);
       toast({ title: "Error", description: "No se pudo completar el reseteo", variant: "destructive" });
@@ -211,7 +350,7 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
   const totalRevenue = state.transactions.filter(t => t.type === 'contado').reduce((sum, t) => sum + t.total, 0);
   // ✅ CORREGIDO: Calcular el total de deudas desde las cuentas (state.accounts) en lugar de los clientes
   const totalCreditBs = state.accounts.reduce((sum, acc) => sum + (acc.amountBs - (acc.paidAmount || 0)), 0);
-  const totalCreditUsd = totalCreditBs / state.exchangeRate; // ✅ Convertir a USD
+  const totalCreditUsd = totalCreditBs / state.exchangeRate;
   const totalPayable = invoices.reduce((sum, inv) => sum + (inv.total - inv.paidAmount), 0);
   const outOfStock = state.products.filter(p => p.stock === 0).length;
   const lowStock = state.products.filter(p => p.stock > 0 && p.stock <= 5).length;

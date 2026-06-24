@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { 
   Plus, Edit, Trash2, Computer, Users, MapPin, Power, 
-  PowerOff, Search, Lock, Unlock, AlertTriangle
+  PowerOff, Search, Lock, Unlock, AlertTriangle, CheckCircle
 } from 'lucide-react';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import syncService from '@/services/syncService';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/context/AuthContext';
+import { useToast } from '@/hooks/use-toast';
 
 interface Terminal {
   id: string;
@@ -20,6 +21,7 @@ interface Terminal {
   location: string;
   status: 'active' | 'inactive' | 'maintenance';
   assignedTo: string | null;
+  assignedToName?: string | null;
   isBlocked?: boolean;
   createdAt: string;
   updatedAt: string;
@@ -27,14 +29,17 @@ interface Terminal {
 
 interface User {
   id: string;
+  uid: string;
   name: string;
   email: string;
   role: string;
   terminalId?: string | null;
+  terminalName?: string | null;
 }
 
 export default function TerminalManager() {
   const { user } = useAuth();
+  const { toast } = useToast();
   const [terminals, setTerminals] = useState<Terminal[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [showModal, setShowModal] = useState(false);
@@ -43,6 +48,7 @@ export default function TerminalManager() {
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
   const [nameError, setNameError] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
   
   const [formData, setFormData] = useState({
     name: '',
@@ -51,57 +57,118 @@ export default function TerminalManager() {
     assignedTo: '',
   });
 
+  // ✅ Cargar datos iniciales y suscribirse a cambios en tiempo real
   useEffect(() => {
     if (!user) return;
 
-    // ✅ CORREGIDO: Usar subscribeToRegisterRealtime en lugar de subscribeToTerminalsRealtime
-    // Pero para obtener TODAS las terminales, usamos getAllTerminals con polling o una suscripción global
-    // Como no tenemos subscribeToTerminalsRealtime, usamos getAllTerminals con intervalo
-    
-    const loadTerminals = async () => {
+    let isMounted = true;
+
+    const loadData = async () => {
       try {
-        const data = await syncService.getAllTerminals();
-        const terminalsWithDefaults = data.map((t: any) => ({ 
-          ...t, 
-          id: t.id || t.name,
-          name: t.name || 'Sin nombre',
-          location: t.location || '',
-          isBlocked: t.isBlocked ?? false 
-        }));
-        setTerminals(terminalsWithDefaults);
-      } catch (error) {
-        console.error('Error loading terminals:', error);
-      }
-    };
+        // ✅ Cargar terminales
+        const terminalsData = await syncService.getAllTerminals();
+        if (isMounted) {
+          const terminalsWithDefaults = terminalsData.map((t: any) => ({ 
+            ...t, 
+            id: t.id || t.name,
+            name: t.name || 'Sin nombre',
+            location: t.location || '',
+            isBlocked: t.isBlocked ?? false,
+            assignedToName: t.assignedToName || null,
+          }));
+          setTerminals(terminalsWithDefaults);
+        }
 
-    loadTerminals();
-
-    // Polling cada 5 segundos para actualizar en tiempo real
-    const interval = setInterval(loadTerminals, 5000);
-
-    const loadUsers = async () => {
-      setIsLoadingUsers(true);
-      try {
+        // ✅ Cargar usuarios
+        setIsLoadingUsers(true);
         const usersList = await syncService.getAllUsers();
-        setUsers(usersList as User[]);
+        if (isMounted) {
+          setUsers(usersList as User[]);
+        }
+        setIsLoadingUsers(false);
       } catch (error) {
-        console.error('Error loading users:', error);
-      } finally {
+        console.error('Error loading data:', error);
         setIsLoadingUsers(false);
       }
     };
 
-    loadUsers();
-    return () => clearInterval(interval);
+    loadData();
+
+    // ✅ Suscripción en tiempo real a usuarios (Firestore)
+    const unsubscribeUsers = syncService.subscribeToUsers((usersData) => {
+      if (isMounted) {
+        setUsers(usersData as User[]);
+        console.log('🔄 Usuarios actualizados en tiempo real:', usersData.length);
+      }
+    });
+
+    // ✅ Polling para terminales cada 3 segundos
+    const interval = setInterval(async () => {
+      try {
+        const terminalsData = await syncService.getAllTerminals();
+        if (isMounted) {
+          const terminalsWithDefaults = terminalsData.map((t: any) => ({ 
+            ...t, 
+            id: t.id || t.name,
+            name: t.name || 'Sin nombre',
+            location: t.location || '',
+            isBlocked: t.isBlocked ?? false,
+            assignedToName: t.assignedToName || null,
+          }));
+          setTerminals(terminalsWithDefaults);
+        }
+      } catch (error) {
+        console.error('Error polling terminals:', error);
+      }
+    }, 3000);
+
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+      if (unsubscribeUsers) unsubscribeUsers();
+    };
   }, [user]);
 
-  // Actualizar terminalId del usuario
-  const updateUserTerminalAssignment = async (userId: string | null, terminalId: string | null) => {
-    if (!userId) return;
+  // ✅ Función para recargar todos los datos
+  const refreshData = async () => {
     try {
-      await syncService.updateUserTerminalId(userId, terminalId);
+      const terminalsData = await syncService.getAllTerminals();
+      const terminalsWithDefaults = terminalsData.map((t: any) => ({ 
+        ...t, 
+        id: t.id || t.name,
+        name: t.name || 'Sin nombre',
+        location: t.location || '',
+        isBlocked: t.isBlocked ?? false,
+        assignedToName: t.assignedToName || null,
+      }));
+      setTerminals(terminalsWithDefaults);
+
+      const usersList = await syncService.getAllUsers();
+      setUsers(usersList as User[]);
+    } catch (error) {
+      console.error('Error refreshing data:', error);
+    }
+  };
+
+  // ✅ Actualizar terminalId del usuario con nombre
+  const updateUserTerminalAssignment = async (userId: string | null, terminalId: string | null, terminalName: string | null = null) => {
+    if (!userId) return false;
+    try {
+      console.log(`📡 Asignando usuario ${userId} a terminal ${terminalName || 'Ninguna'}...`);
+      await syncService.updateUserTerminalId(userId, terminalId, terminalName);
+      console.log(`✅ Usuario ${userId} asignado a terminal ${terminalName || 'Ninguna'}`);
+      
+      // ✅ Esperar un momento para que Firestore se actualice
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // ✅ Recargar usuarios para obtener los datos actualizados
+      const usersList = await syncService.getAllUsers();
+      setUsers(usersList as User[]);
+      
+      return true;
     } catch (error) {
       console.error('Error al actualizar terminalId del usuario:', error);
+      return false;
     }
   };
 
@@ -111,68 +178,143 @@ export default function TerminalManager() {
 
   const handleSubmit = async () => {
     if (!formData.name.trim()) {
-      alert('El nombre de la terminal es requerido');
+      toast({ title: 'Error', description: 'El nombre de la terminal es requerido', variant: 'destructive' });
       return;
     }
 
     if (!editingTerminal && !isNameUnique(formData.name)) {
       setNameError('Ya existe una terminal con este nombre');
+      toast({ title: 'Error', description: 'Ya existe una terminal con este nombre', variant: 'destructive' });
       return;
     }
     setNameError('');
 
-    const oldAssignedTo = editingTerminal ? editingTerminal.assignedTo : null;
-    const newAssignedTo = formData.assignedTo || null;
-    const terminalId = formData.name;
+    setIsSaving(true);
 
-    if (editingTerminal && editingTerminal.name !== formData.name) {
-      alert('No se puede cambiar el nombre de la terminal. Cree una nueva terminal y elimine esta.');
-      return;
-    }
+    try {
+      const oldAssignedTo = editingTerminal ? editingTerminal.assignedTo : null;
+      const newAssignedTo = formData.assignedTo || null;
+      
+      // ✅ Generar un ID único para la terminal
+      const terminalId = editingTerminal ? editingTerminal.id : `term_${Date.now()}`;
+      const terminalName = formData.name.trim();
 
-    const terminalData = {
-      id: terminalId,
-      name: formData.name,
-      description: formData.description,
-      location: formData.location,
-      assignedTo: newAssignedTo,
-      status: editingTerminal ? editingTerminal.status : 'active',
-      isBlocked: editingTerminal ? (editingTerminal.isBlocked ?? false) : false,
-      updatedAt: new Date().toISOString(),
-      createdAt: editingTerminal ? editingTerminal.createdAt : new Date().toISOString(),
-    };
+      // ✅ Obtener el usuario seleccionado y su uid
+      const selectedUser = users.find(u => u.id === newAssignedTo || u.uid === newAssignedTo);
+      const userUid = selectedUser?.uid || selectedUser?.id || newAssignedTo;
+      const assignedUserName = selectedUser ? selectedUser.name : null;
 
-    await syncService.saveTerminal(terminalData);
+      console.log(`📡 Usuario seleccionado:`, { newAssignedTo, userUid, assignedUserName });
 
-    if (oldAssignedTo !== newAssignedTo) {
-      if (oldAssignedTo) {
-        await updateUserTerminalAssignment(oldAssignedTo, null);
+      if (editingTerminal && editingTerminal.name !== formData.name) {
+        toast({ 
+          title: 'Error', 
+          description: 'No se puede cambiar el nombre de la terminal. Cree una nueva terminal y elimine esta.', 
+          variant: 'destructive' 
+        });
+        setIsSaving(false);
+        return;
       }
-      if (newAssignedTo) {
-        await updateUserTerminalAssignment(newAssignedTo, terminalId);
-      }
-    }
 
-    resetForm();
-    setShowModal(false);
+      const terminalData = {
+        id: terminalId,
+        name: terminalName,
+        description: formData.description || '',
+        location: formData.location || '',
+        assignedTo: newAssignedTo,
+        assignedToName: assignedUserName,
+        status: editingTerminal ? editingTerminal.status : 'active',
+        isBlocked: editingTerminal ? (editingTerminal.isBlocked ?? false) : false,
+        updatedAt: new Date().toISOString(),
+        createdAt: editingTerminal ? editingTerminal.createdAt : new Date().toISOString(),
+      };
+
+      // ✅ Guardar terminal en RTDB
+      await syncService.saveTerminal(terminalData);
+      console.log('✅ Terminal guardada:', terminalData);
+
+      // ✅ Actualizar asignación del usuario
+      if (oldAssignedTo !== newAssignedTo) {
+        // Desasignar usuario anterior
+        if (oldAssignedTo) {
+          console.log(`📡 Desasignando usuario anterior: ${oldAssignedTo}`);
+          await updateUserTerminalAssignment(oldAssignedTo, null, null);
+        }
+        
+        // Asignar nuevo usuario (usando el uid correcto)
+        if (newAssignedTo && userUid) {
+          console.log(`📡 Asignando nuevo usuario: ${userUid} -> terminal ${terminalName}`);
+          await updateUserTerminalAssignment(userUid, terminalId, terminalName);
+        }
+      }
+
+      // ✅ Esperar a que Firestore se actualice
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      // ✅ Recargar todos los datos
+      await refreshData();
+
+      toast({ 
+        title: '✅ Éxito', 
+        description: editingTerminal 
+          ? `Terminal "${terminalName}" actualizada correctamente` 
+          : `Terminal "${terminalName}" creada correctamente`,
+        variant: 'default'
+      });
+
+      resetForm();
+      setShowModal(false);
+
+    } catch (error) {
+      console.error('Error al guardar terminal:', error);
+      toast({ 
+        title: '❌ Error', 
+        description: 'No se pudo guardar la terminal. Intente de nuevo.', 
+        variant: 'destructive' 
+      });
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleDelete = async (terminal: Terminal) => {
     if (confirm(`¿Eliminar la terminal "${terminal.name}"? Esta acción también desasignará a cualquier usuario.`)) {
-      if (terminal.assignedTo) {
-        await updateUserTerminalAssignment(terminal.assignedTo, null);
+      try {
+        if (terminal.assignedTo) {
+          const userToUnassign = users.find(u => u.id === terminal.assignedTo || u.uid === terminal.assignedTo);
+          await updateUserTerminalAssignment(userToUnassign?.uid || terminal.assignedTo, null, null);
+        }
+        await syncService.deleteTerminal(terminal.id);
+        
+        await refreshData();
+        
+        toast({ title: '✅ Eliminada', description: `Terminal "${terminal.name}" eliminada correctamente` });
+      } catch (error) {
+        console.error('Error al eliminar terminal:', error);
+        toast({ title: '❌ Error', description: 'No se pudo eliminar la terminal', variant: 'destructive' });
       }
-      await syncService.deleteTerminal(terminal.id);
     }
   };
 
   const handleStatusToggle = async (terminal: Terminal) => {
-    const updated = {
-      ...terminal,
-      status: terminal.status === 'active' ? 'inactive' : 'active' as any,
-      updatedAt: new Date().toISOString()
-    };
-    await syncService.saveTerminal(updated);
+    try {
+      const updated = {
+        ...terminal,
+        status: terminal.status === 'active' ? 'inactive' : 'active' as any,
+        updatedAt: new Date().toISOString()
+      };
+      await syncService.saveTerminal(updated);
+      
+      await refreshData();
+      
+      toast({ 
+        title: '✅ Estado actualizado', 
+        description: `Terminal "${terminal.name}" ${updated.status === 'active' ? 'activada' : 'desactivada'}` 
+      });
+    } catch (error) {
+      console.error('Error al cambiar estado:', error);
+      toast({ title: '❌ Error', description: 'No se pudo cambiar el estado', variant: 'destructive' });
+    }
   };
 
   const handleToggleBlock = async (terminal: Terminal) => {
@@ -180,12 +322,16 @@ export default function TerminalManager() {
     try {
       const newBlocked = !terminal.isBlocked;
       await syncService.updateTerminalBlockStatus(terminal.id, newBlocked);
-      setTerminals(prev => prev.map(t => 
-        t.id === terminal.id ? { ...t, isBlocked: newBlocked, updatedAt: new Date().toISOString() } : t
-      ));
+      
+      await refreshData();
+      
+      toast({ 
+        title: '✅ Bloqueo actualizado', 
+        description: `Terminal "${terminal.name}" ${newBlocked ? 'bloqueada' : 'desbloqueada'}` 
+      });
     } catch (error) {
       console.error('Error al cambiar estado de bloqueo:', error);
-      alert('No se pudo cambiar el estado de bloqueo');
+      toast({ title: '❌ Error', description: 'No se pudo cambiar el estado de bloqueo', variant: 'destructive' });
     } finally {
       setIsUpdating(false);
     }
@@ -208,19 +354,32 @@ export default function TerminalManager() {
     setNameError('');
   };
 
-  const getAssignedUserName = (userId: string | null) => {
-    if (!userId) return 'Sin asignar';
-    const found = users.find(u => u.id === userId);
-    return found ? found.name : 'Usuario no encontrado';
+  // ✅ Obtener nombre del usuario asignado
+  const getAssignedUserName = (terminal: Terminal) => {
+    if (!terminal.assignedTo) return 'Sin asignar';
+    
+    // Primero intentar usar el nombre guardado en la terminal
+    if (terminal.assignedToName) return terminal.assignedToName;
+    
+    // Buscar en la lista de usuarios por id o uid
+    const found = users.find(u => u.id === terminal.assignedTo || u.uid === terminal.assignedTo);
+    if (found) return found.name;
+    
+    // Buscar por terminalId en los usuarios
+    const userWithTerminal = users.find(u => u.terminalId === terminal.id);
+    if (userWithTerminal) return userWithTerminal.name;
+    
+    return 'Usuario no encontrado';
   };
 
-  // Filtrado seguro (con validación para evitar undefined)
+  // Filtrado seguro
   const filteredTerminals = terminals.filter(t => 
     (t.name && t.name.toLowerCase().includes(search.toLowerCase())) ||
     (t.location && t.location.toLowerCase().includes(search.toLowerCase()))
   );
 
-  const cashiers = users.filter(u => u.role === 'cashier');
+  // ✅ Obtener todos los usuarios disponibles para asignar
+  const availableUsers = users.filter(u => u.role === 'user' || u.role === 'cashier' || u.role === 'admin' || u.role === 'supervisor');
 
   return (
     <div className="bg-white border border-[#9E9E9E] rounded-xl p-5 shadow-md">
@@ -262,64 +421,72 @@ export default function TerminalManager() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filteredTerminals.map((terminal) => (
-              <TableRow key={terminal.id} className="border-b border-[#9E9E9E] hover:bg-[#F5F5F5]">
-                <TableCell className="font-bold text-black text-sm">{terminal.name}</TableCell>
-                <TableCell className="text-black/60 text-xs">{terminal.description || '—'}</TableCell>
-                <TableCell className="text-black/60 text-xs">
-                  <div className="flex items-center gap-1">
-                    <MapPin size={10} className="flex-shrink-0" />
-                    {terminal.location || '—'}
-                  </div>
-                </TableCell>
-                <TableCell className="text-black/60 text-xs">
-                  <div className="flex items-center gap-1">
-                    <Users size={10} className="flex-shrink-0" />
-                    {isLoadingUsers ? '...' : getAssignedUserName(terminal.assignedTo)}
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <span className={cn(
-                    "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold",
-                    terminal.status === 'active' ? "text-green-600 bg-green-100" : "text-red-600 bg-red-100"
-                  )}>
-                    <span className={cn(
-                      "w-1.5 h-1.5 rounded-full",
-                      terminal.status === 'active' ? "bg-green-600" : "bg-red-600"
-                    )} />
-                    {terminal.status === 'active' ? 'ACTIVA' : 'INACTIVA'}
-                  </span>
-                </TableCell>
-                <TableCell>
-                  <button
-                    onClick={() => handleToggleBlock(terminal)}
-                    disabled={isUpdating}
-                    className={cn(
-                      "inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold transition-all",
-                      terminal.isBlocked 
-                        ? "bg-red-100 text-red-700 hover:bg-red-200" 
-                        : "bg-green-100 text-green-700 hover:bg-green-200"
-                    )}
-                  >
-                    {terminal.isBlocked ? <Lock size={10} /> : <Unlock size={10} />}
-                    {terminal.isBlocked ? 'BLOQUEADA' : 'DESBLOQUEADA'}
-                  </button>
-                </TableCell>
-                <TableCell className="text-right">
-                  <div className="flex justify-end gap-1">
-                    <button onClick={() => handleStatusToggle(terminal)} className="p-1.5 rounded-lg hover:bg-gray-100" title={terminal.status === 'active' ? 'Desactivar' : 'Activar'}>
-                      {terminal.status === 'active' ? <PowerOff size={14} className="text-red-500" /> : <Power size={14} className="text-green-500" />}
-                    </button>
-                    <button onClick={() => handleEdit(terminal)} className="p-1.5 rounded-lg hover:bg-gray-100" title="Editar">
-                      <Edit size={14} className="text-blue-500" />
-                    </button>
-                    <button onClick={() => handleDelete(terminal)} className="p-1.5 rounded-lg hover:bg-gray-100" title="Eliminar">
-                      <Trash2 size={14} className="text-red-500" />
-                    </button>
-                  </div>
+            {filteredTerminals.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={7} className="text-center py-8 text-black/50 text-sm">
+                  No hay terminales registradas
                 </TableCell>
               </TableRow>
-            ))}
+            ) : (
+              filteredTerminals.map((terminal) => (
+                <TableRow key={terminal.id} className="border-b border-[#9E9E9E] hover:bg-[#F5F5F5]">
+                  <TableCell className="font-bold text-black text-sm">{terminal.name}</TableCell>
+                  <TableCell className="text-black/60 text-xs">{terminal.description || '—'}</TableCell>
+                  <TableCell className="text-black/60 text-xs">
+                    <div className="flex items-center gap-1">
+                      <MapPin size={10} className="flex-shrink-0" />
+                      {terminal.location || '—'}
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-black/60 text-xs">
+                    <div className="flex items-center gap-1">
+                      <Users size={10} className="flex-shrink-0" />
+                      {isLoadingUsers ? '...' : getAssignedUserName(terminal)}
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <span className={cn(
+                      "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold",
+                      terminal.status === 'active' ? "text-green-600 bg-green-100" : "text-red-600 bg-red-100"
+                    )}>
+                      <span className={cn(
+                        "w-1.5 h-1.5 rounded-full",
+                        terminal.status === 'active' ? "bg-green-600" : "bg-red-600"
+                      )} />
+                      {terminal.status === 'active' ? 'ACTIVA' : 'INACTIVA'}
+                    </span>
+                  </TableCell>
+                  <TableCell>
+                    <button
+                      onClick={() => handleToggleBlock(terminal)}
+                      disabled={isUpdating}
+                      className={cn(
+                        "inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold transition-all",
+                        terminal.isBlocked 
+                          ? "bg-red-100 text-red-700 hover:bg-red-200" 
+                          : "bg-green-100 text-green-700 hover:bg-green-200"
+                      )}
+                    >
+                      {terminal.isBlocked ? <Lock size={10} /> : <Unlock size={10} />}
+                      {terminal.isBlocked ? 'BLOQUEADA' : 'DESBLOQUEADA'}
+                    </button>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex justify-end gap-1">
+                      <button onClick={() => handleStatusToggle(terminal)} className="p-1.5 rounded-lg hover:bg-gray-100" title={terminal.status === 'active' ? 'Desactivar' : 'Activar'}>
+                        {terminal.status === 'active' ? <PowerOff size={14} className="text-red-500" /> : <Power size={14} className="text-green-500" />}
+                      </button>
+                      <button onClick={() => handleEdit(terminal)} className="p-1.5 rounded-lg hover:bg-gray-100" title="Editar">
+                        <Edit size={14} className="text-blue-500" />
+                      </button>
+                      <button onClick={() => handleDelete(terminal)} className="p-1.5 rounded-lg hover:bg-gray-100" title="Eliminar">
+                        <Trash2 size={14} className="text-red-500" />
+                      </button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
           </TableBody>
         </Table>
       </div>
@@ -345,7 +512,7 @@ export default function TerminalManager() {
                   setFormData({ ...formData, name: e.target.value });
                   setNameError('');
                 }}
-                placeholder="Ej: Caja Principal"
+                placeholder="Ej: 0001"
                 disabled={!!editingTerminal}
                 className={editingTerminal ? "bg-gray-100" : ""}
               />
@@ -360,7 +527,7 @@ export default function TerminalManager() {
               <Input 
                 value={formData.description} 
                 onChange={(e) => setFormData({ ...formData, description: e.target.value })} 
-                placeholder="Ej: Terminal de entrada principal" 
+                placeholder="Ej: Terminal principal" 
               />
             </div>
             <div>
@@ -372,20 +539,43 @@ export default function TerminalManager() {
               />
             </div>
             <div>
-              <label className="text-[10px] font-bold text-black/60 uppercase block mb-1">Asignar a Cajero</label>
+              <label className="text-[10px] font-bold text-black/60 uppercase block mb-1">Asignar a Usuario</label>
               <select 
                 value={formData.assignedTo} 
                 onChange={(e) => setFormData({ ...formData, assignedTo: e.target.value })} 
                 className="w-full h-10 border border-[#9E9E9E] rounded-lg px-3 text-sm"
               >
                 <option value="">Sin asignar</option>
-                {cashiers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                {availableUsers.map(c => (
+                  <option key={c.id} value={c.id || c.uid}>
+                    {c.name} {c.role ? `(${c.role})` : ''}
+                  </option>
+                ))}
               </select>
+              <p className="text-[8px] text-black/40 mt-1">
+                {formData.assignedTo 
+                  ? `Usuario asignado: ${availableUsers.find(u => u.id === formData.assignedTo || u.uid === formData.assignedTo)?.name || 'Usuario'}` 
+                  : 'Ningún usuario asignado a esta terminal'}
+              </p>
             </div>
           </div>
           <div className="bg-[#F5F5F5] p-4 border-t flex justify-end gap-3">
-            <Button variant="ghost" onClick={() => setShowModal(false)}>CANCELAR</Button>
-            <Button onClick={handleSubmit} className="bg-primary text-black font-black">GUARDAR</Button>
+            <Button 
+              variant="ghost" 
+              onClick={() => {
+                resetForm();
+                setShowModal(false);
+              }}
+            >
+              CANCELAR
+            </Button>
+            <Button 
+              onClick={handleSubmit} 
+              className="bg-primary text-black font-black"
+              disabled={isSaving}
+            >
+              {isSaving ? 'GUARDANDO...' : 'GUARDAR'}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

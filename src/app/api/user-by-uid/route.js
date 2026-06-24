@@ -1,4 +1,5 @@
-import { turso } from '@/lib/db';
+import { db } from '@/lib/firebase';
+import { collection, query, where, getDocs } from 'firebase/firestore';
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
@@ -9,18 +10,25 @@ export async function GET(request) {
   }
 
   try {
-    const result = await turso.execute({
-      sql: 'SELECT name, role, email FROM users WHERE uid = ?',
-      args: [uid]
-    });
+    // Buscar en Firestore
+    const usersRef = collection(db, 'users');
+    const q = query(usersRef, where('uid', '==', uid));
+    const snapshot = await getDocs(q);
 
-    if (result.rows.length === 0) {
+    if (snapshot.empty) {
       return Response.json({ error: 'Usuario no encontrado' }, { status: 404 });
     }
 
-    return Response.json(result.rows[0]);
+    const userDoc = snapshot.docs[0];
+    const userData = userDoc.data();
+    
+    return Response.json({
+      name: userData.name || '',
+      role: userData.role || 'user',
+      email: userData.email || ''
+    });
   } catch (error) {
-    console.error(error);
+    console.error('Error obteniendo usuario:', error);
     return Response.json({ error: error.message }, { status: 500 });
   }
 }

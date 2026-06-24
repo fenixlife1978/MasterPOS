@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { cn } from '@/lib/utils';
 import ExpenseModal from './expense-modal';
 import { formatBs, formatUsd, formatBsNumber, formatUsdNumber } from '@/lib/currency-formatter';
+import { usePOSState } from '@/hooks/use-pos-state';
 
 // ✅ Función para obtener timestamp único
 const getTimestamp = (): number => Date.now();
@@ -50,7 +51,9 @@ const formatDateFriendly = (dateStr: string): string => {
 
 export default function AccountingModule() {
   const { entries, addEntry, getTotalIngresos, getTotalEgresos } = useAccounting();
-  // ✅ Eliminado el estado 'search'
+  const state = usePOSState();
+  const exchangeRate = state.exchangeRate || 1;
+  
   const [filterType, setFilterType] = useState<'todos' | 'ingreso' | 'egreso'>('todos');
   const [filterCategory, setFilterCategory] = useState('todas');
   const [startDate, setStartDate] = useState('');
@@ -63,7 +66,7 @@ export default function AccountingModule() {
   const categoriesList = [
     { id: 'ventas', label: 'Ventas' },
     { id: 'compra_mercancia', label: 'Compra de Mercancía' },
-    { id: 'pagos_proveedores', label: 'Pagos a Proveedores' }, // ✅ Agregado
+    { id: 'pagos_proveedores', label: 'Pagos a Proveedores' },
     { id: 'servicios_publicos', label: 'Servicios Públicos' },
     { id: 'alquiler', label: 'Alquiler' },
     { id: 'telefonia', label: 'Telefonía' },
@@ -71,14 +74,14 @@ export default function AccountingModule() {
     { id: 'declaracion_renta', label: 'Declaración de Renta' },
     { id: 'servicios_profesionales', label: 'Servicios Profesionales' },
     { id: 'reparacion_local', label: 'Reparación de Local' },
-    { id: 'sueldos', label: 'Sueldos y Salarios' }, // ✅ Renombrado
+    { id: 'sueldos', label: 'Sueldos y Salarios' },
     { id: 'otros', label: 'Otros Gastos' },
     { id: 'devolucion', label: 'Devolución' },
     { id: 'cobro_deuda', label: 'Cobro de Deuda' },
     { id: 'cuenta_por_cobrar', label: 'Venta a Crédito' }
   ];
 
-  // Filtrar entradas basadas en tipo, categoría y fechas (sin búsqueda)
+  // Filtrar entradas basadas en tipo, categoría y fechas
   const filteredEntries = (entries || []).filter(entry => {
     if (filterType !== 'todos' && entry.type !== filterType) return false;
     if (filterCategory !== 'todas' && entry.category !== filterCategory) return false;
@@ -87,11 +90,21 @@ export default function AccountingModule() {
     return true;
   }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-  const totalIngresos = getTotalIngresos ? getTotalIngresos() : 0;
-  const totalEgresos = getTotalEgresos ? getTotalEgresos() : 0;
-  const balance = totalIngresos - totalEgresos;
+  // ✅ Calcular totales en Bs (original) y convertir a USD
+  const totalIngresosBs = getTotalIngresos ? getTotalIngresos() : 0;
+  const totalEgresosBs = getTotalEgresos ? getTotalEgresos() : 0;
+  const balanceBs = totalIngresosBs - totalEgresosBs;
+  
+  // ✅ Convertir a USD usando la tasa de cambio
+  const totalIngresosUsd = totalIngresosBs / exchangeRate;
+  const totalEgresosUsd = totalEgresosBs / exchangeRate;
+  const balanceUsd = balanceBs / exchangeRate;
 
-  // ✅ Función corregida - genera el id antes de guardar
+  // ✅ Función para convertir monto individual a USD
+  const getUsdAmount = (amountBs: number): number => {
+    return amountBs / exchangeRate;
+  };
+
   const handleExpenseConfirm = async (data: any) => {
     if (!addEntry) {
       console.error('addEntry no está disponible');
@@ -136,22 +149,49 @@ export default function AccountingModule() {
         </Button>
       </div>
 
+      {/* ✅ TOTALES CORREGIDOS: USD como principal, Bs como secundario */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         <div className="bg-white rounded-xl border border-[#9E9E9E] p-4 shadow-sm">
-          <div className="flex items-center gap-2 mb-2"><TrendingUp size={18} className="text-green-600" /><p className="text-xs font-black text-black/60 uppercase">Total Ingresos</p></div>
-          <p className="text-2xl font-black text-green-600">{formatBs(totalIngresos)}</p>
+          <div className="flex items-center gap-2 mb-2">
+            <TrendingUp size={18} className="text-green-600" />
+            <p className="text-xs font-black text-black/60 uppercase">Total Ingresos</p>
+          </div>
+          <p className="text-2xl font-black text-green-600">
+            {formatUsd(totalIngresosUsd)}
+          </p>
+          <p className="text-[10px] text-black/40 font-mono">
+            {formatBs(totalIngresosBs)}
+          </p>
         </div>
+        
         <div className="bg-white rounded-xl border border-[#9E9E9E] p-4 shadow-sm">
-          <div className="flex items-center gap-2 mb-2"><TrendingDown size={18} className="text-red-600" /><p className="text-xs font-black text-black/60 uppercase">Total Egresos</p></div>
-          <p className="text-2xl font-black text-red-600">{formatBs(totalEgresos)}</p>
+          <div className="flex items-center gap-2 mb-2">
+            <TrendingDown size={18} className="text-red-600" />
+            <p className="text-xs font-black text-black/60 uppercase">Total Egresos</p>
+          </div>
+          <p className="text-2xl font-black text-red-600">
+            {formatUsd(totalEgresosUsd)}
+          </p>
+          <p className="text-[10px] text-black/40 font-mono">
+            {formatBs(totalEgresosBs)}
+          </p>
         </div>
-        <div className={cn("bg-white rounded-xl border p-4 shadow-sm", balance >= 0 ? "border-green-500" : "border-red-500")}>
-          <div className="flex items-center gap-2 mb-2"><DollarSign size={18} className={balance >= 0 ? "text-green-600" : "text-red-600"} /><p className="text-xs font-black text-black/60 uppercase">Balance</p></div>
-          <p className={cn("text-2xl font-black", balance >= 0 ? "text-green-600" : "text-red-600")}>{formatBs(balance)}</p>
+        
+        <div className={cn("bg-white rounded-xl border p-4 shadow-sm", balanceBs >= 0 ? "border-green-500" : "border-red-500")}>
+          <div className="flex items-center gap-2 mb-2">
+            <DollarSign size={18} className={balanceBs >= 0 ? "text-green-600" : "text-red-600"} />
+            <p className="text-xs font-black text-black/60 uppercase">Balance</p>
+          </div>
+          <p className={cn("text-2xl font-black", balanceBs >= 0 ? "text-green-600" : "text-red-600")}>
+            {formatUsd(balanceUsd)}
+          </p>
+          <p className={cn("text-[10px] font-mono", balanceBs >= 0 ? "text-green-600/60" : "text-red-600/60")}>
+            {formatBs(balanceBs)}
+          </p>
         </div>
       </div>
 
-      {/* ✅ Filtros - Eliminada la barra de búsqueda inteligente */}
+      {/* Filtros */}
       <div className="bg-white border border-[#9E9E9E] rounded-xl p-4 mb-6">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
           <select value={filterType} onChange={(e) => { setFilterType(e.target.value as any); setFilterCategory('todas'); }} className="h-10 bg-white border border-[#9E9E9E] rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50">
@@ -172,6 +212,7 @@ export default function AccountingModule() {
         </div>
       </div>
 
+      {/* ✅ TABLA CORREGIDA: USD como principal, Bs como secundario */}
       <div className="bg-white border border-[#9E9E9E] rounded-xl overflow-hidden shadow-md">
         <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
           <Table>
@@ -182,29 +223,73 @@ export default function AccountingModule() {
                 <TableHead className="text-[10px] font-black text-black uppercase">Categoría</TableHead>
                 <TableHead className="text-[10px] font-black text-black uppercase">Concepto</TableHead>
                 <TableHead className="text-[10px] font-black text-black uppercase">Descripción</TableHead>
-                <TableHead className="text-[10px] font-black text-black uppercase text-right">Monto</TableHead>
+                <TableHead className="text-[10px] font-black text-black uppercase text-right">Monto USD</TableHead>
+                <TableHead className="text-[10px] font-black text-black uppercase text-right">Monto Bs</TableHead>
                 <TableHead className="text-[10px] font-black text-black uppercase text-center">Acción</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredEntries.map((entry, idx) => (
-                <TableRow key={`${entry.id}_${idx}`} className="border-b border-[#9E9E9E] hover:bg-[#F5F5F5] cursor-pointer" onClick={() => { setSelectedEntry(entry); setShowEntryDetail(true); }}>
-                  {/* ✅ Formato de fecha amigable */}
-                  <TableCell className="text-xs text-black/60">{formatDateFriendly(entry.date)}</TableCell>
-                  <TableCell><span className={cn("px-2 py-0.5 rounded-full text-[10px] font-bold", entry.type === 'ingreso' ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700")}>{entry.type === 'ingreso' ? 'INGRESO' : 'EGRESO'}</span></TableCell>
-                  <TableCell className="text-xs text-black/80">{getCategoryLabel(entry.category)}</TableCell>
-                  <TableCell className="text-xs font-medium text-black">{entry.concept}</TableCell>
-                  <TableCell className="text-xs text-black/60 max-w-[200px] truncate">{entry.description}</TableCell>
-                  <TableCell className={cn("text-right font-bold text-sm", entry.type === 'ingreso' ? "text-green-600" : "text-red-600")}>{entry.type === 'ingreso' ? '+' : '-'} {formatBs(entry.amount)}</TableCell>
-                  <TableCell className="text-center"><button className="text-primary text-[10px] font-bold hover:underline">Ver</button></TableCell>
+              {filteredEntries.map((entry, idx) => {
+                const amountUsd = getUsdAmount(entry.amount);
+                return (
+                  <TableRow 
+                    key={`${entry.id}_${idx}`} 
+                    className="border-b border-[#9E9E9E] hover:bg-[#F5F5F5] cursor-pointer" 
+                    onClick={() => { setSelectedEntry(entry); setShowEntryDetail(true); }}
+                  >
+                    <TableCell className="text-xs text-black/60">{formatDateFriendly(entry.date)}</TableCell>
+                    <TableCell>
+                      <span className={cn("px-2 py-0.5 rounded-full text-[10px] font-bold", entry.type === 'ingreso' ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700")}>
+                        {entry.type === 'ingreso' ? 'INGRESO' : 'EGRESO'}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-xs text-black/80">{getCategoryLabel(entry.category)}</TableCell>
+                    <TableCell className="text-xs font-medium text-black">{entry.concept}</TableCell>
+                    <TableCell className="text-xs text-black/60 max-w-[200px] truncate">{entry.description}</TableCell>
+                    <TableCell className={cn("text-right font-bold text-sm", entry.type === 'ingreso' ? "text-green-600" : "text-red-600")}>
+                      {entry.type === 'ingreso' ? '+' : '-'} {formatUsd(amountUsd)}
+                    </TableCell>
+                    <TableCell className="text-right text-[10px] text-black/40 font-mono">
+                      {formatBs(entry.amount)}
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <button className="text-primary text-[10px] font-bold hover:underline">Ver</button>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+              {filteredEntries.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={8} className="text-center py-10 text-black/50 italic">
+                    No hay movimientos que coincidan con los filtros
+                  </TableCell>
                 </TableRow>
-              ))}
-              {filteredEntries.length === 0 && (<TableRow><TableCell colSpan={7} className="text-center py-10 text-black/50 italic">No hay movimientos que coincidan con los filtros</TableCell></TableRow>)}
+              )}
             </TableBody>
+            {/* ✅ PIE DE TABLA CORREGIDO: USD como principal */}
             <tfoot className="bg-[#F0F0F0] sticky bottom-0">
-              <TableRow className="border-t-2 border-[#9E9E9E]"><TableCell colSpan={5} className="p-3 text-right font-black text-black">TOTAL FILTRADO INGRESOS:</TableCell><TableCell className="p-3 text-right font-black text-green-600">+ {formatBs(totalIngresos)}</TableCell><TableCell></TableCell></TableRow>
-              <TableRow><TableCell colSpan={5} className="p-3 text-right font-black text-black">TOTAL FILTRADO EGRESOS:</TableCell><TableCell className="p-3 text-right font-black text-red-600">- {formatBs(totalEgresos)}</TableCell><TableCell></TableCell></TableRow>
-              <TableRow className="bg-[#E8E8E8]"><TableCell colSpan={5} className="p-3 text-right font-black text-black">BALANCE PERIODO:</TableCell><TableCell className={cn("p-3 text-right font-black text-lg", balance >= 0 ? "text-green-600" : "text-red-600")}>{formatBs(balance)}</TableCell><TableCell></TableCell></TableRow>
+              <TableRow className="border-t-2 border-[#9E9E9E]">
+                <TableCell colSpan={5} className="p-3 text-right font-black text-black">TOTAL FILTRADO INGRESOS:</TableCell>
+                <TableCell className="p-3 text-right font-black text-green-600">+ {formatUsd(totalIngresosUsd)}</TableCell>
+                <TableCell className="p-3 text-right text-[10px] text-black/40 font-mono">{formatBs(totalIngresosBs)}</TableCell>
+                <TableCell></TableCell>
+              </TableRow>
+              <TableRow>
+                <TableCell colSpan={5} className="p-3 text-right font-black text-black">TOTAL FILTRADO EGRESOS:</TableCell>
+                <TableCell className="p-3 text-right font-black text-red-600">- {formatUsd(totalEgresosUsd)}</TableCell>
+                <TableCell className="p-3 text-right text-[10px] text-black/40 font-mono">{formatBs(totalEgresosBs)}</TableCell>
+                <TableCell></TableCell>
+              </TableRow>
+              <TableRow className="bg-[#E8E8E8]">
+                <TableCell colSpan={5} className="p-3 text-right font-black text-black">BALANCE PERIODO:</TableCell>
+                <TableCell className={cn("p-3 text-right font-black text-lg", balanceBs >= 0 ? "text-green-600" : "text-red-600")}>
+                  {formatUsd(balanceUsd)}
+                </TableCell>
+                <TableCell className={cn("p-3 text-right text-[10px] font-mono", balanceBs >= 0 ? "text-green-600/60" : "text-red-600/60")}>
+                  {formatBs(balanceBs)}
+                </TableCell>
+                <TableCell></TableCell>
+              </TableRow>
             </tfoot>
           </Table>
         </div>
@@ -212,22 +297,69 @@ export default function AccountingModule() {
 
       <ExpenseModal open={showExpenseModal} onClose={() => setShowExpenseModal(false)} onConfirm={handleExpenseConfirm} />
 
+      {/* ✅ DETALLE CORREGIDO: USD como principal, Bs como secundario */}
       <Dialog open={showEntryDetail} onOpenChange={setShowEntryDetail}>
         <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-md p-0 rounded-2xl">
           <DialogHeader className="sr-only"><DialogTitle>Detalle del Movimiento</DialogTitle></DialogHeader>
           {selectedEntry && (
             <div className="flex flex-col">
-              <div className="bg-[#1A2C4E] p-4 text-white"><div className="flex justify-between"><h3 className="text-lg font-black">Detalle del Movimiento</h3><button onClick={() => setShowEntryDetail(false)}><X size={18} /></button></div></div>
-              <div className="p-5 space-y-3">
-                <div className="grid grid-cols-2 gap-2"><p className="text-[10px] font-bold text-black/60">Fecha</p><p className="text-sm font-bold text-black">{formatDateFriendly(selectedEntry.date)}</p></div>
-                <div className="grid grid-cols-2 gap-2"><p className="text-[10px] font-bold text-black/60">Tipo</p><p className={cn("text-sm font-bold", selectedEntry.type === 'ingreso' ? "text-green-600" : "text-red-600")}>{selectedEntry.type === 'ingreso' ? 'INGRESO' : 'EGRESO'}</p></div>
-                <div className="grid grid-cols-2 gap-2"><p className="text-[10px] font-bold text-black/60">Categoría</p><p className="text-sm text-black">{getCategoryLabel(selectedEntry.category)}</p></div>
-                {selectedEntry.subcategory && <div className="grid grid-cols-2 gap-2"><p className="text-[10px] font-bold text-black/60">Subcategoría</p><p className="text-sm text-black">{selectedEntry.subcategory}</p></div>}
-                <div className="grid grid-cols-2 gap-2"><p className="text-[10px] font-bold text-black/60">Concepto</p><p className="text-sm font-medium text-black">{selectedEntry.concept}</p></div>
-                <div className="grid grid-cols-2 gap-2"><p className="text-[10px] font-bold text-black/60">Monto</p><p className={cn("text-lg font-black", selectedEntry.type === 'ingreso' ? "text-green-600" : "text-red-600")}>{formatBs(selectedEntry.amount)}</p></div>
-                {selectedEntry.description && <div className="grid grid-cols-2 gap-2"><p className="text-[10px] font-bold text-black/60">Descripción</p><p className="text-sm text-black/70">{selectedEntry.description}</p></div>}
+              <div className="bg-[#1A2C4E] p-4 text-white">
+                <div className="flex justify-between">
+                  <h3 className="text-lg font-black">Detalle del Movimiento</h3>
+                  <button onClick={() => setShowEntryDetail(false)}><X size={18} /></button>
+                </div>
               </div>
-              <div className="bg-[#F5F5F5] p-4 border-t flex justify-end"><Button onClick={() => setShowEntryDetail(false)}>CERRAR</Button></div>
+              <div className="p-5 space-y-3">
+                <div className="grid grid-cols-2 gap-2">
+                  <p className="text-[10px] font-bold text-black/60">Fecha</p>
+                  <p className="text-sm font-bold text-black">{formatDateFriendly(selectedEntry.date)}</p>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <p className="text-[10px] font-bold text-black/60">Tipo</p>
+                  <p className={cn("text-sm font-bold", selectedEntry.type === 'ingreso' ? "text-green-600" : "text-red-600")}>
+                    {selectedEntry.type === 'ingreso' ? 'INGRESO' : 'EGRESO'}
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <p className="text-[10px] font-bold text-black/60">Categoría</p>
+                  <p className="text-sm text-black">{getCategoryLabel(selectedEntry.category)}</p>
+                </div>
+                {selectedEntry.subcategory && (
+                  <div className="grid grid-cols-2 gap-2">
+                    <p className="text-[10px] font-bold text-black/60">Subcategoría</p>
+                    <p className="text-sm text-black">{selectedEntry.subcategory}</p>
+                  </div>
+                )}
+                <div className="grid grid-cols-2 gap-2">
+                  <p className="text-[10px] font-bold text-black/60">Concepto</p>
+                  <p className="text-sm font-medium text-black">{selectedEntry.concept}</p>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <p className="text-[10px] font-bold text-black/60">Monto USD</p>
+                  <p className={cn("text-lg font-black", selectedEntry.type === 'ingreso' ? "text-green-600" : "text-red-600")}>
+                    {formatUsd(getUsdAmount(selectedEntry.amount))}
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 gap-2 border-t border-gray-100 pt-2">
+                  <p className="text-[10px] font-bold text-black/40">Monto Bs</p>
+                  <p className="text-sm font-mono text-black/60">
+                    {formatBs(selectedEntry.amount)}
+                  </p>
+                </div>
+                {selectedEntry.description && (
+                  <div className="grid grid-cols-2 gap-2">
+                    <p className="text-[10px] font-bold text-black/60">Descripción</p>
+                    <p className="text-sm text-black/70">{selectedEntry.description}</p>
+                  </div>
+                )}
+                <div className="grid grid-cols-2 gap-2 border-t border-gray-100 pt-2">
+                  <p className="text-[10px] font-bold text-black/40">Tasa BCV</p>
+                  <p className="text-sm font-mono text-black/60">{formatBs(exchangeRate)}</p>
+                </div>
+              </div>
+              <div className="bg-[#F5F5F5] p-4 border-t flex justify-end">
+                <Button onClick={() => setShowEntryDetail(false)}>CERRAR</Button>
+              </div>
             </div>
           )}
         </DialogContent>

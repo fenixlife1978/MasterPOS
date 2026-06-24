@@ -1,17 +1,19 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { usePOSState } from '@/hooks/use-pos-state';
-import { Search, X, CheckCircle, AlertCircle, Receipt, Hash, User, Calendar, Banknote, Minus, Plus, RefreshCw, DollarSign, Smartphone, CreditCard } from 'lucide-react';
+import { Search, X, CheckCircle, AlertCircle, Receipt, User, Calendar, Banknote, Minus, Plus, RefreshCw, Smartphone, CreditCard, Monitor, ChevronLeft, ChevronRight, Filter, Loader2 } from 'lucide-react';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 import { Transaction, CartItem } from '@/lib/types';
-import { registerReturnEntry } from '@/services/accountingService';
 import syncService from '@/services/syncService';
-import { formatBs, formatUsd, formatBsNumber, formatUsdNumber } from '@/lib/currency-formatter';
+import { formatBs, formatUsd } from '@/lib/currency-formatter';
+import { useAuth } from '@/context/AuthContext';
+import { getDatabase, ref, get } from 'firebase/database';
+import app from '@/lib/firebase';
 
 interface ReturnItem {
   productId: number;
@@ -30,10 +32,45 @@ const returnMethods = [
   { id: 'nota_credito' as ReturnMethod, label: 'NOTA DE CRÉDITO', icon: CreditCard, description: 'Saldo a favor para futuras compras' },
 ];
 
-export default function ReturnsModule() {
-  const { transactions, products, register, exchangeRate, registerCashEgress } = usePOSState();
-  const [search, setSearch] = useState('');
-  const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
+function getLocalDateStr(isoString: string): string {
+  const date = new Date(isoString);
+  const formatter = new Intl.DateTimeFormat('fr-CA', {
+    timeZone: 'America/Caracas',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  });
+  return formatter.format(date);
+}
+
+function getTodayYMD(): string {
+  return getLocalDateStr(new Date().toISOString());
+}
+
+function extractTerminalIdFromSession(sessionId: string | null | undefined): string {
+  if (!sessionId) return 'default';
+  const parts = sessionId.split('_');
+  if (parts.length > 0 && parts[0]) {
+    return parts[0];
+  }
+  return 'default';
+}
+
+function formatReceipt(num?: number): string {
+  return (num || 0).toString().padStart(8, '0');
+}
+
+interface ReturnsModuleProps {
+  userRole?: 'admin' | 'cashier';
+}
+
+export default function ReturnsModule({ userRole = 'cashier' }: ReturnsModuleProps) {
+  const { user } = useAuth();
+  const currentTerminalId = user?.terminalId || 'default';
+  const isAdmin = userRole === 'admin' || user?.role === 'admin';
+
+  const { products, register, exchangeRate, registerCashEgress } = usePOSState();
+  const [selectedTransaction, setSelectedTransaction] = useState<any>(null);
   const [returnItems, setReturnItems] = useState<ReturnItem[]>([]);
   const [showReturnModal, setShowReturnModal] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
@@ -41,66 +78,269 @@ export default function ReturnsModule() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  const salesTransactions = transactions.filter(t => t.type === 'contado').sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  const [startDate, setStartDate] = useState(getTodayYMD());
+  const [endDate, setEndDate] = useState(getTodayYMD());
+  const [searchReceipt, setSearchReceipt] = useState('');
 
-  const filteredSales = salesTransactions.filter(t =>
-    t.id.toString().includes(search) ||
-    t.clientName?.toLowerCase().includes(search.toLowerCase())
-  );
+  const [allTransactions, setAllTransactions] = useState<any[]>([]);
+  const [filteredTransactions, setFilteredTransactions] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 5;
 
-  const isTransactionReturned = (saleId: number) => {
-    return transactions.some(t => t.type === 'devolucion' && (t as any).originalSaleId === saleId);
-  };
+  // ✅ IDs de transacciones devueltas - se actualiza INMEDIATAMENTE
+  const [returnedIds, setReturnedIds] = useState<Set<string | number>>(new Set());
+  const returnedIdsRef = useRef<Set<string | number>>(new Set());
 
-  const openReturnModal = (transaction: Transaction, type: 'total' | 'partial') => {
-    if (isTransactionReturned(transaction.id)) {
-      alert('Esta venta ya tiene una devolución procesada.');
+  const loadTransactions = useCallback(async () => {
+    setIsLoading(true);
+    setMessage(null);
+    
+    try {
+      const db = getDatabase(app);
+      const snapshot = await get(ref(db, 'transactions'));
+      
+      let transactions: any[] = [];
+      
+      if (snapshot.exists()) {
+        const data = snapshot.val();
+        transactions = Object.entries(data).map(([id, tx]) => ({ 
+          id: id, 
+          ...(tx as any) 
+        }));
+        
+        transactions = transactions.filter(tx => {
+          const txTerminal = extractTerminalIdFromSession(tx.session_id);
+          return txTerminal === currentTerminalId;
+        });
+        
+        transactions = transactions.filter(tx => {
+          if (!tx.date) return false;
+          const txDate = getLocalDateStr(tx.date);
+          return txDate >= startDate && txDate <= endDate;
+        });
+        
+        transactions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      }
+      
+      setAllTransactions(transactions);
+      
+      // ✅ Calcular IDs devueltos (TOTAL O PARCIALMENTE)
+      const returnedSet = new Set<string | number>();
+      for (const tx of transactions) {
+        // Una venta está devuelta si existe una devolución (total o parcial) que la referencia
+        if (tx.type === 'devolucion' && (tx.original_sale_id || tx.originalSaleId)) {
+          returnedSet.add(tx.original_sale_id || tx.originalSaleId);
+        }
+      }
+      returnedIdsRef.current = returnedSet;
+      setReturnedIds(returnedSet);
+      
+      const start = 0;
+      const end = itemsPerPage;
+      setFilteredTransactions(transactions.slice(start, end));
+      setCurrentPage(1);
+      
+    } catch (error) {
+      console.error('Error cargando transacciones:', error);
+      setMessage({ type: 'error', text: 'Error cargando transacciones' });
+    } finally {
+      setIsLoading(false);
+    }
+  }, [currentTerminalId, startDate, endDate]);
+
+  const loadMore = useCallback(() => {
+    const nextPage = currentPage + 1;
+    const start = (nextPage - 1) * itemsPerPage;
+    const end = start + itemsPerPage;
+    const more = allTransactions.slice(start, end);
+    
+    if (more.length > 0) {
+      setFilteredTransactions(prev => [...prev, ...more]);
+      setCurrentPage(nextPage);
+    }
+  }, [currentPage, allTransactions]);
+
+  const handleSearchByReceipt = useCallback(async () => {
+    const receipt = searchReceipt.trim();
+    if (!receipt) {
+      loadTransactions();
       return;
     }
-    setSelectedTransaction(transaction);
+    
+    setIsLoading(true);
+    setMessage(null);
+    
+    try {
+      const num = parseInt(receipt);
+      if (isNaN(num)) {
+        setMessage({ type: 'error', text: 'Ingrese un número de recibo válido' });
+        setIsLoading(false);
+        return;
+      }
+      
+      const found = allTransactions.find(tx => 
+        (tx.receipt_number || tx.receiptNumber) === num
+      );
+      
+      if (found) {
+        setFilteredTransactions([found]);
+        setCurrentPage(1);
+        const isReturned = returnedIdsRef.current.has(found.id);
+        if (isReturned) {
+          setMessage({ type: 'error', text: 'Esta venta ya fue devuelta (total o parcialmente)' });
+        }
+      } else {
+        setFilteredTransactions([]);
+        setMessage({ type: 'error', text: 'No se encontró una venta con ese número de recibo' });
+      }
+    } catch (error) {
+      console.error('Error buscando transacción:', error);
+      setMessage({ type: 'error', text: 'Error al buscar la transacción' });
+    } finally {
+      setIsLoading(false);
+    }
+  }, [allTransactions, searchReceipt, loadTransactions]);
+
+  const clearSearch = useCallback(() => {
+    setSearchReceipt('');
+    setMessage(null);
+    const start = 0;
+    const end = itemsPerPage;
+    setFilteredTransactions(allTransactions.slice(start, end));
+    setCurrentPage(1);
+  }, [allTransactions]);
+
+  useEffect(() => {
+    if (!searchReceipt.trim()) {
+      loadTransactions();
+    }
+  }, [loadTransactions, searchReceipt]);
+
+  // ✅ Verificar si una venta ya fue devuelta - usa el estado actualizado
+  const isTransactionReturned = useCallback((id: string | number) => {
+    return returnedIdsRef.current.has(id);
+  }, []);
+
+  const salesTransactions = useMemo(() => {
+    return filteredTransactions.filter(t => {
+      if (t.type !== 'contado' && t.type !== 'credito') return false;
+      if (t.type === 'devolucion') return false;
+      return true;
+    });
+  }, [filteredTransactions]);
+
+  const openReturnModal = (tx: any, type: 'total' | 'partial') => {
+    if (isTransactionReturned(tx.id)) {
+      alert('Esta venta ya fue devuelta (total o parcialmente). No se puede procesar otra devolución.');
+      return;
+    }
+    
+    if (!isAdmin && !register?.isOpen) {
+      alert('La caja debe estar abierta para hacer devoluciones');
+      return;
+    }
+    
+    setSelectedTransaction(tx);
     setSelectedMethod('efectivo');
-    const items: ReturnItem[] = transaction.items.map(item => ({
-      productId: item.productId,
-      name: item.name,
-      priceBs: item.priceBs,
-      originalQty: item.qty,
-      returnQty: type === 'total' ? item.qty : 0,
-      amount: type === 'total' ? item.priceBs * item.qty : 0
+    
+    let items: any[] = [];
+    if (typeof tx.items === 'string') {
+      try {
+        items = JSON.parse(tx.items);
+      } catch (e) {
+        items = [];
+      }
+    } else if (Array.isArray(tx.items)) {
+      items = tx.items;
+    }
+    
+    const returnItemsList: ReturnItem[] = items.map((item: any) => ({
+      productId: item.productId || 0,
+      name: item.name || 'Producto',
+      priceBs: item.priceBs || item.price_bs || 0,
+      originalQty: item.qty || 1,
+      returnQty: type === 'total' ? (item.qty || 1) : 0,
+      amount: type === 'total' ? ((item.priceBs || item.price_bs || 0) * (item.qty || 1)) : 0
     }));
-    setReturnItems(items);
+    
+    setReturnItems(returnItemsList);
     if (type === 'total') setShowConfirmModal(true);
     else setShowReturnModal(true);
   };
 
-  const updateReturnQty = (index: number, newQty: number) => {
-    const updated = [...returnItems];
-    const item = updated[index];
-    const validQty = Math.min(Math.max(0, newQty), item.originalQty);
-    updated[index] = { ...item, returnQty: validQty, amount: item.priceBs * validQty };
-    setReturnItems(updated);
+  const updateReturnQty = (idx: number, newQty: number) => {
+    setReturnItems(prev => {
+      const upd = [...prev];
+      const item = upd[idx];
+      const q = Math.min(item.originalQty, Math.max(0, newQty));
+      upd[idx] = { ...item, returnQty: q, amount: item.priceBs * q };
+      return upd;
+    });
   };
 
-  const totalReturnAmount = returnItems.reduce((s, i) => s + i.amount, 0);
-  const hasItemsToReturn = returnItems.some(i => i.returnQty > 0);
+  const totalReturnAmount = useMemo(() => returnItems.reduce((s, i) => s + i.amount, 0), [returnItems]);
+  const hasItemsToReturn = useMemo(() => returnItems.some(i => i.returnQty > 0), [returnItems]);
 
+  // ✅ PROCESAR DEVOLUCIÓN - CON BLOQUEO INMEDIATO Y PERMANENTE
   const processReturn = async () => {
-    if (!selectedTransaction || !register?.isOpen) {
-      setMessage({ type: 'error', text: 'La caja debe estar abierta' });
+    if (isAdmin) {
+      setMessage({ type: 'error', text: 'Los administradores no pueden procesar devoluciones' });
       return;
     }
-
+    
+    if (!register?.isOpen) {
+      setMessage({ type: 'error', text: 'La caja debe estar abierta para hacer devoluciones' });
+      return;
+    }
+    
+    if (!selectedTransaction) {
+      setMessage({ type: 'error', text: 'No hay transacción seleccionada' });
+      return;
+    }
+    
     if (totalReturnAmount <= 0) {
-      setMessage({ type: 'error', text: 'Seleccione al menos un producto para devolver' });
+      setMessage({ type: 'error', text: 'Seleccione productos para devolver' });
       return;
     }
-
+    
+    if (isTransactionReturned(selectedTransaction.id)) {
+      setMessage({ type: 'error', text: 'Esta venta ya fue devuelta. No se puede procesar otra devolución.' });
+      return;
+    }
+    
     setIsProcessing(true);
-
+    setMessage(null);
+    
+    const saleId = selectedTransaction.id;
+    
+    // ✅ BLOQUEAR INMEDIATAMENTE el botón (ANTES de guardar en BD)
+    // Esto asegura que aunque falle la conexión, no se puede procesar dos veces
+    returnedIdsRef.current.add(saleId);
+    setReturnedIds(new Set(returnedIdsRef.current));
+    
+    // ✅ Actualizar la transacción en la lista local (UI se actualiza inmediatamente)
+    setFilteredTransactions(prev => 
+      prev.map(tx => 
+        tx.id === saleId ? { ...tx, _returned: true } : tx
+      )
+    );
+    setAllTransactions(prev => 
+      prev.map(tx => 
+        tx.id === saleId ? { ...tx, _returned: true } : tx
+      )
+    );
+    
     try {
       const returnItemsList: CartItem[] = returnItems.filter(i => i.returnQty > 0).map(i => ({
-        productId: i.productId, name: i.name, priceBs: i.priceBs, priceUsd: i.priceBs / exchangeRate, qty: i.returnQty, category: 'Otro' as any
+        productId: i.productId, 
+        name: i.name, 
+        priceBs: i.priceBs,
+        priceUsd: i.priceBs / exchangeRate, 
+        qty: i.returnQty, 
+        category: 'Otro' as any
       }));
-
+      
       const returnTransaction = {
         id: Date.now(),
         date: new Date().toISOString(),
@@ -110,280 +350,384 @@ export default function ReturnsModule() {
         iva: 0,
         total: totalReturnAmount,
         totalUsd: totalReturnAmount / exchangeRate,
-        payMethod: selectedTransaction.payMethod,
+        payMethod: selectedTransaction.pay_method || selectedTransaction.payMethod || 'efectivo_bs',
         paidBs: totalReturnAmount,
         change: 0,
-        clientId: selectedTransaction.clientId,
-        clientName: selectedTransaction.clientName,
-        originalSaleId: selectedTransaction.id,
+        clientId: selectedTransaction.client_id || selectedTransaction.clientId || null,
+        clientName: selectedTransaction.client_name || selectedTransaction.clientName || null,
+        // ✅ Guardar ambas variaciones de nombres para compatibilidad
+        original_sale_id: saleId,
+        originalSaleId: saleId,
+        original_receipt_number: selectedTransaction.receipt_number || selectedTransaction.receiptNumber,
+        originalReceiptNumber: selectedTransaction.receipt_number || selectedTransaction.receiptNumber,
         returnMethod: selectedMethod,
+        terminalId: currentTerminalId,
+        session_id: selectedTransaction.session_id,
       };
-
-      // ✅ 1. Guardar la devolución en la colección dedicada (ID como string)
-      const returnDocument = {
-        id: `devolucion_${returnTransaction.id}`,
-        id_devolucion: returnTransaction.id,
-        id_venta_original: selectedTransaction.id,
-        id_sesion_caja: register?.openTime,
-        productos: returnItemsList.map(i => ({
-          id_producto: i.productId,
-          cantidad: i.qty,
-          precio_unitario: i.priceBs,
-          subtotal: i.priceBs * i.qty
-        })),
-        monto_total_devuelto: totalReturnAmount,
-        metodo_retorno: selectedMethod,
-        fecha: returnTransaction.date,
-        creado_en: Date.now()
-      };
-
-      await syncService.saveKardexEntry(returnDocument as any);
-
-      // ✅ 2. Actualizar stock de productos
-      const updates = [];
-      const kardexEntries: any[] = [];
-
-      for (const ret of returnItems.filter(i => i.returnQty > 0)) {
-        const product = products.find(p => p.id === ret.productId);
-        if (!product) continue;
-
-        const previousStock = product.stock;
-        const newStock = previousStock + ret.returnQty;
-
-        updates.push({ ...product, stock: newStock });
-
-        kardexEntries.push({
-          id: `${Date.now()}_${ret.productId}_${Math.random()}`,
-          productId: ret.productId,
-          date: new Date().toLocaleString('es-VE'),
-          type: 'devolucion',
-          quantity: ret.returnQty,
-          previousStock: previousStock,
-          newStock: newStock,
-          reference: `Devolución - Venta #${selectedTransaction.id}`,
-          note: `Devolución de ${ret.returnQty} unidades de ${ret.name}. Método: ${selectedMethod}`,
-          costUsd: product.costUsd,
-        });
-      }
-
+      
       await syncService.saveTransaction(returnTransaction);
       
-      if (updates.length > 0) {
-        await syncService.saveProducts(updates as any[]);
+      // Actualizar stock
+      for (const ret of returnItems.filter(i => i.returnQty > 0)) {
+        const prod = products.find(p => p.id === ret.productId);
+        if (prod) {
+          await syncService.saveProduct({ ...prod, stock: prod.stock + ret.returnQty });
+        }
       }
-
-      for (const entry of kardexEntries) {
-        await syncService.saveKardexEntry(entry);
-      }
-
-      // ✅ 3. Registrar egreso de caja según el método (ahora ambos métodos usan registerCashEgress)
+      
       if (selectedMethod === 'efectivo') {
-        // Restar dinero de la caja física con método 'efectivo_bs'
-        await registerCashEgress(totalReturnAmount, `Devolución - Venta #${selectedTransaction.id}`, selectedTransaction.id, 'efectivo_bs');
+        await registerCashEgress(totalReturnAmount, `Devolución #${selectedTransaction.receipt_number || selectedTransaction.receiptNumber}`, selectedTransaction.id, 'efectivo_bs');
       } else if (selectedMethod === 'pago_movil') {
-        // Registrar egreso bancario con método 'pago_movil' (aparecerá en DEVOLUCIONES del cierre)
-        await registerCashEgress(totalReturnAmount, `Devolución - Venta #${selectedTransaction.id}`, selectedTransaction.id, 'pago_movil');
-      } else if (selectedMethod === 'nota_credito') {
-        // Nota de crédito: solo asiento contable, no afecta caja
-        await registerReturnEntry(returnTransaction as any, selectedTransaction.id);
+        await registerCashEgress(totalReturnAmount, `Devolución #${selectedTransaction.receipt_number || selectedTransaction.receiptNumber}`, selectedTransaction.id, 'pago_movil');
+      } else {
+        await syncService.saveAccountingEntry({
+          id: Date.now(),
+          date: new Date().toISOString(),
+          type: 'egreso',
+          category: 'devolucion',
+          subcategory: 'nota_credito',
+          concept: `Nota de crédito - Devolución #${selectedTransaction.id}`,
+          description: `Devolución a ${selectedTransaction.client_name || selectedTransaction.clientName || 'Cliente'}`,
+          amount: totalReturnAmount,
+          referenceId: selectedTransaction.id,
+          referenceType: 'return',
+          createdAt: new Date().toISOString()
+        });
       }
-
-      setMessage({ type: 'success', text: `Devolución procesada. Método: ${selectedMethod === 'efectivo' ? 'Efectivo' : selectedMethod === 'pago_movil' ? 'Pago Móvil' : 'Nota de Crédito'}` });
       
-      setTimeout(() => {
-        setMessage(null);
-        setShowReturnModal(false);
-        setShowConfirmModal(false);
+      setMessage({ type: 'success', text: '✅ Devolución exitosa - Botones desactivados permanentemente' });
+      
+      setTimeout(() => { 
+        setMessage(null); 
+        setShowReturnModal(false); 
+        setShowConfirmModal(false); 
         setSelectedTransaction(null);
-      }, 2000);
+        // ✅ NO restaurar los IDs devueltos - permanecen bloqueados
+      }, 1500);
       
-    } catch (error) {
-      console.error('Error en devolución:', error);
-      setMessage({ type: 'error', text: 'Error al procesar la devolución' });
-    } finally {
-      setIsProcessing(false);
+    } catch (err) {
+      console.error('Error en devolución:', err);
+      // ✅ Si falla, DESBLOQUEAR para permitir reintentar
+      returnedIdsRef.current.delete(saleId);
+      setReturnedIds(new Set(returnedIdsRef.current));
+      setFilteredTransactions(prev => 
+        prev.map(tx => 
+          tx.id === saleId ? { ...tx, _returned: false } : tx
+        )
+      );
+      setAllTransactions(prev => 
+        prev.map(tx => 
+          tx.id === saleId ? { ...tx, _returned: false } : tx
+        )
+      );
+      setMessage({ type: 'error', text: '❌ Error en devolución: ' + (err instanceof Error ? err.message : 'Intente nuevamente') });
+    } finally { 
+      setIsProcessing(false); 
     }
   };
 
+  const hasMore = useMemo(() => {
+    const totalDisplayed = filteredTransactions.length;
+    const totalAvailable = allTransactions.length;
+    return totalDisplayed < totalAvailable;
+  }, [filteredTransactions, allTransactions]);
+
+  if (isLoading) {
+    return (
+      <div className="p-6 h-full flex items-center justify-center bg-background">
+        <div className="text-center">
+          <Loader2 size={32} className="animate-spin text-primary mx-auto mb-4" />
+          <p className="text-black/50">Cargando transacciones...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="p-6 h-full overflow-y-auto scrollbar-thin bg-background">
-      <div className="flex justify-between items-center mb-6">
-        <div><h2 className="text-2xl font-headline font-black text-black">Devoluciones</h2><p className="text-sm text-black/50">Seleccione el método de retorno de dinero</p></div>
-        <div className="relative w-64"><Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-black/50" /><Input placeholder="Buscar venta..." value={search} onChange={(e) => setSearch(e.target.value)} /></div>
+    <div className="p-6 h-full overflow-auto bg-background">
+      <div className="flex justify-between mb-6 flex-wrap gap-4">
+        <div>
+          <h2 className="text-2xl font-black">Devoluciones</h2>
+          <p className="text-sm text-black/50">
+            Gestión de devoluciones - Terminal {currentTerminalId}
+          </p>
+          {!searchReceipt.trim() && (
+            <p className="text-xs text-black/30 mt-1">
+              {allTransactions.length} transacciones en el período · Mostrando {filteredTransactions.length}
+            </p>
+          )}
+          {isAdmin && (
+            <p className="text-xs text-amber-600 mt-1">⚠️ Modo administrador: Solo visualización</p>
+          )}
+        </div>
+        <Button 
+          onClick={loadTransactions} 
+          variant="outline" 
+          className="h-8 text-[10px] font-black border-[#9E9E9E]"
+        >
+          <RefreshCw size={12} className="mr-1" /> RECARGAR
+        </Button>
       </div>
 
-      {message && <div className={cn("mb-4 p-3 rounded-lg flex items-center gap-2", message.type === 'success' ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700")}>{message.type === 'success' ? <CheckCircle size={18} /> : <AlertCircle size={18} />} {message.text}</div>}
+      <div className="bg-white border rounded-xl p-4 mb-6 shadow-sm">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div>
+            <label className="text-[10px] font-black text-black/60 uppercase block mb-1">Fecha Desde</label>
+            <Input 
+              type="date" 
+              value={startDate} 
+              onChange={(e) => setStartDate(e.target.value)}
+              className="h-9 text-sm"
+              disabled={!!searchReceipt.trim()}
+            />
+          </div>
+          <div>
+            <label className="text-[10px] font-black text-black/60 uppercase block mb-1">Fecha Hasta</label>
+            <Input 
+              type="date" 
+              value={endDate} 
+              onChange={(e) => setEndDate(e.target.value)}
+              className="h-9 text-sm"
+              disabled={!!searchReceipt.trim()}
+            />
+          </div>
+          <div className="flex items-end gap-2">
+            <div className="flex-1">
+              <label className="text-[10px] font-black text-black/60 uppercase block mb-1">Buscar por Recibo</label>
+              <Input 
+                type="text" 
+                value={searchReceipt}
+                onChange={(e) => setSearchReceipt(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    handleSearchByReceipt();
+                  }
+                }}
+                className="h-9 text-sm font-mono"
+                placeholder="Ej: 00000001"
+              />
+            </div>
+            <Button 
+              onClick={handleSearchByReceipt} 
+              disabled={isLoading}
+              className="bg-primary text-black font-black h-9 text-xs px-3"
+            >
+              <Search size={14} />
+            </Button>
+            {searchReceipt.trim() && (
+              <Button 
+                variant="ghost" 
+                onClick={clearSearch}
+                className="h-9 text-xs px-3"
+              >
+                <X size={14} />
+              </Button>
+            )}
+          </div>
+        </div>
+        {!searchReceipt.trim() && (
+          <div className="flex justify-between mt-3">
+            <span className="text-[9px] text-black/40">
+              Mostrando transacciones del {startDate} al {endDate}
+            </span>
+            <Button 
+              onClick={loadTransactions}
+              className="bg-primary text-black font-black h-7 text-[9px] px-3"
+            >
+              APLICAR FILTROS
+            </Button>
+          </div>
+        )}
+      </div>
 
-      <div className="bg-white border border-[#9E9E9E] rounded-xl overflow-hidden shadow-md">
+      {message && (
+        <div className={cn("mb-4 p-3 rounded-lg flex items-center gap-2", message.type === 'success' ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700")}>
+          {message.type === 'success' ? <CheckCircle size={18} /> : <AlertCircle size={18} />}
+          <span className="flex-1">{message.text}</span>
+          <button onClick={() => setMessage(null)}><X size={14} /></button>
+        </div>
+      )}
+
+      <div className="bg-white border rounded-xl overflow-hidden">
         <Table>
-          <TableHeader className="bg-[#E8E8E8]"><TableRow><TableHead className="text-[10px] font-black"># VENTA</TableHead><TableHead className="text-[10px] font-black">CLIENTE</TableHead><TableHead className="text-[10px] font-black">FECHA</TableHead><TableHead className="text-[10px] font-black text-right">TOTAL</TableHead><TableHead className="text-[10px] font-black text-center">ACCIONES</TableHead></TableRow></TableHeader>
+          <TableHeader className="bg-[#E8E8E8]">
+            <TableRow>
+              <TableHead className="text-[10px] font-black"># RECIBO</TableHead>
+              <TableHead className="text-[10px] font-black">TERMINAL</TableHead>
+              <TableHead className="text-[10px] font-black">CLIENTE</TableHead>
+              <TableHead className="text-[10px] font-black">FECHA</TableHead>
+              <TableHead className="text-[10px] font-black text-right">TOTAL</TableHead>
+              <TableHead className="text-[10px] font-black text-center">ACCIONES</TableHead>
+            </TableRow>
+          </TableHeader>
           <TableBody>
-            {filteredSales.map((t) => {
-              const returned = isTransactionReturned(t.id);
-              return (
-                <TableRow key={t.id} className="border-b border-[#9E9E9E] hover:bg-[#F5F5F5]">
-                  <TableCell className="font-bold text-sm">#{t.id}</TableCell>
-                  <TableCell className="text-sm">{t.clientName || 'Cliente Final'}</TableCell>
-                  <TableCell className="text-xs text-black/60">{new Date(t.date).toLocaleDateString()}</TableCell>
-                  <TableCell className="text-right font-bold">{formatBs(t.total)}</TableCell>
-                  <TableCell className="text-center">
-                    <div className="flex justify-center gap-2">
-                      <button disabled={returned} onClick={() => openReturnModal(t, 'total')} className={cn("px-3 py-1 text-white text-[10px] font-bold rounded-lg", returned ? "bg-gray-400" : "bg-red-600 hover:bg-red-700")}>{returned ? 'PROCESADA' : 'DEV. TOTAL'}</button>
-                      <button disabled={returned} onClick={() => openReturnModal(t, 'partial')} className={cn("px-3 py-1 text-white text-[10px] font-bold rounded-lg", returned ? "bg-gray-400" : "bg-yellow-600 hover:bg-yellow-700")}>{returned ? 'DEVUELTO' : 'DEV. PARCIAL'}</button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              );
-            })}
+            {salesTransactions.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={6} className="text-center py-10 italic text-black/50">
+                  {searchReceipt.trim() ? 'No se encontró la venta' : 'No hay ventas en el período seleccionado'}
+                </TableCell>
+              </TableRow>
+            ) : (
+              salesTransactions.map((tx: any) => {
+                // ✅ Verificar devuelta usando el estado actualizado
+                const returned = returnedIdsRef.current.has(tx.id) || tx._returned === true;
+                return (
+                  <TableRow key={tx.id} className={cn("border-b hover:bg-gray-50", returned && "bg-red-50")}>
+                    <TableCell className="font-mono font-bold">
+                      #{formatReceipt(tx.receipt_number || tx.receiptNumber || tx.id)}
+                    </TableCell>
+                    <TableCell className="text-xs font-bold text-green-600">
+                      <Monitor size={12} className="inline mr-1" />
+                      {extractTerminalIdFromSession(tx.session_id || tx.sessionId)}
+                    </TableCell>
+                    <TableCell className="text-sm font-bold">
+                      {tx.client_name || tx.clientName || 'Cliente Final'}
+                    </TableCell>
+                    <TableCell className="text-xs">
+                      {new Date(tx.date).toLocaleString('es-VE', {
+                        timeZone: 'America/Caracas',
+                        day: '2-digit',
+                        month: '2-digit',
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      })}
+                    </TableCell>
+                    <TableCell className="text-right font-bold">{formatBs(tx.total)}</TableCell>
+                    <TableCell className="text-center space-x-2">
+                      <button 
+                        disabled={returned || isAdmin || isProcessing} 
+                        onClick={() => openReturnModal(tx, 'total')} 
+                        className={cn(
+                          "px-3 py-1 text-white text-[10px] font-bold rounded transition-all",
+                          returned || isAdmin || isProcessing
+                            ? "bg-gray-400 cursor-not-allowed opacity-60" 
+                            : "bg-red-600 hover:bg-red-700 cursor-pointer"
+                        )}
+                        title={returned ? "Esta venta fue devuelta - No se puede procesar otra devolución" : "Devolver total"}
+                      >
+                        {returned ? '✓ DEVUELTA' : 'DEV. TOTAL'}
+                      </button>
+                      <button 
+                        disabled={returned || isAdmin || isProcessing} 
+                        onClick={() => openReturnModal(tx, 'partial')} 
+                        className={cn(
+                          "px-3 py-1 text-white text-[10px] font-bold rounded transition-all",
+                          returned || isAdmin || isProcessing
+                            ? "bg-gray-400 cursor-not-allowed opacity-60" 
+                            : "bg-yellow-600 hover:bg-yellow-700 cursor-pointer"
+                        )}
+                        title={returned ? "Esta venta fue devuelta - No se puede procesar otra devolución" : "Devolver parcialmente"}
+                      >
+                        {returned ? '✓ DEVUELTA' : 'DEV. PARCIAL'}
+                      </button>
+                    </TableCell>
+                  </TableRow>
+                );
+              })
+            )}
           </TableBody>
         </Table>
+        
+        {!searchReceipt.trim() && hasMore && (
+          <div className="p-4 border-t bg-gray-50 flex justify-center">
+            <Button
+              onClick={loadMore}
+              disabled={isLoading}
+              variant="outline"
+              className="text-xs font-black"
+            >
+              CARGAR MÁS (5)
+            </Button>
+          </div>
+        )}
       </div>
 
-      {/* Dialog Devolución Parcial con selección de método */}
+      {/* Modal Devolución Parcial */}
       <Dialog open={showReturnModal} onOpenChange={setShowReturnModal}>
-        <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-2xl p-0 rounded-2xl shadow-xl max-h-[85vh] overflow-y-auto">
-          <DialogHeader className="bg-[#1A2C4E] p-5 text-white sticky top-0 z-10">
-            <div className="flex justify-between items-center">
-              <DialogTitle className="text-lg font-black flex items-center gap-2">
-                <RefreshCw size={20} className="text-primary" /> Devolución Parcial
-              </DialogTitle>
-              <button onClick={() => setShowReturnModal(false)} className="text-white/60 hover:text-white"><X size={20} /></button>
-            </div>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader className="bg-[#1A2C4E] p-5 text-white sticky top-0">
+            <DialogTitle>Devolución Parcial</DialogTitle>
           </DialogHeader>
-
           <div className="p-5 space-y-4">
             {selectedTransaction && (
-              <div className="bg-[#F5F5F5] rounded-xl p-4 grid grid-cols-2 gap-3 text-sm">
-                <div className="flex items-center gap-2"><Hash size={14} className="text-primary" /><span className="font-bold">Venta #{selectedTransaction.id}</span></div>
-                <div className="flex items-center gap-2"><User size={14} className="text-primary" /><span>{selectedTransaction.clientName || 'Cliente Final'}</span></div>
-                <div className="flex items-center gap-2"><Calendar size={14} className="text-primary" /><span className="text-xs">{new Date(selectedTransaction.date).toLocaleString()}</span></div>
-                <div className="flex items-center gap-2"><Banknote size={14} className="text-primary" /><span className="font-bold">Total venta: {formatBs(selectedTransaction.total)}</span></div>
+              <div className="bg-gray-100 p-4 rounded grid grid-cols-2 gap-3 text-sm">
+                <div><Receipt size={14} className="inline mr-1" /> Recibo #{formatReceipt(selectedTransaction.receipt_number || selectedTransaction.receiptNumber || selectedTransaction.id)}</div>
+                <div><Monitor size={14} className="inline mr-1" /> Terminal: {extractTerminalIdFromSession(selectedTransaction.session_id || selectedTransaction.sessionId)}</div>
+                <div><User size={14} className="inline mr-1" /> {selectedTransaction.client_name || selectedTransaction.clientName || 'Cliente Final'}</div>
+                <div><Calendar size={14} className="inline mr-1" /> {new Date(selectedTransaction.date).toLocaleString('es-VE')}</div>
+                <div><Banknote size={14} className="inline mr-1" /> Total: {formatBs(selectedTransaction.total)}</div>
               </div>
             )}
-
-            <div>
-              <p className="text-[10px] font-black text-black/50 uppercase mb-3">Método de retorno del dinero</p>
-              <div className="grid grid-cols-3 gap-2">
-                {returnMethods.map(method => (
-                  <button
-                    key={method.id}
-                    onClick={() => setSelectedMethod(method.id)}
-                    className={cn(
-                      "p-3 rounded-xl border-2 text-center transition-all",
-                      selectedMethod === method.id
-                        ? "border-primary bg-primary/10"
-                        : "border-gray-200 hover:border-primary/50 bg-white"
-                    )}
-                  >
-                    <method.icon size={20} className={cn("mx-auto mb-1", selectedMethod === method.id ? "text-primary" : "text-gray-500")} />
-                    <p className="text-[10px] font-bold">{method.label}</p>
-                    <p className="text-[7px] text-gray-500 mt-0.5">{method.description}</p>
-                  </button>
-                ))}
-              </div>
+            <div className="grid grid-cols-3 gap-2">
+              {returnMethods.map(m => (
+                <button key={m.id} onClick={() => setSelectedMethod(m.id)} className={cn("p-3 border-2 rounded-xl text-center", selectedMethod === m.id ? "border-primary bg-primary/10" : "border-gray-200")}>
+                  <m.icon size={20} className="mx-auto" /><p className="text-[10px] font-bold">{m.label}</p>
+                </button>
+              ))}
             </div>
-
-            <div>
-              <p className="text-[10px] font-black text-black/50 uppercase mb-3">Productos a devolver - Ajuste las cantidades</p>
-              <div className="border border-[#9E9E9E] rounded-lg overflow-hidden">
-                <table className="w-full text-sm">
-                  <thead className="bg-[#E8E8E8]">
-                    <tr>
-                      <th className="text-left p-2.5 text-[9px] font-black uppercase">Producto</th>
-                      <th className="text-center p-2.5 text-[9px] font-black uppercase w-20">Precio Unit.</th>
-                      <th className="text-center p-2.5 text-[9px] font-black uppercase w-16">Vendido</th>
-                      <th className="text-center p-2.5 text-[9px] font-black uppercase w-28">A Devolver</th>
-                      <th className="text-right p-2.5 text-[9px] font-black uppercase w-24">Subtotal</th>
+            <div className="border rounded overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-100">
+                  <tr><th className="p-2 text-left">Producto</th><th className="p-2 text-center">Precio</th><th className="p-2 text-center">Vendido</th><th className="p-2 text-center">A devolver</th><th className="p-2 text-right">Subtotal</th></tr>
+                </thead>
+                <tbody>
+                  {returnItems.map((item, idx) => (
+                    <tr key={item.productId} className="border-b">
+                      <td className="p-2">{item.name}</td>
+                      <td className="p-2 text-center">{formatBs(item.priceBs)}</td>
+                      <td className="p-2 text-center">{item.originalQty}</td>
+                      <td className="p-2 text-center">
+                        <div className="flex justify-center gap-1">
+                          <button onClick={() => updateReturnQty(idx, item.returnQty-1)} disabled={item.returnQty<=0} className="w-6 h-6 border rounded hover:bg-gray-100"><Minus size={12} /></button>
+                          <span className="w-8 text-center font-bold">{item.returnQty}</span>
+                          <button onClick={() => updateReturnQty(idx, item.returnQty+1)} disabled={item.returnQty>=item.originalQty} className="w-6 h-6 border rounded hover:bg-gray-100"><Plus size={12} /></button>
+                        </div>
+                      </td>
+                      <td className="p-2 text-right font-bold">{formatBs(item.amount)}</td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {returnItems.map((item, idx) => (
-                      <tr key={item.productId} className="border-b border-[#9E9E9E]/50 hover:bg-[#F5F5F5]">
-                        <td className="p-2.5"><p className="font-bold text-xs">{item.name}</p></td>
-                        <td className="p-2.5 text-center text-xs font-mono">{formatBs(item.priceBs)}</td>
-                        <td className="p-2.5 text-center text-xs text-black/60">{item.originalQty} und</td>
-                        <td className="p-2.5">
-                          <div className="flex items-center justify-center gap-1.5">
-                            <button onClick={() => updateReturnQty(idx, item.returnQty - 1)} disabled={item.returnQty <= 0} className="w-6 h-6 bg-white rounded-md border border-[#9E9E9E] font-bold text-xs flex items-center justify-center hover:bg-gray-100 disabled:opacity-30"><Minus size={10} /></button>
-                            <span className={cn("w-8 text-center font-bold text-sm", item.returnQty > 0 ? "text-red-600" : "text-black/40")}>{item.returnQty}</span>
-                            <button onClick={() => updateReturnQty(idx, item.returnQty + 1)} disabled={item.returnQty >= item.originalQty} className="w-6 h-6 bg-white rounded-md border border-[#9E9E9E] font-bold text-xs flex items-center justify-center hover:bg-gray-100 disabled:opacity-30"><Plus size={10} /></button>
-                          </div>
-                          {item.returnQty > 0 && <p className="text-[9px] text-red-500 text-center mt-0.5">{item.returnQty} de {item.originalQty}</p>}
-                        </td>
-                        <td className={cn("p-2.5 text-right font-bold text-xs", item.amount > 0 ? "text-red-600" : "text-black/30")}>{formatBs(item.amount)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                  ))}
+                </tbody>
+              </table>
             </div>
-
-            <div className={cn("rounded-xl p-4 flex justify-between items-center transition-all", totalReturnAmount > 0 ? "bg-red-50 border-2 border-red-200" : "bg-[#F5F5F5] border border-[#9E9E9E]")}>
-              <div><span className="text-xs font-black uppercase">MONTO A DEVOLVER</span><p className="text-[10px] text-black/50">{formatUsd(totalReturnAmount / exchangeRate)}</p></div>
-              <span className={cn("text-2xl font-black", totalReturnAmount > 0 ? "text-red-600" : "text-black/30")}>{formatBs(totalReturnAmount)}</span>
+            <div className="bg-red-50 p-4 rounded flex justify-between">
+              <span className="font-bold">MONTO A DEVOLVER</span>
+              <span className="text-2xl font-black text-red-600">{formatBs(totalReturnAmount)}</span>
             </div>
-
-            <Button onClick={processReturn} disabled={!hasItemsToReturn || isProcessing} className="w-full bg-red-600 hover:bg-red-700 text-white font-black h-11 disabled:opacity-50">
-              {isProcessing ? <RefreshCw size={16} className="animate-spin" /> : <Receipt size={16} className="mr-2" />} 
+            <Button onClick={processReturn} disabled={!hasItemsToReturn || isProcessing} className="w-full bg-red-600 hover:bg-red-700 text-white font-black">
               {isProcessing ? 'PROCESANDO...' : 'PROCESAR DEVOLUCIÓN'}
             </Button>
           </div>
         </DialogContent>
       </Dialog>
 
-      {/* Dialog Confirmación Devolución Total con selección de método */}
+      {/* Modal Confirmación Devolución Total */}
       <Dialog open={showConfirmModal} onOpenChange={setShowConfirmModal}>
-        <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-xl p-0 rounded-2xl shadow-xl max-h-[85vh] overflow-y-auto">
-          <DialogHeader className="bg-red-600 p-5 text-white sticky top-0 z-10">
-            <div className="flex justify-between items-center">
-              <DialogTitle className="text-lg font-black flex items-center gap-2"><Receipt size={20} /> Confirmar Devolución Total</DialogTitle>
-              <button onClick={() => setShowConfirmModal(false)} className="text-white/60 hover:text-white"><X size={20} /></button>
-            </div>
+        <DialogContent className="max-w-xl">
+          <DialogHeader className="bg-red-600 p-5 text-white">
+            <DialogTitle>Confirmar Devolución Total</DialogTitle>
           </DialogHeader>
           <div className="p-5 space-y-4">
             {selectedTransaction && (
-              <div className="bg-[#F5F5F5] rounded-xl p-4 grid grid-cols-2 gap-3 text-sm">
-                <div className="flex items-center gap-2"><Hash size={14} className="text-primary" /><span className="font-bold">Venta #{selectedTransaction.id}</span></div>
-                <div className="flex items-center gap-2"><User size={14} className="text-primary" /><span>{selectedTransaction.clientName || 'Cliente Final'}</span></div>
-                <div className="flex items-center gap-2"><Calendar size={14} className="text-primary" /><span className="text-xs">{new Date(selectedTransaction.date).toLocaleString()}</span></div>
-                <div className="flex items-center gap-2"><Banknote size={14} className="text-primary" /><span className="font-bold">Total: {formatBs(selectedTransaction.total)}</span></div>
+              <div className="bg-gray-100 p-4 rounded">
+                Recibo #{formatReceipt(selectedTransaction.receipt_number || selectedTransaction.receiptNumber || selectedTransaction.id)} - Total: {formatBs(selectedTransaction.total)}
               </div>
             )}
-
-            <div>
-              <p className="text-[10px] font-black text-black/50 uppercase mb-3">Método de retorno del dinero</p>
-              <div className="grid grid-cols-3 gap-2">
-                {returnMethods.map(method => (
-                  <button
-                    key={method.id}
-                    onClick={() => setSelectedMethod(method.id)}
-                    className={cn(
-                      "p-3 rounded-xl border-2 text-center transition-all",
-                      selectedMethod === method.id
-                        ? "border-primary bg-primary/10"
-                        : "border-gray-200 hover:border-primary/50 bg-white"
-                    )}
-                  >
-                    <method.icon size={20} className={cn("mx-auto mb-1", selectedMethod === method.id ? "text-primary" : "text-gray-500")} />
-                    <p className="text-[10px] font-bold">{method.label}</p>
-                    <p className="text-[7px] text-gray-500 mt-0.5">{method.description}</p>
-                  </button>
-                ))}
-              </div>
+            <div className="grid grid-cols-3 gap-2">
+              {returnMethods.map(m => (
+                <button key={m.id} onClick={() => setSelectedMethod(m.id)} className={cn("p-3 border-2 rounded-xl text-center", selectedMethod === m.id ? "border-primary bg-primary/10" : "border-gray-200")}>
+                  <m.icon size={20} className="mx-auto" /><p className="text-[10px] font-bold">{m.label}</p>
+                </button>
+              ))}
             </div>
-
-            <div className="bg-red-50 border-2 border-red-200 rounded-xl p-4 flex justify-between items-center">
-              <div><span className="text-xs font-black text-red-700 uppercase">TOTAL A DEVOLVER</span><p className="text-[10px] text-red-500">{formatUsd(totalReturnAmount / exchangeRate)}</p></div>
-              <span className="text-2xl font-black text-red-700">{formatBs(totalReturnAmount)}</span>
+            <div className="bg-red-50 p-4 rounded flex justify-between">
+              <span className="font-bold">TOTAL A DEVOLVER</span>
+              <span className="text-2xl font-black text-red-600">{formatBs(totalReturnAmount)}</span>
             </div>
-
-            <p className="text-xs text-black/50 text-center">Esta acción repondrá el inventario y registrará el egreso según el método seleccionado.</p>
-            
             <div className="flex gap-2">
-              <Button variant="ghost" onClick={() => setShowConfirmModal(false)} className="flex-1">CANCELAR</Button>
+              <Button variant="ghost" onClick={() => setShowConfirmModal(false)} className="flex-1">Cancelar</Button>
               <Button onClick={processReturn} disabled={isProcessing} className="flex-1 bg-red-600 hover:bg-red-700 text-white font-black">
-                {isProcessing ? <RefreshCw size={16} className="animate-spin" /> : <CheckCircle size={16} className="mr-2" />} 
-                {isProcessing ? 'PROCESANDO...' : 'CONFIRMAR DEVOLUCIÓN'}
+                {isProcessing ? 'PROCESANDO...' : 'CONFIRMAR'}
               </Button>
             </div>
           </div>

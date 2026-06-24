@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { usePOSState } from '@/hooks/use-pos-state';
 import { Download, ChevronDown, ChevronRight, Wallet, Eye, X, HandCoins, History, DollarSign, Trash2, PlusCircle, AlertTriangle } from 'lucide-react';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
@@ -45,27 +45,44 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
   });
   const [isSubmittingInitial, setIsSubmittingInitial] = useState(false);
 
-  const groupedAccounts = state.accounts.reduce((acc, account) => {
-    if (!acc[account.clientId]) {
-      acc[account.clientId] = {
-        clientId: account.clientId,
-        clientName: account.clientName,
-        clientCedula: account.clientCedula,
-        accounts: [],
-        totalDebt: 0,
-        totalOriginal: 0,
-        totalPaid: 0
-      };
+  // ✅ CORREGIDO: groupedAccounts con validación de datos
+  const groupedAccounts = useMemo(() => {
+    const acc: Record<number, { clientId: number; clientName: string; clientCedula: string; accounts: any[]; totalDebt: number; totalOriginal: number; totalPaid: number }> = {};
+    
+    for (const account of state.accounts) {
+      // ✅ Validar que account tenga clientId
+      if (!account || account.clientId === undefined || account.clientId === null) {
+        continue;
+      }
+      
+      const clientId = Number(account.clientId);
+      if (isNaN(clientId)) continue;
+      
+      if (!acc[clientId]) {
+        acc[clientId] = {
+          clientId: clientId,
+          clientName: account.clientName || 'Cliente sin nombre',
+          clientCedula: account.clientCedula || 'N/A',
+          accounts: [],
+          totalDebt: 0,
+          totalOriginal: 0,
+          totalPaid: 0
+        };
+      }
+      const remaining = (account.amountBs || 0) - (account.paidAmount || 0);
+      acc[clientId].accounts.push(account);
+      acc[clientId].totalOriginal += (account.amountBs || 0);
+      acc[clientId].totalPaid += (account.paidAmount || 0);
+      acc[clientId].totalDebt += Math.max(0, remaining);
     }
-    const remaining = account.amountBs - (account.paidAmount || 0);
-    acc[account.clientId].accounts.push(account);
-    acc[account.clientId].totalOriginal += account.amountBs;
-    acc[account.clientId].totalPaid += (account.paidAmount || 0);
-    acc[account.clientId].totalDebt += remaining;
     return acc;
-  }, {} as Record<number, { clientId: number; clientName: string; clientCedula: string; accounts: any[]; totalDebt: number; totalOriginal: number; totalPaid: number }>);
+  }, [state.accounts]);
 
-  const clientsList = Object.values(groupedAccounts);
+  // ✅ CORREGIDO: clientsList con validación
+  const clientsList = useMemo(() => {
+    return Object.values(groupedAccounts).filter(c => c.clientId !== undefined && c.clientId !== null);
+  }, [groupedAccounts]);
+
   const totalGeneralDebt = clientsList.reduce((sum, c) => sum + c.totalDebt, 0);
 
   const handleTransactionClick = (account: any) => {
@@ -101,11 +118,13 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
     }
     if (selectedTransaction?.accountInfo?.products) {
       const productsStr = selectedTransaction.accountInfo.products;
-      return productsStr.split(',').map((item: string): ProductItem => {
-        const match = item.trim().match(/(.+)\sx(\d+)$/);
-        if (match) return { name: match[1], qty: parseInt(match[2]), priceBs: 0, priceUsd: 0 };
-        return { name: item.trim(), qty: 1, priceBs: 0, priceUsd: 0 };
-      });
+      if (typeof productsStr === 'string') {
+        return productsStr.split(',').map((item: string): ProductItem => {
+          const match = item.trim().match(/(.+)\sx(\d+)$/);
+          if (match) return { name: match[1], qty: parseInt(match[2]), priceBs: 0, priceUsd: 0 };
+          return { name: item.trim(), qty: 1, priceBs: 0, priceUsd: 0 };
+        });
+      }
     }
     return [];
   };
@@ -138,23 +157,19 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
 
   const historicalRate = getHistoricalExchangeRate();
 
-  // ========== ELIMINAR CLIENTE (CORREGIDO PARA TURSO) ==========
+  // ========== ELIMINAR CLIENTE ==========
   const handleDeleteClient = async (clientId: number, clientName: string) => {
     if (!confirm(`¿Eliminar al cliente "${clientName}" y todas sus cuentas pendientes? Esta acción es irreversible.`)) return;
     
     try {
-      // ✅ Obtener todas las cuentas del cliente desde state.accounts
       const clientAccounts = state.accounts.filter(acc => acc.clientId === clientId);
       
-      // ✅ Eliminar cada cuenta usando syncService
       for (const account of clientAccounts) {
         await syncService.deleteAccount?.(account.id);
       }
       
-      // ✅ Eliminar el cliente usando syncService
       await syncService.deleteClient(clientId);
       
-      // ✅ Recargar datos
       if (state.refreshAllData) await state.refreshAllData();
       
       toast({
@@ -193,6 +208,7 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
       toast({ title: "Error", description: "Ingrese un monto válido en Bolívares", variant: "destructive" });
       return;
     }
+    
     let clientId: number;
     if (initialDebtForm.clientId === 'new') {
       if (!initialDebtForm.clientName.trim()) {
@@ -213,6 +229,10 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
       toast({ title: "Cliente creado", description: `${newClient.name} agregado correctamente.` });
     } else {
       clientId = parseInt(initialDebtForm.clientId);
+      if (isNaN(clientId)) {
+        toast({ title: "Error", description: "Seleccione un cliente válido", variant: "destructive" });
+        return;
+      }
     }
 
     const exchangeRateAtMoment = state.exchangeRate;
@@ -274,6 +294,11 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
       reason: '',
     });
   };
+
+  // ✅ CORREGIDO: Obtener lista de clientes existentes para el select
+  const existingClientsList = useMemo(() => {
+    return clientsList.filter(c => c.clientId !== undefined && c.clientId !== null);
+  }, [clientsList]);
 
   return (
     <>
@@ -571,8 +596,10 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
               >
                 <option value="">Seleccionar cliente existente</option>
                 <option value="new">➕ Nuevo cliente</option>
-                {clientsList.map(c => (
-                  <option key={c.clientId} value={c.clientId.toString()}>{c.clientName} (Cédula: {c.clientCedula})</option>
+                {existingClientsList.map(c => (
+                  <option key={c.clientId} value={c.clientId?.toString() || ''}>
+                    {c.clientName || 'Cliente sin nombre'} (Cédula: {c.clientCedula || 'N/A'})
+                  </option>
                 ))}
               </select>
             </div>

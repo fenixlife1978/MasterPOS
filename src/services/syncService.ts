@@ -1,11 +1,33 @@
 // src/services/syncService.ts
 // ============================================================
 // SERVICIO DE SINCRONIZACIÓN - SIN TURSO
-// Usa Firebase Realtime Database + localStorage como respaldo
+// Usa Firebase Firestore como fuente principal + RTDB como respaldo
 // ============================================================
 
 import { ref, get, set, update, remove, push, onValue } from 'firebase/database';
 import { rtdb } from '@/lib/firebase';
+
+// ============================================================
+// IMPORTS PARA FIRESTORE
+// ============================================================
+
+import { 
+  collection, 
+  doc, 
+  getDoc, 
+  getDocs, 
+  setDoc, 
+  updateDoc, 
+  deleteDoc, 
+  query, 
+  where, 
+  onSnapshot,
+  orderBy,
+  limit,
+  startAfter,
+  Timestamp
+} from 'firebase/firestore';
+import { db as firestoreDb } from '@/lib/firebase';
 
 // ============================================================
 // UTILIDADES
@@ -13,6 +35,8 @@ import { rtdb } from '@/lib/firebase';
 
 const CACHE_PREFIX = 'pos_cache_';
 const STOCK_CACHE_KEY = `${CACHE_PREFIX}stock`;
+const USERS_COLLECTION = 'users';
+const TRANSACTIONS_COLLECTION = 'transactions';
 
 function getCacheKey(entity: string): string {
   return `${CACHE_PREFIX}${entity}`;
@@ -39,49 +63,239 @@ function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
 }
 
+// ✅ Función para limpiar objetos y eliminar undefined (convertir a null)
+function cleanForFirebase(obj: any): any {
+  if (obj === undefined) return null;
+  if (obj === null) return null;
+  if (Array.isArray(obj)) {
+    return obj.map(item => cleanForFirebase(item));
+  }
+  if (typeof obj === 'object') {
+    const cleaned: any = {};
+    for (const [key, value] of Object.entries(obj)) {
+      cleaned[key] = cleanForFirebase(value);
+    }
+    return cleaned;
+  }
+  return obj;
+}
+
 // ============================================================
-// USUARIOS
+// USUARIOS - FIRESTORE PRIMERO, RTDB COMO RESPALDO
 // ============================================================
 
 export async function getUserByUid(uid: string) {
-  const usersRef = ref(rtdb, 'users');
-  const snapshot = await get(usersRef);
-  if (!snapshot.exists()) return null;
+  console.log(`📡 Buscando usuario ${uid} en Firestore...`);
   
-  const users = snapshot.val();
-  for (const [key, user] of Object.entries(users)) {
-    if ((user as any).uid === uid) {
-      return { id: key, ...(user as any) };
+  try {
+    const userDoc = await getDoc(doc(firestoreDb, USERS_COLLECTION, uid));
+    if (userDoc.exists()) {
+      const data = userDoc.data();
+      console.log(`✅ Usuario encontrado en Firestore: ${data.name}`);
+      return {
+        id: uid,
+        uid: data.uid || uid,
+        name: data.name || '',
+        email: data.email || '',
+        role: data.role || 'user',
+        terminalId: data.terminalId || null,
+        terminalName: data.terminalName || null,
+        status: data.status || 'active',
+        createdAt: data.createdAt || new Date().toISOString(),
+        updatedAt: data.updatedAt || new Date().toISOString()
+      };
     }
+    
+    console.log(`⚠️ Usuario no encontrado en Firestore, buscando en RTDB...`);
+    const usersRef = ref(rtdb, 'users');
+    const snapshot = await get(usersRef);
+    if (!snapshot.exists()) return null;
+    
+    const users = snapshot.val();
+    for (const [key, user] of Object.entries(users)) {
+      if ((user as any).uid === uid) {
+        const userData = {
+          uid: (user as any).uid,
+          name: (user as any).name || '',
+          email: (user as any).email || '',
+          role: (user as any).role || 'user',
+          terminalId: (user as any).terminalId || null,
+          terminalName: (user as any).terminalName || null,
+          status: (user as any).status || 'active',
+          createdAt: (user as any).createdAt || new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+        await setDoc(doc(firestoreDb, USERS_COLLECTION, uid), userData);
+        console.log(`✅ Usuario ${userData.name} migrado de RTDB a Firestore`);
+        return { id: uid, ...userData };
+      }
+    }
+    return null;
+  } catch (error) {
+    console.error('Error obteniendo usuario:', error);
+    const usersRef = ref(rtdb, 'users');
+    const snapshot = await get(usersRef);
+    if (!snapshot.exists()) return null;
+    const users = snapshot.val();
+    for (const [key, user] of Object.entries(users)) {
+      if ((user as any).uid === uid) {
+        return { id: key, ...(user as any) };
+      }
+    }
+    return null;
   }
-  return null;
 }
 
 export async function saveUser(user: any) {
-  const userId = user.id || generateId();
-  const userRef = ref(rtdb, `users/${userId}`);
-  const userData = {
-    uid: user.uid || userId,
-    name: user.name,
-    email: user.email,
-    role: user.role || 'user',
-    terminalId: user.terminalId || null,
-    status: user.status || 'active',
-    updatedAt: new Date().toISOString()
-  };
-  await set(userRef, userData);
-  return { id: userId, ...userData };
+  console.log(`📡 Guardando usuario ${user.name || 'sin nombre'}...`);
+  
+  try {
+    const userId = user.uid || user.id || generateId();
+    const now = new Date().toISOString();
+    
+    const userData = {
+      uid: userId,
+      name: user.name || 'Usuario sin nombre',
+      email: user.email || '',
+      role: user.role || 'user',
+      terminalId: user.terminalId || null,
+      terminalName: user.terminalName || null,
+      status: user.status || 'active',
+      createdAt: user.createdAt || now,
+      updatedAt: now
+    };
+    
+    await setDoc(doc(firestoreDb, USERS_COLLECTION, userId), userData);
+    console.log(`✅ Usuario ${userData.name} guardado en Firestore (ID: ${userId})`);
+    
+    const rtdbData = {
+      uid: userId,
+      name: userData.name,
+      email: userData.email,
+      role: userData.role,
+      terminalId: userData.terminalId,
+      terminalName: userData.terminalName,
+      status: userData.status,
+      createdAt: userData.createdAt,
+      updatedAt: userData.updatedAt
+    };
+    await set(ref(rtdb, `users/${userId}`), rtdbData);
+    console.log(`✅ Usuario ${userData.name} sincronizado con RTDB`);
+    
+    return { id: userId, ...userData };
+  } catch (error) {
+    console.error('❌ Error guardando usuario en Firestore:', error);
+    const userId = user.uid || user.id || generateId();
+    const userData = {
+      uid: user.uid || userId,
+      name: user.name,
+      email: user.email,
+      role: user.role || 'user',
+      terminalId: user.terminalId || null,
+      terminalName: user.terminalName || null,
+      status: user.status || 'active',
+      updatedAt: new Date().toISOString()
+    };
+    await set(ref(rtdb, `users/${userId}`), userData);
+    console.log(`⚠️ Usuario guardado solo en RTDB (fallback)`);
+    return { id: userId, ...userData };
+  }
 }
 
 export async function getAllUsers() {
-  const usersRef = ref(rtdb, 'users');
-  const snapshot = await get(usersRef);
-  if (!snapshot.exists()) return [];
-  const data = snapshot.val();
-  return Object.entries(data).map(([id, user]) => ({ id, ...(user as any) }));
+  console.log(`📡 Obteniendo todos los usuarios desde Firestore...`);
+  
+  try {
+    const usersRef = collection(firestoreDb, USERS_COLLECTION);
+    const snapshot = await getDocs(usersRef);
+    
+    if (!snapshot.empty) {
+      const users: any[] = [];
+      snapshot.forEach(doc => {
+        const data = doc.data();
+        users.push({
+          id: doc.id,
+          uid: data.uid || doc.id,
+          name: data.name || '',
+          email: data.email || '',
+          role: data.role || 'user',
+          terminalId: data.terminalId || null,
+          terminalName: data.terminalName || null,
+          status: data.status || 'active',
+          createdAt: data.createdAt || new Date().toISOString(),
+          updatedAt: data.updatedAt || new Date().toISOString()
+        });
+      });
+      
+      console.log(`✅ ${users.length} usuarios obtenidos de Firestore`);
+      setCachedData(getCacheKey('users'), users);
+      return users;
+    }
+    
+    console.log(`⚠️ No hay usuarios en Firestore, consultando RTDB...`);
+    const usersRefRtdb = ref(rtdb, 'users');
+    const snapshotRtdb = await get(usersRefRtdb);
+    if (!snapshotRtdb.exists()) {
+      const cached = getCachedData<any[]>(getCacheKey('users'));
+      return cached || [];
+    }
+    
+    const data = snapshotRtdb.val();
+    const users = Object.entries(data).map(([id, user]) => {
+      const u = user as any;
+      return {
+        id: id,
+        uid: u.uid || id,
+        name: u.name || '',
+        email: u.email || '',
+        role: u.role || 'user',
+        terminalId: u.terminalId || null,
+        terminalName: u.terminalName || null,
+        status: u.status || 'active',
+        createdAt: u.createdAt || new Date().toISOString(),
+        updatedAt: u.updatedAt || new Date().toISOString()
+      };
+    });
+    
+    console.log(`📡 Migrando ${users.length} usuarios de RTDB a Firestore...`);
+    for (const user of users) {
+      try {
+        await setDoc(doc(firestoreDb, USERS_COLLECTION, user.uid || user.id), {
+          uid: user.uid || user.id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          terminalId: user.terminalId,
+          terminalName: user.terminalName,
+          status: user.status,
+          createdAt: user.createdAt,
+          updatedAt: new Date().toISOString()
+        });
+        console.log(`✅ Usuario ${user.name} migrado a Firestore`);
+      } catch (error) {
+        console.error(`❌ Error migrando usuario ${user.name}:`, error);
+      }
+    }
+    
+    setCachedData(getCacheKey('users'), users);
+    return users;
+  } catch (error) {
+    console.error('Error obteniendo usuarios:', error);
+    const cached = getCachedData<any[]>(getCacheKey('users'));
+    return cached || [];
+  }
 }
 
 export async function deleteUser(uid: string) {
+  console.log(`📡 Eliminando usuario ${uid}...`);
+  
+  try {
+    await deleteDoc(doc(firestoreDb, USERS_COLLECTION, uid));
+    console.log(`✅ Usuario ${uid} eliminado de Firestore`);
+  } catch (error) {
+    console.error('Error eliminando usuario de Firestore:', error);
+  }
+  
   const usersRef = ref(rtdb, 'users');
   const snapshot = await get(usersRef);
   if (!snapshot.exists()) return;
@@ -90,23 +304,347 @@ export async function deleteUser(uid: string) {
   for (const [key, user] of Object.entries(users)) {
     if ((user as any).uid === uid) {
       await remove(ref(rtdb, `users/${key}`));
+      console.log(`✅ Usuario ${uid} eliminado de RTDB`);
       break;
     }
   }
 }
 
-export async function updateUserTerminalId(userId: string, terminalId: string | null) {
-  const usersRef = ref(rtdb, 'users');
-  const snapshot = await get(usersRef);
-  if (!snapshot.exists()) return;
+export async function updateUserTerminalId(userId: string, terminalId: string | null, terminalName: string | null = null) {
+  console.log(`📡 Actualizando terminal para usuario ${userId}: terminalId=${terminalId}, terminalName=${terminalName}`);
   
-  const users = snapshot.val();
-  for (const [key, user] of Object.entries(users)) {
-    if ((user as any).uid === userId) {
-      await update(ref(rtdb, `users/${key}`), { terminalId, updatedAt: new Date().toISOString() });
-      break;
+  try {
+    const now = new Date().toISOString();
+    
+    let userDocRef = doc(firestoreDb, USERS_COLLECTION, userId);
+    let userDoc = await getDoc(userDocRef);
+    let userUid = userId;
+    
+    if (!userDoc.exists()) {
+      console.log(`⚠️ Usuario ${userId} no encontrado en Firestore, buscando por uid...`);
+      const usersRef = collection(firestoreDb, USERS_COLLECTION);
+      const q = query(usersRef, where('uid', '==', userId));
+      const querySnapshot = await getDocs(q);
+      
+      if (!querySnapshot.empty) {
+        const docSnap = querySnapshot.docs[0];
+        userDocRef = docSnap.ref;
+        userDoc = docSnap;
+        userUid = docSnap.data().uid || docSnap.id;
+        console.log(`✅ Usuario encontrado por uid: ${docSnap.id}`);
+      } else {
+        console.log(`⚠️ Usuario no encontrado en Firestore, buscando en RTDB...`);
+        const usersRefRtdb = ref(rtdb, 'users');
+        const snapshot = await get(usersRefRtdb);
+        if (snapshot.exists()) {
+          const users = snapshot.val();
+          let foundKey = null;
+          let foundUser = null;
+          for (const [key, user] of Object.entries(users)) {
+            const u = user as any;
+            if (u.uid === userId || key === userId) {
+              foundKey = key;
+              foundUser = u;
+              break;
+            }
+          }
+          if (foundKey && foundUser) {
+            console.log(`✅ Usuario encontrado en RTDB: ${foundKey}`);
+            const newUserData = {
+              uid: foundUser.uid || foundKey,
+              name: foundUser.name || '',
+              email: foundUser.email || '',
+              role: foundUser.role || 'user',
+              terminalId: terminalId,
+              terminalName: terminalName,
+              status: foundUser.status || 'active',
+              createdAt: foundUser.createdAt || now,
+              updatedAt: now
+            };
+            await setDoc(doc(firestoreDb, USERS_COLLECTION, newUserData.uid), newUserData);
+            console.log(`✅ Usuario migrado a Firestore con terminalId=${terminalId}`);
+            
+            await update(ref(rtdb, `users/${foundKey}`), {
+              terminalId: terminalId,
+              terminalName: terminalName,
+              updatedAt: now
+            });
+            console.log(`✅ RTDB actualizado para usuario ${foundKey}`);
+            return;
+          }
+        }
+        console.error(`❌ Usuario ${userId} no encontrado en Firestore ni RTDB`);
+        return;
+      }
+    } else {
+      userUid = userDoc.data().uid || userId;
+    }
+    
+    const updateData: any = {
+      terminalId: terminalId,
+      updatedAt: now
+    };
+    if (terminalName !== null) {
+      updateData.terminalName = terminalName;
+    }
+    
+    await updateDoc(userDocRef, updateData);
+    console.log(`✅ Firestore actualizado: usuario ${userDocRef.id} -> terminalId=${terminalId}, terminalName=${terminalName}`);
+    
+    const usersRefRtdb = ref(rtdb, 'users');
+    const snapshotRtdb = await get(usersRefRtdb);
+    if (snapshotRtdb.exists()) {
+      const users = snapshotRtdb.val();
+      let foundKey = null;
+      for (const [key, user] of Object.entries(users)) {
+        const u = user as any;
+        if (u.uid === userUid || key === userUid || u.uid === userId || key === userId) {
+          foundKey = key;
+          break;
+        }
+      }
+      
+      if (foundKey) {
+        const rtdbUpdateData: any = {
+          terminalId: terminalId,
+          updatedAt: now
+        };
+        if (terminalName !== null) {
+          rtdbUpdateData.terminalName = terminalName;
+        }
+        await update(ref(rtdb, `users/${foundKey}`), rtdbUpdateData);
+        console.log(`✅ RTDB actualizado: usuario ${foundKey} -> terminalId=${terminalId}`);
+      } else {
+        const userData = (await getDoc(userDocRef)).data();
+        if (userData) {
+          await set(ref(rtdb, `users/${userData.uid || userDocRef.id}`), {
+            uid: userData.uid || userDocRef.id,
+            name: userData.name || '',
+            email: userData.email || '',
+            role: userData.role || 'user',
+            terminalId: terminalId,
+            terminalName: terminalName,
+            status: userData.status || 'active',
+            createdAt: userData.createdAt || now,
+            updatedAt: now
+          });
+          console.log(`✅ Usuario creado en RTDB con terminalId=${terminalId}`);
+        }
+      }
+    }
+  } catch (error) {
+    console.error('❌ Error en updateUserTerminalId:', error);
+    throw error;
+  }
+}
+
+export async function getUserByTerminalId(terminalId: string) {
+  console.log(`📡 Buscando usuario por terminalId: ${terminalId}`);
+  
+  try {
+    const usersRef = collection(firestoreDb, USERS_COLLECTION);
+    const q = query(usersRef, where('terminalId', '==', terminalId));
+    const snapshot = await getDocs(q);
+    
+    if (!snapshot.empty) {
+      const docSnap = snapshot.docs[0];
+      const data = docSnap.data();
+      console.log(`✅ Usuario encontrado en Firestore: ${data.name}`);
+      return {
+        id: docSnap.id,
+        uid: data.uid || docSnap.id,
+        name: data.name || '',
+        email: data.email || '',
+        role: data.role || 'user',
+        terminalId: data.terminalId || null,
+        terminalName: data.terminalName || null,
+        status: data.status || 'active',
+        createdAt: data.createdAt || new Date().toISOString(),
+        updatedAt: data.updatedAt || new Date().toISOString()
+      };
+    }
+    
+    console.log(`⚠️ Usuario no encontrado en Firestore, buscando en RTDB...`);
+    const usersRefRtdb = ref(rtdb, 'users');
+    const snapshotRtdb = await get(usersRefRtdb);
+    if (!snapshotRtdb.exists()) return null;
+    
+    const users = snapshotRtdb.val();
+    for (const [key, user] of Object.entries(users)) {
+      const u = user as any;
+      if (u.terminalId === terminalId) {
+        return {
+          id: key,
+          uid: u.uid || key,
+          name: u.name || '',
+          email: u.email || '',
+          role: u.role || 'user',
+          terminalId: u.terminalId || null,
+          terminalName: u.terminalName || null,
+          status: u.status || 'active',
+          createdAt: u.createdAt || new Date().toISOString(),
+          updatedAt: u.updatedAt || new Date().toISOString()
+        };
+      }
+    }
+    return null;
+  } catch (error) {
+    console.error('Error obteniendo usuario por terminal:', error);
+    return null;
+  }
+}
+
+export async function updateUserProfile(userId: string, data: { name?: string; email?: string; role?: string; status?: string }) {
+  console.log(`📡 Actualizando perfil de usuario ${userId}...`);
+  
+  try {
+    const now = new Date().toISOString();
+    
+    let userDocRef = doc(firestoreDb, USERS_COLLECTION, userId);
+    let userDoc = await getDoc(userDocRef);
+    
+    if (!userDoc.exists()) {
+      const usersRef = collection(firestoreDb, USERS_COLLECTION);
+      const q = query(usersRef, where('uid', '==', userId));
+      const querySnapshot = await getDocs(q);
+      if (!querySnapshot.empty) {
+        userDocRef = querySnapshot.docs[0].ref;
+      }
+    }
+    
+    await updateDoc(userDocRef, {
+      ...data,
+      updatedAt: now
+    });
+    console.log(`✅ Perfil de usuario ${userId} actualizado en Firestore`);
+    
+    const usersRefRtdb = ref(rtdb, 'users');
+    const snapshotRtdb = await get(usersRefRtdb);
+    if (snapshotRtdb.exists()) {
+      const users = snapshotRtdb.val();
+      for (const [key, user] of Object.entries(users)) {
+        if ((user as any).uid === userId) {
+          await update(ref(rtdb, `users/${key}`), {
+            ...data,
+            updatedAt: now
+          });
+          console.log(`✅ Perfil de usuario ${userId} actualizado en RTDB`);
+          break;
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Error actualizando perfil:', error);
+    throw error;
+  }
+}
+
+export function subscribeToUsers(callback: (data: any[]) => void) {
+  console.log(`📡 Suscribiendo a cambios de usuarios (Firestore)...`);
+  let isUnsubscribed = false;
+  let firestoreUnsubscribe: (() => void) | null = null;
+  let rtdbUnsubscribe: (() => void) | null = null;
+
+  try {
+    const usersRef = collection(firestoreDb, USERS_COLLECTION);
+    firestoreUnsubscribe = onSnapshot(usersRef, (snapshot) => {
+      if (isUnsubscribed) return;
+      const users: any[] = [];
+      snapshot.forEach(doc => {
+        const data = doc.data();
+        users.push({
+          id: doc.id,
+          uid: data.uid || doc.id,
+          name: data.name || '',
+          email: data.email || '',
+          role: data.role || 'user',
+          terminalId: data.terminalId || null,
+          terminalName: data.terminalName || null,
+          status: data.status || 'active',
+          createdAt: data.createdAt || new Date().toISOString(),
+          updatedAt: data.updatedAt || new Date().toISOString()
+        });
+      });
+      
+      console.log(`🔄 ${users.length} usuarios actualizados desde Firestore`);
+      setCachedData(getCacheKey('users'), users);
+      callback(users);
+    }, (error) => {
+      console.error('Error en suscripción de usuarios (Firestore):', error);
+      if (!isUnsubscribed && !rtdbUnsubscribe) {
+        const usersRefRtdb = ref(rtdb, 'users');
+        rtdbUnsubscribe = onValue(usersRefRtdb, (snapshot) => {
+          if (isUnsubscribed) return;
+          if (snapshot.exists()) {
+            const data = snapshot.val();
+            const users = Object.entries(data).map(([key, user]) => {
+              const u = user as any;
+              return {
+                id: key,
+                uid: u.uid || key,
+                name: u.name || '',
+                email: u.email || '',
+                role: u.role || 'user',
+                terminalId: u.terminalId || null,
+                terminalName: u.terminalName || null,
+                status: u.status || 'active',
+                createdAt: u.createdAt || new Date().toISOString(),
+                updatedAt: u.updatedAt || new Date().toISOString()
+              };
+            });
+            setCachedData(getCacheKey('users'), users);
+            callback(users);
+          } else {
+            const cached = getCachedData<any[]>(getCacheKey('users'));
+            if (cached) callback(cached);
+          }
+        });
+      }
+    });
+  } catch (error) {
+    console.error('Error iniciando suscripción a usuarios:', error);
+    if (!rtdbUnsubscribe) {
+      const usersRefRtdb = ref(rtdb, 'users');
+      rtdbUnsubscribe = onValue(usersRefRtdb, (snapshot) => {
+        if (isUnsubscribed) return;
+        if (snapshot.exists()) {
+          const data = snapshot.val();
+          const users = Object.entries(data).map(([key, user]) => {
+            const u = user as any;
+            return {
+              id: key,
+              uid: u.uid || key,
+              name: u.name || '',
+              email: u.email || '',
+              role: u.role || 'user',
+              terminalId: u.terminalId || null,
+              terminalName: u.terminalName || null,
+              status: u.status || 'active',
+              createdAt: u.createdAt || new Date().toISOString(),
+              updatedAt: u.updatedAt || new Date().toISOString()
+            };
+          });
+          setCachedData(getCacheKey('users'), users);
+          callback(users);
+        } else {
+          const cached = getCachedData<any[]>(getCacheKey('users'));
+          if (cached) callback(cached);
+        }
+      });
     }
   }
+  
+  return () => {
+    isUnsubscribed = true;
+    if (firestoreUnsubscribe) {
+      firestoreUnsubscribe();
+      firestoreUnsubscribe = null;
+    }
+    if (rtdbUnsubscribe) {
+      rtdbUnsubscribe();
+      rtdbUnsubscribe = null;
+    }
+  };
 }
 
 // ============================================================
@@ -331,7 +869,162 @@ export async function deleteClient(id: number) {
 }
 
 // ============================================================
-// TRANSACCIONES
+// TRANSACCIONES - FIRESTORE (NUEVO)
+// ============================================================
+
+// ✅ Guardar transacción en Firestore (además de RTDB)
+export async function saveTransactionFirestore(transaction: any) {
+  try {
+    const txId = transaction.id || generateId();
+    const txRef = doc(firestoreDb, TRANSACTIONS_COLLECTION, String(txId));
+    
+    const txData = {
+      id: txId,
+      date: transaction.date || new Date().toISOString(),
+      type: transaction.type || 'sale',
+      items: transaction.items || [],
+      subtotal: transaction.subtotal || 0,
+      iva: transaction.iva || 0,
+      total: transaction.total || 0,
+      totalUsd: transaction.totalUsd || 0,
+      payMethod: transaction.payMethod || null,
+      paidBs: transaction.paidBs || 0,
+      change: transaction.change || 0,
+      clientId: transaction.clientId || null,
+      clientName: transaction.clientName || null,
+      exchangeRate: transaction.exchangeRate || null,
+      receiptNumber: transaction.receiptNumber || null,
+      notes: transaction.notes || null,
+      sessionId: transaction.sessionId || null,
+      terminalId: transaction.terminalId || null,
+      originalSaleId: transaction.originalSaleId || null,
+      originalReceiptNumber: transaction.originalReceiptNumber || null,
+      returnMethod: transaction.returnMethod || null,
+      payments: transaction.payments || [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    
+    await setDoc(txRef, txData);
+    console.log(`✅ Transacción ${txId} guardada en Firestore`);
+  } catch (error) {
+    console.error('❌ Error guardando transacción en Firestore:', error);
+    throw error;
+  }
+}
+
+// ✅ Obtener transacciones paginadas desde Firestore
+export async function getTransactionsFirestorePaginated(
+  terminalId: string,
+  pageSize: number = 5,
+  lastDoc?: any
+) {
+  try {
+    let q = query(
+      collection(firestoreDb, TRANSACTIONS_COLLECTION),
+      where('terminalId', '==', terminalId),
+      orderBy('date', 'desc'),
+      limit(pageSize)
+    );
+    
+    if (lastDoc) {
+      q = query(
+        collection(firestoreDb, TRANSACTIONS_COLLECTION),
+        where('terminalId', '==', terminalId),
+        orderBy('date', 'desc'),
+        startAfter(lastDoc),
+        limit(pageSize)
+      );
+    }
+    
+    const snapshot = await getDocs(q);
+    const transactions: any[] = [];
+    let lastVisible = null;
+    
+    snapshot.forEach(doc => {
+      transactions.push({ id: doc.id, ...doc.data() });
+      lastVisible = doc;
+    });
+    
+    return { transactions, lastVisible };
+  } catch (error) {
+    console.error('Error obteniendo transacciones paginadas:', error);
+    return { transactions: [], lastVisible: null };
+  }
+}
+
+// ✅ Buscar transacción por número de recibo
+export async function getTransactionByReceiptNumber(terminalId: string, receiptNumber: number) {
+  try {
+    const q = query(
+      collection(firestoreDb, TRANSACTIONS_COLLECTION),
+      where('terminalId', '==', terminalId),
+      where('receiptNumber', '==', receiptNumber)
+    );
+    const snapshot = await getDocs(q);
+    if (!snapshot.empty) {
+      const doc = snapshot.docs[0];
+      return { id: doc.id, ...doc.data() };
+    }
+    return null;
+  } catch (error) {
+    console.error('Error buscando transacción por recibo:', error);
+    return null;
+  }
+}
+
+// ✅ Obtener última transacción de Firestore (para saber el último recibo)
+export async function getLastTransactionFirestore(terminalId: string) {
+  try {
+    const q = query(
+      collection(firestoreDb, TRANSACTIONS_COLLECTION),
+      where('terminalId', '==', terminalId),
+      orderBy('receiptNumber', 'desc'),
+      limit(1)
+    );
+    const snapshot = await getDocs(q);
+    if (!snapshot.empty) {
+      const doc = snapshot.docs[0];
+      return { id: doc.id, ...doc.data() };
+    }
+    return null;
+  } catch (error) {
+    console.error('Error obteniendo última transacción:', error);
+    return null;
+  }
+}
+
+// ✅ Suscripción en tiempo real a transacciones de Firestore (solo las más recientes)
+export function subscribeToTransactionsFirestore(
+  terminalId: string,
+  callback: (data: any[]) => void,
+  pageSize: number = 5
+) {
+  console.log(`📡 Suscribiendo a transacciones Firestore para terminal ${terminalId}...`);
+  
+  const q = query(
+    collection(firestoreDb, TRANSACTIONS_COLLECTION),
+    where('terminalId', '==', terminalId),
+    orderBy('date', 'desc'),
+    limit(pageSize)
+  );
+  
+  const unsubscribe = onSnapshot(q, (snapshot) => {
+    const transactions: any[] = [];
+    snapshot.forEach(doc => {
+      transactions.push({ id: doc.id, ...doc.data() });
+    });
+    console.log(`🔄 ${transactions.length} transacciones actualizadas desde Firestore`);
+    callback(transactions);
+  }, (error) => {
+    console.error('Error en suscripción Firestore:', error);
+  });
+  
+  return unsubscribe;
+}
+
+// ============================================================
+// TRANSACCIONES - RTDB (LEGACY)
 // ============================================================
 
 export async function getAllTransactions() {
@@ -377,9 +1070,21 @@ export async function saveTransaction(transaction: any) {
     notes: transaction.notes || null,
     session_id: transaction.sessionId || null,
     terminal_id: transaction.terminalId || null,
+    original_sale_id: transaction.originalSaleId || null,
+    original_receipt_number: transaction.originalReceiptNumber || null,
+    return_method: transaction.returnMethod || null,
+    payments: transaction.payments ? JSON.stringify(transaction.payments) : null,
     updatedAt: new Date().toISOString()
   };
   await set(txRef, txData);
+  
+  // ✅ También guardar en Firestore
+  try {
+    await saveTransactionFirestore(transaction);
+  } catch (e) {
+    console.warn('⚠️ No se pudo guardar en Firestore, solo RTDB:', e);
+  }
+  
   return { id: txId, ...txData };
 }
 
@@ -632,7 +1337,7 @@ export async function saveAccountingEntry(entry: any) {
 }
 
 // ============================================================
-// KARDEX - ✅ CORREGIDO CON MAPEO UNIFICADO
+// KARDEX
 // ============================================================
 
 export async function getAllKardexEntries() {
@@ -667,14 +1372,11 @@ export async function getAllKardexEntries() {
   }
 }
 
-// ✅ MAPEO UNIFICADO DE TIPOS DE KARDEX
 export async function saveKardexEntry(entry: any) {
-  // Generar ID válido para Firebase
   const entryId = entry.id || `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   const cleanId = entryId.replace(/[.#$[\]]/g, '_');
   const entryRef = ref(rtdb, `kardex_entries/${cleanId}`);
   
-  // ✅ Mapeo unificado de tipos - todos los tipos posibles se convierten a los definidos en types.ts
   const typeMap: Record<string, string> = {
     'INICIAL': 'ajuste_inicial',
     'venta': 'salida_venta',
@@ -691,7 +1393,6 @@ export async function saveKardexEntry(entry: any) {
     'consumo_propio': 'consumo',
   };
   
-  // Obtener el tipo mapeado o usar el original si no está en el mapa
   const type = typeMap[entry.type] || entry.type || 'entrada_compra';
   
   const entryData = {
@@ -752,14 +1453,16 @@ export async function getRegisterByTerminal(terminalId: string) {
 }
 
 export async function saveRegisterByTerminal(terminalId: string, register: any) {
+  const cleanRegister = cleanForFirebase(register);
+  
   const registerRef = ref(rtdb, `registers/${terminalId}`);
   await set(registerRef, {
-    is_open: register.isOpen ? 1 : 0,
-    open_time: register.openTime || null,
-    open_amount_bs: register.openAmountBs || 0,
-    open_amount_usd: register.openAmountUsd || 0,
-    exchange_rate: register.exchangeRate || null,
-    txs: register.txs || [],
+    is_open: cleanRegister.isOpen ? 1 : 0,
+    open_time: cleanRegister.openTime || null,
+    open_amount_bs: cleanRegister.openAmountBs || 0,
+    open_amount_usd: cleanRegister.openAmountUsd || 0,
+    exchange_rate: cleanRegister.exchangeRate || null,
+    txs: cleanRegister.txs || [],
     updatedAt: new Date().toISOString()
   });
 }
@@ -811,7 +1514,21 @@ export async function getAllTerminals() {
     
     if (snapshot.exists()) {
       const data = snapshot.val();
-      return Object.entries(data).map(([id, terminal]) => ({ id, ...(terminal as any) }));
+      return Object.entries(data).map(([id, terminal]) => {
+        const t = terminal as any;
+        return {
+          id: id,
+          name: t.name || '',
+          description: t.description || '',
+          location: t.location || '',
+          assignedTo: t.assigned_to || null,
+          assignedToName: t.assignedToName || null,
+          status: t.status || 'active',
+          isBlocked: t.is_blocked === 1,
+          createdAt: t.createdAt || new Date().toISOString(),
+          updatedAt: t.updatedAt || new Date().toISOString()
+        };
+      });
     }
     return [];
   } catch {
@@ -827,8 +1544,10 @@ export async function saveTerminal(terminal: any) {
     description: terminal.description || null,
     location: terminal.location || null,
     assigned_to: terminal.assignedTo || null,
+    assignedToName: terminal.assignedToName || null,
     status: terminal.status || 'active',
     is_blocked: terminal.isBlocked ? 1 : 0,
+    createdAt: terminal.createdAt || new Date().toISOString(),
     updatedAt: new Date().toISOString()
   };
   await set(terminalRef, terminalData);
@@ -892,6 +1611,38 @@ export async function getAdminCode() {
   } catch {
     return { code: '123456' };
   }
+}
+
+// ============================================================
+// SUSCRIPCIÓN EN TIEMPO REAL A TRANSACCIONES (RTDB - LEGACY)
+// ============================================================
+
+export function subscribeToTransactionsRTDB(callback: (data: any[]) => void) {
+  console.log('📡 Suscribiendo a transacciones en RTDB en tiempo real...');
+  
+  const transactionsRef = ref(rtdb, 'transactions');
+  
+  const unsubscribe = onValue(transactionsRef, (snapshot) => {
+    if (snapshot.exists()) {
+      const data = snapshot.val();
+      const transactions = Object.entries(data).map(([id, tx]) => ({ 
+        id: id, 
+        ...(tx as any) 
+      }));
+      
+      transactions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      
+      console.log(`🔄 ${transactions.length} transacciones actualizadas desde RTDB`);
+      callback(transactions);
+    } else {
+      console.log('⚠️ No hay transacciones en RTDB');
+      callback([]);
+    }
+  }, (error) => {
+    console.error('Error en suscripción RTDB:', error);
+  });
+  
+  return unsubscribe;
 }
 
 // ============================================================
@@ -1229,7 +1980,8 @@ export async function syncAllPending() {
 
 export async function runAtomicSale(terminalId: string, transaction: any, updates: any) {
   try {
-    await saveTransaction(transaction);
+    const cleanTransaction = cleanForFirebase(transaction);
+    await saveTransaction(cleanTransaction);
     
     if (updates.products) {
       for (const [id, data] of Object.entries(updates.products)) {
@@ -1243,20 +1995,23 @@ export async function runAtomicSale(terminalId: string, transaction: any, update
     
     if (updates.kardexEntries) {
       for (const entry of updates.kardexEntries) {
-        await saveKardexEntry(entry);
+        const cleanEntry = cleanForFirebase(entry);
+        await saveKardexEntry(cleanEntry);
       }
     }
     
     if (updates.accountingEntry) {
-      await saveAccountingEntry(updates.accountingEntry);
+      const cleanEntry = cleanForFirebase(updates.accountingEntry);
+      await saveAccountingEntry(cleanEntry);
     }
     
     if (updates.registerUpdate) {
       const reg = await getRegisterByTerminal(terminalId);
       if (reg) {
+        const cleanTxs = (updates.registerUpdate.txs || []).map((tx: any) => cleanForFirebase(tx));
         await saveRegisterByTerminal(terminalId, { 
           ...reg, 
-          txs: updates.registerUpdate.txs 
+          txs: cleanTxs 
         });
       }
     }
@@ -1303,9 +2058,15 @@ export const subscribeToSuppliersRealtime = subscribeToSuppliers;
 
 const syncService = {
   getUserByUid, saveUser, getAllUsers, deleteUser, updateUserTerminalId,
+  getUserByTerminalId, updateUserProfile, subscribeToUsers,
   getAllProducts, getProducts, saveProduct, saveProducts, deleteProduct, updateProductWithWeightedAverageCost,
   getAllClients, getClients, saveClient, deleteClient,
   getAllTransactions, getTransactions, saveTransaction,
+  saveTransactionFirestore,
+  getTransactionsFirestorePaginated,
+  getTransactionByReceiptNumber,
+  getLastTransactionFirestore,
+  subscribeToTransactionsFirestore,
   getAllAccounts, getAccounts, saveAccount, deleteAccount,
   getAllSuppliers, getSuppliers, saveSupplier, deleteSupplier,
   getAllPurchaseInvoices, getPurchaseInvoices, savePurchaseInvoice,
@@ -1317,6 +2078,7 @@ const syncService = {
   getAllCashCloses, saveCashClose, deleteCashClose,
   getAllTerminals, saveTerminal, deleteTerminal, updateTerminalBlockStatus,
   getGlobalSettings, saveGlobalSettings, getAdminCode,
+  subscribeToTransactionsRTDB,
   subscribeToStockRTDB,
   subscribeToProducts, 
   subscribeToClients, 

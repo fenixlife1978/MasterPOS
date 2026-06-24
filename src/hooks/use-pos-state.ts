@@ -529,6 +529,7 @@ export function usePOSState() {
     return result;
   }, [products]);
 
+  // ✅ CORREGIDO: finalizeSale - clientId nunca es undefined
   const finalizeSale = useCallback(async (type: 'contado' | 'credito' | 'cobro_deuda' | 'colaboracion' | 'consumo_propio', paymentData: any) => {
     if (!register?.isOpen) throw new Error('Caja no abierta');
 
@@ -548,7 +549,8 @@ export function usePOSState() {
       costoTotalOperacion = roundTo2(costoTotalOperacion);
     }
 
-    let targetClientId = paymentData.clientId;
+    // ✅ CORREGIDO: clientId siempre es undefined o un número, nunca null
+    let targetClientId: number | undefined = undefined;
     if (type === 'credito' && paymentData.isNewClient) {
       const nextClientId = getVenezuelaTimestamp();
       const newClient: Client = { 
@@ -562,19 +564,32 @@ export function usePOSState() {
       await syncService.saveClient(newClient);
       targetClientId = nextClientId;
       setClients(prev => [...prev, newClient]);
+    } else if (paymentData.clientId) {
+      targetClientId = paymentData.clientId;
     }
 
     const txId = getVenezuelaTimestamp();
     const tx: Transaction = {
-      id: txId, date: getVenezuelaISOString(), type: type as any, items: type === 'cobro_deuda' ? [] : [...cart],
+      id: txId, 
+      date: getVenezuelaISOString(), 
+      type: type as any, 
+      items: type === 'cobro_deuda' ? [] : [...cart],
       subtotal: isSpecial ? 0 : (type === 'cobro_deuda' ? finalTotal : subtotal),
-      iva: isSpecial ? 0 : iva, total: isSpecial ? 0 : finalTotal,
+      iva: isSpecial ? 0 : iva, 
+      total: isSpecial ? 0 : finalTotal,
       totalUsd: isSpecial ? 0 : roundTo2(finalTotal / exchangeRate),
-      payMethod: paymentData.method || 'efectivo_bs', paidBs: isSpecial ? 0 : (paymentData.totalPaid || paymentData.amount || finalTotal),
-      change: isSpecial ? 0 : (paymentData.change || 0), clientId: targetClientId, clientName: paymentData.clientName,
-      exchangeRate, receiptNumber: paymentData.receiptNumber, costoTotalOperacion: isSpecial ? costoTotalOperacion : undefined,
-      notes: isSpecial ? paymentData.notes : undefined, authorizedBy: isSpecial ? paymentData.authorizedBy : undefined,
-      sessionId: currentSession?.id || null, ajusteRedondeoBs: paymentData.ajusteRedondeoBs || 0,
+      payMethod: paymentData.method || 'efectivo_bs', 
+      paidBs: isSpecial ? 0 : (paymentData.totalPaid || paymentData.amount || finalTotal),
+      change: isSpecial ? 0 : (paymentData.change || 0), 
+      clientId: targetClientId, // ✅ Nunca undefined, solo number | undefined
+      clientName: paymentData.clientName || undefined,
+      exchangeRate, 
+      receiptNumber: paymentData.receiptNumber || undefined, 
+      costoTotalOperacion: isSpecial ? costoTotalOperacion : undefined,
+      notes: isSpecial ? paymentData.notes : undefined, 
+      authorizedBy: isSpecial ? paymentData.authorizedBy : undefined,
+      sessionId: currentSession?.id || undefined, 
+      ajusteRedondeoBs: paymentData.ajusteRedondeoBs || 0,
     };
     if (type === 'contado' && paymentData.payments) tx.payments = paymentData.payments;
 
@@ -662,12 +677,21 @@ export function usePOSState() {
     registerRef.current = { ...register, txs: newTxs };
     saveRegisterToLocalStorage({ ...register, txs: newTxs });
     
-    if (type === 'credito') {
+    // ✅ CORREGIDO: Solo crear cuenta si hay un clientId válido
+    if (type === 'credito' && targetClientId) {
       const newAcc: Account = {
-        id: getVenezuelaTimestamp(), txId: tx.id, date: tx.date, clientId: targetClientId!,
-        clientName: paymentData.clientName, clientCedula: paymentData.clientCedula || '',
+        id: getVenezuelaTimestamp(), 
+        txId: tx.id, 
+        date: tx.date, 
+        clientId: targetClientId,
+        clientName: paymentData.clientName || 'Cliente', 
+        clientCedula: paymentData.clientCedula || '',
         products: cart.map(i => `${i.name} x${i.qty}`).join(', '),
-        amountBs: total, amountUsd: roundTo2(total / exchangeRate), paidAmount: 0, status: 'pendiente', exchangeRate,
+        amountBs: total, 
+        amountUsd: roundTo2(total / exchangeRate), 
+        paidAmount: 0, 
+        status: 'pendiente', 
+        exchangeRate,
       };
       await syncService.saveAccount(newAcc);
       setAccounts(prev => [...prev, newAcc]);
@@ -684,6 +708,7 @@ export function usePOSState() {
     return tx;
   }, [cart, register, exchangeRate, clients, products, terminalId, saveRegisterToLocalStorage, getItemsToDiscount, currentSession]);
 
+  // ✅ CORREGIDO: applyAbono - clientId ya es número
   const applyAbono = useCallback(async (clientId: number, amount: number, method: string = 'efectivo_bs') => {
     if (!register?.isOpen) {
       console.warn("Caja no abierta, no se puede registrar el pago");
@@ -728,10 +753,10 @@ export function usePOSState() {
       payMethod: method,
       paidBs: amount,
       change: 0,
-      clientId,
+      clientId: clientId, // ✅ Siempre es un número
       clientName: client.name,
       exchangeRate,
-      sessionId: currentSession?.id || null,
+      sessionId: currentSession?.id || undefined,
       notes: `Abono de Bs ${amount.toFixed(2)}`,
     };
 
@@ -766,6 +791,7 @@ export function usePOSState() {
     setClients(prev => prev.map(c => c.id === clientId ? updatedClient : c));
   }, [register, clients, accounts, exchangeRate, terminalId, saveRegisterToLocalStorage, currentSession]);
 
+  // ✅ CORREGIDO: registerCashEgress - clientId siempre es undefined
   const registerCashEgress = useCallback(async (
     amount: number,
     reason: string,
@@ -791,10 +817,11 @@ export function usePOSState() {
       payMethod: payMethod,
       paidBs: totalBs,
       change: 0,
+      clientId: undefined, // ✅ Siempre undefined para devoluciones
       clientName: 'DEVOLUCIÓN',
       exchangeRate,
       notes: reason,
-      sessionId: currentSession?.id || null,
+      sessionId: currentSession?.id || undefined,
       payments: [{
         id: crypto.randomUUID(),
         method: payMethod,

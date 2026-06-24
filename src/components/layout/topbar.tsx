@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { CashRegister } from '@/lib/types';
-import { RefreshCw, Clock, Wifi, WifiOff, UploadCloud } from 'lucide-react';
+import { RefreshCw, Clock, Wifi, WifiOff, UploadCloud, Monitor } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import syncService from '@/services/syncService';
 import InvoiceNotifications from '@/components/ui/InvoiceNotifications';
@@ -106,11 +106,12 @@ export default function Topbar({ register, rate, onRateChange }: TopbarProps) {
           <span className="text-white">POS</span>
         </div>
         
-        {/* ✅ Identificación visual de la Terminal asignada */}
+        {/* ✅ Terminal - Diseño discreto (sin cuadro rojo) */}
         {showTerminalBadge && (
-          <div className="bg-red-600 rounded-lg px-3 py-1 shadow-md animate-in fade-in duration-500">
-            <span className="text-white font-black text-xs tracking-wider uppercase">
-              Terminal {currentTerminalId}
+          <div className="flex items-center gap-1.5 bg-white/10 rounded-lg px-2.5 py-1 border border-white/10">
+            <Monitor size={12} className="text-primary/70" />
+            <span className="text-white/60 font-mono text-[10px] font-bold tracking-wider">
+              {currentTerminalId}
             </span>
           </div>
         )}

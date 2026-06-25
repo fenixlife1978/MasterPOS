@@ -47,7 +47,7 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
   });
   const [isSubmittingInitial, setIsSubmittingInitial] = useState(false);
 
-  // ✅ Agrupación mejorada: normaliza IDs para evitar duplicados por tipo (number vs string)
+  // ✅ LÓGICA CORREGIDA: USD como fuente de verdad fija, Bs dinámico
   const groupedAccounts = useMemo(() => {
     return state.accounts.reduce((acc, account) => {
       const clientIdKey = String(account.clientId);
@@ -57,30 +57,33 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
           clientName: account.clientName || 'Cliente Desconocido',
           clientCedula: account.clientCedula || 'S/N',
           accounts: [],
-          totalDebt: 0,
-          totalOriginal: 0,
-          totalPaid: 0
+          totalDebtUsd: 0,
+          totalOriginalUsd: 0,
+          totalPaidUsd: 0
         };
       }
       
       const currentRate = state.exchangeRate || 36.50;
       const accountRate = account.exchangeRate || currentRate;
       
-      const originalBs = account.amountBs || ((account.amountUsd || 0) * accountRate);
-      const paidBs = account.paidAmount || 0;
-      const remainingBs = Math.max(0, originalBs - paidBs);
+      // El monto USD es el valor ancla que no cambia
+      const originalUsd = account.amountUsd || (account.amountBs / accountRate);
+      // Calculamos cuánto de ese USD se ha pagado (usando la tasa a la que se registró la cuenta o la actual si no hay)
+      const paidUsd = (account.paidAmount || 0) / accountRate;
+      const remainingUsd = Math.max(0, originalUsd - paidUsd);
       
       acc[clientIdKey].accounts.push(account);
-      acc[clientIdKey].totalOriginal += originalBs;
-      acc[clientIdKey].totalPaid += paidBs;
-      acc[clientIdKey].totalDebt += remainingBs;
+      acc[clientIdKey].totalOriginalUsd += originalUsd;
+      acc[clientIdKey].totalPaidUsd += paidUsd;
+      acc[clientIdKey].totalDebtUsd += remainingUsd;
+      
       return acc;
     }, {} as Record<string, any>);
   }, [state.accounts, state.exchangeRate]);
 
   const clientsList = Object.values(groupedAccounts);
-  const totalGeneralDebt = clientsList.reduce((sum, c) => sum + c.totalDebt, 0);
-  const totalGeneralDebtUsd = totalGeneralDebt / state.exchangeRate;
+  const totalGeneralDebtUsd = clientsList.reduce((sum, c) => sum + c.totalDebtUsd, 0);
+  const totalGeneralDebtBs = totalGeneralDebtUsd * state.exchangeRate;
 
   const handleTransactionClick = (account: any) => {
     const transaction = state.transactions.find(t => String(t.id) === String(account.txId));
@@ -92,11 +95,12 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
     const reportData = clientsList.map(c => ({
       Cliente: c.clientName,
       Cédula: c.clientCedula,
-      'Monto Original (USD)': c.totalOriginal / state.exchangeRate,
-      'Monto Pagado (USD)': c.totalPaid / state.exchangeRate,
-      'Saldo Pendiente (USD)': c.totalDebt / state.exchangeRate
+      'Monto Original (USD)': c.totalOriginalUsd,
+      'Monto Pagado (USD)': c.totalPaidUsd,
+      'Saldo Pendiente (USD)': c.totalDebtUsd,
+      'Saldo Pendiente (Bs)': c.totalDebtUsd * state.exchangeRate
     }));
-    const csvContent = ['Cliente,Cédula,Monto Original (USD),Monto Pagado (USD),Saldo Pendiente (USD)']
+    const csvContent = ['Cliente,Cédula,Monto Original (USD),Monto Pagado (USD),Saldo Pendiente (USD),Saldo Pendiente (Bs)']
       .concat(reportData.map(r => Object.values(r).join(','))).join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
@@ -287,11 +291,11 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
             <div className="bg-[#1A2C4E] rounded-xl px-4 py-2">
               <span className="text-[10px] text-white/60 uppercase tracking-widest">Total General</span>
               <div className="text-2xl font-black text-white">{formatUsd(totalGeneralDebtUsd)}</div>
-              <div className="text-[8px] text-white/40">≈ {formatBs(totalGeneralDebt)}</div>
+              <div className="text-[8px] text-white/40">≈ {formatBs(totalGeneralDebtBs)}</div>
             </div>
             <div className="bg-[#D4A017]/10 rounded-xl px-4 py-2 border border-[#D4A017]/30">
               <span className="text-[10px] text-black/60 uppercase tracking-widest">Clientes con Deuda</span>
-              <div className="text-2xl font-black text-black">{clientsList.filter(c => c.totalDebt > 0.01).length}</div>
+              <div className="text-2xl font-black text-black">{clientsList.filter(c => c.totalDebtUsd > 0.001).length}</div>
             </div>
           </div>
         </div>
@@ -324,7 +328,7 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
             ) : (
               clientsList.map((client) => {
                 const isExpanded = expandedClient === client.clientId;
-                const hasDebt = client.totalDebt > 0.01;
+                const hasDebt = client.totalDebtUsd > 0.001;
                 return (
                   <React.Fragment key={client.clientId}>
                     <TableRow className="border-b border-[#9E9E9E] hover:bg-[#F5F5F5] cursor-pointer" onClick={() => setExpandedClient(isExpanded ? null : client.clientId)}>
@@ -332,18 +336,18 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
                       <TableCell className="font-bold text-black">{client.clientName}</TableCell>
                       <TableCell className="text-black font-bold text-sm">{client.clientCedula}</TableCell>
                       <TableCell className="text-right">
-                        <div className="font-bold text-black">{formatUsd(client.totalOriginal / state.exchangeRate)}</div>
-                        <div className="text-[8px] text-black/40">≈ {formatBs(client.totalOriginal)}</div>
+                        <div className="font-bold text-black">{formatUsd(client.totalOriginalUsd)}</div>
+                        <div className="text-[8px] text-black/40">≈ {formatBs(client.totalOriginalUsd * state.exchangeRate)}</div>
                       </TableCell>
                       <TableCell className="text-right">
-                        <div className="font-bold text-[#2ECC71]">{formatUsd(client.totalPaid / state.exchangeRate)}</div>
-                        <div className="text-[8px] text-black/40">≈ {formatBs(client.totalPaid)}</div>
+                        <div className="font-bold text-[#2ECC71]">{formatUsd(client.totalPaidUsd)}</div>
+                        <div className="text-[8px] text-black/40">≈ {formatBs(client.totalPaidUsd * state.exchangeRate)}</div>
                       </TableCell>
                       <TableCell className="text-right">
                         <span className={cn("font-black", hasDebt ? "text-[#E74C3C]" : "text-[#2ECC71]")}>
-                          {formatUsd(client.totalDebt / state.exchangeRate)}
+                          {formatUsd(client.totalDebtUsd)}
                         </span>
-                        <div className="text-[8px] text-black/40">≈ {formatBs(client.totalDebt)}</div>
+                        <div className="text-[8px] text-black/40">≈ {formatBs(client.totalDebtUsd * state.exchangeRate)}</div>
                       </TableCell>
                       <TableCell className="text-center">
                         <button
@@ -365,7 +369,7 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
                                   <TableHead className="text-[9px] font-bold text-black">Fecha</TableHead>
                                   <TableHead className="text-[9px] font-bold text-black">Detalle</TableHead>
                                   <TableHead className="text-[9px] font-bold text-black text-right">Monto USD</TableHead>
-                                  <TableHead className="text-[9px] font-bold text-black text-right">Saldo Bs</TableHead>
+                                  <TableHead className="text-[9px] font-bold text-black text-right">Saldo Bs Actual</TableHead>
                                   <TableHead className="text-[9px] font-bold text-black text-center">Estado</TableHead>
                                   <TableHead className="text-[9px] font-bold text-black text-center">Ver</TableHead>
                                 </TableRow>
@@ -373,13 +377,16 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
                               <TableBody>
                                 {client.accounts.map((account: any) => {
                                   const originalUsd = account.amountUsd || (account.amountBs / (account.exchangeRate || state.exchangeRate));
-                                  const remainingBs = Math.max(0, (account.amountBs || (originalUsd * (account.exchangeRate || state.exchangeRate))) - (account.paidAmount || 0));
+                                  const paidUsd = (account.paidAmount || 0) / (account.exchangeRate || state.exchangeRate);
+                                  const remainingUsd = Math.max(0, originalUsd - paidUsd);
+                                  const remainingBsAtCurrentRate = remainingUsd * state.exchangeRate;
+                                  
                                   return (
                                     <TableRow key={account.id} className="border-b border-[#9E9E9E]/50 hover:bg-[#F5F5F5]">
                                       <TableCell className="text-[11px] text-black font-bold">{new Date(account.date).toLocaleDateString('es-VE')}</TableCell>
                                       <TableCell className="text-[11px] text-black font-bold max-w-[250px] truncate">{account.products}</TableCell>
                                       <TableCell className="text-right font-bold">{formatUsd(originalUsd)}</TableCell>
-                                      <TableCell className="text-right font-bold text-[#E74C3C]">{formatBs(remainingBs)}</TableCell>
+                                      <TableCell className="text-right font-bold text-[#E74C3C]">{formatBs(remainingBsAtCurrentRate)}</TableCell>
                                       <TableCell className="text-center">
                                         <span className={cn("px-2 py-0.5 rounded-full text-[9px] font-bold", 
                                           account.status === 'pagada' ? "bg-green-100 text-green-700" : 
@@ -479,12 +486,20 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
 
                 <div className="bg-[#F5F5F5] rounded-lg p-4 space-y-2">
                   <div className="flex justify-between text-sm">
-                    <span className="text-black/60">Pagado:</span>
+                    <span className="text-black/60">Pagado en Bs:</span>
                     <span className="font-bold text-green-600">{formatBs(selectedTransaction.accountInfo.paidAmount || 0)}</span>
                   </div>
                   <div className="flex justify-between text-sm pt-1 border-t border-dashed border-[#9E9E9E]">
-                    <span className="text-black font-bold">Saldo Pendiente:</span>
-                    <span className="font-black text-red-600">{formatBs(selectedTransaction.accountInfo.amountBs - (selectedTransaction.accountInfo.paidAmount || 0))}</span>
+                    <span className="text-black font-bold">Saldo Pendiente (USD Fijo):</span>
+                    <span className="font-black text-red-600">
+                      {formatUsd(selectedTransaction.accountInfo.amountUsd - ((selectedTransaction.accountInfo.paidAmount || 0) / (selectedTransaction.accountInfo.exchangeRate || state.exchangeRate)))}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-black font-bold">Equivalente Hoy (Bs Dinámico):</span>
+                    <span className="font-black text-amber-700">
+                      {formatBs((selectedTransaction.accountInfo.amountUsd - ((selectedTransaction.accountInfo.paidAmount || 0) / (selectedTransaction.accountInfo.exchangeRate || state.exchangeRate))) * state.exchangeRate)}
+                    </span>
                   </div>
                 </div>
 
@@ -553,7 +568,7 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
                 <Input type="number" step="0.01" value={initialDebtForm.amountUsd} onChange={(e) => handleInitialDebtChange('amountUsd', e.target.value)} placeholder="0.00" />
               </div>
               <div>
-                <label className="text-[10px] font-bold text-black/60 uppercase block mb-1">Total Bs</label>
+                <label className="text-[10px] font-bold text-black/60 uppercase block mb-1">Total Bs (Hoy)</label>
                 <Input value={initialDebtForm.amountBs} disabled className="bg-gray-100 font-bold" />
               </div>
             </div>

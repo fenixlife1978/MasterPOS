@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { usePOSState } from '@/hooks/use-pos-state';
 import { Download, ChevronDown, ChevronRight, Wallet, Eye, X, HandCoins, History, DollarSign, Trash2, PlusCircle, AlertCircle } from 'lucide-react';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
@@ -12,6 +12,8 @@ import { CartItem } from '@/lib/types';
 import { formatBs, formatUsd, formatBsNumber, formatUsdNumber } from '@/lib/currency-formatter';
 import syncService from '@/services/syncService';
 import { useToast } from '@/hooks/use-toast';
+import { ref } from 'firebase/database';
+import { rtdb } from '@/lib/firebase';
 
 interface AccountsModuleProps {
   state: ReturnType<typeof usePOSState>;
@@ -64,7 +66,7 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
       const currentRate = state.exchangeRate || 36.50;
       const accountRate = account.exchangeRate || currentRate;
       
-      const originalBs = account.amountBs || (account.amountUsd * accountRate);
+      const originalBs = account.amountBs || ((account.amountUsd || 0) * accountRate);
       const paidBs = account.paidAmount || 0;
       const remainingBs = Math.max(0, originalBs - paidBs);
       
@@ -150,7 +152,7 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
     try {
       const clientAccounts = state.accounts.filter(acc => String(acc.clientId) === clientId);
       for (const account of clientAccounts) {
-        await syncService.remove(ref(rtdb, `accounts/${account.id}`));
+        await syncService.deleteAccount?.(String(account.id));
       }
       await syncService.deleteClient(Number(clientId));
       toast({ title: "Cliente eliminado", description: `${clientName} eliminado correctamente.` });

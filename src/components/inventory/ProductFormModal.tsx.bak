@@ -208,7 +208,7 @@ const ProductFormModal = memo(function ProductFormModal({
       barcode,
       name,
       department: department || 'Otros',
-      category: category  as unknown  as unknown  as unknown  as unknown  as unknown as Category,
+      category: category  as unknown  as unknown  as unknown  as unknown as Category,
       stock: parseInt(stockInput) || 0,
       minStock: parseInt(minStockInput) || 5,
       costUsd: roundTo4(cost),

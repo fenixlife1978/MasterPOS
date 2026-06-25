@@ -370,9 +370,21 @@ export default function ReturnsModule({ userRole = 'cashier' }: ReturnsModulePro
         priceUsd: i.priceBs / exchangeRate,
         qty: i.returnQty,
         category: 'Otro',
-        ivaType: 'sin_iva',
+        ivaType: "sin_iva",
         ivaPercentage: 0,
         isKit: false
+        ivaType: "sin_iva",
+        ivaPercentage: 0,
+        isKit: false
+        ivaType: "sin_iva",
+        ivaPercentage: 0,
+        isKit: false
+        ivaType: "sin_iva",
+        ivaPercentage: 0,
+        isKit: false
+        ivaType: 'sin_iva',      // ✅ Agregado
+        ivaPercentage: 0,        // ✅ Agregado
+        isKit: false             // ✅ Agregado
       }));
       
       const returnTransaction = {

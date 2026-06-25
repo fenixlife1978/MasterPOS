@@ -1,123 +1,124 @@
-// components/suppliers/InvoiceDetailModal.tsx
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { SupplierInvoice, SupplierPayment, PurchaseInvoiceItem } from "@/lib/types";
-import { formatUsd } from "@/lib/currency-formatter";
+// src/components/suppliers/InvoiceDetailModal.tsx
+"use client";
 
-// ✅ Función auxiliar para formatear fecha (copiada localmente)
-function formatDateFromString(dateStr: string): string {
-  if (dateStr.includes('T') || dateStr.includes(' ') || /^\d+$/.test(dateStr)) {
+import React from 'react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { SupplierInvoice, PurchaseInvoiceItem } from '@/lib/types';
+import { formatBs, formatUsd, formatBsNumber, formatUsdNumber } from '@/lib/currency-formatter';
+import { X } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+
+interface InvoiceDetailModalProps {
+  invoice: SupplierInvoice | null;
+  isOpen: boolean;
+  onClose: () => void;
+  exchangeRate: number;
+}
+
+export default function InvoiceDetailModal({ invoice, isOpen, onClose, exchangeRate }: InvoiceDetailModalProps) {
+  if (!invoice) return null;
+
+  const formatDate = (dateStr: string) => {
     return new Date(dateStr).toLocaleDateString('es-VE', {
       day: '2-digit',
       month: '2-digit',
-      year: 'numeric'
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
     });
-  }
-  const parts = dateStr.split('-');
-  if (parts.length === 3) {
-    const [year, month, day] = parts;
-    return `${day}/${month}/${year}`;
-  }
-  return dateStr;
-}
+  };
 
-interface InvoiceDetailModalProps {
-  invoice: SupplierInvoice;
-  isOpen: boolean;
-  onClose: () => void;
-  purchaseItems: Record<number, PurchaseInvoiceItem[]>; // ✅ Record
-  supplierPayments: SupplierPayment[];
-  supplierName: string;
-}
+  const totalPaid = invoice.paidAmount || 0;
+  const remaining = invoice.total - totalPaid;
 
-export default function InvoiceDetailModal({
-  invoice,
-  isOpen,
-  onClose,
-  purchaseItems,
-  supplierPayments,
-  supplierName,
-}: InvoiceDetailModalProps) {
-  const invoiceItems = purchaseItems[invoice.id] || [];
-  const invoicePayments = supplierPayments.filter((p) => p.invoiceId === invoice.id);
+  // ✅ Manejar paidAmount que puede ser undefined
+  const paidAmount = invoice.paidAmount || 0;
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Detalles de la Factura #{invoice.invoiceNumber}</DialogTitle>
+      <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-3xl p-0 overflow-hidden rounded-2xl shadow-xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader className="p-4 bg-[#1A2C4E] text-white sticky top-0 z-10">
+          <button onClick={onClose} className="absolute top-4 right-4 hover:opacity-70">
+            <X size={20} />
+          </button>
+          <DialogTitle className="text-lg font-black">
+            Factura #{invoice.invoiceNumber || invoice.id}
+          </DialogTitle>
+          <p className="text-white/60 text-sm">{invoice.supplierName}</p>
         </DialogHeader>
-        <div className="space-y-4">
-          {/* Información de la factura */}
-          <div className="border rounded-lg p-4 space-y-2 bg-gray-50">
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <span className="text-sm font-semibold">Fecha:</span>
-                <span className="ml-2">{formatDateFromString(invoice.date)}</span>
-              </div>
-              <div>
-                <span className="text-sm font-semibold">Proveedor:</span>
-                <span className="ml-2">{supplierName}</span>
-              </div>
-              <div>
-                <span className="text-sm font-semibold">Total:</span>
-                <span className="ml-2 font-bold text-red-500">{formatUsd(invoice.total)}</span>
-              </div>
-              <div>
-                <span className="text-sm font-semibold">Pagado:</span>
-                <span className="ml-2 text-green-600">{formatUsd(invoice.paidAmount)}</span>
-              </div>
+
+        <div className="p-6 space-y-6">
+          <div className="grid grid-cols-2 gap-4 pb-4 border-b border-[#9E9E9E]">
+            <div>
+              <label className="text-[10px] font-black text-black/60 uppercase">Fecha</label>
+              <p className="text-sm font-bold">{formatDate(invoice.date)}</p>
+            </div>
+            <div>
+              <label className="text-[10px] font-black text-black/60 uppercase">Estado</label>
+              <span className={cn(
+                "px-2 py-0.5 rounded-full text-[10px] font-bold",
+                invoice.status === 'pagada' ? "bg-green-100 text-green-700" :
+                invoice.status === 'parcial' ? "bg-yellow-100 text-yellow-700" :
+                "bg-red-100 text-red-700"
+              )}>
+                {invoice.status.toUpperCase()}
+              </span>
             </div>
           </div>
 
-          {/* Tabla de productos */}
-          <div>
-            <h3 className="text-md font-semibold mb-2">Productos/Servicios</h3>
-            <table className="min-w-full border text-sm">
-              <thead className="bg-gray-100">
-                <tr>
-                  <th className="p-2 text-left">Producto</th>
-                  <th className="p-2 text-center">Cantidad</th>
-                  <th className="p-2 text-right">Precio Unitario (USD)</th>
-                  <th className="p-2 text-right">Subtotal (USD)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {invoiceItems.map((item, idx) => (
-                  <tr key={idx} className="border-t">
-                    <td className="p-2">{item.productName}</td>
-                    <td className="p-2 text-center">{item.qty}</td>
-                    <td className="p-2 text-right font-mono">{formatUsd(item.costUsd)}</td>
-                    <td className="p-2 text-right font-mono">{formatUsd(item.totalUsd)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="grid grid-cols-3 gap-4">
+            <div className="bg-[#F5F5F5] rounded-lg p-3">
+              <label className="text-[9px] font-black text-black/60 uppercase">Total</label>
+              <p className="text-lg font-black text-black">{formatBs(invoice.total)}</p>
+            </div>
+            <div className="bg-[#F5F5F5] rounded-lg p-3">
+              <label className="text-[9px] font-black text-black/60 uppercase">Pagado</label>
+              <p className="text-lg font-black text-green-600">{formatBs(paidAmount)}</p>
+            </div>
+            <div className="bg-[#F5F5F5] rounded-lg p-3">
+              <label className="text-[9px] font-black text-black/60 uppercase">Saldo</label>
+              <p className="text-lg font-black text-red-600">{formatBs(remaining)}</p>
+            </div>
           </div>
 
-          {/* Historial de pagos */}
-          <div>
-            <h3 className="text-md font-semibold mb-2">Historial de Pagos / Abonos</h3>
-            {invoicePayments.length === 0 ? (
-              <p className="text-sm text-gray-500">No hay pagos registrados para esta factura.</p>
-            ) : (
-              <div className="space-y-2">
-                {invoicePayments.map((payment) => (
-                  <div key={payment.id} className="border rounded p-2">
-                    <div className="flex justify-between">
-                      <span className="font-medium">{payment.method.replace("_", " ")}</span>
-                      <span className="font-bold text-green-600">{formatUsd(payment.amount)}</span>
-                    </div>
-                    <div className="text-sm text-gray-500 flex justify-between mt-1">
-                      <span>Fecha: {formatDateFromString(payment.date)}</span>
-                      {payment.reference && <span>Referencia: {payment.reference}</span>}
-                    </div>
-                  </div>
-                ))}
+          {invoice.items && invoice.items.length > 0 && (
+            <div>
+              <label className="text-[10px] font-black text-black/60 uppercase flex items-center gap-2 mb-3">
+                📦 PRODUCTOS
+              </label>
+              <div className="border border-[#9E9E9E] rounded-lg overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-[#E8E8E8]">
+                    <tr>
+                      <th className="text-left p-3 text-[10px] font-black uppercase">CANT</th>
+                      <th className="text-left p-3 text-[10px] font-black uppercase">PRODUCTO</th>
+                      <th className="text-right p-3 text-[10px] font-black uppercase">COSTO USD</th>
+                      <th className="text-right p-3 text-[10px] font-black uppercase">TOTAL</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {invoice.items.map((item: PurchaseInvoiceItem, idx: number) => (
+                      <tr key={idx} className="border-b border-[#9E9E9E]/50">
+                        <td className="p-3 text-xs font-bold">{item.qty || item.quantity || 0}</td>
+                        <td className="p-3 text-xs font-bold">{item.productName}</td>
+                        <td className="p-3 text-right text-xs">{formatUsd(item.costUsd)}</td>
+                        <td className="p-3 text-right text-xs font-bold">{formatBs(item.totalBs)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-            )}
-          </div>
+            </div>
+          )}
+        </div>
+
+        <div className="bg-[#F5F5F5] p-4 border-t flex justify-end">
+          <Button onClick={onClose}>CERRAR</Button>
         </div>
       </DialogContent>
     </Dialog>
   );
 }
+
+// Importar cn si no está importado
+import { cn } from '@/lib/utils';

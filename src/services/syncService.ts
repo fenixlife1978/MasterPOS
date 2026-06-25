@@ -785,10 +785,19 @@ const syncService = {
   getAllSupplierPayments, saveSupplierPayment, deleteSupplierPayment,
   getAllAccountingEntries, saveAccountingEntry, saveAccountingBatch,
   getAllKardexEntries, saveKardexEntry, saveKardexBatch, getKardexEntries: getAllKardexEntries,
-  subscribeToProducts, subscribeToClients, subscribeToTransactions,
-  subscribeToRegisterRealtime, subscribeToPurchaseInvoices, subscribeToPurchaseItems,
-  subscribeToSupplierPayments, subscribeToSuppliersRealtime, subscribeToGlobalSettings,
-  subscribeToKardex, subscribeToAccounting, subscribeToStockRTDB,
+  subscribeToProducts, 
+  subscribeToClients, 
+  subscribeToTransactions,
+  subscribeToAccounts,
+  subscribeToRegisterRealtime, 
+  subscribeToPurchaseInvoices, 
+  subscribeToPurchaseItems,
+  subscribeToSupplierPayments, 
+  subscribeToSuppliersRealtime, 
+  subscribeToGlobalSettings,
+  subscribeToKardex, 
+  subscribeToAccounting, 
+  subscribeToStockRTDB,
   listenForSyncCommands, loadAllDataToCache, syncAllPending, runAtomicSale,
   getPendingQueueLength, unsubscribeAll, setLoggingOut,
   sendSyncCommandToAllTerminals,
@@ -815,3 +824,6 @@ export const getPurchaseItems = getAllPurchaseItems;
 export const getSupplierPayments = getAllSupplierPayments;
 export const getAccountingEntries = getAllAccountingEntries;
 export const getKardexEntries = getAllKardexEntries;
+
+// ✅ ELIMINADA la exportación duplicada de subscribeToAccounts
+// Ya está exportada como función normal arriba (línea ~662)

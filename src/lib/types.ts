@@ -1,36 +1,39 @@
-export type Category = 'Whisky' | 'Ron' | 'Cerveza' | 'Vino' | 'Vodka' | 'Tequila' | 'Licor' | 'Gin' | 'Otro';
-
-// ✅ Nueva interfaz para componentes de kit
-export interface KitComponent {
-  productId: number;
-  quantity: number;
-}
+// src/lib/types.ts
+// ============================================================
+// TIPOS GLOBALES
+// ============================================================
 
 export interface Product {
   id: number;
-  barcode: string;
+  barcode?: string;
   name: string;
-  priceBs: number;
-  priceUsd: number;
-  stock: number;
-  category: Category;
-  minStock?: number;
-  costBs?: number;
-  costUsd?: number;
-  profitPercent?: number;
+  category: Category; // ✅ Cambiado: ahora es Category, no string
   department?: string;
+  stock: number;
+  minStock?: number;
+  priceUsd: number;
+  priceBs: number;
+  costUsd?: number;
+  costBs?: number;
+  profitPercent?: number;
   priceRetail?: number;
   priceWholesale?: number;
   priceCost?: number;
-  ivaType?: 'con_iva' | 'sin_iva';
-  ivaPercentage?: number;
-  // ✅ Nuevos campos para kits/combos
-  isKit?: boolean;
-  kitComponents?: KitComponent[];
-  // ✅ Nueva propiedad: indica si el kit tiene su propio stock o solo descuenta componentes
+  ivaType: 'con_iva' | 'sin_iva' | 'exento';
+  ivaPercentage: number;
+  isKit: boolean;
   kitHasOwnStock?: boolean;
-  // ✅ Nueva propiedad: indica si el precio en Bs fue fijado manualmente
-  isPriceFixed?: boolean;
+  kitComponents?: KitComponent[];
+  isPriceFixed: boolean;
+  activo?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface KitComponent {
+  productId: number;
+  quantity: number;
+  productName?: string;
 }
 
 export interface Client {
@@ -39,34 +42,15 @@ export interface Client {
   cedula: string;
   phone: string;
   address: string;
-  debt: number;
-}
-
-export interface CartItem {
-  productId: number;
-  name: string;
-  priceBs: number;
-  priceUsd: number;
-  qty: number;
-  category: Category;
-  ivaType?: 'con_iva' | 'sin_iva';
-  ivaPercentage?: number;
-  // ✅ Opcional: para poder expandir el kit en el ticket si se desea, pero no necesario
-  isKit?: boolean;
-}
-
-// ✅ Interfaz para un pago individual (usado en transacciones de contado)
-export interface PaymentDetail {
-  id: string;
-  method: string;
-  amount: number;      // monto en bolívares (o USD si el método es USD)
-  usdAmount?: number;  // monto original en USD (solo para métodos USD, opcional)
+  debt?: number;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface Transaction {
   id: number;
   date: string;
-  type: 'contado' | 'credito' | 'cobro_deuda' | 'devolucion' | 'colaboracion' | 'consumo_propio';
+  type: 'contado' | 'credito' | 'cobro_deuda' | 'colaboracion' | 'consumo_propio' | 'devolucion';
   items: CartItem[];
   subtotal: number;
   iva: number;
@@ -77,20 +61,37 @@ export interface Transaction {
   change: number;
   clientId?: number;
   clientName?: string;
-  exchangeRate?: number;
-  receiptNumber?: number; // ✅ Numero correlativo para el recibo (00000001...)
-  // ✅ Nuevos campos para colaboraciones y consumo propio
+  exchangeRate: number;
+  receiptNumber?: number;
   costoTotalOperacion?: number;
   notes?: string;
   authorizedBy?: string;
-  // ✅ Detalle de pagos (para ventas de contado)
-  payments?: PaymentDetail[];
-  // ✅ ID de sesión de caja (aislamiento por terminal)
-  sessionId?: string | null;
-  // ✅ Terminal ID (para filtrar por terminal en reportes)
-  terminalId?: string;
-  // ✅ Ajuste contable por redondeo bimonetario
+  sessionId?: string;
   ajusteRedondeoBs?: number;
+  payments?: Payment[];
+  terminalId?: string | number;
+  referenceId?: string | number;
+  txId?: string | number;
+  referenceType?: string;
+}
+
+export interface Payment {
+  id: string;
+  method: string;
+  amount: number;
+  usdAmount?: number;
+}
+
+export interface CartItem {
+  productId: number;
+  name: string;
+  priceBs: number;
+  priceUsd: number;
+  qty: number;
+  category: Category;
+  ivaType: string;
+  ivaPercentage: number;
+  isKit: boolean;
 }
 
 export interface Account {
@@ -104,78 +105,127 @@ export interface Account {
   amountBs: number;
   amountUsd: number;
   paidAmount: number;
+  paidAmountUsd?: number;
   status: 'pendiente' | 'parcial' | 'pagada';
-  exchangeRate?: number;
+  exchangeRate: number;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface CashRegister {
   isOpen: boolean;
-  openTime: string;
+  openTime: string | null;
   openAmount: number;
   openAmountBs: number;
   openAmountUsd: number;
   txs: Transaction[];
-  exchangeRate: number;
+  exchangeRate: number | null;
 }
 
-export type Page = 'dashboard' | 'pos' | 'inventario' | 'clientes' | 'cuentas' | 'caja' | 'proveedores' | 'contabilidad' | 'devoluciones' | 'registrar_compra';
+export interface CashClose {
+  id: string;
+  terminalId: string;
+  openTime: string;
+  closeTime: string;
+  initialAmount: number;
+  finalAmount: number;
+  expectedAmount: number;
+  difference: number;
+  totalSales: number;
+  transactions: Transaction[];
+  notes?: string;
+}
 
-// ✅ CORREGIDO: Tipos unificados para kardex
-export interface KardexEntry {
-  id?: string;
-  productId: number;
-  date: string;
-  type: 'entrada_compra' | 'salida_venta' | 'ajuste_positivo' | 'ajuste_negativo' | 'devolucion' | 'ajuste_inicial' | 'ajuste_manual' | 'colaboracion' | 'consumo' | 'compra' | 'venta';
-  reference: string;
-  qty?: number;
-  quantity: number;
-  previousStock: number;
-  newStock: number;
-  note?: string;
-  costUsd?: number;
-  costBs?: number;
-  stockAfter?: number;
+export interface User {
+  uid: string;
+  name: string;
+  email: string;
+  role: 'admin' | 'manager' | 'cashier' | 'viewer';
+  terminalId?: string;
+  terminalName?: string;
+  status: 'active' | 'inactive' | 'blocked';
+  photoURL?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface Terminal {
-  id: number;
+  id: string;
   name: string;
-  description: string;
+  description?: string;
   location: string;
   status: 'active' | 'inactive' | 'maintenance';
-  assignedTo: string | null;
-  isBlocked?: boolean; // ✅ Nueva propiedad para bloqueo de terminal
-  createdAt: string;
-  updatedAt: string;
+  isBlocked?: boolean;
+  assignedTo?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface Supplier {
   id: number;
   name: string;
-  rif: string;
+  cedula?: string;
+  rif?: string;
   phone: string;
-  email: string;
   address: string;
-  contactPerson: string;
-  totalDebt: number;
-  createdAt: string;
+  email?: string;
+  contactPerson?: string;
+  debt?: number;
+  totalDebt?: number;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface SupplierInvoice {
   id: number;
   supplierId: number;
-  invoiceNumber: string;
+  supplierName: string;
   date: string;
-  dueDate: string;
-  subtotal: number;
-  iva: number;
+  invoiceNumber?: string;
   total: number;
-  paidAmount: number;
-  status: 'pendiente' | 'parcial' | 'pagada';
-  notes: string;
+  totalUsd?: number;
   exchangeRate: number;
-  itemsCount: number;
-  createdAt: string;
+  status: 'pendiente' | 'pagada' | 'parcial';
+  paymentMethod?: string;
+  notes?: string;
+  items?: PurchaseInvoiceItem[];
+  paidAmount?: number;
+  itemsCount?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface PurchaseInvoice {
+  id: number;
+  supplierId: number;
+  supplierName: string;
+  date: string;
+  total: number;
+  totalUsd?: number;
+  exchangeRate: number;
+  status: 'pendiente' | 'pagada' | 'parcial';
+  paymentMethod?: string;
+  notes?: string;
+  items?: PurchaseItem[];
+  invoiceNumber?: string;
+  paidAmount?: number;
+  itemsCount?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface PurchaseItem {
+  id: string;
+  invoiceId: number;
+  productId: number;
+  productName: string;
+  quantity: number;
+  costUsd: number;
+  costBs: number;
+  totalUsd: number;
+  totalBs: number;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface PurchaseInvoiceItem {
@@ -184,69 +234,174 @@ export interface PurchaseInvoiceItem {
   productId: number;
   productName: string;
   qty: number;
+  quantity?: number;
   costUsd: number;
+  costBs: number;
   totalUsd: number;
-  createdAt: string;
+  totalBs: number;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface SupplierPayment {
   id: number;
   supplierId: number;
-  invoiceId: number;
+  supplierName: string;
   date: string;
   amount: number;
+  amountUsd?: number;
+  exchangeRate: number;
   method: string;
+  invoiceId?: number;
   reference?: string;
   bank?: string;
-  notes: string;
+  notes?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface AccountingEntry {
-  id: number;
+  id: string | number;
   date: string;
   type: 'ingreso' | 'egreso';
   category: string;
   subcategory?: string;
   concept: string;
-  description: string;
+  description?: string;
   amount: number;
-  referenceId?: number;
-  referenceType?: 'sale' | 'supplier_payment' | 'expense' | 'return' | 'payment_reversal' | 'credit_sale' | 'debt_payment' | 'colaboracion' | 'consumo_propio' | 'inventory_adjustment' | 'purchase';
-  createdAt: string;
+  referenceId?: string | number;
+  referenceType?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
-export interface ExpenseCategory {
+export interface KardexEntry {
   id: string;
-  name: string;
-  subcategories?: string[];
+  productId: number;
+  date: string;
+  type: 'venta' | 'compra' | 'ajuste' | 'consumo' | 'colaboracion' | 'devolucion';
+  quantity: number;
+  previousStock: number;
+  newStock: number;
+  costUsd?: number;
+  costBs?: number;
+  reference: string;
+  note?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
-export const EXPENSE_CATEGORIES: ExpenseCategory[] = [
-  { id: 'ventas', name: 'Ventas' },
-  { id: 'pagos_proveedores', name: 'Pagos a Proveedores' },
-  { id: 'compra_mercancia', name: 'Compra de Mercancía' }, // ✅ Agregado
-  { id: 'servicios_publicos', name: 'Servicios Públicos', subcategories: ['Agua', 'Aseo', 'Electricidad', 'Teléfono CANTV'] },
-  { id: 'alquiler', name: 'Alquiler' },
-  { id: 'telefonia', name: 'Telefonía', subcategories: ['Movistar', 'Movilnet', 'Digitel'] },
-  { id: 'impuestos_municipales', name: 'Impuestos Municipales' },
-  { id: 'declaracion_renta', name: 'Declaración de Renta' },
-  { id: 'servicios_profesionales', name: 'Servicios Profesionales' },
-  { id: 'reparacion_local', name: 'Reparación de Local' },
-  { id: 'sueldos', name: 'Sueldos y Salarios' }, // ✅ Renombrado
-  { id: 'otros', name: 'Otros Gastos' },
-];
-
-export interface AdminCode {
-  id: string;
-  code: string;
-  updatedAt: string;
-}
+export type Page = 'pos' | 'products' | 'clients' | 'accounts' | 'admin' | 'terminal' | 'purchases' | 'reports' | 'caja' | 'dashboard' | 'inventario' | 'registrar_compra' | 'proveedores' | 'clientes' | 'cuentas' | 'contabilidad' | 'devoluciones';
 
 export interface GlobalSettings {
-  id: string;
+  exchangeRate: number;
   defaultIvaPercentage: number;
-  exchangeRate?: number;
-  categories?: string[];
-  departments?: string[];
-  updatedAt: string;
+  adminCode: string;
+  terminalId?: string;
+  updatedAt?: string;
+}
+
+// ✅ Category como objeto
+export interface Category {
+  id: string;
+  name: string;
+  color?: string;
+  icon?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface AdminCode {
+  code: string;
+  updatedAt?: string;
+}
+
+// ✅ EXPENSES - Categorías de gastos
+export const EXPENSE_CATEGORIES = [
+  { value: 'servicios', label: 'Servicios Públicos' },
+  { value: 'alquiler', label: 'Alquiler' },
+  { value: 'nomina', label: 'Nómina' },
+  { value: 'impuestos', label: 'Impuestos' },
+  { value: 'proveedores', label: 'Pagos a Proveedores' },
+  { value: 'publicidad', label: 'Publicidad y Marketing' },
+  { value: 'transporte', label: 'Transporte y Logística' },
+  { value: 'mantenimiento', label: 'Mantenimiento' },
+  { value: 'materiales', label: 'Materiales y Suministros' },
+  { value: 'comunicaciones', label: 'Comunicaciones' },
+  { value: 'seguros', label: 'Seguros' },
+  { value: 'consultoria', label: 'Consultoría' },
+  { value: 'gastos_bancarios', label: 'Gastos Bancarios' },
+  { value: 'otros', label: 'Otros Gastos' },
+];
+
+export interface Expense {
+  id: string | number;
+  date: string;
+  category: string;
+  subcategory?: string;
+  description: string;
+  amount: number;
+  paymentMethod: string;
+  reference?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+// ✅ INCOME - Categorías de ingresos
+export const INCOME_CATEGORIES = [
+  { value: 'ventas', label: 'Ventas' },
+  { value: 'servicios', label: 'Servicios' },
+  { value: 'alquileres', label: 'Alquileres' },
+  { value: 'intereses', label: 'Intereses' },
+  { value: 'transferencias', label: 'Transferencias' },
+  { value: 'otros', label: 'Otros Ingresos' },
+];
+
+export interface Income {
+  id: string | number;
+  date: string;
+  category: string;
+  subcategory?: string;
+  description: string;
+  amount: number;
+  paymentMethod: string;
+  reference?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export type PaymentMethod = 'efectivo_bs' | 'usd_efectivo' | 'tarjeta' | 'biopago' | 'pago_movil' | 'zelle' | 'transferencia' | 'cheque' | 'credito';
+
+// ✅ Categorías predefinidas para productos
+export const DEFAULT_CATEGORIES: Category[] = [
+  { id: 'alimentos', name: 'Alimentos' },
+  { id: 'bebidas', name: 'Bebidas' },
+  { id: 'licores', name: 'Licores' },
+  { id: 'snacks', name: 'Snacks' },
+  { id: 'cigarrillos', name: 'Cigarrillos' },
+  { id: 'higiene', name: 'Higiene Personal' },
+  { id: 'limpieza', name: 'Limpieza' },
+  { id: 'cuidado_personal', name: 'Cuidado Personal' },
+  { id: 'otros', name: 'Otros' },
+];
+
+// ✅ Función helper para obtener Category desde string
+export function getCategoryById(id: string): Category {
+  const found = DEFAULT_CATEGORIES.find(c => c.id === id);
+  return found || DEFAULT_CATEGORIES[DEFAULT_CATEGORIES.length - 1];
+}
+
+// ✅ Función helper para obtener string desde Category
+export function getCategoryId(category: Category | string): string {
+  if (typeof category === 'string') return category;
+  return category.id;
+}
+
+// ✅ Función helper para obtener nombre de Category
+export function getCategoryName(category: Category | string): string {
+  if (typeof category === 'string') {
+    const found = DEFAULT_CATEGORIES.find(c => c.id === category);
+    return found ? found.name : category;
+  }
+  return category.name;
 }

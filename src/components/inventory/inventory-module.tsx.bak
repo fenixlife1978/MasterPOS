@@ -189,7 +189,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
     barcode: '',
     name: '',
     department: '',
-    category: 'Otro'  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown as Category,
+    category: 'Otro'  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown as Category,
     stock: 0,
     minStock: 5,
     costUsd: 0,
@@ -280,7 +280,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
     const q = searchChildProduct.toLowerCase();
     return products.filter(p => 
       p.id !== editingProduct?.id && 
-      (p.name.toLowerCase().includes(q) || p.barcode || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "".includes(q))
+      (p.name.toLowerCase().includes(q) || p.barcode || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "".includes(q))
     ).slice(0, 5);
   }, [searchChildProduct, products, editingProduct, hideChildResults]);
   
@@ -330,7 +330,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
         if (settings) {
           if (settings.categories) {
             const cats = Array.isArray(settings.categories) ? settings.categories : [];
-            setCategories(cats  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown as Category[]);
+            setCategories(cats  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown as Category[]);
           }
           if (settings.departments) {
             const depts = Array.isArray(settings.departments) ? settings.departments : [];
@@ -525,7 +525,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
     
     const productData: Product = {
       id: productId,
-      barcode: formData.barcode || "" || "" || "" || "" || "" || "" || "" || "" || "" || "",
+      barcode: formData.barcode || "" || "" || "" || "" || "" || "" || "" || "",
       name: formData.name,
       department: formData.department || 'Otros',
       category: formData.category,
@@ -576,7 +576,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
   const handleEdit = (p: Product) => {
     setEditingProduct(p);
     setFormData({
-      barcode: p.barcode || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "",
+      barcode: p.barcode || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "",
       name: p.name,
       department: p.department || 'Otros',
       category: p.category,
@@ -820,11 +820,11 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
   
   const addCategory = () => {
     if (!newCategory.trim()) return;
-    if (categories.includes(newCategory.trim()  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown as Category)) {
+    if (categories.includes(newCategory.trim()  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown as Category)) {
       toast({ title: "Error", description: "Esta categoría ya existe", variant: "destructive" });
       return;
     }
-    const newCats = [...categories, newCategory.trim()  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown as Category];
+    const newCats = [...categories, newCategory.trim()  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown as Category];
     setCategories(newCats);
     localStorage.setItem(CACHE_KEYS.CATEGORIES, JSON.stringify(newCats));
     syncService.saveGlobalSettings({ categories: newCats, departments }).catch(console.error);
@@ -881,7 +881,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
     if (!printWindow) return;
     
     const pdfProducts = products.filter(p => {
-      const matchSearch = p.name.toLowerCase().includes(search.toLowerCase()) || p.barcode || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "".includes(search);
+      const matchSearch = p.name.toLowerCase().includes(search.toLowerCase()) || p.barcode || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "".includes(search);
       const matchCat = filterCategory === 'all' || p.category === filterCategory;
       const matchDept = filterDepartment === 'all' || (p.department === filterDepartment);
       return matchSearch && matchCat && matchDept;
@@ -933,7 +933,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
             <tbody>
               ${pdfProducts.map(p => `
                 <tr>
-                  <td>${p.barcode || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || ""}</td>
+                  <td>${p.barcode || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || ""}</td>
                   <td class="bold">${p.name}</td>
                   <td>${p.category}</td>
                   <td class="text-center ${p.stock <= getProductMinStock(p) ? 'low-stock' : ''}">${p.stock}</td>
@@ -974,10 +974,10 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
       
       let matchesBarcode = false;
       if (isNumericSearch) {
-        const barcodeStr = p.barcode || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "".toString();
+        const barcodeStr = p.barcode || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "".toString();
         matchesBarcode = barcodeStr.startsWith(term);
       } else {
-        matchesBarcode = p.barcode || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "".toLowerCase().includes(term.toLowerCase());
+        matchesBarcode = p.barcode || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "".toLowerCase().includes(term.toLowerCase());
       }
       
       const matchCat = filterCategory === 'all' || p.category === filterCategory;
@@ -986,8 +986,8 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
       return (matchesName || matchesBarcode) && matchCat && matchDept;
     }).sort((a, b) => {
       if (isNumericSearch) {
-        const aStarts = a.barcode || "" || "" || "" || "" || "".toString().startsWith(term);
-        const bStarts = b.barcode || "" || "" || "" || "" || "".toString().startsWith(term);
+        const aStarts = a.barcode || "" || "" || "" || "".toString().startsWith(term);
+        const bStarts = b.barcode || "" || "" || "" || "".toString().startsWith(term);
         if (aStarts && !bStarts) return -1;
         if (!aStarts && bStarts) return 1;
       }
@@ -1012,7 +1012,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
         const matchesName = p.name.toLowerCase().includes(term.toLowerCase());
         
         let matchesBarcode = false;
-        const barcodeStr = p.barcode || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "".toString();
+        const barcodeStr = p.barcode || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "".toString();
         if (isNumericSearch) {
           matchesBarcode = barcodeStr.startsWith(term);
         } else {
@@ -1024,8 +1024,8 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
       
       if (isNumericSearch) {
         filtered = filtered.sort((a, b) => {
-          const aStarts = a.barcode || "" || "" || "" || "" || "".toString().startsWith(term);
-          const bStarts = b.barcode || "" || "" || "" || "" || "".toString().startsWith(term);
+          const aStarts = a.barcode || "" || "" || "" || "".toString().startsWith(term);
+          const bStarts = b.barcode || "" || "" || "" || "".toString().startsWith(term);
           if (aStarts && !bStarts) return -1;
           if (!aStarts && bStarts) return 1;
           return a.name.localeCompare(b.name);
@@ -1314,7 +1314,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                     .filter((p) => p && p.id && p.name)
                     .map((p, index) => (
                       <TableRow key={`${p.id}-${index}`} className="border-b border-[#9E9E9E]/40 hover:bg-[#F5F5F5]">
-                        <TableCell className="font-mono text-[10px] text-black/60">{p.barcode || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || ""}</TableCell>
+                        <TableCell className="font-mono text-[10px] text-black/60">{p.barcode || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || ""}</TableCell>
                         <TableCell>
                           <p className="font-bold text-xs text-black">{p.name}</p>
                           <p className="text-[8px] font-bold text-primary uppercase">{p.category} | {p.department || 'Sin Dept.'}</p>
@@ -1382,10 +1382,10 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                 <TableBody>
                   {reportProducts
                     .filter(p => p && p.id && p.name)
-                    .filter(p => !search || p.name.toLowerCase().includes(search.toLowerCase()) || p.barcode || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "".includes(search))
+                    .filter(p => !search || p.name.toLowerCase().includes(search.toLowerCase()) || p.barcode || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "".includes(search))
                     .map((p, index) => (
                       <TableRow key={`${p.id}-${index}`} className="border-b border-[#9E9E9E]/30 hover:bg-[#F5F5F5] py-1">
-                        <TableCell className="font-mono text-[9px] text-black/60 py-1.5">{p.barcode || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || ""}</TableCell>
+                        <TableCell className="font-mono text-[9px] text-black/60 py-1.5">{p.barcode || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || ""}</TableCell>
                         <TableCell className="py-1.5"><p className="font-bold text-xs text-black">{p.name}</p><p className="text-[7px] font-bold text-primary/70 uppercase">{p.category} | {p.department || 'Sin Dept.'}</p></TableCell>
                         <TableCell className="text-right font-mono text-[10px] font-bold text-black/80 py-1.5">{formatUsd(p.costUsd || 0, 4)}</TableCell>
                         <TableCell className="text-center py-1.5"><span className={cn("px-2 py-0.5 rounded-full text-[8px] font-black", p.stock <= getProductMinStock(p) ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700")}>{p.stock} UDS</span></TableCell>
@@ -1416,7 +1416,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
             </div>
           </div>
           <div className="mt-3 bg-gray-100 rounded-lg p-2 flex justify-between items-center flex-shrink-0">
-            <div className="text-[9px] text-black/60"><span className="font-bold">{reportProducts.filter(p => !search || p.name.toLowerCase().includes(search.toLowerCase()) || p.barcode || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "".includes(search)).length}</span> productos mostrados</div>
+            <div className="text-[9px] text-black/60"><span className="font-bold">{reportProducts.filter(p => !search || p.name.toLowerCase().includes(search.toLowerCase()) || p.barcode || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "".includes(search)).length}</span> productos mostrados</div>
             <div className="text-[9px] text-black/60">Valor total inventario: <span className="font-bold text-black">{formatUsd(reportProducts.reduce((sum, p) => sum + ((p.costUsd || 0) * p.stock), 0))}</span></div>
           </div>
         </div>

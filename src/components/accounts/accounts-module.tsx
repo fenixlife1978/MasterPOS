@@ -128,10 +128,30 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
     return [];
   };
 
-  const getAbonosForClient = () => {
+  // ✅ CORREGIDO: Obtener SOLO los abonos de esta cuenta específica (por txId)
+  const getAbonosForCurrentAccount = () => {
     if (!selectedTransaction?.accountInfo) return [];
+    
+    const currentTxId = selectedTransaction.accountInfo.txId;
+    
+    // Buscar transacciones de tipo 'cobro_deuda' que tengan el mismo txId de referencia
+    // o que estén asociadas a esta cuenta específica
     return state.transactions
-      .filter(t => t.type === 'cobro_deuda' && String(t.clientId) === String(selectedTransaction.accountInfo.clientId))
+      .filter(t => {
+        // Si la transacción tiene un referenceId que coincide con el txId de la cuenta
+        if (t.referenceId && String(t.referenceId) === String(currentTxId)) {
+          return true;
+        }
+        // Si la transacción tiene un txId que coincide (para abonos directos)
+        if (t.txId && String(t.txId) === String(currentTxId)) {
+          return true;
+        }
+        // Si la transacción tiene un notes que contiene el txId de la cuenta
+        if (t.notes && t.notes.includes(String(currentTxId))) {
+          return true;
+        }
+        return false;
+      })
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
   };
 
@@ -263,6 +283,8 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
         clientName: targetClientName,
         exchangeRate: exchangeRateAtMoment,
         notes: newAccount.products,
+        txId: timestamp + 1,
+        referenceId: timestamp + 1,
       };
       
       await syncService.saveTransaction(creditTransaction);
@@ -280,6 +302,19 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
     } finally {
       setIsSubmittingInitial(false);
     }
+  };
+
+  // ✅ Función para calcular el total de abonos de una cuenta específica
+  const getTotalAbonosForAccount = (account: any) => {
+    const txId = account.txId;
+    return state.transactions
+      .filter(t => {
+        if (t.referenceId && String(t.referenceId) === String(txId)) return true;
+        if (t.txId && String(t.txId) === String(txId)) return true;
+        if (t.notes && t.notes.includes(String(txId))) return true;
+        return false;
+      })
+      .reduce((sum, t) => sum + (t.total || 0), 0);
   };
 
   return (
@@ -371,6 +406,7 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
                                   <TableHead className="text-[9px] font-bold text-black text-right">Monto USD</TableHead>
                                   <TableHead className="text-[9px] font-bold text-black text-right">Saldo Bs Actual</TableHead>
                                   <TableHead className="text-[9px] font-bold text-black text-center">Estado</TableHead>
+                                  <TableHead className="text-[9px] font-bold text-black text-center">Abonos</TableHead>
                                   <TableHead className="text-[9px] font-bold text-black text-center">Ver</TableHead>
                                 </TableRow>
                               </TableHeader>
@@ -380,6 +416,7 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
                                   const paidUsd = (account.paidAmount || 0) / (account.exchangeRate || state.exchangeRate);
                                   const remainingUsd = Math.max(0, originalUsd - paidUsd);
                                   const remainingBsAtCurrentRate = remainingUsd * state.exchangeRate;
+                                  const totalAbonos = getTotalAbonosForAccount(account);
                                   
                                   // ✅ Obtener el estado con valor predeterminado
                                   const status = account.status || 'pendiente';
@@ -396,6 +433,11 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
                                           status === 'parcial' ? "bg-yellow-100 text-yellow-700" : 
                                           "bg-red-100 text-red-700")}>
                                           {status.toUpperCase()}
+                                        </span>
+                                      </TableCell>
+                                      <TableCell className="text-center">
+                                        <span className="text-[10px] font-bold text-blue-600">
+                                          {totalAbonos > 0 ? formatBs(totalAbonos) : '—'}
                                         </span>
                                       </TableCell>
                                       <TableCell className="text-center">
@@ -420,7 +462,7 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
         </Table>
       </div>
 
-      {/* Modal Detalle */}
+      {/* Modal Detalle - Ahora con abonos específicos de la cuenta */}
       <Dialog open={showDetailModal} onOpenChange={setShowDetailModal}>
         <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-2xl p-0 overflow-hidden rounded-2xl shadow-xl max-h-[85vh] overflow-y-auto">
           <DialogHeader className="sr-only"><DialogTitle>Detalle del Crédito</DialogTitle></DialogHeader>
@@ -506,29 +548,37 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
                   </div>
                 </div>
 
-                {getAbonosForClient().length > 0 && (
-                  <div>
-                    <label className="text-[10px] font-black text-black/60 uppercase flex items-center gap-2 mb-3"><History size={12} /> HISTORIAL DE ABONOS</label>
-                    <div className="border border-[#9E9E9E] rounded-lg overflow-hidden">
-                      <table className="w-full text-sm">
-                        <thead className="bg-[#E8E8E8]">
-                          <tr>
-                            <th className="text-left p-3 text-[10px] font-black uppercase">FECHA</th>
-                            <th className="text-right p-3 text-[10px] font-black uppercase">MONTO</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {getAbonosForClient().map((abono, idx) => (
-                            <tr key={idx} className="border-b border-[#9E9E9E]/50">
-                              <td className="p-3 text-xs text-black font-bold">{formatDateShort(abono.date)}</td>
-                              <td className="p-3 text-right text-xs font-bold text-green-600">{formatBs(abono.total)}</td>
+                {/* ✅ AHORA SOLO MUESTRA LOS ABONOS DE ESTA CUENTA ESPECÍFICA */}
+                {(() => {
+                  const abonos = getAbonosForCurrentAccount();
+                  return abonos.length > 0 ? (
+                    <div>
+                      <label className="text-[10px] font-black text-black/60 uppercase flex items-center gap-2 mb-3">
+                        <History size={12} /> HISTORIAL DE ABONOS - Cuenta #{selectedTransaction.accountInfo.txId}
+                      </label>
+                      <div className="border border-[#9E9E9E] rounded-lg overflow-hidden">
+                        <table className="w-full text-sm">
+                          <thead className="bg-[#E8E8E8]">
+                            <tr>
+                              <th className="text-left p-3 text-[10px] font-black uppercase">FECHA</th>
+                              <th className="text-right p-3 text-[10px] font-black uppercase">MONTO</th>
+                              <th className="text-left p-3 text-[10px] font-black uppercase">MÉTODO</th>
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                          </thead>
+                          <tbody>
+                            {abonos.map((abono, idx) => (
+                              <tr key={idx} className="border-b border-[#9E9E9E]/50">
+                                <td className="p-3 text-xs text-black font-bold">{formatDateShort(abono.date)}</td>
+                                <td className="p-3 text-right text-xs font-bold text-green-600">{formatBs(abono.total)}</td>
+                                <td className="p-3 text-xs text-black">{abono.payMethod || 'Efectivo BS'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
-                  </div>
-                )}
+                  ) : null;
+                })()}
               </div>
               <div className="bg-[#F5F5F5] p-4 border-t flex justify-end">
                 <Button onClick={() => setShowDetailModal(false)}>CERRAR</Button>

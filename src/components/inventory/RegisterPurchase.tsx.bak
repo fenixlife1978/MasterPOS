@@ -112,7 +112,7 @@ export default function RegisterPurchase() {
     barcode: '',
     name: '',
     department: 'Otros',
-    category: 'Otro'  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown as Category,
+    category: 'Otro'  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown as Category,
     stock: 0,
     minStock: 5,
     costUsd: 0,
@@ -150,7 +150,7 @@ export default function RegisterPurchase() {
     const loadSettings = async () => {
       const settings = await syncService.getGlobalSettings();
       if (settings) {
-        if (settings.categories) setCategories(settings.categories  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown as Category[]);
+        if (settings.categories) setCategories(settings.categories  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown as Category[]);
         if (settings.departments) setDepartments(settings.departments);
       }
     };
@@ -205,7 +205,7 @@ export default function RegisterPurchase() {
     const q = productQuery.toLowerCase();
     return state.products.filter(p => 
       p.name.toLowerCase().includes(q) || 
-      p.barcode || "" || "" || "" || "" || "" || "" || "" || "" || "" || "".includes(q)
+      p.barcode || "" || "" || "" || "" || "" || "" || "" || "".includes(q)
     ).slice(0, 5);
   }, [productQuery, state.products, selectedProduct]);
 
@@ -433,7 +433,7 @@ export default function RegisterPurchase() {
     if (!searchChildProduct.trim() || hideChildResults) return [];
     const q = searchChildProduct.toLowerCase();
     return state.products.filter(p => 
-      p.name.toLowerCase().includes(q) || p.barcode || "" || "" || "" || "" || "" || "" || "" || "" || "" || "".includes(q)
+      p.name.toLowerCase().includes(q) || p.barcode || "" || "" || "" || "" || "" || "" || "" || "".includes(q)
     ).slice(0, 5);
   }, [searchChildProduct, state.products, hideChildResults]);
 
@@ -527,7 +527,7 @@ export default function RegisterPurchase() {
       return;
     }
     
-    const existingProduct = state.products.find(p => p.barcode || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" === productForm.barcode);
+    const existingProduct = state.products.find(p => p.barcode || "" || "" || "" || "" || "" || "" || "" || "" === productForm.barcode);
     if (existingProduct) {
       toast({ 
         title: "Código de barras duplicado", 
@@ -955,7 +955,7 @@ export default function RegisterPurchase() {
                       <label className="text-[8px] font-black uppercase">Categoría</label>
                       <select 
                         value={productForm.category} 
-                        onChange={e => setProductForm({...productForm, category: e.target.value  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown as Category})} 
+                        onChange={e => setProductForm({...productForm, category: e.target.value  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown as Category})} 
                         className="w-full h-7 border rounded px-2 text-xs bg-white"
                       >
                         {categories.map(c => <option key={c}>{c}</option>)}

@@ -157,12 +157,12 @@ export default function SuppliersModule() {
     await syncService.deleteSupplier(id);
   };
 
-  // ✅ Calcular total pagado al proveedor (suma de todos sus pagos)
+  // ✅ CORREGIDO: Calcular total pagado al proveedor basado en las facturas para consistencia
   const getTotalPaid = useCallback((supplierId: number) => {
-    return supplierPayments
-      .filter(p => p.supplierId === supplierId)
-      .reduce((sum, p) => sum + p.amount, 0);
-  }, [supplierPayments]);
+    return invoices
+      .filter(i => i.supplierId === supplierId)
+      .reduce((sum, i) => sum + i.paidAmount, 0);
+  }, [invoices]);
 
   // ✅ Calcular total comprado (suma de todas las facturas)
   const getTotalPurchases = useCallback((supplierId: number) => {
@@ -171,12 +171,12 @@ export default function SuppliersModule() {
       .reduce((sum, i) => sum + i.total, 0);
   }, [invoices]);
 
-  // ✅ Calcular deuda real = total compras - total pagos
+  // ✅ CORREGIDO: Calcular deuda real = suma de saldos pendientes de facturas
   const getSupplierDebt = useCallback((supplierId: number) => {
-    const totalPurchases = getTotalPurchases(supplierId);
-    const totalPaid = getTotalPaid(supplierId);
-    return Math.max(0, totalPurchases - totalPaid);
-  }, [getTotalPurchases, getTotalPaid]);
+    return invoices
+      .filter(i => i.supplierId === supplierId)
+      .reduce((sum, i) => sum + (i.total - i.paidAmount), 0);
+  }, [invoices]);
 
   // ✅ Abrir modal de pago (para proveedor o para factura específica)
   const handleOpenPaymentModal = (supplier: Supplier, invoice?: SupplierInvoice) => {
@@ -363,16 +363,6 @@ export default function SuppliersModule() {
         toast({ title: "Pago global aplicado", description: `Distribuido ${formatUsd(paymentData.amount)} entre facturas pendientes de ${selectedSupplierForPayment.name}` });
       }
       
-      // ✅ ACTUALIZACIÓN INSTANTÁNEA del saldo deudor del proveedor
-      const paidUsd = paymentData.amount;
-      setSuppliers(prevSuppliers => 
-        prevSuppliers.map(s => 
-          s.id === selectedSupplierForPayment.id 
-            ? { ...s, totalDebt: Math.max(0, (s.totalDebt || 0) - paidUsd) }
-            : s
-        )
-      );
-      
       setShowPaymentModal(false);
       setSelectedSupplierForPayment(null);
       setSelectedInvoiceForPayment(null);
@@ -414,20 +404,13 @@ export default function SuppliersModule() {
         referenceType: 'payment_reversal',
         createdAt: getVenezuelaISOString(),
       });
-      // Actualizar deuda del proveedor (sumando el monto anulado)
-      const supplier = suppliers.find(s => s.id === payment.supplierId);
-      if (supplier) {
-        const newDebt = (supplier.totalDebt || 0) + payment.amount;
-        setSuppliers(prev => prev.map(s => s.id === supplier.id ? { ...s, totalDebt: newDebt } : s));
-        await updateSupplier({ ...supplier, totalDebt: newDebt });
-      }
       toast({ title: "Pago anulado", description: `Se anuló pago de ${formatUsd(payment.amount)}` });
     } catch (error) {
       console.error('Error al anular pago:', error);
       toast({ title: "Error", description: "No se pudo anular el pago", variant: "destructive" });
     }
     setIsProcessing(false);
-  }, [invoices, suppliers, updateSupplier, state.exchangeRate]);
+  }, [invoices, state.exchangeRate]);
 
   const filteredSuppliers = useMemo(() => {
     if (!search.trim()) return suppliers;
@@ -546,7 +529,7 @@ export default function SuppliersModule() {
           </DialogHeader>
           <div className="flex-1 overflow-y-auto p-4">
             <div className="bg-green-50 rounded-lg p-3 mb-4 text-center border border-green-200">
-              <p className="text-[9px] font-black uppercase text-green-700">Total Pagado</p>
+              <p className="text-[9px] font-black uppercase text-green-700">Total Pagado Histórico</p>
               <p className="text-2xl font-black text-green-700">{formatUsd(totalPaid)}</p>
             </div>
             {payments.length === 0 ? (

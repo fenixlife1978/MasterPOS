@@ -128,9 +128,20 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
     return [];
   };
 
+  const getAbonosForClient = () => {
+    if (!selectedTransaction?.accountInfo) return [];
+    return state.transactions
+      .filter(t => t.type === 'cobro_deuda' && String(t.clientId) === String(selectedTransaction.accountInfo.clientId))
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  };
+
   const formatDate = (dateStr: string) => {
     const d = new Date(dateStr);
     return d.toLocaleDateString('es-VE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  };
+
+  const formatDateShort = (dateStr: string) => {
+    return new Date(dateStr).toLocaleDateString('es-VE', { day: '2-digit', month: '2-digit', year: 'numeric' });
   };
 
   const historicalRate = useMemo(() => {
@@ -370,6 +381,9 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
                                   const remainingUsd = Math.max(0, originalUsd - paidUsd);
                                   const remainingBsAtCurrentRate = remainingUsd * state.exchangeRate;
                                   
+                                  // ✅ Obtener el estado con valor predeterminado
+                                  const status = account.status || 'pendiente';
+                                  
                                   return (
                                     <TableRow key={account.id} className="border-b border-[#9E9E9E]/50 hover:bg-[#F5F5F5]">
                                       <TableCell className="text-[11px] text-black font-bold">{new Date(account.date).toLocaleDateString('es-VE')}</TableCell>
@@ -378,10 +392,10 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
                                       <TableCell className="text-right font-bold text-[#E74C3C]">{formatBs(remainingBsAtCurrentRate)}</TableCell>
                                       <TableCell className="text-center">
                                         <span className={cn("px-2 py-0.5 rounded-full text-[9px] font-bold", 
-                                          account.status === 'pagada' ? "bg-green-100 text-green-700" : 
-                                          account.status === 'parcial' ? "bg-yellow-100 text-yellow-700" : 
+                                          status === 'pagada' ? "bg-green-100 text-green-700" : 
+                                          status === 'parcial' ? "bg-yellow-100 text-yellow-700" : 
                                           "bg-red-100 text-red-700")}>
-                                          {account.status.toUpperCase()}
+                                          {status.toUpperCase()}
                                         </span>
                                       </TableCell>
                                       <TableCell className="text-center">
@@ -491,6 +505,30 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
                     </span>
                   </div>
                 </div>
+
+                {getAbonosForClient().length > 0 && (
+                  <div>
+                    <label className="text-[10px] font-black text-black/60 uppercase flex items-center gap-2 mb-3"><History size={12} /> HISTORIAL DE ABONOS</label>
+                    <div className="border border-[#9E9E9E] rounded-lg overflow-hidden">
+                      <table className="w-full text-sm">
+                        <thead className="bg-[#E8E8E8]">
+                          <tr>
+                            <th className="text-left p-3 text-[10px] font-black uppercase">FECHA</th>
+                            <th className="text-right p-3 text-[10px] font-black uppercase">MONTO</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {getAbonosForClient().map((abono, idx) => (
+                            <tr key={idx} className="border-b border-[#9E9E9E]/50">
+                              <td className="p-3 text-xs text-black font-bold">{formatDateShort(abono.date)}</td>
+                              <td className="p-3 text-right text-xs font-bold text-green-600">{formatBs(abono.total)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
               </div>
               <div className="bg-[#F5F5F5] p-4 border-t flex justify-end">
                 <Button onClick={() => setShowDetailModal(false)}>CERRAR</Button>

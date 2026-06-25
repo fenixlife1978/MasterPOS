@@ -1,4 +1,3 @@
-// src/hooks/use-pos-state.ts
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -210,8 +209,7 @@ export function usePOSState() {
     
     const unsubClients = syncService.subscribeToClients(setClients);
     const unsubTransactions = syncService.subscribeToTransactions(setTransactions as any);
-    // ✅ CORREGIDO: usar subscribeToAccounting en lugar de subscribeToAccounts
-    const unsubAccounts = syncService.subscribeToAccounting(setAccounts as any);
+    const unsubAccounts = syncService.subscribeToAccounts(setAccounts as any);
     
     const unsubSettings = syncService.subscribeToGlobalSettings?.((settings: any) => {
       if (settings) {
@@ -578,7 +576,8 @@ export function usePOSState() {
     const stockUpdates: Map<number, { newStock: number }> = new Map();
     const kardexEntries: any[] = [];
     if (type !== 'cobro_deuda') {
-      for (const discountItem of getItemsToDiscount(cart)) {
+      const itemsToDiscountList = getItemsToDiscount(cart);
+      for (const discountItem of itemsToDiscountList) {
         const product = discountItem.product;
         if (!product) continue;
         const newStock = product.stock - discountItem.quantity;
@@ -659,6 +658,7 @@ export function usePOSState() {
         paidAmount: 0, 
         status: 'pendiente', 
         exchangeRate,
+        paidAmountUsd: 0,
       };
       await syncService.saveAccount(newAcc);
       
@@ -694,8 +694,9 @@ export function usePOSState() {
       const owed = acc.amountBs - (acc.paidAmount || 0);
       const pay = Math.min(remaining, owed);
       const newPaid = (acc.paidAmount || 0) + pay;
+      const newPaidUsd = (acc.paidAmountUsd || 0) + (pay / exchangeRate);
       const newStatus: 'pagada' | 'parcial' = newPaid >= acc.amountBs ? 'pagada' : 'parcial';
-      const updatedAcc = { ...acc, paidAmount: newPaid, status: newStatus };
+      const updatedAcc = { ...acc, paidAmount: newPaid, paidAmountUsd: newPaidUsd, status: newStatus };
       await syncService.saveAccount(updatedAcc);
       remaining -= pay;
     }

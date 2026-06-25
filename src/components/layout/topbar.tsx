@@ -30,9 +30,9 @@ export default function Topbar({ register, rate, onRateChange }: TopbarProps) {
   // Determinar si debe mostrar el badge de caja (solo si NO es admin Y la caja existe)
   const showRegisterBadge = !loading && !isAdmin && register !== undefined;
   
-  // ✅ Identificación de terminal (ID real de Firestore)
-  const currentTerminalId = user?.terminalId;
-  const showTerminalBadge = !loading && !isAdmin && currentTerminalId;
+  // ✅ Identificación de terminal (Nombre Real de Firestore)
+  const currentTerminalName = user?.terminalName || user?.terminalId;
+  const showTerminalBadge = !loading && !isAdmin && currentTerminalName;
 
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 1000);
@@ -106,12 +106,12 @@ export default function Topbar({ register, rate, onRateChange }: TopbarProps) {
           <span className="text-white">POS</span>
         </div>
         
-        {/* ✅ Terminal - Diseño discreto (sin cuadro rojo) */}
+        {/* ✅ Terminal - Diseño discreto (Muestra Nombre en lugar de ID) */}
         {showTerminalBadge && (
           <div className="flex items-center gap-1.5 bg-white/10 rounded-lg px-2.5 py-1 border border-white/10">
             <Monitor size={12} className="text-primary/70" />
-            <span className="text-white/60 font-mono text-[10px] font-bold tracking-wider">
-              {currentTerminalId}
+            <span className="text-white/60 font-mono text-[10px] font-bold tracking-wider uppercase">
+              {currentTerminalName}
             </span>
           </div>
         )}

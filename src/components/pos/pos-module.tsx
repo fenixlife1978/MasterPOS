@@ -36,6 +36,7 @@ interface POSModuleProps {
 export default function POSModule({ state }: POSModuleProps) {
   const { user } = useAuth();
   const terminalId = user?.terminalId || 'default';
+  const terminalName = user?.terminalName || terminalId;
   
   const [showSaleType, setShowSaleType] = useState(false);
   const [showContado, setShowContado] = useState(false);
@@ -250,7 +251,7 @@ export default function POSModule({ state }: POSModuleProps) {
           nextReceiptNumber={nextReceiptNumber}
           products={state.products}
           onUpdatePrice={state.updateCartItemPrice}
-          terminalId={terminalId}
+          terminalId={terminalName}
         />
       </div>
 

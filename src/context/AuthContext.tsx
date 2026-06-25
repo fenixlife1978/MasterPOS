@@ -14,6 +14,7 @@ interface AppUser {
   name: string;
   role: 'admin' | 'cashier';
   terminalId?: string;
+  terminalName?: string;
 }
 
 interface AuthContextType {
@@ -89,6 +90,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             name: data.name || firebaseUser.displayName || 'Usuario',
             role: data.role === 'admin' ? 'admin' : 'cashier',
             terminalId: data.terminalId,
+            terminalName: data.terminalName,
           };
           sessionStorage.setItem('user', JSON.stringify(appUser));
           setUser(appUser);
@@ -105,6 +107,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               name,
               role: 'admin',
               terminalId: undefined,
+              terminalName: undefined,
             };
             await setDoc(userRef, {
               ...newUser,
@@ -144,15 +147,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setUser((prevUser) => {
             if (!prevUser) return prevUser;
             const newTerminalId = data.terminalId;
+            const newTerminalName = data.terminalName;
             const newRole: 'admin' | 'cashier' = data.role === 'admin' ? 'admin' : 'cashier';
             const newName = data.name || prevUser.name;
             
             if (
               prevUser.terminalId !== newTerminalId ||
+              prevUser.terminalName !== newTerminalName ||
               prevUser.role !== newRole ||
               prevUser.name !== newName
             ) {
-              const updated = { ...prevUser, terminalId: newTerminalId, role: newRole, name: newName };
+              const updated = { ...prevUser, terminalId: newTerminalId, terminalName: newTerminalName, role: newRole, name: newName };
               sessionStorage.setItem('user', JSON.stringify(updated));
               return updated;
             }
@@ -193,7 +198,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               totalSales: registerData.txs?.length || 0,
               exchangeRate: registerData.exchangeRate || 0,
             };
-            setActiveSession(session);
+            setCurrentSession(session);
+            if (setActiveSession) setActiveSession(session);
           } else {
             setActiveSession(null);
           }
@@ -257,7 +263,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           finalAmountUsd: 0,
           status: 'open',
           totalSales: registerData.txs?.length || 0,
-          exchangeRate: registerData.exchangeRate || 0,
+          exchangeRate: registerData.exchangeRate || exchangeRate,
         };
         setActiveSession(session);
       } else {

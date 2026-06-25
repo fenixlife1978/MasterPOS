@@ -72,6 +72,42 @@ function cleanForFirebase(obj: any): any {
   return obj;
 }
 
+/**
+ * Normaliza los datos de un producto para asegurar que los campos numéricos
+ * se extraigan correctamente (maneja snake_case y camelCase).
+ */
+function parseProductData(id: string, p: any) {
+  const parseNum = (v: any) => {
+    const n = parseFloat(v);
+    return isNaN(n) ? 0 : n;
+  };
+
+  return {
+    id: processId(id) as number,
+    barcode: p.barcode || '',
+    name: p.name || 'Sin nombre',
+    category: p.category || 'Otro',
+    department: p.department || 'Otros',
+    stock: parseNum(p.stock),
+    minStock: parseNum(p.minStock || p.min_stock || 5),
+    priceUsd: parseNum(p.priceUsd || p.price_usd),
+    priceBs: parseNum(p.priceBs || p.price_bs),
+    costUsd: parseNum(p.costUsd || p.cost_usd),
+    costBs: parseNum(p.costBs || p.cost_bs),
+    profitPercent: parseNum(p.profitPercent || p.profit_percent),
+    priceRetail: parseNum(p.priceRetail || p.price_retail),
+    priceWholesale: parseNum(p.priceWholesale || p.price_wholesale),
+    priceCost: parseNum(p.priceCost || p.price_cost),
+    ivaType: p.ivaType || p.iva_type || 'con_iva',
+    ivaPercentage: parseNum(p.ivaPercentage || p.iva_percentage || 16),
+    isKit: p.isKit === 1 || p.isKit === true,
+    kitHasOwnStock: p.kitHasOwnStock === 1 || p.kitHasOwnStock === true,
+    kitComponents: p.kitComponents ? (typeof p.kitComponents === 'string' ? JSON.parse(p.kitComponents) : p.kitComponents) : [],
+    isPriceFixed: p.isPriceFixed === 1 || p.isPriceFixed === true,
+    activo: p.activo !== 0
+  };
+}
+
 // ============================================================
 // USUARIOS (FIRESTORE)
 // ============================================================
@@ -152,15 +188,8 @@ export async function getAllProducts() {
     if (snapshot.exists()) {
       const data = snapshot.val();
       const products = Object.entries(data)
-        .map(([id, p]: [string, any]) => ({
-          id: processId(id) as number,
-          ...p,
-          isKit: p.isKit === 1,
-          kitHasOwnStock: p.kitHasOwnStock === 1,
-          kitComponents: p.kitComponents ? (typeof p.kitComponents === 'string' ? JSON.parse(p.kitComponents) : p.kitComponents) : [],
-          isPriceFixed: p.isPriceFixed === 1
-        }))
-        .filter(p => p.activo !== 0);
+        .map(([id, p]: [string, any]) => parseProductData(id, p))
+        .filter(p => p.activo !== false);
       setCachedData(getCacheKey('products'), products);
       return products;
     }
@@ -179,7 +208,7 @@ export async function saveProduct(product: any) {
     kitHasOwnStock: product.kitHasOwnStock ? 1 : 0,
     kitComponents: product.kitComponents ? JSON.stringify(product.kitComponents) : null,
     isPriceFixed: product.isPriceFixed ? 1 : 0,
-    activo: product.activo !== undefined ? product.activo : 1,
+    activo: product.activo !== undefined ? (product.activo ? 1 : 0) : 1,
     updatedAt: new Date().toISOString()
   };
   await set(ref(rtdb, `products/${productId}`), productData);
@@ -468,11 +497,11 @@ export async function getRegisterByTerminal(terminalId: string) {
 }
 
 export async function saveRegisterByTerminal(terminalId: string, register: any) {
-  await set(ref(rtdb, `registers/${terminalId}`), {
+  await set(ref(rtdb, `registers/${terminalId}`), cleanForFirebase({
     ...register,
     isOpen: register.isOpen ? 1 : 0,
     updatedAt: new Date().toISOString()
-  });
+  }));
 }
 
 export async function getAllCashCloses() {
@@ -602,14 +631,7 @@ export function subscribeToSupplierPayments(callback: (data: any[]) => void) {
 export function subscribeToProducts(callback: (data: any[]) => void) {
   return onValue(ref(rtdb, 'products'), (snapshot) => {
     if (snapshot.exists()) {
-      const products = Object.entries(snapshot.val()).map(([id, p]: [string, any]) => ({
-        id: processId(id) as number,
-        ...p,
-        isKit: p.isKit === 1,
-        kitHasOwnStock: p.kitHasOwnStock === 1,
-        kitComponents: p.kitComponents ? (typeof p.kitComponents === 'string' ? JSON.parse(p.kitComponents) : p.kitComponents) : [],
-        isPriceFixed: p.isPriceFixed === 1
-      })).filter(p => p.activo !== 0);
+      const products = Object.entries(snapshot.val()).map(([id, p]: [string, any]) => parseProductData(id, p));
       callback(products);
     } else callback([]);
   });

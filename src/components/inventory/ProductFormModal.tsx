@@ -78,10 +78,10 @@ const ProductFormModal = memo(function ProductFormModal({
 
   useEffect(() => {
     if (open && editingProduct) {
-      setBarcode(editingProduct.barcode);
+      setBarcode(editingProduct.barcode || '');
       setName(editingProduct.name);
       setDepartment(editingProduct.department || 'Otros');
-      setCategory(editingProduct.category);
+      setCategory(typeof editingProduct.category === 'string' ? editingProduct.category : editingProduct.category?.id || 'Otro');
       setStockInput(editingProduct.stock.toString());
       setMinStockInput((editingProduct.minStock || 5).toString());
       setPriceWholesaleInput(editingProduct.priceWholesale?.toString() || '');
@@ -125,7 +125,7 @@ const ProductFormModal = memo(function ProductFormModal({
     const q = searchChildProduct.toLowerCase();
     return products.filter(p => 
       p.id !== editingProduct?.id && 
-      (p.name.toLowerCase().includes(q) || p.barcode.includes(q))
+      (p.name.toLowerCase().includes(q) || (p.barcode || '').includes(q))
     ).slice(0, 5);
   }, [searchChildProduct, products, editingProduct, hideChildResults]);
 
@@ -163,7 +163,6 @@ const ProductFormModal = memo(function ProductFormModal({
     let priceUsd = localPriceUsd !== '' ? parseFloat(localPriceUsd) : 0;
     let priceBs = priceRetailBs !== '' ? parseFloat(priceRetailBs) : 0;
     
-    // ✅ MISMA LÓGICA QUE REGISTER PURCHASE
     if (priceBs > 0) {
       priceUsd = priceBs / exchangeRate;
       if (cost > 0 && priceUsd > 0) {
@@ -190,9 +189,8 @@ const ProductFormModal = memo(function ProductFormModal({
       return;
     }
     
-    // Validar código de barras duplicado
     const existingProduct = products.find(p => p.barcode === barcode && p.id !== editingProduct?.id);
-    if (existingProduct) {
+    if (existingProduct && barcode !== '') {
       toast({ 
         title: "Código de barras duplicado", 
         description: `Ya existe un producto con el código "${barcode}" (${existingProduct.name})`, 
@@ -208,7 +206,7 @@ const ProductFormModal = memo(function ProductFormModal({
       barcode,
       name,
       department: department || 'Otros',
-      category: category  as unknown  as unknown  as unknown  as unknown  as unknown as Category,
+      category: category as unknown as Category,
       stock: parseInt(stockInput) || 0,
       minStock: parseInt(minStockInput) || 5,
       costUsd: roundTo4(cost),
@@ -220,10 +218,11 @@ const ProductFormModal = memo(function ProductFormModal({
       priceWholesale: roundTo2(parseFloat(priceWholesaleInput) || 0),
       priceCost: roundTo2(parseFloat(priceCostInput) || 0),
       ivaType: ivaType,
-      ivaPercentage: ivaType === 'con_iva' ? ivaPercentage : undefined,
+      ivaPercentage: ivaType === 'con_iva' ? ivaPercentage : 0,
       isKit: isKit,
       kitHasOwnStock: isKit ? kitHasOwnStock : false,
       kitComponents: isKit && kitComponents.length > 0 ? kitComponents : [],
+      isPriceFixed: false
     };
     
     setIsSubmitting(true);
@@ -239,32 +238,6 @@ const ProductFormModal = memo(function ProductFormModal({
       });
     } finally {
       setIsSubmitting(false);
-    }
-  };
-
-  // ✅ MISMA LÓGICA DE onSave QUE REGISTER PURCHASE
-  const handleProductSave = async (product: Product) => {
-    try {
-      await syncService.saveProduct(product);
-      
-      // ✅ Crear entrada de kardex con 'ajuste_inicial' (NO 'INICIAL')
-      const kardexEntry = {
-        id: `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-        productId: product.id,
-        date: new Date().toISOString(),
-        type: 'ajuste_inicial',  // ✅ Tipo correcto
-        quantity: product.stock,
-        previousStock: 0,
-        newStock: product.stock,
-        reference: 'Creación de producto',
-        note: 'Stock inicial',
-        costUsd: product.costUsd,
-      };
-      await syncService.saveKardexEntry(kardexEntry);
-      await syncService.loadAllDataToCache();
-    } catch (error: any) {
-      console.error('Error al guardar producto:', error);
-      throw error;
     }
   };
 
@@ -286,11 +259,10 @@ const ProductFormModal = memo(function ProductFormModal({
         <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
           <div className="flex-1 overflow-y-auto p-4">
             <div className="grid grid-cols-2 gap-3">
-              {/* Columna izquierda */}
               <div className="space-y-2">
                 <div>
                   <label className="text-[8px] font-black uppercase">Código de Barras</label>
-                  <Input value={barcode} onChange={e => setBarcode(e.target.value)} className="h-7 text-xs" required />
+                  <Input value={barcode} onChange={e => setBarcode(e.target.value)} className="h-7 text-xs" />
                 </div>
                 <div>
                   <label className="text-[8px] font-black uppercase">Nombre del Producto</label>
@@ -300,13 +272,13 @@ const ProductFormModal = memo(function ProductFormModal({
                   <div>
                     <label className="text-[8px] font-black uppercase">Departamento</label>
                     <select value={department} onChange={e => setDepartment(e.target.value)} className="w-full h-7 border rounded px-2 text-xs bg-white">
-                      {departments.map(d => <option key={d}>{d}</option>)}
+                      {departments.map((d, i) => <option key={`${d}-${i}`} value={d}>{d}</option>)}
                     </select>
                   </div>
                   <div>
                     <label className="text-[8px] font-black uppercase">Categoría</label>
                     <select value={category} onChange={e => setCategory(e.target.value)} className="w-full h-7 border rounded px-2 text-xs bg-white">
-                      {categories.map(c => <option key={c}>{c}</option>)}
+                      {categories.map((c, i) => <option key={`${c}-${i}`} value={c}>{c}</option>)}
                     </select>
                   </div>
                 </div>
@@ -383,9 +355,9 @@ const ProductFormModal = memo(function ProductFormModal({
                           />
                           {!hideChildResults && childProductResults.length > 0 && (
                             <div className="absolute top-full left-0 right-0 bg-white border rounded shadow z-20 mt-1 max-h-24 overflow-y-auto">
-                              {childProductResults.map(p => (
+                              {childProductResults.map((p, i) => (
                                 <button 
-                                  key={p.id} 
+                                  key={`child-${p.id}-${i}`} 
                                   type="button" 
                                   onClick={() => {
                                     setSelectedChildProduct(p);
@@ -412,7 +384,6 @@ const ProductFormModal = memo(function ProductFormModal({
                 )}
               </div>
               
-              {/* Columna derecha: costos y precios - IGUAL QUE REGISTER PURCHASE */}
               <div className="bg-[#F5F5F5] rounded-lg p-3 space-y-2">
                 <div className="w-3/4">
                   <label className="text-[7px] font-bold uppercase">Costo Unitario USD</label>
@@ -671,7 +642,7 @@ const ProductFormModal = memo(function ProductFormModal({
           </div>
           
           <div className="bg-[#F5F5F5] p-3 border-t flex justify-end gap-2 flex-shrink-0">
-            <Button type="submit" disabled={isSubmitting} className="bg-primary text-black font-black px-6 h-8 text-xs">
+            <Button type="submit" disabled={isSubmitting} id="submit-product-btn" className="bg-primary text-black font-black px-6 h-8 text-xs">
               {isSubmitting ? 'GUARDANDO...' : 'GUARDAR PRODUCTO'}
             </Button>
           </div>

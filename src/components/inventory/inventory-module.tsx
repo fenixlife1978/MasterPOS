@@ -72,7 +72,17 @@ interface KardexEntry {
   costUsd?: number;
 }
 
-const DEFAULT_CATEGORIES: Category[] = ['Whisky', 'Ron', 'Cerveza', 'Vino', 'Vodka', 'Tequila', 'Licor', 'Gin', 'Otro'];
+const DEFAULT_CATEGORIES: Category[] = [
+  { id: 'Whisky', name: 'Whisky' },
+  { id: 'Ron', name: 'Ron' },
+  { id: 'Cerveza', name: 'Cerveza' },
+  { id: 'Vino', name: 'Vino' },
+  { id: 'Vodka', name: 'Vodka' },
+  { id: 'Tequila', name: 'Tequila' },
+  { id: 'Licor', name: 'Licor' },
+  { id: 'Gin', name: 'Gin' },
+  { id: 'Otro', name: 'Otro' }
+];
 const DEFAULT_DEPARTMENTS = ['Polar', 'Munchy', 'Otros'];
 
 type InventoryTab = 'catalogo' | 'reporte' | 'ajustes';
@@ -152,7 +162,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
   
   const [activeTab, setActiveTab] = useState<InventoryTab>('catalogo');
   const [search, setSearch] = useState('');
-  const [filterCategory, setFilterCategory] = useState<Category | 'all'>('all');
+  const [filterCategory, setFilterCategory] = useState<string>('all');
   const [filterDepartment, setFilterDepartment] = useState<string>('all');
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [isAdding, setIsAdding] = useState(false);
@@ -189,7 +199,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
     barcode: '',
     name: '',
     department: '',
-    category: 'Otro'  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown as Category,
+    category: 'Otro' as unknown as Category,
     stock: 0,
     minStock: 5,
     costUsd: 0,
@@ -280,7 +290,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
     const q = searchChildProduct.toLowerCase();
     return products.filter(p => 
       p.id !== editingProduct?.id && 
-      (p.name.toLowerCase().includes(q) || p.barcode || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "".includes(q))
+      (p.name.toLowerCase().includes(q) || (p.barcode || '').includes(q))
     ).slice(0, 5);
   }, [searchChildProduct, products, editingProduct, hideChildResults]);
   
@@ -330,7 +340,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
         if (settings) {
           if (settings.categories) {
             const cats = Array.isArray(settings.categories) ? settings.categories : [];
-            setCategories(cats  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown as Category[]);
+            setCategories(cats as unknown as Category[]);
           }
           if (settings.departments) {
             const depts = Array.isArray(settings.departments) ? settings.departments : [];
@@ -355,7 +365,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
           const productIdNum = Number(entry.productId);
           if (!grouped[productIdNum]) grouped[productIdNum] = [];
           if (!grouped[productIdNum].some(e => e.id === entry.id)) {
-            grouped[productIdNum].push(entry);
+            grouped[productIdNum].push(entry as any);
           }
         });
         Object.keys(grouped).forEach(productIdKey => {
@@ -416,7 +426,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
           <div class="info">
             <p><strong>Producto:</strong> ${product.name}</p>
             <p><strong>Código:</strong> ${product.barcode}</p>
-            <p><strong>Categoría:</strong> ${product.category}</p>
+            <p><strong>Categoría:</strong> ${typeof product.category === 'string' ? product.category : product.category?.name || 'Otro'}</p>
             <p><strong>Stock Actual:</strong> ${product.stock} UDS</p>
             <p><strong>Costo Promedio Actual:</strong> ${formatUsd(product.costUsd || 0, 4)}</p>
             <p><strong>Fecha:</strong> ${new Date().toLocaleString('es-VE')}</p>
@@ -525,7 +535,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
     
     const productData: Product = {
       id: productId,
-      barcode: formData.barcode || "" || "" || "" || "" || "" || "" || "" || "" || "" || "",
+      barcode: formData.barcode || "",
       name: formData.name,
       department: formData.department || 'Otros',
       category: formData.category,
@@ -540,10 +550,11 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
       priceWholesale: roundTo2(parseFloat(priceWholesaleInput) || 0),
       priceCost: roundTo2(parseFloat(priceCostInput) || 0),
       ivaType: ivaType,
-      ivaPercentage: ivaType === 'con_iva' ? ivaPercentage : undefined,
+      ivaPercentage: ivaType === 'con_iva' ? ivaPercentage : 0,
       isKit: isKit,
       kitHasOwnStock: isKit ? containerHasOwnStock : false,
       kitComponents: isKit && kitComponents.length > 0 ? kitComponents : [],
+      isPriceFixed: false
     };
     
     if (editingProduct) {
@@ -551,7 +562,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
       toast({ title: "Actualizado", description: "Producto modificado correctamente." });
     } else {
       await syncService.saveProduct(productData);
-      const kardexEntry: KardexEntry = {
+      const kardexEntry: any = {
         id: `${Date.now()}_${Math.random()}`,
         productId: Number(productData.id),
         date: new Date().toISOString(),
@@ -576,7 +587,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
   const handleEdit = (p: Product) => {
     setEditingProduct(p);
     setFormData({
-      barcode: p.barcode || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "",
+      barcode: p.barcode || "",
       name: p.name,
       department: p.department || 'Otros',
       category: p.category,
@@ -604,7 +615,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
   
   const resetForm = () => {
     setFormData({
-      barcode: '', name: '', department: 'Otros', category: 'Otro', stock: 0, minStock: 5,
+      barcode: '', name: '', department: 'Otros', category: 'Otro' as unknown as Category, stock: 0, minStock: 5,
       costUsd: 0, priceWholesale: 0, priceCost: 0
     });
     setCostUsdInput('');
@@ -657,7 +668,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
     const accountingEntry = {
       id: String(Date.now()),
       date: new Date().toISOString(),
-      type: entryType,
+      type: entryType as any,
       category,
       subcategory,
       concept,
@@ -760,7 +771,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
         
         await syncService.saveProduct(updatedProduct);
         
-        const kardexEntry: KardexEntry = {
+        const kardexEntry: any = {
           id: `${Date.now()}_${Math.random()}`,
           productId: Number(product.id),
           date: new Date().toISOString(),
@@ -820,11 +831,12 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
   
   const addCategory = () => {
     if (!newCategory.trim()) return;
-    if (categories.includes(newCategory.trim()  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown as Category)) {
+    const cleanId = newCategory.trim().toLowerCase().replace(/\s+/g, '_');
+    if (categories.some(cat => cat.id === cleanId)) {
       toast({ title: "Error", description: "Esta categoría ya existe", variant: "destructive" });
       return;
     }
-    const newCats = [...categories, newCategory.trim()  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown as Category];
+    const newCats = [...categories, { id: cleanId, name: newCategory.trim() }];
     setCategories(newCats);
     localStorage.setItem(CACHE_KEYS.CATEGORIES, JSON.stringify(newCats));
     syncService.saveGlobalSettings({ categories: newCats, departments }).catch(console.error);
@@ -833,15 +845,15 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
   };
   
   const deleteCategory = (cat: Category) => {
-    if (cat === 'Otro') {
+    if (cat.id === 'Otro') {
       toast({ title: "No se puede eliminar", description: "La categoría 'Otro' es requerida", variant: "destructive" });
       return;
     }
-    if (products.some(p => p.category === cat)) {
+    if (products.some(p => p.category === cat.id)) {
       toast({ title: "No se puede eliminar", description: "Hay productos asociados a esta categoría", variant: "destructive" });
       return;
     }
-    const newCats = categories.filter(c => c !== cat);
+    const newCats = categories.filter(c => c.id !== cat.id);
     setCategories(newCats);
     localStorage.setItem(CACHE_KEYS.CATEGORIES, JSON.stringify(newCats));
     syncService.saveGlobalSettings({ categories: newCats, departments }).catch(console.error);
@@ -881,8 +893,8 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
     if (!printWindow) return;
     
     const pdfProducts = products.filter(p => {
-      const matchSearch = p.name.toLowerCase().includes(search.toLowerCase()) || p.barcode || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "".includes(search);
-      const matchCat = filterCategory === 'all' || p.category === filterCategory;
+      const matchSearch = p.name.toLowerCase().includes(search.toLowerCase()) || (p.barcode || '').includes(search);
+      const matchCat = filterCategory === 'all' || (typeof p.category === 'string' ? p.category === filterCategory : p.category?.id === filterCategory);
       const matchDept = filterDepartment === 'all' || (p.department === filterDepartment);
       return matchSearch && matchCat && matchDept;
     });
@@ -896,7 +908,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
             .header { text-align: center; border-bottom: 2px solid #D4A017; padding-bottom: 10px; margin-bottom: 20px; }
             h1 { margin: 0; color: #1A2C4E; font-size: 24px; text-transform: uppercase; }
             .info { display: flex; justify-content: space-between; font-size: 10px; color: #666; margin-bottom: 20px; }
-            table { width: 100%; border-collapse: collapse; }
+            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
             th { background-color: #1A2C4E; color: white; text-align: left; padding: 10px; font-size: 10px; text-transform: uppercase; }
             td { padding: 8px 10px; border-bottom: 1px solid #eee; font-size: 10px; }
             .text-right { text-align: right; }
@@ -933,9 +945,9 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
             <tbody>
               ${pdfProducts.map(p => `
                 <tr>
-                  <td>${p.barcode || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || ""}</td>
+                  <td>${p.barcode || ""}</td>
                   <td class="bold">${p.name}</td>
-                  <td>${p.category}</td>
+                  <td>${typeof p.category === 'string' ? p.category : p.category?.name || 'Otro'}</td>
                   <td class="text-center ${p.stock <= getProductMinStock(p) ? 'low-stock' : ''}">${p.stock}</td>
                   <td class="text-right">${formatUsd(p.priceUsd)}</td>
                   <td class="text-right">${formatBs(p.priceBs)}</td>
@@ -974,20 +986,20 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
       
       let matchesBarcode = false;
       if (isNumericSearch) {
-        const barcodeStr = p.barcode || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "".toString();
+        const barcodeStr = (p.barcode || "").toString();
         matchesBarcode = barcodeStr.startsWith(term);
       } else {
-        matchesBarcode = p.barcode || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "".toLowerCase().includes(term.toLowerCase());
+        matchesBarcode = (p.barcode || "").toLowerCase().includes(term.toLowerCase());
       }
       
-      const matchCat = filterCategory === 'all' || p.category === filterCategory;
+      const matchCat = filterCategory === 'all' || (typeof p.category === 'string' ? p.category === filterCategory : p.category?.id === filterCategory);
       const matchDept = filterDepartment === 'all' || (p.department === filterDepartment);
       
       return (matchesName || matchesBarcode) && matchCat && matchDept;
     }).sort((a, b) => {
       if (isNumericSearch) {
-        const aStarts = a.barcode || "" || "" || "" || "" || "".toString().startsWith(term);
-        const bStarts = b.barcode || "" || "" || "" || "" || "".toString().startsWith(term);
+        const aStarts = (a.barcode || "").toString().startsWith(term);
+        const bStarts = (b.barcode || "").toString().startsWith(term);
         if (aStarts && !bStarts) return -1;
         if (!aStarts && bStarts) return 1;
       }
@@ -1001,7 +1013,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
       filtered = filtered.filter(p => p.department === filterDepartment);
     }
     if (filterCategory !== 'all') {
-      filtered = filtered.filter(p => p.category === filterCategory);
+      filtered = filtered.filter(p => typeof p.category === 'string' ? p.category === filterCategory : p.category?.id === filterCategory);
     }
     
     if (search.trim()) {
@@ -1012,7 +1024,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
         const matchesName = p.name.toLowerCase().includes(term.toLowerCase());
         
         let matchesBarcode = false;
-        const barcodeStr = p.barcode || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "".toString();
+        const barcodeStr = (p.barcode || "").toString();
         if (isNumericSearch) {
           matchesBarcode = barcodeStr.startsWith(term);
         } else {
@@ -1024,8 +1036,8 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
       
       if (isNumericSearch) {
         filtered = filtered.sort((a, b) => {
-          const aStarts = a.barcode || "" || "" || "" || "" || "".toString().startsWith(term);
-          const bStarts = b.barcode || "" || "" || "" || "" || "".toString().startsWith(term);
+          const aStarts = (a.barcode || "").toString().startsWith(term);
+          const bStarts = (b.barcode || "").toString().startsWith(term);
           if (aStarts && !bStarts) return -1;
           if (!aStarts && bStarts) return 1;
           return a.name.localeCompare(b.name);
@@ -1044,12 +1056,10 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
     return reportProducts.reduce((sum, p) => sum + ((p.costUsd || 0) * p.stock), 0);
   }, [reportProducts]);
   
-  // ✅ CORREGIDO: Solo ajustes manuales (positivos y negativos) usando el mapeo unificado
   const allAdjustments = useMemo(() => {
     const adjustments: (KardexEntry & { productName: string; productBarcode: string; costBsValue: number })[] = [];
     for (const product of products) {
       const entries = getKardexForProduct(Number(product.id));
-      // ✅ Mostrar ajustes manuales (positivos, negativos y manuales)
       const productAdjustments = entries.filter(e => 
         e.type === 'ajuste_manual' || 
         e.type === 'ajuste_positivo' || 
@@ -1059,9 +1069,9 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
         adjustments.push({
           ...entry,
           productName: product.name,
-          productBarcode: product.barcode,
+          productBarcode: product.barcode || '',
           costBsValue: (entry.costUsd || 0) * state.exchangeRate,
-        });
+        } as any);
       }
     }
     adjustments.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
@@ -1150,7 +1160,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
       } else {
         await syncService.saveProduct(product);
         
-        const kardexEntry: KardexEntry = {
+        const kardexEntry: any = {
           id: `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
           productId: product.id,
           date: new Date().toISOString(),
@@ -1259,7 +1269,6 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
         </button>
       </div>
       
-      {/* === CATÁLOGO === */}
       {activeTab === 'catalogo' ? (
         <div className="flex-1 flex flex-col overflow-hidden px-6 mt-4">
           <div className="flex justify-between items-center mb-3 gap-2 flex-wrap flex-shrink-0">
@@ -1270,14 +1279,14 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
             <div className="flex items-center gap-1">
               <select value={filterDepartment} onChange={(e) => setFilterDepartment(e.target.value)} className="h-8 border rounded-lg px-2 text-xs font-bold bg-white">
                 <option value="all">📁 Todos los Deptos.</option>
-                {Array.isArray(departments) && departments.map(d => <option key={d}>{d}</option>)}
+                {Array.isArray(departments) && departments.map((d, i) => <option key={`${d}-${i}`} value={d}>{d}</option>)}
               </select>
               <button onClick={() => setShowDepartmentModal(true)} className="h-8 w-8 border rounded-lg flex items-center justify-center hover:bg-gray-100"><Settings size={13} /></button>
             </div>
             <div className="flex items-center gap-1">
-              <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value as any)} className="h-8 border rounded-lg px-2 text-xs font-bold bg-white">
+              <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)} className="h-8 border rounded-lg px-2 text-xs font-bold bg-white">
                 <option value="all">🏷️ Todas las Cats.</option>
-                {Array.isArray(categories) && categories.map(c => <option key={c}>{c}</option>)}
+                {Array.isArray(categories) && categories.map((c, i) => <option key={`${c.id}-${i}`} value={c.id}>{c.name}</option>)}
               </select>
               <button onClick={() => setShowCategoryModal(true)} className="h-8 w-8 border rounded-lg flex items-center justify-center hover:bg-gray-100"><Settings size={13} /></button>
             </div>
@@ -1314,10 +1323,10 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                     .filter((p) => p && p.id && p.name)
                     .map((p, index) => (
                       <TableRow key={`${p.id}-${index}`} className="border-b border-[#9E9E9E]/40 hover:bg-[#F5F5F5]">
-                        <TableCell className="font-mono text-[10px] text-black/60">{p.barcode || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || ""}</TableCell>
+                        <TableCell className="font-mono text-[10px] text-black/60">{p.barcode || ""}</TableCell>
                         <TableCell>
                           <p className="font-bold text-xs text-black">{p.name}</p>
-                          <p className="text-[8px] font-bold text-primary uppercase">{p.category} | {p.department || 'Sin Dept.'}</p>
+                          <p className="text-[8px] font-bold text-primary uppercase">{typeof p.category === 'string' ? p.category : p.category?.name || 'Otro'} | {p.department || 'Sin Dept.'}</p>
                         </TableCell>
                         <TableCell className="text-center">
                           <span className={cn("px-2 py-0.5 rounded-full text-[8px] font-black border", p.stock <= getProductMinStock(p) ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700")}>
@@ -1354,12 +1363,12 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
               <Input placeholder="Buscar producto en el reporte..." className="pl-9 h-8 border-[#9E9E9E] text-xs" value={search} onChange={(e) => setSearch(e.target.value)} />
             </div>
             <div className="flex items-center gap-1">
-              <select value={filterDepartment} onChange={(e) => setFilterDepartment(e.target.value)} className="h-8 border rounded-lg px-2 text-xs font-bold bg-white"><option value="all">📁 Todos los Deptos.</option>{Array.isArray(departments) && departments.map(d => <option key={d}>{d}</option>)}</select>
+              <select value={filterDepartment} onChange={(e) => setFilterDepartment(e.target.value)} className="h-8 border rounded-lg px-2 text-xs font-bold bg-white"><option value="all">📁 Todos los Deptos.</option>{Array.isArray(departments) && departments.map((d, i) => <option key={`${d}-${i}`} value={d}>{d}</option>)}</select>
             </div>
             <div className="flex items-center gap-1">
-              <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value as any)} className="h-8 border rounded-lg px-2 text-xs font-bold bg-white">
+              <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)} className="h-8 border rounded-lg px-2 text-xs font-bold bg-white">
                 <option value="all">🏷️ Todas las Cats.</option>
-                {Array.isArray(categories) && categories.map(c => <option key={c}>{c}</option>)}
+                {Array.isArray(categories) && categories.map((c, i) => <option key={`${c.id}-${i}`} value={c.id}>{c.name}</option>)}
               </select>
             </div>
             <div className="flex items-center gap-1 ml-auto">
@@ -1382,11 +1391,11 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                 <TableBody>
                   {reportProducts
                     .filter(p => p && p.id && p.name)
-                    .filter(p => !search || p.name.toLowerCase().includes(search.toLowerCase()) || p.barcode || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "".includes(search))
+                    .filter(p => !search || p.name.toLowerCase().includes(search.toLowerCase()) || (p.barcode || "").includes(search))
                     .map((p, index) => (
                       <TableRow key={`${p.id}-${index}`} className="border-b border-[#9E9E9E]/30 hover:bg-[#F5F5F5] py-1">
-                        <TableCell className="font-mono text-[9px] text-black/60 py-1.5">{p.barcode || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || ""}</TableCell>
-                        <TableCell className="py-1.5"><p className="font-bold text-xs text-black">{p.name}</p><p className="text-[7px] font-bold text-primary/70 uppercase">{p.category} | {p.department || 'Sin Dept.'}</p></TableCell>
+                        <TableCell className="font-mono text-[9px] text-black/60 py-1.5">{p.barcode || ""}</TableCell>
+                        <TableCell className="py-1.5"><p className="font-bold text-xs text-black">{p.name}</p><p className="text-[7px] font-bold text-primary/70 uppercase">{typeof p.category === 'string' ? p.category : p.category?.name || 'Otro'} | {p.department || 'Sin Dept.'}</p></TableCell>
                         <TableCell className="text-right font-mono text-[10px] font-bold text-black/80 py-1.5">{formatUsd(p.costUsd || 0, 4)}</TableCell>
                         <TableCell className="text-center py-1.5"><span className={cn("px-2 py-0.5 rounded-full text-[8px] font-black", p.stock <= getProductMinStock(p) ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700")}>{p.stock} UDS</span></TableCell>
                         <TableCell className="text-right font-mono text-[10px] font-black text-black/80 py-1.5">{formatUsd((p.costUsd || 0) * p.stock)}</TableCell>
@@ -1416,7 +1425,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
             </div>
           </div>
           <div className="mt-3 bg-gray-100 rounded-lg p-2 flex justify-between items-center flex-shrink-0">
-            <div className="text-[9px] text-black/60"><span className="font-bold">{reportProducts.filter(p => !search || p.name.toLowerCase().includes(search.toLowerCase()) || p.barcode || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" || "".includes(search)).length}</span> productos mostrados</div>
+            <div className="text-[9px] text-black/60"><span className="font-bold">{reportProducts.filter(p => !search || p.name.toLowerCase().includes(search.toLowerCase()) || (p.barcode || "").includes(search)).length}</span> productos mostrados</div>
             <div className="text-[9px] text-black/60">Valor total inventario: <span className="font-bold text-black">{formatUsd(reportProducts.reduce((sum, p) => sum + ((p.costUsd || 0) * p.stock), 0))}</span></div>
           </div>
         </div>
@@ -1491,8 +1500,6 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
         </div>
       )}
       
-      {/* ==================== MODALES ==================== */}
-      
       {viewingCostDetail && (
         <Dialog open={true} onOpenChange={() => setViewingCostDetail(null)}>
           <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-lg p-0 rounded-xl shadow-xl max-h-[85vh] flex flex-col">
@@ -1536,7 +1543,6 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
         </Dialog>
       )}
       
-      {/* ✅ MODAL DE KARDEX CORREGIDO - Usa el mapeo unificado */}
       {viewingKardex && (
         <Dialog open={true} onOpenChange={() => setViewingKardex(null)}>
           <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-6xl w-[95vw] p-0 overflow-hidden rounded-xl shadow-xl max-h-[90vh] flex flex-col">
@@ -1580,8 +1586,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                         const entries = getKardexForProduct(Number(viewingKardex.id));
                         const sortedEntries = [...entries].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
                         return sortedEntries.map((entry, idx) => {
-                          // ✅ Usar las funciones unificadas
-                          const { entrada, salida } = getEntryExit(entry);
+                          const { entrada, salida } = getEntryExit(entry as any);
                           const typeInfo = getKardexTypeInfo(entry.type);
                           let detalle = entry.reference || entry.note || '';
                           let formattedDate = '';
@@ -1691,7 +1696,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
           <DialogHeader className="bg-[#1A2C4E] p-3 text-white rounded-t-xl"><DialogTitle className="text-xs font-black">🏷️ Gestionar Categorías</DialogTitle></DialogHeader>
           <div className="p-3">
             <div className="flex gap-2 mb-3"><Input placeholder="Nueva categoría..." value={newCategory} onChange={(e) => setNewCategory(e.target.value)} className="flex-1 h-7 text-xs" onKeyPress={(e) => e.key === 'Enter' && addCategory()} /><Button onClick={addCategory} className="bg-primary text-black h-7 text-xs px-3">AGREGAR</Button></div>
-            <div className="max-h-52 overflow-y-auto border rounded-lg divide-y">{Array.isArray(categories) && categories.map(cat => (<div key={cat} className="flex justify-between items-center px-2 py-1.5"><span className="text-xs">{cat}</span>{cat !== 'Otro' && (<button onClick={() => deleteCategory(cat)} className="text-red-500 hover:text-red-700"><Trash2 size={12} /></button>)}</div>))}</div>
+            <div className="max-h-52 overflow-y-auto border rounded-lg divide-y">{Array.isArray(categories) && categories.map((cat, i) => (<div key={`${cat.id}-${i}`} className="flex justify-between items-center px-2 py-1.5"><span className="text-xs">{cat.name}</span>{cat.id !== 'Otro' && (<button onClick={() => deleteCategory(cat)} className="text-red-500 hover:text-red-700"><Trash2 size={12} /></button>)}</div>))}</div>
             <p className="text-[8px] text-black/40 mt-2 text-center">* La categoría "Otro" no se puede eliminar</p>
           </div>
         </DialogContent>
@@ -1702,7 +1707,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
           <DialogHeader className="bg-[#1A2C4E] p-3 text-white rounded-t-xl"><DialogTitle className="text-xs font-black">📁 Gestionar Departamentos</DialogTitle></DialogHeader>
           <div className="p-3">
             <div className="flex gap-2 mb-3"><Input placeholder="Nuevo departamento..." value={newDepartment} onChange={(e) => setNewDepartment(e.target.value)} className="flex-1 h-7 text-xs" onKeyPress={(e) => e.key === 'Enter' && addDepartment()} /><Button onClick={addDepartment} className="bg-primary text-black h-7 text-xs px-3">AGREGAR</Button></div>
-            <div className="max-h-52 overflow-y-auto border rounded-lg divide-y">{Array.isArray(departments) && departments.map(dept => (<div key={dept} className="flex justify-between items-center px-2 py-1.5"><span className="text-xs">{dept}</span>{dept !== 'Otros' && (<button onClick={() => deleteDepartment(dept)} className="text-red-500 hover:text-red-700"><Trash2 size={12} /></button>)}</div>))}</div>
+            <div className="max-h-52 overflow-y-auto border rounded-lg divide-y">{Array.isArray(departments) && departments.map((dept, i) => (<div key={`${dept}-${i}`} className="flex justify-between items-center px-2 py-1.5"><span className="text-xs">{dept}</span>{dept !== 'Otros' && (<button onClick={() => deleteDepartment(dept)} className="text-red-500 hover:text-red-700"><Trash2 size={12} /></button>)}</div>))}</div>
             <p className="text-[8px] text-black/40 mt-2 text-center">* El departamento "Otros" no se puede eliminar</p>
           </div>
         </DialogContent>

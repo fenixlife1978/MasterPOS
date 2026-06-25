@@ -29,7 +29,17 @@ type PaymentType = 'contado' | 'credito' | 'mixto';
 const roundTo2 = (num: number): number => Math.round(num * 100) / 100;
 const roundTo4 = (num: number): number => Math.round(num * 10000) / 10000;
 
-const DEFAULT_CATEGORIES: Category[] = ['Whisky', 'Ron', 'Cerveza', 'Vino', 'Vodka', 'Tequila', 'Licor', 'Gin', 'Otro'];
+const DEFAULT_CATEGORIES: Category[] = [
+  { id: 'Whisky', name: 'Whisky' },
+  { id: 'Ron', name: 'Ron' },
+  { id: 'Cerveza', name: 'Cerveza' },
+  { id: 'Vino', name: 'Vino' },
+  { id: 'Vodka', name: 'Vodka' },
+  { id: 'Tequila', name: 'Tequila' },
+  { id: 'Licor', name: 'Licor' },
+  { id: 'Gin', name: 'Gin' },
+  { id: 'Otro', name: 'Otro' }
+];
 const DEFAULT_DEPARTMENTS = ['Polar', 'Munchy', 'Otros'];
 
 function getVenezuelaISOString(): string {
@@ -112,7 +122,7 @@ export default function RegisterPurchase() {
     barcode: '',
     name: '',
     department: 'Otros',
-    category: 'Otro'  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown as Category,
+    category: 'Otro' as unknown as Category,
     stock: 0,
     minStock: 5,
     costUsd: 0,
@@ -150,7 +160,7 @@ export default function RegisterPurchase() {
     const loadSettings = async () => {
       const settings = await syncService.getGlobalSettings();
       if (settings) {
-        if (settings.categories) setCategories(settings.categories  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown as Category[]);
+        if (settings.categories) setCategories(settings.categories as unknown as Category[]);
         if (settings.departments) setDepartments(settings.departments);
       }
     };
@@ -205,7 +215,7 @@ export default function RegisterPurchase() {
     const q = productQuery.toLowerCase();
     return state.products.filter(p => 
       p.name.toLowerCase().includes(q) || 
-      p.barcode || "" || "" || "" || "" || "" || "" || "" || "" || "" || "".includes(q)
+      (p.barcode || '').includes(q)
     ).slice(0, 5);
   }, [productQuery, state.products, selectedProduct]);
 
@@ -348,7 +358,7 @@ export default function RegisterPurchase() {
           };
           await syncService.saveProduct(updatedProduct);
           
-          const kardexEntry = {
+          const kardexEntry: any = {
             id: `${Date.now()}_${item.productId}_${Math.random().toString(36).substr(2, 6)}`,
             productId: item.productId,
             date: timestamp,
@@ -433,7 +443,7 @@ export default function RegisterPurchase() {
     if (!searchChildProduct.trim() || hideChildResults) return [];
     const q = searchChildProduct.toLowerCase();
     return state.products.filter(p => 
-      p.name.toLowerCase().includes(q) || p.barcode || "" || "" || "" || "" || "" || "" || "" || "" || "" || "".includes(q)
+      p.name.toLowerCase().includes(q) || (p.barcode || '').includes(q)
     ).slice(0, 5);
   }, [searchChildProduct, state.products, hideChildResults]);
 
@@ -468,7 +478,7 @@ export default function RegisterPurchase() {
       barcode: '',
       name: '',
       department: 'Otros',
-      category: 'Otro',
+      category: 'Otro' as unknown as Category,
       stock: 0,
       minStock: 5,
       costUsd: 0,
@@ -527,8 +537,8 @@ export default function RegisterPurchase() {
       return;
     }
     
-    const existingProduct = state.products.find(p => p.barcode || "" || "" || "" || "" || "" || "" || "" || "" || "" || "" === productForm.barcode);
-    if (existingProduct) {
+    const existingProduct = state.products.find(p => p.barcode === productForm.barcode);
+    if (existingProduct && productForm.barcode !== '') {
       toast({ 
         title: "Código de barras duplicado", 
         description: `Ya existe un producto con el código "${productForm.barcode}" (${existingProduct.name})`, 
@@ -554,16 +564,17 @@ export default function RegisterPurchase() {
       priceWholesale: roundTo2(parseFloat(priceWholesaleInput) || 0),
       priceCost: roundTo2(parseFloat(priceCostInput) || 0),
       ivaType: ivaType,
-      ivaPercentage: ivaType === 'con_iva' ? ivaPercentage : undefined,
+      ivaPercentage: ivaType === 'con_iva' ? ivaPercentage : 0,
       isKit: isKit,
       kitHasOwnStock: isKit ? kitHasOwnStock : false,
       kitComponents: isKit && kitComponents.length > 0 ? kitComponents : [],
+      isPriceFixed: false
     };
     
     setIsSubmittingProduct(true);
     try {
       await syncService.saveProduct(productData);
-      const kardexEntry = {
+      const kardexEntry: any = {
         id: `${Date.now()}_${Math.random()}`,
         productId: productData.id,
         date: getVenezuelaISOString(),
@@ -928,7 +939,6 @@ export default function RegisterPurchase() {
                       value={productForm.barcode} 
                       onChange={e => setProductForm({...productForm, barcode: e.target.value})} 
                       className="h-7 text-xs" 
-                      required 
                     />
                   </div>
                   <div>
@@ -948,17 +958,17 @@ export default function RegisterPurchase() {
                         onChange={e => setProductForm({...productForm, department: e.target.value})} 
                         className="w-full h-7 border rounded px-2 text-xs bg-white"
                       >
-                        {departments.map(d => <option key={d}>{d}</option>)}
+                        {departments.map((d, i) => <option key={`${d}-${i}`} value={d}>{d}</option>)}
                       </select>
                     </div>
                     <div>
                       <label className="text-[8px] font-black uppercase">Categoría</label>
                       <select 
-                        value={productForm.category} 
-                        onChange={e => setProductForm({...productForm, category: e.target.value  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown  as unknown as Category})} 
+                        value={productForm.category as any} 
+                        onChange={e => setProductForm({...productForm, category: e.target.value as any})} 
                         className="w-full h-7 border rounded px-2 text-xs bg-white"
                       >
-                        {categories.map(c => <option key={c}>{c}</option>)}
+                        {categories.map((c, i) => <option key={`${c.id}-${i}`} value={c.id}>{c.name}</option>)}
                       </select>
                     </div>
                   </div>
@@ -1084,9 +1094,9 @@ export default function RegisterPurchase() {
                             />
                             {!hideChildResults && searchChildProduct && childProductResults.length > 0 && (
                               <div className="absolute top-full left-0 right-0 bg-white border rounded shadow z-20 mt-1 max-h-24 overflow-y-auto">
-                                {childProductResults.map(p => (
+                                {childProductResults.map((p, i) => (
                                   <button
-                                    key={p.id}
+                                    key={`${p.id}-${i}`}
                                     type="button"
                                     onClick={() => {
                                       setSelectedChildProduct(p);

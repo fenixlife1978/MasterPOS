@@ -296,6 +296,15 @@ export async function saveAccount(account: any) {
   return accountData;
 }
 
+export async function deleteAccount(accountId: string) {
+  try {
+    await remove(ref(rtdb, `accounts/${accountId}`));
+  } catch (error) {
+    console.error('Error deleting account:', error);
+    throw error;
+  }
+}
+
 // ============================================================
 // PROVEEDORES Y COMPRAS (RTDB)
 // ============================================================
@@ -527,6 +536,34 @@ export async function getAdminCode() {
 }
 
 // ============================================================
+// COMANDOS DE SINCRONIZACIÓN
+// ============================================================
+
+export async function sendSyncCommandToAllTerminals(): Promise<void> {
+  try {
+    const terminals = await getAllTerminals();
+    const activeTerminals = terminals.filter(t => t.status === 'active');
+    
+    const commands = activeTerminals.map(async (terminal) => {
+      const terminalId = terminal.id.toString();
+      const commandRef = ref(rtdb, `sync_commands/${terminalId}`);
+      await set(commandRef, {
+        command: 'sync_all',
+        timestamp: Date.now(),
+        status: 'pending'
+      });
+    });
+    
+    await Promise.all(commands);
+    
+    console.log(`✅ Comandos de sincronización enviados a ${activeTerminals.length} terminales`);
+  } catch (error) {
+    console.error('Error sending sync commands:', error);
+    throw error;
+  }
+}
+
+// ============================================================
 // SUSCRIPCIONES
 // ============================================================
 
@@ -716,7 +753,7 @@ const syncService = {
   getAllProducts, saveProduct, deleteProduct,
   getAllClients, saveClient, deleteClient,
   getAllTransactions, saveTransaction,
-  getAllAccounts, saveAccount, subscribeToAccounts,
+  getAllAccounts, saveAccount, deleteAccount,
   getRegisterByTerminal, saveRegisterByTerminal,
   getAllCashCloses, saveCashClose, deleteCashClose,
   getAllTerminals, saveTerminal, deleteTerminal, updateTerminalBlockStatus,
@@ -732,6 +769,7 @@ const syncService = {
   subscribeToKardex, subscribeToAccounting, subscribeToStockRTDB,
   listenForSyncCommands, loadAllDataToCache, syncAllPending, runAtomicSale,
   getPendingQueueLength, unsubscribeAll, setLoggingOut,
+  sendSyncCommandToAllTerminals,
   // Alias
   getProducts: getAllProducts,
   getClients: getAllClients,

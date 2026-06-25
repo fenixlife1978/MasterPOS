@@ -32,7 +32,7 @@ function getVenezuelaDate(): string {
     month: '2-digit',
     day: '2-digit',
   });
-  const parts = formatter.formatToParts(now);
+  const parts = formatter.formatToParts(new Date());
   const partMap = Object.fromEntries(parts.map(p => [p.type, p.value]));
   return `${partMap.year}-${partMap.month}-${partMap.day}`;
 }
@@ -210,7 +210,8 @@ export function usePOSState() {
     
     const unsubClients = syncService.subscribeToClients(setClients);
     const unsubTransactions = syncService.subscribeToTransactions(setTransactions as any);
-    const unsubAccounts = syncService.subscribeToAccounts(setAccounts as any);
+    // ✅ CORREGIDO: usar subscribeToAccounting en lugar de subscribeToAccounts
+    const unsubAccounts = syncService.subscribeToAccounting(setAccounts as any);
     
     const unsubSettings = syncService.subscribeToGlobalSettings?.((settings: any) => {
       if (settings) {

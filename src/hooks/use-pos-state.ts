@@ -32,7 +32,7 @@ function getVenezuelaDate(): string {
     month: '2-digit',
     day: '2-digit',
   });
-  const parts = formatter.formatToParts(new Date());
+  const parts = formatter.formatToParts(now);
   const partMap = Object.fromEntries(parts.map(p => [p.type, p.value]));
   return `${partMap.year}-${partMap.month}-${partMap.day}`;
 }
@@ -80,7 +80,6 @@ export function usePOSState() {
     }
   }, [terminalId]);
 
-  // ✅ CORREGIDO: Solo recalcula precios si hay productos y si el rate cambió realmente
   const recalcAllPricesWithNewRate = useCallback((newRate: number) => {
     if (products.length === 0) return;
     
@@ -114,7 +113,6 @@ export function usePOSState() {
     );
   }, [products]);
 
-  // Limpiar cuando el usuario se desconecta
   useEffect(() => {
     if (!user) {
       if (stockUnsubscribeRef.current) {
@@ -134,7 +132,6 @@ export function usePOSState() {
     }
   }, [user, terminalId]);
 
-  // Cargar caché local - SOLO UNA VEZ
   useEffect(() => {
     if (isUpdatingRef.current) return;
     isUpdatingRef.current = true;
@@ -156,12 +153,10 @@ export function usePOSState() {
     isUpdatingRef.current = false;
   }, [terminalId]);
 
-  // Sincronizar sesión activa con AuthContext
   useEffect(() => {
     setCurrentSession(authActiveSession);
   }, [authActiveSession]);
 
-  // Suscripción a cambios de sesión
   useEffect(() => {
     if (!user?.terminalId) return;
     const unsubscribe = syncService.subscribeToRegisterRealtime(terminalId, (registerData) => {
@@ -187,7 +182,6 @@ export function usePOSState() {
     return () => unsubscribe();
   }, [user?.terminalId, terminalId, user?.uid, exchangeRate, setActiveSession]);
 
-  // Suscripción al registro de caja
   useEffect(() => {
     if (!user) return;
     const unsubRegister = syncService.subscribeToRegisterRealtime(terminalId, (registerData) => {
@@ -198,7 +192,6 @@ export function usePOSState() {
     return () => unsubRegister();
   }, [user, terminalId, saveRegisterToLocalStorage]);
 
-  // ✅ CORREGIDO: Suscripción a productos - SIN dependencia de exchangeRate para evitar bucles
   useEffect(() => {
     if (!user) return;
 
@@ -270,7 +263,6 @@ export function usePOSState() {
     };
   }, [user, exchangeRate]);
 
-  // ✅ CORREGIDO: Suscripción a stock
   useEffect(() => {
     if (!user) return;
 
@@ -301,10 +293,8 @@ export function usePOSState() {
     };
   }, [user]);
 
-  // ✅ CORREGIDO: Recalcular precios cuando cambia exchangeRate - con protección contra bucles
   useEffect(() => {
     if (products.length > 0 && !isUpdatingRef.current) {
-      // Solo recalcular si los precios actuales no coinciden con la tasa actual
       const sampleProduct = products[0];
       if (sampleProduct && sampleProduct.priceBs !== roundTo2(sampleProduct.priceUsd * exchangeRate)) {
         recalcAllPricesWithNewRate(exchangeRate);
@@ -313,7 +303,6 @@ export function usePOSState() {
   }, [exchangeRate, products.length]);
 
   const refreshAllData = useCallback(async () => {
-    console.log("🔄 Refrescando datos desde caché local...");
     const [newProducts, newClients, newTransactions, newAccounts] = await Promise.all([
       syncService.getProducts(),
       syncService.getClients(),
@@ -324,7 +313,6 @@ export function usePOSState() {
     setClients(newClients);
     setTransactions(newTransactions);
     setAccounts(newAccounts);
-    console.log("✅ Datos actualizados después de sincronización.");
   }, []);
 
   useEffect(() => {
@@ -336,11 +324,9 @@ export function usePOSState() {
     return () => window.removeEventListener('sync-complete', handleSyncComplete);
   }, [refreshAllData]);
 
-  // Escuchar comandos remotos de sincronización
   useEffect(() => {
     if (!terminalId || terminalId === 'default') return;
     const unsubscribe = syncService.listenForSyncCommands(terminalId, async () => {
-      console.log(`📢 Terminal ${terminalId} ejecutando sincronización remota...`);
       await syncService.syncAllPending();
       await refreshAllData();
     });
@@ -422,7 +408,6 @@ export function usePOSState() {
     setCart(prevCart => prevCart.map(item => item.productId === productId ? { ...item, priceUsd: roundTo2(newPriceUsd), priceBs: roundTo2(newPriceBs) } : item));
   }, []);
 
-  // Crear sesión de caja
   const createCashSession = useCallback(async (initialAmountUsd: number): Promise<any> => {
     if (!user || !terminalId) throw new Error('Usuario o Terminal no autenticado');
     
@@ -446,7 +431,6 @@ export function usePOSState() {
     return null;
   }, [user, terminalId, exchangeRate, setActiveSession]);
 
-  // Cerrar sesión de caja
   const closeCashSession = useCallback(async (finalAmountUsd: number): Promise<any> => {
     if (!currentSession) throw new Error('No hay sesión activa');
     
@@ -462,7 +446,6 @@ export function usePOSState() {
     return closed;
   }, [currentSession, setActiveSession]);
 
-  // Recargar sesión
   const reloadSession = useCallback(async () => {
     if (!terminalId) return;
     const registerData = await syncService.getRegisterByTerminal(terminalId);
@@ -529,7 +512,6 @@ export function usePOSState() {
     return result;
   }, [products]);
 
-  // ✅ CORREGIDO: finalizeSale - clientId nunca es undefined
   const finalizeSale = useCallback(async (type: 'contado' | 'credito' | 'cobro_deuda' | 'colaboracion' | 'consumo_propio', paymentData: any) => {
     if (!register?.isOpen) throw new Error('Caja no abierta');
 
@@ -549,7 +531,6 @@ export function usePOSState() {
       costoTotalOperacion = roundTo2(costoTotalOperacion);
     }
 
-    // ✅ CORREGIDO: clientId siempre es undefined o un número, nunca null
     let targetClientId: number | undefined = undefined;
     if (type === 'credito' && paymentData.isNewClient) {
       const nextClientId = getVenezuelaTimestamp();
@@ -565,7 +546,7 @@ export function usePOSState() {
       targetClientId = nextClientId;
       setClients(prev => [...prev, newClient]);
     } else if (paymentData.clientId) {
-      targetClientId = paymentData.clientId;
+      targetClientId = Number(paymentData.clientId);
     }
 
     const txId = getVenezuelaTimestamp();
@@ -581,7 +562,7 @@ export function usePOSState() {
       payMethod: paymentData.method || 'efectivo_bs', 
       paidBs: isSpecial ? 0 : (paymentData.totalPaid || paymentData.amount || finalTotal),
       change: isSpecial ? 0 : (paymentData.change || 0), 
-      clientId: targetClientId, // ✅ Nunca undefined, solo number | undefined
+      clientId: targetClientId, 
       clientName: paymentData.clientName || undefined,
       exchangeRate, 
       receiptNumber: paymentData.receiptNumber || undefined, 
@@ -624,12 +605,6 @@ export function usePOSState() {
       }
     }
 
-    setProducts(prevProducts => prevProducts.map(p => {
-      const update = stockUpdates.get(p.id);
-      if (update) return { ...p, stock: update.newStock };
-      return p;
-    }));
-
     let accountingEntry: any = null;
     if (isSpecial && costoTotalOperacion > 0) {
       accountingEntry = {
@@ -662,22 +637,13 @@ export function usePOSState() {
 
     const newTxs = [...(register.txs || []), tx];
     
-    try {
-      await syncService.runAtomicSale(terminalId, tx, { 
-        products: stockUpdates, 
-        kardexEntries,
-        accountingEntry: accountingEntry,
-        registerUpdate: { txs: newTxs } 
-      });
-    } catch (syncError) {
-      console.warn("⚠️ Error de sincronización inmediata, la operación se reintentará en segundo plano.", syncError);
-    }
+    await syncService.runAtomicSale(terminalId, tx, { 
+      products: stockUpdates, 
+      kardexEntries,
+      accountingEntry: accountingEntry,
+      registerUpdate: { txs: newTxs } 
+    });
 
-    setRegister({ ...register, txs: newTxs });
-    registerRef.current = { ...register, txs: newTxs };
-    saveRegisterToLocalStorage({ ...register, txs: newTxs });
-    
-    // ✅ CORREGIDO: Solo crear cuenta si hay un clientId válido
     if (type === 'credito' && targetClientId) {
       const newAcc: Account = {
         id: getVenezuelaTimestamp(), 
@@ -694,21 +660,18 @@ export function usePOSState() {
         exchangeRate,
       };
       await syncService.saveAccount(newAcc);
-      setAccounts(prev => [...prev, newAcc]);
       
       const c = clients.find(cl => cl.id === targetClientId);
       if (c) {
         const updatedClient = { ...c, debt: (c.debt || 0) + total };
         await syncService.saveClient(updatedClient);
-        setClients(prev => prev.map(cl => cl.id === targetClientId ? updatedClient : cl));
       }
     }
 
     if (type !== 'cobro_deuda') setCart([]);
     return tx;
-  }, [cart, register, exchangeRate, clients, products, terminalId, saveRegisterToLocalStorage, getItemsToDiscount, currentSession]);
+  }, [cart, register, exchangeRate, clients, products, terminalId, getItemsToDiscount, currentSession]);
 
-  // ✅ CORREGIDO: applyAbono - clientId ya es número
   const applyAbono = useCallback(async (clientId: number, amount: number, method: string = 'efectivo_bs') => {
     if (!register?.isOpen) {
       console.warn("Caja no abierta, no se puede registrar el pago");
@@ -722,10 +685,9 @@ export function usePOSState() {
 
     let remaining = amount;
     const clientAccounts = accounts
-      .filter(a => a.clientId === clientId && a.status !== 'pagada')
+      .filter(a => Number(a.clientId) === Number(clientId) && a.status !== 'pagada')
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
-    const updatedAccounts = [...accounts];
     for (const acc of clientAccounts) {
       if (remaining <= 0) break;
       const owed = acc.amountBs - (acc.paidAmount || 0);
@@ -734,11 +696,8 @@ export function usePOSState() {
       const newStatus: 'pagada' | 'parcial' = newPaid >= acc.amountBs ? 'pagada' : 'parcial';
       const updatedAcc = { ...acc, paidAmount: newPaid, status: newStatus };
       await syncService.saveAccount(updatedAcc);
-      const idx = updatedAccounts.findIndex(a => a.id === acc.id);
-      if (idx !== -1) updatedAccounts[idx] = updatedAcc;
       remaining -= pay;
     }
-    setAccounts(updatedAccounts);
 
     const txId = getVenezuelaTimestamp();
     const tx: Transaction = {
@@ -753,7 +712,7 @@ export function usePOSState() {
       payMethod: method,
       paidBs: amount,
       change: 0,
-      clientId: clientId, // ✅ Siempre es un número
+      clientId: Number(clientId),
       clientName: client.name,
       exchangeRate,
       sessionId: currentSession?.id || undefined,
@@ -781,17 +740,11 @@ export function usePOSState() {
       registerUpdate: { txs: newTxs }
     });
 
-    setRegister({ ...register, txs: newTxs });
-    registerRef.current = { ...register, txs: newTxs };
-    saveRegisterToLocalStorage({ ...register, txs: newTxs });
-
     const newDebt = Math.max(0, (client.debt || 0) - amount);
     const updatedClient = { ...client, debt: newDebt };
     await syncService.saveClient(updatedClient);
-    setClients(prev => prev.map(c => c.id === clientId ? updatedClient : c));
-  }, [register, clients, accounts, exchangeRate, terminalId, saveRegisterToLocalStorage, currentSession]);
+  }, [register, clients, accounts, exchangeRate, terminalId, currentSession]);
 
-  // ✅ CORREGIDO: registerCashEgress - clientId siempre es undefined
   const registerCashEgress = useCallback(async (
     amount: number,
     reason: string,
@@ -817,7 +770,7 @@ export function usePOSState() {
       payMethod: payMethod,
       paidBs: totalBs,
       change: 0,
-      clientId: undefined, // ✅ Siempre undefined para devoluciones
+      clientId: undefined,
       clientName: 'DEVOLUCIÓN',
       exchangeRate,
       notes: reason,
@@ -850,12 +803,8 @@ export function usePOSState() {
       accountingEntry: accountingEntry,
       registerUpdate: { txs: newTxs }
     });
-
-    setRegister({ ...register, txs: newTxs });
-    registerRef.current = { ...register, txs: newTxs };
-    saveRegisterToLocalStorage({ ...register, txs: newTxs });
     return tx;
-  }, [register, exchangeRate, terminalId, saveRegisterToLocalStorage, currentSession]);
+  }, [register, exchangeRate, terminalId, currentSession]);
 
   const setExchangeRateProxy = useCallback(async (newRate: number) => {
     setExchangeRate(newRate);

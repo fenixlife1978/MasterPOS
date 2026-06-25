@@ -45,30 +45,36 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
   });
   const [isSubmittingInitial, setIsSubmittingInitial] = useState(false);
 
-  const groupedAccounts = state.accounts.reduce((acc, account) => {
-    const clientIdKey = String(account.clientId);
-    if (!acc[clientIdKey]) {
-      acc[clientIdKey] = {
-        clientId: String(account.clientId),
-        clientName: account.clientName,
-        clientCedula: account.clientCedula,
-        accounts: [],
-        totalDebt: 0,
-        totalOriginal: 0,
-        totalPaid: 0
-      };
-    }
-    const remainingUsd = (account.amountUsd || 0) - ((account.paidAmount || 0) / (account.exchangeRate || state.exchangeRate));
-    const remainingBs = remainingUsd * state.exchangeRate;
-    const originalBs = (account.amountUsd || 0) * (account.exchangeRate || state.exchangeRate);
-    const paidBs = (account.paidAmount || 0);
-    
-    acc[clientIdKey].accounts.push(account);
-    acc[clientIdKey].totalOriginal += originalBs;
-    acc[clientIdKey].totalPaid += paidBs;
-    acc[clientIdKey].totalDebt += remainingBs;
-    return acc;
-  }, {} as Record<string, { clientId: string; clientName: string; clientCedula: string; accounts: any[]; totalDebt: number; totalOriginal: number; totalPaid: number }>);
+  // ✅ Agrupación mejorada: normaliza IDs para evitar duplicados por tipo (number vs string)
+  const groupedAccounts = useMemo(() => {
+    return state.accounts.reduce((acc, account) => {
+      const clientIdKey = String(account.clientId);
+      if (!acc[clientIdKey]) {
+        acc[clientIdKey] = {
+          clientId: clientIdKey,
+          clientName: account.clientName || 'Cliente Desconocido',
+          clientCedula: account.clientCedula || 'S/N',
+          accounts: [],
+          totalDebt: 0,
+          totalOriginal: 0,
+          totalPaid: 0
+        };
+      }
+      
+      const currentRate = state.exchangeRate || 36.50;
+      const accountRate = account.exchangeRate || currentRate;
+      
+      const originalBs = account.amountBs || (account.amountUsd * accountRate);
+      const paidBs = account.paidAmount || 0;
+      const remainingBs = Math.max(0, originalBs - paidBs);
+      
+      acc[clientIdKey].accounts.push(account);
+      acc[clientIdKey].totalOriginal += originalBs;
+      acc[clientIdKey].totalPaid += paidBs;
+      acc[clientIdKey].totalDebt += remainingBs;
+      return acc;
+    }, {} as Record<string, any>);
+  }, [state.accounts, state.exchangeRate]);
 
   const clientsList = Object.values(groupedAccounts);
   const totalGeneralDebt = clientsList.reduce((sum, c) => sum + c.totalDebt, 0);
@@ -132,55 +138,28 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
     return new Date(dateStr).toLocaleDateString('es-VE', { day: '2-digit', month: '2-digit', year: 'numeric' });
   };
 
-  const getHistoricalExchangeRate = () => {
-    if (selectedTransaction?.accountInfo?.exchangeRate) {
-      return selectedTransaction.accountInfo.exchangeRate;
-    }
-    if (selectedTransaction?.exchangeRate) {
-      return selectedTransaction.exchangeRate;
-    }
+  const historicalRate = useMemo(() => {
+    if (selectedTransaction?.accountInfo?.exchangeRate) return selectedTransaction.accountInfo.exchangeRate;
+    if (selectedTransaction?.exchangeRate) return selectedTransaction.exchangeRate;
     return null;
-  };
+  }, [selectedTransaction]);
 
-  const historicalRate = getHistoricalExchangeRate();
-
-  // ========== ELIMINAR CLIENTE ==========
   const handleDeleteClient = async (clientId: string, clientName: string) => {
     if (!confirm(`¿Eliminar al cliente "${clientName}" y todas sus cuentas pendientes? Esta acción es irreversible.`)) return;
     
     try {
       const clientAccounts = state.accounts.filter(acc => String(acc.clientId) === clientId);
-      
-      // Eliminar cada cuenta usando la API
       for (const account of clientAccounts) {
-        const response = await fetch(`/api/accounts/delete-account?accountId=${String(account.id)}`, {
-          method: 'DELETE',
-        });
-        if (!response.ok) {
-          throw new Error(`Error al eliminar cuenta ${account.id}`);
-        }
+        await syncService.remove(ref(rtdb, `accounts/${account.id}`));
       }
-      
-      // Eliminar el cliente usando syncService
       await syncService.deleteClient(Number(clientId));
-      
-      // Recargar datos
-      await syncService.loadAllDataToCache();
-      toast({
-        title: "Cliente eliminado",
-        description: `${clientName} y sus ${clientAccounts.length} cuenta(s) han sido eliminadas.`,
-      });
+      toast({ title: "Cliente eliminado", description: `${clientName} eliminado correctamente.` });
     } catch (error) {
       console.error("Error al eliminar cliente:", error);
-      toast({
-        title: "Error",
-        description: "No se pudo eliminar el cliente. Intente de nuevo.",
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: "No se pudo eliminar el cliente.", variant: "destructive" });
     }
   };
 
-  // ========== REGISTRAR DEUDA INICIAL ==========
   const handleInitialDebtChange = (field: string, value: string) => {
     setInitialDebtForm(prev => ({ ...prev, [field]: value }));
     
@@ -199,260 +178,237 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
   const handleSubmitInitialDebt = async () => {
     const amountUsd = parseFloat(initialDebtForm.amountUsd);
     if (isNaN(amountUsd) || amountUsd <= 0) {
-      toast({ title: "Error", description: "Ingrese un monto válido en USD", variant: "destructive" });
+      toast({ title: "Error", description: "Ingrese un monto válido", variant: "destructive" });
       return;
     }
-    let clientId: string;
-    if (initialDebtForm.clientId === 'new') {
-      if (!initialDebtForm.clientName.trim()) {
-        toast({ title: "Error", description: "Ingrese el nombre del cliente", variant: "destructive" });
-        return;
-      }
-      const newClient = {
-        _id: String(Date.now()),
-        id: String(Date.now()),
-        name: initialDebtForm.clientName,
-        cedula: initialDebtForm.clientCedula,
-        phone: initialDebtForm.clientPhone,
-        address: initialDebtForm.clientAddress,
-        debt: 0,
-        createdAt: new Date().toISOString(),
-      };
-      await syncService.saveClient(newClient);
-      clientId = newClient.id;
-      toast({ title: "Cliente creado", description: `${newClient.name} agregado correctamente.` });
-    } else {
-      clientId = initialDebtForm.clientId;
-    }
-
-    const exchangeRateAtMoment = state.exchangeRate;
-    const amountBs = amountUsd * exchangeRateAtMoment;
-    const accountId = String(Date.now());
-    const newAccount = {
-      _id: String(Date.now()),
-      id: accountId,
-      txId: String(Date.now() + 1),
-      clientId: clientId,
-      clientName: initialDebtForm.clientName,
-      clientCedula: initialDebtForm.clientCedula,
-      amountBs: amountBs,
-      amountUsd: amountUsd,
-      paidAmount: 0,
-      status: 'pendiente',
-      date: initialDebtForm.date || new Date().toISOString(),
-      products: `Deuda inicial: ${initialDebtForm.reason || 'Sin motivo'}`,
-      exchangeRate: exchangeRateAtMoment,
-      createdAt: new Date().toISOString(),
-    };
-    await syncService.saveAccount(newAccount);
-
-    const txId = String(Date.now() + 1);
-    const creditTransaction = {
-      id: txId,
-      date: initialDebtForm.date || new Date().toISOString(),
-      type: 'credito',
-      items: [],
-      subtotal: amountBs,
-      iva: 0,
-      total: amountBs,
-      totalUsd: amountUsd,
-      payMethod: 'credito',
-      clientId: clientId,
-      clientName: initialDebtForm.clientName,
-      exchangeRate: exchangeRateAtMoment,
-      notes: `Deuda inicial: ${initialDebtForm.reason || 'Sin motivo'}`,
-      sessionId: null,
-      createdAt: new Date().toISOString(),
-    };
-    await syncService.saveTransaction(creditTransaction);
     
-    const clients = await syncService.getClients();
-    const client = clients.find(c => c.id === clientId);
-    if (client) {
-      const updatedClient = { ...client, debt: (client.debt || 0) + amountBs };
-      await syncService.saveClient(updatedClient);
+    setIsSubmittingInitial(true);
+    try {
+      let targetClientId: number;
+      let targetClientName: string;
+      let targetClientCedula: string;
+
+      if (initialDebtForm.clientId === 'new') {
+        if (!initialDebtForm.clientName.trim()) {
+          toast({ title: "Error", description: "Ingrese el nombre del cliente", variant: "destructive" });
+          setIsSubmittingInitial(false);
+          return;
+        }
+        const timestamp = Date.now();
+        const newClient = {
+          id: timestamp,
+          name: initialDebtForm.clientName,
+          cedula: initialDebtForm.clientCedula,
+          phone: initialDebtForm.clientPhone,
+          address: initialDebtForm.clientAddress,
+          debt: amountUsd * state.exchangeRate,
+        };
+        await syncService.saveClient(newClient);
+        targetClientId = timestamp;
+        targetClientName = newClient.name;
+        targetClientCedula = newClient.cedula;
+      } else {
+        const client = state.clients.find(c => String(c.id) === String(initialDebtForm.clientId));
+        if (!client) throw new Error("Cliente no encontrado");
+        targetClientId = Number(client.id);
+        targetClientName = client.name;
+        targetClientCedula = client.cedula;
+        
+        // Actualizar deuda del cliente existente
+        await syncService.saveClient({
+          ...client,
+          debt: (client.debt || 0) + (amountUsd * state.exchangeRate)
+        });
+      }
+
+      const exchangeRateAtMoment = state.exchangeRate;
+      const amountBs = amountUsd * exchangeRateAtMoment;
+      const timestamp = Date.now();
+      
+      const newAccount = {
+        id: timestamp,
+        txId: timestamp + 1,
+        clientId: targetClientId,
+        clientName: targetClientName,
+        clientCedula: targetClientCedula,
+        amountBs: amountBs,
+        amountUsd: amountUsd,
+        paidAmount: 0,
+        status: 'pendiente',
+        date: initialDebtForm.date || new Date().toISOString(),
+        products: `DEUDA INICIAL: ${initialDebtForm.reason || 'Saldo anterior'}`,
+        exchangeRate: exchangeRateAtMoment,
+      };
+
+      await syncService.saveAccount(newAccount);
+
+      // Crear transacción de respaldo
+      const creditTransaction = {
+        id: timestamp + 1,
+        date: newAccount.date,
+        type: 'credito',
+        items: [],
+        subtotal: amountBs,
+        iva: 0,
+        total: amountBs,
+        totalUsd: amountUsd,
+        payMethod: 'credito',
+        clientId: targetClientId,
+        clientName: targetClientName,
+        exchangeRate: exchangeRateAtMoment,
+        notes: newAccount.products,
+      };
+      
+      await syncService.saveTransaction(creditTransaction);
+
+      toast({ title: "Deuda registrada", description: "El crédito se ha guardado correctamente." });
+      setShowInitialDebtModal(false);
+      setInitialDebtForm({
+        clientId: '', clientName: '', clientCedula: '', clientPhone: '',
+        clientAddress: '', amountBs: '', amountUsd: '',
+        date: new Date().toISOString().split('T')[0], reason: '',
+      });
+    } catch (error) {
+      console.error("Error al registrar deuda inicial:", error);
+      toast({ title: "Error", description: "No se pudo registrar la deuda.", variant: "destructive" });
+    } finally {
+      setIsSubmittingInitial(false);
     }
-
-    await syncService.loadAllDataToCache();
-    toast({ title: "Deuda registrada", description: `Se cargó ${formatUsd(amountUsd)} al cliente.` });
-    setShowInitialDebtModal(false);
-    setInitialDebtForm({
-      clientId: '',
-      clientName: '',
-      clientCedula: '',
-      clientPhone: '',
-      clientAddress: '',
-      amountBs: '',
-      amountUsd: '',
-      date: new Date().toISOString().split('T')[0],
-      reason: '',
-    });
-  };
-
-  const getRemainingBs = (account: any) => {
-    const remainingUsd = (account.amountUsd || 0) - ((account.paidAmount || 0) / (account.exchangeRate || state.exchangeRate));
-    return remainingUsd * state.exchangeRate;
-  };
-
-  const getRemainingUsd = (account: any) => {
-    return (account.amountUsd || 0) - ((account.paidAmount || 0) / (account.exchangeRate || state.exchangeRate));
-  };
-
-  const getOriginalUsd = (account: any) => {
-    return account.amountUsd || 0;
-  };
-
-  const getPaidUsd = (account: any) => {
-    return (account.paidAmount || 0) / (account.exchangeRate || state.exchangeRate);
   };
 
   return (
-    <>
-      <div className="p-6 h-full overflow-y-auto scrollbar-thin">
-        <div className="flex justify-between items-center mb-6 flex-wrap gap-4">
-          <div>
-            <h2 className="text-2xl font-headline font-black text-black">Cuentas por Cobrar</h2>
-            <div className="flex items-center gap-4 mt-2">
-              <div className="bg-[#1A2C4E] rounded-xl px-4 py-2">
-                <span className="text-[10px] text-white/60 uppercase tracking-widest">Total General</span>
-                <div className="text-2xl font-black text-white">{formatUsd(totalGeneralDebtUsd)}</div>
-                <div className="text-[8px] text-white/40">≈ {formatBs(totalGeneralDebt)}</div>
-              </div>
-              <div className="bg-[#D4A017]/10 rounded-xl px-4 py-2 border border-[#D4A017]/30">
-                <span className="text-[10px] text-black/60 uppercase tracking-widest">Clientes con Deuda</span>
-                <div className="text-2xl font-black text-black">{clientsList.filter(c => c.totalDebt > 0).length}</div>
-              </div>
+    <div className="p-6 h-full overflow-y-auto scrollbar-thin">
+      <div className="flex justify-between items-center mb-6 flex-wrap gap-4">
+        <div>
+          <h2 className="text-2xl font-headline font-black text-black">Cuentas por Cobrar</h2>
+          <div className="flex items-center gap-4 mt-2">
+            <div className="bg-[#1A2C4E] rounded-xl px-4 py-2">
+              <span className="text-[10px] text-white/60 uppercase tracking-widest">Total General</span>
+              <div className="text-2xl font-black text-white">{formatUsd(totalGeneralDebtUsd)}</div>
+              <div className="text-[8px] text-white/40">≈ {formatBs(totalGeneralDebt)}</div>
+            </div>
+            <div className="bg-[#D4A017]/10 rounded-xl px-4 py-2 border border-[#D4A017]/30">
+              <span className="text-[10px] text-black/60 uppercase tracking-widest">Clientes con Deuda</span>
+              <div className="text-2xl font-black text-black">{clientsList.filter(c => c.totalDebt > 0.01).length}</div>
             </div>
           </div>
-          <div className="flex gap-2">
-            <Button onClick={() => setShowInitialDebtModal(true)} className="bg-green-600 hover:bg-green-700 text-white font-black h-9 px-4">
-              <PlusCircle size={16} className="mr-2" /> REGISTRAR DEUDA INICIAL
-            </Button>
-            <Button onClick={handleExport} className="bg-[#E8E8E8] hover:bg-[#D4A017] text-black border border-black/20 font-black h-9 px-4">
-              <Download size={16} className="mr-2" /> EXPORTAR CSV
-            </Button>
-          </div>
         </div>
-
-        <div className="bg-white border border-[#9E9E9E] rounded-xl overflow-hidden shadow-md">
-          <Table>
-            <TableHeader className="bg-[#E8E8E8]">
-              <TableRow className="border-b border-[#9E9E9E]">
-                <TableHead className="text-[10px] font-black uppercase w-8"></TableHead>
-                <TableHead className="text-[10px] font-black uppercase">Cliente</TableHead>
-                <TableHead className="text-[10px] font-black uppercase">Cédula</TableHead>
-                <TableHead className="text-[10px] font-black uppercase text-right">Total Original</TableHead>
-                <TableHead className="text-[10px] font-black uppercase text-right">Pagado</TableHead>
-                <TableHead className="text-[10px] font-black uppercase text-right">Saldo Pendiente</TableHead>
-                <TableHead className="text-[10px] font-black uppercase text-center">Acciones</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {clientsList.length === 0 ? (
-                <TableRow><TableCell colSpan={7} className="text-center py-10 text-black/50 italic">No hay cuentas registradas</TableCell></TableRow>
-              ) : (
-                clientsList.map((client) => {
-                  const isExpanded = expandedClient === client.clientId;
-                  const hasDebt = client.totalDebt > 0;
-                  const totalOriginalUsd = client.totalOriginal / state.exchangeRate;
-                  const totalPaidUsd = client.totalPaid / state.exchangeRate;
-                  const totalDebtUsd = client.totalDebt / state.exchangeRate;
-                  return (
-                    <React.Fragment key={client.clientId}>
-                      <TableRow className="border-b border-[#9E9E9E] hover:bg-[#F5F5F5] cursor-pointer" onClick={() => setExpandedClient(isExpanded ? null : client.clientId)}>
-                        <TableCell className="py-3">{isExpanded ? <ChevronDown size={16} className="text-black/60" /> : <ChevronRight size={16} className="text-black/60" />}</TableCell>
-                        <TableCell className="font-bold text-black">{client.clientName}</TableCell>
-                        <TableCell className="text-black font-bold text-sm">{client.clientCedula}</TableCell>
-                        <TableCell className="text-right">
-                          <div className="font-bold text-black">{formatUsd(totalOriginalUsd)}</div>
-                          <div className="text-[8px] text-black/40">≈ {formatBs(client.totalOriginal)}</div>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="font-bold text-[#2ECC71]">{formatUsd(totalPaidUsd)}</div>
-                          <div className="text-[8px] text-black/40">≈ {formatBs(client.totalPaid)}</div>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <span className={cn("font-black", hasDebt ? "text-[#E74C3C]" : "text-[#2ECC71]")}>
-                            {formatUsd(totalDebtUsd)}
-                          </span>
-                          <div className="text-[8px] text-black/40">≈ {formatBs(client.totalDebt)}</div>
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <div className="flex items-center justify-center gap-2">
-                            <button
-                              onClick={(e) => { e.stopPropagation(); handleDeleteClient(client.clientId, client.clientName); }}
-                              className="px-3 py-1.5 bg-red-600 text-white text-[10px] font-bold rounded-lg hover:bg-red-700 transition-all flex items-center gap-1"
-                              title="Eliminar cliente y todas sus cuentas"
-                            >
-                              <Trash2 size={12} /> ELIMINAR
-                            </button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                      {isExpanded && (
-                        <TableRow className="bg-[#FAFAFA]">
-                          <TableCell colSpan={7} className="p-0">
-                            <div className="p-4 border-t border-[#9E9E9E]">
-                              <div className="text-[11px] font-black text-black/60 uppercase tracking-widest mb-3">Historial de Créditos</div>
-                              <Table>
-                                <TableHeader>
-                                  <TableRow className="border-b border-[#9E9E9E] bg-[#F0F0F0]">
-                                    <TableHead className="text-[9px] font-bold text-black font-black">Fecha</TableHead>
-                                    <TableHead className="text-[9px] font-bold text-black font-black">Productos</TableHead>
-                                    <TableHead className="text-[9px] font-bold text-black font-black text-right">Monto</TableHead>
-                                    <TableHead className="text-[9px] font-bold text-black font-black text-right">Pagado</TableHead>
-                                    <TableHead className="text-[9px] font-bold text-black font-black text-right">Saldo</TableHead>
-                                    <TableHead className="text-[9px] font-bold text-black font-black text-center">Estado</TableHead>
-                                    <TableHead className="text-[9px] font-bold text-black font-black text-center">Ver</TableHead>
-                                  </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                  {client.accounts.map((account: any) => {
-                                    const remainingUsd = getRemainingUsd(account);
-                                    const originalUsd = getOriginalUsd(account);
-                                    const paidUsd = getPaidUsd(account);
-                                    return (
-                                      <TableRow key={account.id} className="border-b border-[#9E9E9E]/50 hover:bg-[#F5F5F5]">
-                                        <TableCell className="text-[11px] text-black font-bold">{new Date(account.date).toLocaleDateString('es-VE')}</TableCell>
-                                        <TableCell className="text-[11px] text-black font-bold max-w-[250px] truncate">{account.products}</TableCell>
-                                        <TableCell className="text-right">
-                                          <div className="font-bold text-black">{formatUsd(originalUsd)}</div>
-                                          <div className="text-[8px] text-black/40">≈ {formatBs(originalUsd * state.exchangeRate)}</div>
-                                        </TableCell>
-                                        <TableCell className="text-right">
-                                          <div className="font-bold text-[#2ECC71]">{formatUsd(paidUsd)}</div>
-                                          <div className="text-[8px] text-black/40">≈ {formatBs(account.paidAmount || 0)}</div>
-                                        </TableCell>
-                                        <TableCell className="text-right">
-                                          <span className={cn("font-bold", remainingUsd > 0 ? "text-[#E74C3C]" : "text-[#2ECC71]")}>
-                                            {formatUsd(remainingUsd)}
-                                          </span>
-                                          <div className="text-[8px] text-black/40">≈ {formatBs(remainingUsd * state.exchangeRate)}</div>
-                                        </TableCell>
-                                        <TableCell className="text-center"><span className={cn("px-2 py-0.5 rounded-full text-[9px] font-bold", account.status === 'pagada' ? "bg-[#2ECC71]/20 text-[#2ECC71]" : account.status === 'parcial' ? "bg-[#F39C12]/20 text-[#F39C12]" : "bg-[#E74C3C]/20 text-[#E74C3C]")}>{account.status === 'pagada' ? 'PAGADA' : account.status === 'parcial' ? 'PARCIAL' : 'PENDIENTE'}</span></TableCell>
-                                        <TableCell className="text-center">
-                                          <button onClick={() => handleTransactionClick(account)} className="p-1.5 rounded-lg hover:bg-gray-200 transition-colors">
-                                            <Eye size={14} className="text-black font-bold hover:text-black" />
-                                          </button>
-                                        </TableCell>
-                                      </TableRow>
-                                    );
-                                  })}
-                                </TableBody>
-                              </Table>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      )}
-                    </React.Fragment>
-                  );
-                })
-              )}
-            </TableBody>
-          </Table>
+        <div className="flex gap-2">
+          <Button onClick={() => setShowInitialDebtModal(true)} className="bg-green-600 hover:bg-green-700 text-white font-black h-9 px-4">
+            <PlusCircle size={16} className="mr-2" /> REGISTRAR DEUDA INICIAL
+          </Button>
+          <Button onClick={handleExport} className="bg-[#E8E8E8] hover:bg-[#D4A017] text-black border border-black/20 font-black h-9 px-4">
+            <Download size={16} className="mr-2" /> EXPORTAR CSV
+          </Button>
         </div>
       </div>
 
+      <div className="bg-white border border-[#9E9E9E] rounded-xl overflow-hidden shadow-md">
+        <Table>
+          <TableHeader className="bg-[#E8E8E8]">
+            <TableRow className="border-b border-[#9E9E9E]">
+              <TableHead className="text-[10px] font-black uppercase w-8"></TableHead>
+              <TableHead className="text-[10px] font-black uppercase">Cliente</TableHead>
+              <TableHead className="text-[10px] font-black uppercase">Cédula</TableHead>
+              <TableHead className="text-[10px] font-black uppercase text-right">Total Original</TableHead>
+              <TableHead className="text-[10px] font-black uppercase text-right">Pagado</TableHead>
+              <TableHead className="text-[10px] font-black uppercase text-right">Saldo Pendiente</TableHead>
+              <TableHead className="text-[10px] font-black uppercase text-center">Acciones</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {clientsList.length === 0 ? (
+              <TableRow><TableCell colSpan={7} className="text-center py-10 text-black/50 italic">No hay cuentas registradas</TableCell></TableRow>
+            ) : (
+              clientsList.map((client) => {
+                const isExpanded = expandedClient === client.clientId;
+                const hasDebt = client.totalDebt > 0.01;
+                return (
+                  <React.Fragment key={client.clientId}>
+                    <TableRow className="border-b border-[#9E9E9E] hover:bg-[#F5F5F5] cursor-pointer" onClick={() => setExpandedClient(isExpanded ? null : client.clientId)}>
+                      <TableCell className="py-3">{isExpanded ? <ChevronDown size={16} className="text-black/60" /> : <ChevronRight size={16} className="text-black/60" />}</TableCell>
+                      <TableCell className="font-bold text-black">{client.clientName}</TableCell>
+                      <TableCell className="text-black font-bold text-sm">{client.clientCedula}</TableCell>
+                      <TableCell className="text-right">
+                        <div className="font-bold text-black">{formatUsd(client.totalOriginal / state.exchangeRate)}</div>
+                        <div className="text-[8px] text-black/40">≈ {formatBs(client.totalOriginal)}</div>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="font-bold text-[#2ECC71]">{formatUsd(client.totalPaid / state.exchangeRate)}</div>
+                        <div className="text-[8px] text-black/40">≈ {formatBs(client.totalPaid)}</div>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <span className={cn("font-black", hasDebt ? "text-[#E74C3C]" : "text-[#2ECC71]")}>
+                          {formatUsd(client.totalDebt / state.exchangeRate)}
+                        </span>
+                        <div className="text-[8px] text-black/40">≈ {formatBs(client.totalDebt)}</div>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleDeleteClient(client.clientId, client.clientName); }}
+                          className="px-3 py-1.5 bg-red-600 text-white text-[10px] font-bold rounded-lg hover:bg-red-700 transition-all flex items-center gap-1"
+                        >
+                          <Trash2 size={12} /> ELIMINAR
+                        </button>
+                      </TableCell>
+                    </TableRow>
+                    {isExpanded && (
+                      <TableRow className="bg-[#FAFAFA]">
+                        <TableCell colSpan={7} className="p-0">
+                          <div className="p-4 border-t border-[#9E9E9E]">
+                            <div className="text-[11px] font-black text-black/60 uppercase tracking-widest mb-3">Historial de Créditos</div>
+                            <Table>
+                              <TableHeader>
+                                <TableRow className="border-b border-[#9E9E9E] bg-[#F0F0F0]">
+                                  <TableHead className="text-[9px] font-bold text-black">Fecha</TableHead>
+                                  <TableHead className="text-[9px] font-bold text-black">Detalle</TableHead>
+                                  <TableHead className="text-[9px] font-bold text-black text-right">Monto USD</TableHead>
+                                  <TableHead className="text-[9px] font-bold text-black text-right">Saldo Bs</TableHead>
+                                  <TableHead className="text-[9px] font-bold text-black text-center">Estado</TableHead>
+                                  <TableHead className="text-[9px] font-bold text-black text-center">Ver</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {client.accounts.map((account: any) => {
+                                  const originalUsd = account.amountUsd || (account.amountBs / (account.exchangeRate || state.exchangeRate));
+                                  const remainingBs = Math.max(0, (account.amountBs || (originalUsd * (account.exchangeRate || state.exchangeRate))) - (account.paidAmount || 0));
+                                  return (
+                                    <TableRow key={account.id} className="border-b border-[#9E9E9E]/50 hover:bg-[#F5F5F5]">
+                                      <TableCell className="text-[11px] text-black font-bold">{new Date(account.date).toLocaleDateString('es-VE')}</TableCell>
+                                      <TableCell className="text-[11px] text-black font-bold max-w-[250px] truncate">{account.products}</TableCell>
+                                      <TableCell className="text-right font-bold">{formatUsd(originalUsd)}</TableCell>
+                                      <TableCell className="text-right font-bold text-[#E74C3C]">{formatBs(remainingBs)}</TableCell>
+                                      <TableCell className="text-center">
+                                        <span className={cn("px-2 py-0.5 rounded-full text-[9px] font-bold", 
+                                          account.status === 'pagada' ? "bg-green-100 text-green-700" : 
+                                          account.status === 'parcial' ? "bg-yellow-100 text-yellow-700" : 
+                                          "bg-red-100 text-red-700")}>
+                                          {account.status.toUpperCase()}
+                                        </span>
+                                      </TableCell>
+                                      <TableCell className="text-center">
+                                        <button onClick={() => handleTransactionClick(account)} className="p-1.5 rounded-lg hover:bg-gray-200">
+                                          <Eye size={14} className="text-black" />
+                                        </button>
+                                      </TableCell>
+                                    </TableRow>
+                                  );
+                                })}
+                              </TableBody>
+                            </Table>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </React.Fragment>
+                );
+              })
+            )}
+          </TableBody>
+        </Table>
+      </div>
+
+      {/* Modal Detalle */}
       <Dialog open={showDetailModal} onOpenChange={setShowDetailModal}>
         <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-2xl p-0 overflow-hidden rounded-2xl shadow-xl max-h-[85vh] overflow-y-auto">
           <DialogHeader className="sr-only"><DialogTitle>Detalle del Crédito</DialogTitle></DialogHeader>
@@ -471,27 +427,21 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
               <div className="p-6 space-y-6">
                 <div className="grid grid-cols-2 gap-4 pb-4 border-b border-[#9E9E9E]">
                   <div><label className="text-[10px] font-black text-black/60 uppercase">Fecha</label><p className="text-sm font-bold text-black">{formatDate(selectedTransaction.accountInfo.date)}</p></div>
-                  <div><label className="text-[10px] font-black text-black/60 uppercase">Tipo</label><p className="text-sm font-bold text-black uppercase">CRÉDITO</p></div>
                   <div>
-                    <label className="text-[10px] font-black text-black/60 uppercase">Monto Total (USD)</label>
+                    <label className="text-[10px] font-black text-black/60 uppercase">Monto Original (USD)</label>
                     <p className="text-lg font-black text-black">{formatUsd(selectedTransaction.accountInfo.amountUsd)}</p>
-                    <p className="text-xs text-black/60">≈ {formatBs(selectedTransaction.accountInfo.amountUsd * state.exchangeRate)}</p>
                   </div>
-                  <div><label className="text-[10px] font-black text-black/60 uppercase">Estado</label><p className={cn("inline-block px-3 py-1 rounded-full text-[10px] font-bold", selectedTransaction.accountInfo.status === 'pagada' ? "bg-green-100 text-green-700" : selectedTransaction.accountInfo.status === 'parcial' ? "bg-yellow-100 text-yellow-700" : "bg-red-100 text-red-700")}>{selectedTransaction.accountInfo.status === 'pagada' ? 'PAGADA' : selectedTransaction.accountInfo.status === 'parcial' ? 'PARCIAL' : 'PENDIENTE'}</p></div>
                 </div>
 
                 <div className="bg-amber-50 rounded-lg p-4 border border-amber-200">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <DollarSign size={16} className="text-amber-700" />
-                      <label className="text-[10px] font-black text-amber-800 uppercase tracking-widest">Tasa BCV al Momento del Crédito</label>
+                      <label className="text-[10px] font-black text-amber-800 uppercase tracking-widest">Tasa BCV del Crédito</label>
                     </div>
                     <div className="text-right">
                       {historicalRate ? (
-                        <>
-                          <p className="text-lg font-black text-amber-800">1 USD = {formatBsNumber(historicalRate)}</p>
-                          <p className="text-[8px] text-amber-600">Valor fijo aplicado el {new Date(selectedTransaction.accountInfo.date).toLocaleDateString('es-VE')}</p>
-                        </>
+                        <p className="text-lg font-black text-amber-800">1 USD = {formatBsNumber(historicalRate)}</p>
                       ) : (
                         <p className="text-sm font-bold text-red-600">No registrada</p>
                       )}
@@ -507,35 +457,19 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
                         <tr>
                           <th className="text-left p-3 text-[10px] font-black uppercase">CANT</th>
                           <th className="text-left p-3 text-[10px] font-black uppercase">PRODUCTO</th>
-                          <th className="text-right p-3 text-[10px] font-black uppercase">PRECIO</th>
-                          <th className="text-right p-3 text-[10px] font-black uppercase">TOTAL</th>
+                          <th className="text-right p-3 text-[10px] font-black uppercase">SUBTOTAL</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {(() => {
-                          const items = getTransactionItems();
-                          if (items.length > 0) {
-                            return items.map((item, idx) => (
-                              <tr key={idx} className="border-b border-[#9E9E9E]/50 hover:bg-[#F5F5F5]">
-                                <td className="p-3 text-xs text-black font-bold">{item.qty}</td>
-                                <td className="p-3 text-xs text-black font-bold">{item.name}</td>
-                                <td className="p-3 text-right text-xs text-black font-bold">
-                                  {item.priceUsd > 0 ? formatUsd(item.priceUsd) : 
-                                   item.priceBs > 0 ? formatBs(item.priceBs) : '—'}
-                                </td>
-                                <td className="p-3 text-right text-xs font-bold text-black">
-                                  {item.priceUsd > 0 ? formatUsd(item.priceUsd * item.qty) : 
-                                   item.priceBs > 0 ? formatBs(item.priceBs * item.qty) : '—'}
-                                </td>
-                              </tr>
-                            ));
-                          }
-                          return (
-                            <tr>
-                              <td colSpan={4} className="text-center p-4 text-black/50 italic">No se pudieron cargar los productos</td>
-                            </tr>
-                          );
-                        })()}
+                        {getTransactionItems().map((item, idx) => (
+                          <tr key={idx} className="border-b border-[#9E9E9E]/50">
+                            <td className="p-3 text-xs text-black font-bold">{item.qty}</td>
+                            <td className="p-3 text-xs text-black font-bold">{item.name}</td>
+                            <td className="p-3 text-right text-xs font-bold">
+                              {item.priceUsd > 0 ? formatUsd(item.priceUsd * item.qty) : '—'}
+                            </td>
+                          </tr>
+                        ))}
                       </tbody>
                     </table>
                   </div>
@@ -543,32 +477,16 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
 
                 <div className="bg-[#F5F5F5] rounded-lg p-4 space-y-2">
                   <div className="flex justify-between text-sm">
-                    <span className="text-black/60">Monto Total (USD):</span>
-                    <div className="text-right">
-                      <span className="font-bold text-black">{formatUsd(selectedTransaction.accountInfo.amountUsd)}</span>
-                      <span className="text-xs text-black/60 ml-2">({formatBs(selectedTransaction.accountInfo.amountUsd * state.exchangeRate)})</span>
-                    </div>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-black/60">Monto Pagado (USD):</span>
-                    <div className="text-right">
-                      <span className="font-bold text-green-600">{formatUsd(getPaidUsd(selectedTransaction.accountInfo))}</span>
-                      <span className="text-xs text-black/60 ml-2">({formatBs(selectedTransaction.accountInfo.paidAmount || 0)})</span>
-                    </div>
+                    <span className="text-black/60">Pagado:</span>
+                    <span className="font-bold text-green-600">{formatBs(selectedTransaction.accountInfo.paidAmount || 0)}</span>
                   </div>
                   <div className="flex justify-between text-sm pt-1 border-t border-dashed border-[#9E9E9E]">
-                    <span className="text-black/60">Saldo Pendiente (USD):</span>
-                    <div className="text-right">
-                      <span className="font-bold text-red-600">{formatUsd(getRemainingUsd(selectedTransaction.accountInfo))}</span>
-                      <span className="text-xs text-black/60 ml-2">({formatBs(getRemainingBs(selectedTransaction.accountInfo))})</span>
-                    </div>
-                  </div>
-                  <div className="text-[8px] text-amber-600 text-center pt-2 border-t border-dashed border-[#9E9E9E]">
-                    ℹ️ Los montos en Bs se calculan con la tasa actual del sistema ({formatBs(state.exchangeRate)}). La deuda original en USD se mantiene fija.
+                    <span className="text-black font-bold">Saldo Pendiente:</span>
+                    <span className="font-black text-red-600">{formatBs(selectedTransaction.accountInfo.amountBs - (selectedTransaction.accountInfo.paidAmount || 0))}</span>
                   </div>
                 </div>
 
-                {(selectedTransaction.accountInfo.paidAmount || 0) > 0 && (
+                {getAbonosForClient().length > 0 && (
                   <div>
                     <label className="text-[10px] font-black text-black/60 uppercase flex items-center gap-2 mb-3"><History size={12} /> HISTORIAL DE ABONOS</label>
                     <div className="border border-[#9E9E9E] rounded-lg overflow-hidden">
@@ -580,43 +498,27 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
                           </tr>
                         </thead>
                         <tbody>
-                          {(() => {
-                            const abonos = getAbonosForClient();
-                            if (abonos.length === 0) {
-                              return (
-                                <tr>
-                                  <td colSpan={2} className="text-center p-4 text-black/50 italic">No hay registros de abonos individuales</td>
-                                </tr>
-                              );
-                            }
-                            return abonos.map((abono, idx) => (
-                              <tr key={idx} className="border-b border-[#9E9E9E]/50 hover:bg-[#F5F5F5]">
-                                <td className="p-3 text-xs text-black font-bold">{formatDateShort(abono.date)}</td>
-                                <td className="p-3 text-right text-xs font-bold text-green-600">{formatBs(abono.total)}</td>
-                              </tr>
-                            ));
-                          })()}
+                          {getAbonosForClient().map((abono, idx) => (
+                            <tr key={idx} className="border-b border-[#9E9E9E]/50">
+                              <td className="p-3 text-xs text-black font-bold">{formatDateShort(abono.date)}</td>
+                              <td className="p-3 text-right text-xs font-bold text-green-600">{formatBs(abono.total)}</td>
+                            </tr>
+                          ))}
                         </tbody>
-                        <tfoot className="bg-[#F0F0F0]">
-                          <tr>
-                            <td className="p-3 text-xs font-bold text-black">TOTAL ABONADO</td>
-                            <td className="p-3 text-right text-sm font-black text-green-700">{formatUsd(getPaidUsd(selectedTransaction.accountInfo))}</td>
-                          </tr>
-                        </tfoot>
                       </table>
                     </div>
                   </div>
                 )}
               </div>
-              <div className="bg-[#F5F5F5] p-4 border-t border-[#9E9E9E] flex justify-end">
-                <Button onClick={() => setShowDetailModal(false)} className="bg-[#E8E8E8] text-black font-bold hover:bg-[#D4A017]">CERRAR</Button>
+              <div className="bg-[#F5F5F5] p-4 border-t flex justify-end">
+                <Button onClick={() => setShowDetailModal(false)}>CERRAR</Button>
               </div>
             </div>
           )}
         </DialogContent>
       </Dialog>
 
-      {/* Modal para registrar deuda inicial */}
+      {/* Modal Deuda Inicial */}
       <Dialog open={showInitialDebtModal} onOpenChange={setShowInitialDebtModal}>
         <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-md p-0 overflow-hidden rounded-2xl shadow-xl">
           <DialogHeader className="p-4 bg-[#1A2C4E] text-white">
@@ -630,114 +532,39 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
                 onChange={(e) => handleInitialDebtChange('clientId', e.target.value)}
                 className="w-full h-9 border border-[#9E9E9E] rounded-lg px-3 text-sm bg-white"
               >
-                <option value="">Seleccionar cliente existente</option>
+                <option value="">Seleccionar cliente...</option>
                 <option value="new">➕ Nuevo cliente</option>
-                {clientsList.map(c => (
-                  <option key={c.clientId} value={c.clientId}>{c.clientName} (Cédula: {c.clientCedula})</option>
+                {state.clients.map(c => (
+                  <option key={c.id} value={c.id}>{c.name} ({c.cedula})</option>
                 ))}
               </select>
             </div>
             {initialDebtForm.clientId === 'new' && (
-              <>
-                <div>
-                  <label className="text-[10px] font-bold text-black/60 uppercase block mb-1">Nombre *</label>
-                  <Input 
-                    value={initialDebtForm.clientName} 
-                    onChange={(e) => handleInitialDebtChange('clientName', e.target.value)} 
-                    className="h-9 text-sm"
-                    placeholder="Ej: Juan Pérez"
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-[10px] font-bold text-black/60 uppercase block mb-1">Cédula</label>
-                    <Input 
-                      value={initialDebtForm.clientCedula} 
-                      onChange={(e) => handleInitialDebtChange('clientCedula', e.target.value)} 
-                      className="h-9 text-sm"
-                      placeholder="Ej: V-12345678"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-bold text-black/60 uppercase block mb-1">Teléfono</label>
-                    <Input 
-                      value={initialDebtForm.clientPhone} 
-                      onChange={(e) => handleInitialDebtChange('clientPhone', e.target.value)} 
-                      className="h-9 text-sm"
-                      placeholder="Ej: 0412-1234567"
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold text-black/60 uppercase block mb-1">Dirección</label>
-                  <Input 
-                    value={initialDebtForm.clientAddress} 
-                    onChange={(e) => handleInitialDebtChange('clientAddress', e.target.value)} 
-                    className="h-9 text-sm"
-                    placeholder="Ej: Av. Principal, Local 5"
-                  />
-                </div>
-              </>
+              <div className="space-y-3 animate-in fade-in slide-in-from-top-2">
+                <Input value={initialDebtForm.clientName} onChange={(e) => handleInitialDebtChange('clientName', e.target.value)} placeholder="Nombre completo *" />
+                <Input value={initialDebtForm.clientCedula} onChange={(e) => handleInitialDebtChange('clientCedula', e.target.value)} placeholder="Cédula / RIF *" />
+              </div>
             )}
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-[10px] font-bold text-black/60 uppercase block mb-1">Monto (USD) *</label>
-                <Input 
-                  type="number" 
-                  step="0.01"
-                  value={initialDebtForm.amountUsd} 
-                  onChange={(e) => handleInitialDebtChange('amountUsd', e.target.value)} 
-                  className="h-9 text-sm font-mono text-right"
-                  placeholder="0.00"
-                />
-                <p className="text-[8px] text-black/40 mt-1">Tasa actual: {formatBs(state.exchangeRate)}</p>
+                <label className="text-[10px] font-bold text-black/60 uppercase block mb-1">Monto USD *</label>
+                <Input type="number" step="0.01" value={initialDebtForm.amountUsd} onChange={(e) => handleInitialDebtChange('amountUsd', e.target.value)} placeholder="0.00" />
               </div>
               <div>
-                <label className="text-[10px] font-bold text-black/60 uppercase block mb-1">Monto (Bs)</label>
-                <Input 
-                  type="number" 
-                  step="0.01"
-                  value={initialDebtForm.amountBs} 
-                  onChange={(e) => handleInitialDebtChange('amountBs', e.target.value)} 
-                  className="h-9 text-sm font-mono text-right"
-                  placeholder="0.00"
-                  disabled
-                />
+                <label className="text-[10px] font-bold text-black/60 uppercase block mb-1">Total Bs</label>
+                <Input value={initialDebtForm.amountBs} disabled className="bg-gray-100 font-bold" />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-[10px] font-bold text-black/60 uppercase block mb-1">Fecha (opcional)</label>
-                <Input 
-                  type="date" 
-                  value={initialDebtForm.date} 
-                  onChange={(e) => handleInitialDebtChange('date', e.target.value)} 
-                  className="h-9 text-sm"
-                />
-              </div>
-              <div>
-                <label className="text-[10px] font-bold text-black/60 uppercase block mb-1">Motivo (opcional)</label>
-                <Input 
-                  value={initialDebtForm.reason} 
-                  onChange={(e) => handleInitialDebtChange('reason', e.target.value)} 
-                  className="h-9 text-sm"
-                  placeholder="Ej: Saldo anterior"
-                />
-              </div>
-            </div>
+            <Input value={initialDebtForm.reason} onChange={(e) => handleInitialDebtChange('reason', e.target.value)} placeholder="Motivo (ej: Saldo anterior)" />
           </div>
           <div className="bg-[#F5F5F5] p-4 border-t flex justify-end gap-3">
-            <Button variant="ghost" onClick={() => setShowInitialDebtModal(false)} className="text-black">CANCELAR</Button>
-            <Button 
-              onClick={handleSubmitInitialDebt} 
-              disabled={isSubmittingInitial}
-              className="bg-primary text-black font-black"
-            >
-              REGISTRAR DEUDA
+            <Button variant="ghost" onClick={() => setShowInitialDebtModal(false)}>CANCELAR</Button>
+            <Button onClick={handleSubmitInitialDebt} disabled={isSubmittingInitial} className="bg-primary text-black font-black">
+              {isSubmittingInitial ? 'GUARDANDO...' : 'REGISTRAR DEUDA'}
             </Button>
           </div>
         </DialogContent>
       </Dialog>
-    </>
+    </div>
   );
 }

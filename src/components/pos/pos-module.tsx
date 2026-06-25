@@ -106,7 +106,6 @@ export default function POSModule({ state }: POSModuleProps) {
       setNextReceiptNumber(1);
       lastReceiptNumberRef.current = 1;
     }
-    console.log(`📋 Terminal ${terminalId} - Próximo ticket: ${nextReceiptNumber}`);
   }, [terminalId]);
 
   const subtotal = state.cart.reduce((s, i) => s + (i.priceBs * i.qty), 0);
@@ -122,16 +121,11 @@ export default function POSModule({ state }: POSModuleProps) {
   const totalForCredit = totalWithIva;
 
   const handlePaymentConfirm = async (data: any) => {
-    if (isProcessingContado || !canExecuteOperation()) {
-      console.log('⚠️ Operación bloqueada');
-      return;
-    }
-    
+    if (isProcessingContado || !canExecuteOperation()) return;
     setIsProcessingContado(true);
     
     try {
       const safeReceiptNum = await checkAndGetNextTicketNumber();
-      
       const tx = await state.finalizeSale('contado', { 
         ...data, 
         receiptNumber: safeReceiptNum,
@@ -139,12 +133,6 @@ export default function POSModule({ state }: POSModuleProps) {
       });
       
       if (tx) {
-        // ✅ Limpiar carrito
-        if ((state as any).setCart) {
-          (state as any).setCart([]);
-        } else {
-          state.cart.length = 0;
-        }
         lastReceiptNumberRef.current = safeReceiptNum;
         setLastTransaction(tx);
         localStorage.setItem(getStorageKey(), safeReceiptNum.toString());
@@ -153,7 +141,7 @@ export default function POSModule({ state }: POSModuleProps) {
       }
     } catch (error) {
       console.error("Error al procesar venta al contado:", error);
-      alert('Error al procesar la venta. Por favor, verifique e intente nuevamente.');
+      alert('Error al procesar la venta.');
     } finally {
       setIsProcessingContado(false);
       setShowContado(false);
@@ -161,16 +149,11 @@ export default function POSModule({ state }: POSModuleProps) {
   };
 
   const handleCreditConfirm = async (data: any) => {
-    if (isProcessingCredito || !canExecuteOperation()) {
-      console.log('⚠️ Operación bloqueada');
-      return;
-    }
-    
+    if (isProcessingCredito || !canExecuteOperation()) return;
     setIsProcessingCredito(true);
     
     try {
       const safeReceiptNum = await checkAndGetNextTicketNumber();
-      
       const tx = await state.finalizeSale('credito', {
         clientId: data.clientId,
         clientName: data.clientName,
@@ -186,11 +169,6 @@ export default function POSModule({ state }: POSModuleProps) {
       });
       
       if (tx) {
-        if ((state as any).setCart) {
-          (state as any).setCart([]);
-        } else {
-          state.cart.length = 0;
-        }
         lastReceiptNumberRef.current = safeReceiptNum;
         setLastTransaction(tx);
         localStorage.setItem(getStorageKey(), safeReceiptNum.toString());
@@ -199,7 +177,7 @@ export default function POSModule({ state }: POSModuleProps) {
       }
     } catch (error) {
       console.error("Error al procesar venta a crédito:", error);
-      alert('Error al procesar la venta a crédito. Por favor, verifique e intente nuevamente.');
+      alert('Error al procesar la venta a crédito.');
     } finally {
       setIsProcessingCredito(false);
       setShowCredito(false);
@@ -207,11 +185,7 @@ export default function POSModule({ state }: POSModuleProps) {
   };
 
   const handleAuthorizationConfirm = async (type: 'colaboracion' | 'consumo_propio', motivo: string, pin: string) => {
-    if (isProcessingAutorizacion || !canExecuteOperation()) {
-      console.log('⚠️ Operación bloqueada');
-      return;
-    }
-    
+    if (isProcessingAutorizacion || !canExecuteOperation()) return;
     setIsProcessingAutorizacion(true);
     setIsVerifying(true);
     
@@ -225,7 +199,6 @@ export default function POSModule({ state }: POSModuleProps) {
       }
 
       const safeReceiptNum = await checkAndGetNextTicketNumber();
-      
       const tx = await state.finalizeSale(type, {
         receiptNumber: safeReceiptNum,
         notes: motivo,
@@ -234,11 +207,6 @@ export default function POSModule({ state }: POSModuleProps) {
       });
       
       if (tx) {
-        if ((state as any).setCart) {
-          (state as any).setCart([]);
-        } else {
-          state.cart.length = 0;
-        }
         lastReceiptNumberRef.current = safeReceiptNum;
         setLastTransaction(tx);
         localStorage.setItem(getStorageKey(), safeReceiptNum.toString());
@@ -256,10 +224,6 @@ export default function POSModule({ state }: POSModuleProps) {
   };
 
   const handleOpenSaleType = () => {
-    if (isProcessingContado || isProcessingCredito || isProcessingAutorizacion) {
-      console.log('⚠️ Ya hay una operación en curso');
-      return;
-    }
     if (state.cart.length === 0) {
       alert('No hay productos en el carrito');
       return;

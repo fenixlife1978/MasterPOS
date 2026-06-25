@@ -253,8 +253,13 @@ export async function getAllClients() {
 
 export async function saveClient(client: any) {
   const id = client.id || generateId();
-  await set(ref(rtdb, `clients/${id}`), { ...client, id, updatedAt: new Date().toISOString() });
-  return { ...client, id };
+  const clientData = {
+    ...client,
+    id: processId(String(id)),
+    updatedAt: new Date().toISOString()
+  };
+  await set(ref(rtdb, `clients/${id}`), clientData);
+  return clientData;
 }
 
 export async function deleteClient(id: number) {
@@ -271,7 +276,8 @@ export async function getAllAccounts() {
     if (snapshot.exists()) {
       return Object.entries(snapshot.val()).map(([id, a]: [string, any]) => ({
         id: processId(id) as number,
-        ...a
+        ...a,
+        clientId: processId(String(a.clientId))
       }));
     }
     return [];
@@ -280,8 +286,14 @@ export async function getAllAccounts() {
 
 export async function saveAccount(account: any) {
   const id = account.id || generateId();
-  await set(ref(rtdb, `accounts/${id}`), { ...account, id, updatedAt: new Date().toISOString() });
-  return account;
+  const accountData = {
+    ...account,
+    id: processId(String(id)),
+    clientId: processId(String(account.clientId)),
+    updatedAt: new Date().toISOString()
+  };
+  await set(ref(rtdb, `accounts/${id}`), accountData);
+  return accountData;
 }
 
 // ============================================================
@@ -591,7 +603,11 @@ export function subscribeToTransactions(callback: (data: any[]) => void) {
 export function subscribeToAccounts(callback: (data: any[]) => void) {
   return onValue(ref(rtdb, 'accounts'), (snapshot) => {
     if (snapshot.exists()) {
-      callback(Object.entries(snapshot.val()).map(([id, a]: [string, any]) => ({ id: processId(id) as number, ...a })));
+      callback(Object.entries(snapshot.val()).map(([id, a]: [string, any]) => ({
+        id: processId(id) as number,
+        ...a,
+        clientId: processId(String(a.clientId))
+      })));
     } else callback([]);
   });
 }
@@ -677,7 +693,8 @@ export async function loadAllDataToCache() {
       getAllClients(),
       getAllTransactions(),
       getAllSuppliers(),
-      getGlobalSettings()
+      getGlobalSettings(),
+      getAllAccounts()
     ]);
   } catch (error) {
     console.error('Error cargando caché:', error);
@@ -699,6 +716,7 @@ const syncService = {
   getAllProducts, saveProduct, deleteProduct,
   getAllClients, saveClient, deleteClient,
   getAllTransactions, saveTransaction,
+  getAllAccounts, saveAccount, subscribeToAccounts,
   getRegisterByTerminal, saveRegisterByTerminal,
   getAllCashCloses, saveCashClose, deleteCashClose,
   getAllTerminals, saveTerminal, deleteTerminal, updateTerminalBlockStatus,
@@ -708,7 +726,7 @@ const syncService = {
   getAllSupplierPayments, saveSupplierPayment, deleteSupplierPayment,
   getAllAccountingEntries, saveAccountingEntry, saveAccountingBatch,
   getAllKardexEntries, saveKardexEntry, saveKardexBatch, getKardexEntries: getAllKardexEntries,
-  subscribeToProducts, subscribeToClients, subscribeToTransactions, subscribeToAccounts,
+  subscribeToProducts, subscribeToClients, subscribeToTransactions,
   subscribeToRegisterRealtime, subscribeToPurchaseInvoices, subscribeToPurchaseItems,
   subscribeToSupplierPayments, subscribeToSuppliersRealtime, subscribeToGlobalSettings,
   subscribeToKardex, subscribeToAccounting, subscribeToStockRTDB,

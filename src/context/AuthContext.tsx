@@ -198,7 +198,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               totalSales: registerData.txs?.length || 0,
               exchangeRate: registerData.exchangeRate || 0,
             };
-            setCurrentSession(session);
             if (setActiveSession) setActiveSession(session);
           } else {
             setActiveSession(null);
@@ -263,7 +262,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           finalAmountUsd: 0,
           status: 'open',
           totalSales: registerData.txs?.length || 0,
-          exchangeRate: registerData.exchangeRate || exchangeRate,
+          exchangeRate: registerData.exchangeRate || 0,
         };
         setActiveSession(session);
       } else {

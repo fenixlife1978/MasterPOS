@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { usePOSState } from '@/hooks/use-pos-state';
-import { Search, X, CheckCircle, AlertCircle, Receipt, User, Calendar, Banknote, Minus, Plus, RefreshCw, Smartphone, CreditCard, Monitor, ChevronLeft, ChevronRight, Filter, Loader2 } from 'lucide-react';
+import { Search, X, CheckCircle, AlertCircle, Receipt, User, Calendar, Banknote, Minus, Plus, RefreshCw, Smartphone, CreditCard, Monitor, Loader2, Terminal } from 'lucide-react';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,9 +10,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { cn } from '@/lib/utils';
 import { Transaction, CartItem } from '@/lib/types';
 import syncService from '@/services/syncService';
-import { formatBs, formatUsd } from '@/lib/currency-formatter';
+import { formatBs } from '@/lib/currency-formatter';
 import { useAuth } from '@/context/AuthContext';
-import { getDatabase, ref, get } from 'firebase/database';
+import { getDatabase, ref, get, update } from 'firebase/database';
 import app from '@/lib/firebase';
 
 interface ReturnItem {
@@ -78,25 +78,56 @@ export default function ReturnsModule({ userRole = 'cashier' }: ReturnsModulePro
   const [isProcessing, setIsProcessing] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
+  // ✅ Filtros de fecha
   const [startDate, setStartDate] = useState(getTodayYMD());
   const [endDate, setEndDate] = useState(getTodayYMD());
   const [searchReceipt, setSearchReceipt] = useState('');
 
+  // ✅ SELECTOR DE TERMINAL (SOLO PARA ADMIN)
+  const [selectedTerminal, setSelectedTerminal] = useState<string>('all');
+  const [availableTerminals, setAvailableTerminals] = useState<{ id: string; name: string }[]>([]);
+  const [isLoadingTerminals, setIsLoadingTerminals] = useState(false);
+
+  // ✅ Paginación
   const [allTransactions, setAllTransactions] = useState<any[]>([]);
   const [filteredTransactions, setFilteredTransactions] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 5;
 
-  // ✅ IDs de transacciones devueltas - se actualiza INMEDIATAMENTE
-  const [returnedIds, setReturnedIds] = useState<Set<string | number>>(new Set());
-  const returnedIdsRef = useRef<Set<string | number>>(new Set());
+  // ✅ Cargar terminales disponibles (solo admin)
+  useEffect(() => {
+    if (isAdmin) {
+      const loadTerminals = async () => {
+        setIsLoadingTerminals(true);
+        try {
+          const terms = await syncService.getAllTerminals();
+          setAvailableTerminals(terms.map(t => ({ id: t.id, name: t.name || t.id })));
+        } catch (error) {
+          console.error('Error cargando terminales:', error);
+        } finally {
+          setIsLoadingTerminals(false);
+        }
+      };
+      loadTerminals();
+    }
+  }, [isAdmin]);
 
+  // ✅ Obtener terminal a consultar
+  const getTargetTerminal = useCallback(() => {
+    if (isAdmin) {
+      return selectedTerminal === 'all' ? null : selectedTerminal;
+    }
+    return currentTerminalId;
+  }, [isAdmin, selectedTerminal, currentTerminalId]);
+
+  // ✅ Cargar transacciones
   const loadTransactions = useCallback(async () => {
     setIsLoading(true);
     setMessage(null);
     
     try {
+      const targetTerminal = getTargetTerminal();
       const db = getDatabase(app);
       const snapshot = await get(ref(db, 'transactions'));
       
@@ -109,32 +140,27 @@ export default function ReturnsModule({ userRole = 'cashier' }: ReturnsModulePro
           ...(tx as any) 
         }));
         
+        // ✅ Filtrar por terminal (si no es 'all')
         transactions = transactions.filter(tx => {
           const txTerminal = extractTerminalIdFromSession(tx.session_id);
-          return txTerminal === currentTerminalId;
+          if (targetTerminal) {
+            return txTerminal === targetTerminal;
+          }
+          return true; // 'all' muestra todas las terminales
         });
         
+        // ✅ Filtrar por fecha
         transactions = transactions.filter(tx => {
           if (!tx.date) return false;
           const txDate = getLocalDateStr(tx.date);
           return txDate >= startDate && txDate <= endDate;
         });
         
+        // ✅ Ordenar por fecha descendente
         transactions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
       }
       
       setAllTransactions(transactions);
-      
-      // ✅ Calcular IDs devueltos (TOTAL O PARCIALMENTE)
-      const returnedSet = new Set<string | number>();
-      for (const tx of transactions) {
-        // Una venta está devuelta si existe una devolución (total o parcial) que la referencia
-        if (tx.type === 'devolucion' && (tx.original_sale_id || tx.originalSaleId)) {
-          returnedSet.add(tx.original_sale_id || tx.originalSaleId);
-        }
-      }
-      returnedIdsRef.current = returnedSet;
-      setReturnedIds(returnedSet);
       
       const start = 0;
       const end = itemsPerPage;
@@ -147,7 +173,14 @@ export default function ReturnsModule({ userRole = 'cashier' }: ReturnsModulePro
     } finally {
       setIsLoading(false);
     }
-  }, [currentTerminalId, startDate, endDate]);
+  }, [getTargetTerminal, startDate, endDate]);
+
+  // ✅ Recargar cuando cambia terminal seleccionada
+  useEffect(() => {
+    if (isAdmin) {
+      loadTransactions();
+    }
+  }, [selectedTerminal, loadTransactions, isAdmin]);
 
   const loadMore = useCallback(() => {
     const nextPage = currentPage + 1;
@@ -172,6 +205,7 @@ export default function ReturnsModule({ userRole = 'cashier' }: ReturnsModulePro
     setMessage(null);
     
     try {
+      const targetTerminal = getTargetTerminal();
       const num = parseInt(receipt);
       if (isNaN(num)) {
         setMessage({ type: 'error', text: 'Ingrese un número de recibo válido' });
@@ -179,15 +213,17 @@ export default function ReturnsModule({ userRole = 'cashier' }: ReturnsModulePro
         return;
       }
       
-      const found = allTransactions.find(tx => 
-        (tx.receipt_number || tx.receiptNumber) === num
-      );
+      // ✅ Buscar en todas las transacciones filtradas por terminal
+      const found = allTransactions.find(tx => {
+        const txTerminal = extractTerminalIdFromSession(tx.session_id);
+        if (targetTerminal && txTerminal !== targetTerminal) return false;
+        return (tx.receipt_number || tx.receiptNumber) === num;
+      });
       
       if (found) {
         setFilteredTransactions([found]);
         setCurrentPage(1);
-        const isReturned = returnedIdsRef.current.has(found.id);
-        if (isReturned) {
+        if (found.return_status === 'total' || found.return_status === 'partial') {
           setMessage({ type: 'error', text: 'Esta venta ya fue devuelta (total o parcialmente)' });
         }
       } else {
@@ -200,7 +236,7 @@ export default function ReturnsModule({ userRole = 'cashier' }: ReturnsModulePro
     } finally {
       setIsLoading(false);
     }
-  }, [allTransactions, searchReceipt, loadTransactions]);
+  }, [allTransactions, searchReceipt, loadTransactions, getTargetTerminal]);
 
   const clearSearch = useCallback(() => {
     setSearchReceipt('');
@@ -217,9 +253,8 @@ export default function ReturnsModule({ userRole = 'cashier' }: ReturnsModulePro
     }
   }, [loadTransactions, searchReceipt]);
 
-  // ✅ Verificar si una venta ya fue devuelta - usa el estado actualizado
-  const isTransactionReturned = useCallback((id: string | number) => {
-    return returnedIdsRef.current.has(id);
+  const isTransactionReturned = useCallback((tx: any) => {
+    return tx.return_status === 'total' || tx.return_status === 'partial';
   }, []);
 
   const salesTransactions = useMemo(() => {
@@ -231,7 +266,7 @@ export default function ReturnsModule({ userRole = 'cashier' }: ReturnsModulePro
   }, [filteredTransactions]);
 
   const openReturnModal = (tx: any, type: 'total' | 'partial') => {
-    if (isTransactionReturned(tx.id)) {
+    if (isTransactionReturned(tx)) {
       alert('Esta venta ya fue devuelta (total o parcialmente). No se puede procesar otra devolución.');
       return;
     }
@@ -282,7 +317,6 @@ export default function ReturnsModule({ userRole = 'cashier' }: ReturnsModulePro
   const totalReturnAmount = useMemo(() => returnItems.reduce((s, i) => s + i.amount, 0), [returnItems]);
   const hasItemsToReturn = useMemo(() => returnItems.some(i => i.returnQty > 0), [returnItems]);
 
-  // ✅ PROCESAR DEVOLUCIÓN - CON BLOQUEO INMEDIATO Y PERMANENTE
   const processReturn = async () => {
     if (isAdmin) {
       setMessage({ type: 'error', text: 'Los administradores no pueden procesar devoluciones' });
@@ -304,7 +338,7 @@ export default function ReturnsModule({ userRole = 'cashier' }: ReturnsModulePro
       return;
     }
     
-    if (isTransactionReturned(selectedTransaction.id)) {
+    if (isTransactionReturned(selectedTransaction)) {
       setMessage({ type: 'error', text: 'Esta venta ya fue devuelta. No se puede procesar otra devolución.' });
       return;
     }
@@ -313,21 +347,17 @@ export default function ReturnsModule({ userRole = 'cashier' }: ReturnsModulePro
     setMessage(null);
     
     const saleId = selectedTransaction.id;
+    const returnType = returnItems.every(i => i.returnQty === i.originalQty) ? 'total' : 'partial';
     
-    // ✅ BLOQUEAR INMEDIATAMENTE el botón (ANTES de guardar en BD)
-    // Esto asegura que aunque falle la conexión, no se puede procesar dos veces
-    returnedIdsRef.current.add(saleId);
-    setReturnedIds(new Set(returnedIdsRef.current));
-    
-    // ✅ Actualizar la transacción en la lista local (UI se actualiza inmediatamente)
+    // ✅ Bloquear UI inmediatamente
     setFilteredTransactions(prev => 
       prev.map(tx => 
-        tx.id === saleId ? { ...tx, _returned: true } : tx
+        tx.id === saleId ? { ...tx, return_status: returnType } : tx
       )
     );
     setAllTransactions(prev => 
       prev.map(tx => 
-        tx.id === saleId ? { ...tx, _returned: true } : tx
+        tx.id === saleId ? { ...tx, return_status: returnType } : tx
       )
     );
     
@@ -355,7 +385,6 @@ export default function ReturnsModule({ userRole = 'cashier' }: ReturnsModulePro
         change: 0,
         clientId: selectedTransaction.client_id || selectedTransaction.clientId || null,
         clientName: selectedTransaction.client_name || selectedTransaction.clientName || null,
-        // ✅ Guardar ambas variaciones de nombres para compatibilidad
         original_sale_id: saleId,
         originalSaleId: saleId,
         original_receipt_number: selectedTransaction.receipt_number || selectedTransaction.receiptNumber,
@@ -365,13 +394,32 @@ export default function ReturnsModule({ userRole = 'cashier' }: ReturnsModulePro
         session_id: selectedTransaction.session_id,
       };
       
-      await syncService.saveTransaction(returnTransaction);
+      const db = getDatabase(app);
+      await Promise.all([
+        syncService.saveTransaction(returnTransaction),
+        update(ref(db, `transactions/${saleId}`), {
+          return_status: returnType,
+          updatedAt: new Date().toISOString()
+        })
+      ]);
       
-      // Actualizar stock
+      // ✅ Actualizar stock y crear kardex entries
       for (const ret of returnItems.filter(i => i.returnQty > 0)) {
         const prod = products.find(p => p.id === ret.productId);
         if (prod) {
-          await syncService.saveProduct({ ...prod, stock: prod.stock + ret.returnQty });
+          const newStock = prod.stock + ret.returnQty;
+          await syncService.saveProduct({ ...prod, stock: newStock });
+          await syncService.saveKardexEntry({
+            productId: ret.productId,
+            date: new Date().toISOString(),
+            type: 'devolucion',
+            quantity: ret.returnQty,
+            previousStock: prod.stock,
+            newStock: newStock,
+            reference: `Devolución #${selectedTransaction.receipt_number || selectedTransaction.receiptNumber}`,
+            note: `Dev. ${returnType} - Recibo #${formatReceipt(selectedTransaction.receipt_number || selectedTransaction.receiptNumber)}`,
+            costUsd: prod.costUsd,
+          });
         }
       }
       
@@ -395,29 +443,26 @@ export default function ReturnsModule({ userRole = 'cashier' }: ReturnsModulePro
         });
       }
       
-      setMessage({ type: 'success', text: '✅ Devolución exitosa - Botones desactivados permanentemente' });
+      setMessage({ type: 'success', text: '✅ Devolución exitosa - Venta bloqueada permanentemente' });
       
       setTimeout(() => { 
         setMessage(null); 
         setShowReturnModal(false); 
         setShowConfirmModal(false); 
         setSelectedTransaction(null);
-        // ✅ NO restaurar los IDs devueltos - permanecen bloqueados
       }, 1500);
       
     } catch (err) {
       console.error('Error en devolución:', err);
-      // ✅ Si falla, DESBLOQUEAR para permitir reintentar
-      returnedIdsRef.current.delete(saleId);
-      setReturnedIds(new Set(returnedIdsRef.current));
+      // ✅ Revertir UI si falla
       setFilteredTransactions(prev => 
         prev.map(tx => 
-          tx.id === saleId ? { ...tx, _returned: false } : tx
+          tx.id === saleId ? { ...tx, return_status: undefined } : tx
         )
       );
       setAllTransactions(prev => 
         prev.map(tx => 
-          tx.id === saleId ? { ...tx, _returned: false } : tx
+          tx.id === saleId ? { ...tx, return_status: undefined } : tx
         )
       );
       setMessage({ type: 'error', text: '❌ Error en devolución: ' + (err instanceof Error ? err.message : 'Intente nuevamente') });
@@ -432,7 +477,15 @@ export default function ReturnsModule({ userRole = 'cashier' }: ReturnsModulePro
     return totalDisplayed < totalAvailable;
   }, [filteredTransactions, allTransactions]);
 
-  if (isLoading) {
+  // ✅ Obtener texto descriptivo de la terminal seleccionada
+  const getTerminalDisplayText = useCallback(() => {
+    if (!isAdmin) return `Terminal ${currentTerminalId}`;
+    if (selectedTerminal === 'all') return 'Todas las terminales';
+    const term = availableTerminals.find(t => t.id === selectedTerminal);
+    return term ? term.name : `Terminal ${selectedTerminal}`;
+  }, [isAdmin, selectedTerminal, availableTerminals, currentTerminalId]);
+
+  if (isLoading && allTransactions.length === 0) {
     return (
       <div className="p-6 h-full flex items-center justify-center bg-background">
         <div className="text-center">
@@ -449,7 +502,7 @@ export default function ReturnsModule({ userRole = 'cashier' }: ReturnsModulePro
         <div>
           <h2 className="text-2xl font-black">Devoluciones</h2>
           <p className="text-sm text-black/50">
-            Gestión de devoluciones - Terminal {currentTerminalId}
+            Gestión de devoluciones - {getTerminalDisplayText()}
           </p>
           {!searchReceipt.trim() && (
             <p className="text-xs text-black/30 mt-1">
@@ -460,13 +513,33 @@ export default function ReturnsModule({ userRole = 'cashier' }: ReturnsModulePro
             <p className="text-xs text-amber-600 mt-1">⚠️ Modo administrador: Solo visualización</p>
           )}
         </div>
-        <Button 
-          onClick={loadTransactions} 
-          variant="outline" 
-          className="h-8 text-[10px] font-black border-[#9E9E9E]"
-        >
-          <RefreshCw size={12} className="mr-1" /> RECARGAR
-        </Button>
+        <div className="flex gap-2">
+          {isAdmin && (
+            <div className="flex items-center gap-2 bg-white border border-[#9E9E9E] rounded-lg px-3 py-1">
+              <Terminal size={14} className="text-black/50" />
+              <select
+                value={selectedTerminal}
+                onChange={(e) => setSelectedTerminal(e.target.value)}
+                className="bg-transparent border-none text-sm font-bold text-black focus:outline-none py-1"
+                disabled={isLoadingTerminals}
+              >
+                <option value="all">📡 Todas las terminales</option>
+                {availableTerminals.map((term) => (
+                  <option key={term.id} value={term.id}>
+                    🖥️ {term.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+          <Button 
+            onClick={loadTransactions} 
+            variant="outline" 
+            className="h-8 text-[10px] font-black border-[#9E9E9E]"
+          >
+            <RefreshCw size={12} className="mr-1" /> RECARGAR
+          </Button>
+        </div>
       </div>
 
       <div className="bg-white border rounded-xl p-4 mb-6 shadow-sm">
@@ -569,8 +642,7 @@ export default function ReturnsModule({ userRole = 'cashier' }: ReturnsModulePro
               </TableRow>
             ) : (
               salesTransactions.map((tx: any) => {
-                // ✅ Verificar devuelta usando el estado actualizado
-                const returned = returnedIdsRef.current.has(tx.id) || tx._returned === true;
+                const returned = tx.return_status === 'total' || tx.return_status === 'partial';
                 return (
                   <TableRow key={tx.id} className={cn("border-b hover:bg-gray-50", returned && "bg-red-50")}>
                     <TableCell className="font-mono font-bold">

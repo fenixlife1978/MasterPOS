@@ -145,7 +145,7 @@ export default function CashModule({ state }: CashModuleProps) {
     { id: 'zelle', label: 'ZELLE', icon: Plane, isUsd: true },
   ];
 
-  // ✅ CORREGIDO: Desglose EXACTO por método de pago
+  // Desglose EXACTO por método de pago
   const salesBreakdown = useMemo(() => {
     const totalsBs: Record<string, number> = {};
     const totalsUsd: Record<string, number> = {};
@@ -159,14 +159,12 @@ export default function CashModule({ state }: CashModuleProps) {
     for (const tx of todaysTransactions) {
       if (tx.type !== 'contado' && tx.type !== 'cobro_deuda') continue;
       
-      // ✅ Extraer payments
       let payments = tx.payments || [];
       if (typeof payments === 'string') {
         try { payments = JSON.parse(payments); } catch(e) { payments = []; }
       }
       
       if (Array.isArray(payments) && payments.length > 0) {
-        // ✅ Desglosar CADA pago individualmente
         for (const p of payments) {
           const method = p.method || 'efectivo_bs';
           const isUsd = method === 'usd_efectivo' || method === 'zelle';
@@ -180,7 +178,6 @@ export default function CashModule({ state }: CashModuleProps) {
           }
         }
       } else {
-        // ✅ Fallback para transacciones antiguas (sin payments)
         const method = tx.pay_method || tx.payMethod || 'efectivo_bs';
         const isUsd = method === 'usd_efectivo' || method === 'zelle';
         
@@ -203,7 +200,6 @@ export default function CashModule({ state }: CashModuleProps) {
       .reduce((sum, t) => sum + (t.total || 0), 0);
   }, [todaysTransactions]);
 
-  // ✅ CORREGIDO: Total en BS = SOLO lo recibido en BS
   const totalContadoBs = useMemo(() => {
     let total = 0;
     for (const m of paymentMethods.filter(p => !p.isUsd)) {
@@ -212,7 +208,6 @@ export default function CashModule({ state }: CashModuleProps) {
     return total;
   }, [salesBreakdown]);
 
-  // ✅ CORREGIDO: Total en USD = SOLO lo recibido en USD
   const totalContadoUsd = useMemo(() => {
     let total = 0;
     for (const m of paymentMethods.filter(p => p.isUsd)) {
@@ -316,7 +311,6 @@ export default function CashModule({ state }: CashModuleProps) {
     }
   };
 
-  // ✅ Obtener método de pago legible (MIXTO si hay ambos)
   const getPaymentMethodLabel = (tx: any): string => {
     let hasBs = false;
     let hasUsd = false;
@@ -358,7 +352,6 @@ export default function CashModule({ state }: CashModuleProps) {
     }
   };
 
-  // ✅ Obtener monto en USD PAGADO (desde payments)
   const getUsdPaid = (tx: any): number => {
     let payments = tx.payments || [];
     if (typeof payments === 'string') {
@@ -381,7 +374,6 @@ export default function CashModule({ state }: CashModuleProps) {
     return 0;
   };
 
-  // ✅ Obtener monto en BS PAGADO (desde payments)
   const getBsPaid = (tx: any): number => {
     let payments = tx.payments || [];
     if (typeof payments === 'string') {
@@ -404,47 +396,38 @@ export default function CashModule({ state }: CashModuleProps) {
     return 0;
   };
 
-  const receiptMap = useMemo(() => {
-    const map = new Map<string | number, number>();
-    
-    for (const tx of todaysTransactions) {
-      if (tx.receipt_number) {
-        map.set(tx.id, tx.receipt_number);
-      } else if (tx.receiptNumber) {
-        map.set(tx.id, tx.receiptNumber);
-      }
-      
-      if (tx.type === 'devolucion') {
-        const originalSaleId = tx.original_sale_id || tx.originalSaleId;
-        const originalReceipt = tx.original_receipt_number || tx.originalReceiptNumber;
-        
-        if (originalSaleId && originalReceipt) {
-          map.set(originalSaleId, originalReceipt);
-        }
-      }
-    }
-    
-    return map;
-  }, [todaysTransactions]);
-
+  // ✅ CORREGIDO: Obtener recibo de la venta original para devoluciones
   const getDisplayReceipt = (tx: any): string => {
     if (tx.type === 'devolucion') {
+      // 1. Intentar con el original_receipt_number guardado directamente
       const directOriginalReceipt = tx.original_receipt_number || tx.originalReceiptNumber;
       if (directOriginalReceipt) {
         return formatReceipt(directOriginalReceipt);
       }
-      
+
+      // 2. Buscar la venta original en todaysTransactions por original_sale_id
       const originalSaleId = tx.original_sale_id || tx.originalSaleId;
-      if (originalSaleId && receiptMap.has(originalSaleId)) {
-        const mappedReceipt = receiptMap.get(originalSaleId);
-        if (mappedReceipt) {
-          return formatReceipt(mappedReceipt);
+      if (originalSaleId) {
+        const originalSale = todaysTransactions.find(t => t.id === originalSaleId);
+        if (originalSale) {
+          const origReceipt = originalSale.receipt_number || originalSale.receiptNumber;
+          if (origReceipt) {
+            return formatReceipt(origReceipt);
+          }
         }
       }
-      
+
+      // 3. Fallback: usar el propio recibo de la devolución (si existe)
+      const ownReceipt = tx.receipt_number || tx.receiptNumber;
+      if (ownReceipt) {
+        return formatReceipt(ownReceipt);
+      }
+
+      // 4. Último fallback: ID truncado (no debería pasar)
       return `#${String(tx.id).slice(0, 8)}`;
     }
-    
+
+    // Para ventas normales, mostrar su propio recibo
     const receipt = tx.receipt_number || tx.receiptNumber;
     return formatReceipt(receipt || parseInt(tx.id));
   };
@@ -459,7 +442,7 @@ export default function CashModule({ state }: CashModuleProps) {
              (tx.clientName?.toLowerCase().includes(s)) ||
              String(tx.id).includes(s);
     });
-  }, [todaysTransactions, searchTerm, receiptMap]);
+  }, [todaysTransactions, searchTerm]);
 
   const totalPages = Math.ceil(filteredTransactions.length / itemsPerPage);
   const paginatedTransactions = useMemo(() => {
@@ -468,6 +451,13 @@ export default function CashModule({ state }: CashModuleProps) {
   }, [filteredTransactions, currentPage]);
 
   const goToPage = (page: number) => setCurrentPage(Math.min(totalPages, Math.max(1, page)));
+
+  // Total de devoluciones (solo en BS)
+  const totalDevolucionesBs = useMemo(() => {
+    return todaysTransactions
+      .filter(t => t.type === 'devolucion')
+      .reduce((sum, t) => sum + (t.total || 0), 0);
+  }, [todaysTransactions]);
 
   if (showCierreFinal) {
     return <CierreFinalForm 
@@ -601,11 +591,28 @@ export default function CashModule({ state }: CashModuleProps) {
                       <td className="p-2 text-right font-mono font-bold text-blue-700">{formatBs(totalCreditoBs)}</td>
                       <td className="p-2 text-right font-mono font-bold text-blue-700">—</td>
                     </tr>
+                    {/* TOTAL VENTAS CONTADO (SOLO BS) */}
                     <tr className="bg-[#F0F0F0] font-black">
                       <td className="p-2">TOTAL VENTAS CONTADO / INGRESOS</td>
                       <td className="p-2 text-right font-mono">{formatBs(totalContadoBs)}</td>
-                      <td className="p-2 text-right font-mono">{formatUsd(totalContadoUsd)}</td>
+                      <td className="p-2 text-right font-mono">—</td>
                     </tr>
+                    {/* TOTAL VENTAS EFECTIVO USD */}
+                    {totalContadoUsd > 0 && (
+                      <tr className="bg-[#F0F0F0] font-black text-cyan-700">
+                        <td className="p-2">TOTAL VENTAS EFECTIVO USD</td>
+                        <td className="p-2 text-right font-mono">—</td>
+                        <td className="p-2 text-right font-mono">{formatUsd(totalContadoUsd)}</td>
+                      </tr>
+                    )}
+                    {/* TOTAL DEVOLUCIONES (SOLO BS) */}
+                    {totalDevolucionesBs > 0 && (
+                      <tr className="bg-red-50 font-black text-red-700">
+                        <td className="p-2">TOTAL DEVOLUCIONES</td>
+                        <td className="p-2 text-right font-mono">-{formatBs(totalDevolucionesBs)}</td>
+                        <td className="p-2 text-right font-mono">—</td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -666,7 +673,10 @@ export default function CashModule({ state }: CashModuleProps) {
                           
                           return (
                             <tr key={t.id} className={cn("hover:bg-slate-50", isReturn && "bg-red-50/30")}>
-                              <td className="p-2 font-mono font-bold text-slate-700">
+                              <td className={cn(
+                                "p-2 font-mono font-bold",
+                                isReturn ? "text-red-600" : "text-slate-700"
+                              )}>
                                 {displayReceipt}
                                 {isReturn && <span className="text-[8px] text-red-500 ml-1">(DEV)</span>}
                               </td>
@@ -771,7 +781,7 @@ export default function CashModule({ state }: CashModuleProps) {
         )}
       </div>
 
-      {/* Modal de Detalles de Transacción con DESGLOSE EXACTO DE PAGOS */}
+      {/* Modal de Detalles de Transacción */}
       <Dialog open={showDetailModal} onOpenChange={setShowDetailModal}>
         <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-2xl p-0 overflow-hidden rounded-2xl shadow-xl max-h-[85vh] overflow-y-auto">
           <DialogHeader className="sr-only"><DialogTitle>Detalle de la Transacción</DialogTitle></DialogHeader>
@@ -800,7 +810,7 @@ export default function CashModule({ state }: CashModuleProps) {
                   <div><label className="text-[9px] font-black text-black/60 uppercase">Total USD</label><p className="text-lg font-black text-cyan-700">{getUsdPaid(selectedTransaction) > 0 ? formatUsd(getUsdPaid(selectedTransaction)) : '—'}</p></div>
                 </div>
 
-                {/* DESGLOSE DE PAGOS EXACTO */}
+                {/* DESGLOSE DE PAGOS */}
                 {(() => {
                   let payments = selectedTransaction.payments || [];
                   if (typeof payments === 'string') {

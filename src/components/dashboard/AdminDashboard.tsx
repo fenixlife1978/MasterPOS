@@ -363,6 +363,12 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
     { id: 'supervision' as AdminTab, label: 'Supervisión', icon: Eye },
   ];
 
+  // ✅ Función para enmascarar el PIN (maneja string o number)
+  const maskPin = (pin: any): string => {
+    const pinStr = String(pin || '');
+    return pinStr.split('').map(() => '•').join('');
+  };
+
   return (
     <>
       <InvoiceReminderModal />
@@ -504,7 +510,7 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
               </div>
               {adminPin && (
                 <p className="text-[8px] text-amber-600 mt-2">
-                  PIN actual: {adminPin.split('').map(() => '•').join('')}
+                  PIN actual: {maskPin(adminPin)}
                 </p>
               )}
             </div>

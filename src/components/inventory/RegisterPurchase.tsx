@@ -17,64 +17,6 @@ import { formatBs, formatUsd, formatBsNumber, formatUsdNumber } from '@/lib/curr
 // DEFINICIONES LOCALES
 // ============================================================
 
-interface SupplierInvoiceLocal {
-  _id: string;
-  id: string;
-  supplierId: string;
-  invoiceNumber: string;
-  date: string;
-  dueDate: string;
-  subtotal: number;
-  iva: number;
-  total: number;
-  paidAmount: number;
-  status: 'pending' | 'paid' | 'cancelled';
-  notes: string;
-  exchangeRate: number;
-  itemsCount: number;
-  createdAt: string;
-}
-
-interface PurchaseInvoiceItemLocal {
-  _id: string;
-  id: string;
-  invoiceId: string;
-  productId: string;
-  productName: string;
-  quantity: number;
-  cost: number;
-  total: number;
-  createdAt: string;
-}
-
-interface SupplierPaymentLocal {
-  _id: string;
-  id: string;
-  supplierId: string;
-  invoiceId: string;
-  date: string;
-  amount: number;
-  method: string;
-  reference: string;
-  bank: string;
-  notes: string;
-}
-
-interface AccountingEntryLocal {
-  _id: string;
-  id: string;
-  date: string;
-  type: string;
-  category: string;
-  subcategory: string;
-  concept: string;
-  description: string;
-  amount: number;
-  referenceId: string;
-  referenceType: string;
-  createdAt: string;
-}
-
 interface PurchaseItemTemp {
   productId: number;
   name: string;
@@ -332,12 +274,12 @@ export default function RegisterPurchase() {
   const remainingUsd = parseFloat(Math.max(0, totalInvoiceUsd - totalPaidUsd).toFixed(4));
   const remainingBs = roundTo2(remainingUsd * rateNum);
 
-  const getInvoiceStatus = (): 'pending' | 'paid' | 'cancelled' => {
-    if (paymentType === 'contado') return 'paid';
-    if (paymentType === 'credito') return 'pending';
-    if (remainingUsd <= 0) return 'paid';
-    if (totalPaidUsd > 0 && remainingUsd > 0) return 'pending';
-    return 'pending';
+  const getInvoiceStatus = (): 'pagada' | 'pendiente' | 'parcial' => {
+    if (paymentType === 'contado') return 'pagada';
+    if (paymentType === 'credito') return 'pendiente';
+    if (remainingUsd <= 0) return 'pagada';
+    if (totalPaidUsd > 0 && remainingUsd > 0) return 'parcial';
+    return 'pendiente';
   };
 
   const handleProcessPurchase = async () => {
@@ -351,15 +293,13 @@ export default function RegisterPurchase() {
       const subtotal = totalInvoiceUsd / 1.16;
       const iva = totalInvoiceUsd - subtotal;
       const timestamp = getVenezuelaISOString();
-      const invoiceId = String(Date.now());
-      const invoiceStatus = getInvoiceStatus();
+      const invoiceId = Date.now();
       
       const paymentNotes = `Tipo de pago: ${paymentType === 'contado' ? 'Contado' : paymentType === 'credito' ? `Crédito a ${creditTermDays} días` : `Mixto (USD: ${formatUsdNumber(paidUsd)} / Bs: ${formatBsNumber(paidBs)})`}. Saldo pendiente: ${formatUsd(remainingUsd, 4)}`;
       
       const newInvoice = {
-        _id: generateLocalId(),
         id: invoiceId,
-        supplierId: String(selectedSupplierId),
+        supplierId: selectedSupplierId,
         invoiceNumber: invoiceNumber,
         date: timestamp,
         dueDate: paymentType === 'credito' 
@@ -369,7 +309,7 @@ export default function RegisterPurchase() {
         iva: parseFloat(iva.toFixed(4)),
         total: totalInvoiceUsd,
         paidAmount: totalPaidUsd,
-        status: invoiceStatus,
+        status: getInvoiceStatus(),
         notes: paymentNotes,
         exchangeRate: rateNum,
         itemsCount: tempItems.length,
@@ -379,22 +319,18 @@ export default function RegisterPurchase() {
       await syncService.savePurchaseInvoice(newInvoice);
       
       const items = tempItems.map((item, idx) => ({
-        _id: generateLocalId(),
         id: `${invoiceId}_${idx}`,
         invoiceId: invoiceId,
-        productId: String(item.productId),
+        productId: item.productId,
         productName: item.name,
-        quantity: item.qty,
-        cost: item.costUsd,
-        total: parseFloat((item.qty * item.costUsd).toFixed(4)),
+        qty: item.qty,
+        costUsd: item.costUsd,
+        totalUsd: parseFloat((item.qty * item.costUsd).toFixed(4)),
         createdAt: timestamp
       }));
       
-      await syncService.savePurchaseInvoiceItems(Number(invoiceId), items);
+      await syncService.savePurchaseInvoiceItems(invoiceId, items);
       
-      // ============================================================
-      // ✅ CORREGIDO: Actualizar productos Y crear entradas de kardex
-      // ============================================================
       const products = await syncService.getProducts();
       for (const item of tempItems) {
         const product = products.find(p => p.id === item.productId);
@@ -412,14 +348,12 @@ export default function RegisterPurchase() {
           };
           await syncService.saveProduct(updatedProduct);
           
-          // ✅ CORREGIDO: Crear entrada de kardex como COMPRA (no como "entrada_compra")
-          // El tipo debe ser 'compra' para que aparezca correctamente en la tarjeta
           const kardexEntry = {
             id: `${Date.now()}_${item.productId}_${Math.random().toString(36).substr(2, 6)}`,
             productId: item.productId,
             date: timestamp,
-            type: 'compra', // ✅ CORREGIDO: tipo COMPRA (entrada de mercancía)
-            quantity: item.qty, // ✅ Cantidad POSITIVA = ENTRADA
+            type: 'entrada_compra' as const,
+            quantity: item.qty,
             previousStock: currentStock,
             newStock: newStock,
             reference: `Compra ${invoiceNumber}`,
@@ -437,9 +371,8 @@ export default function RegisterPurchase() {
         const totalPaidUsdAmount = paymentType === 'contado' ? totalInvoiceUsd : paidUsd;
         if (totalPaidUsdAmount > 0) {
           const payment = {
-            _id: generateLocalId(),
             id: generateUniquePaymentId(),
-            supplierId: String(selectedSupplierId),
+            supplierId: selectedSupplierId,
             invoiceId: invoiceId,
             date: getLocalDate(),
             amount: totalPaidUsdAmount,
@@ -462,18 +395,17 @@ export default function RegisterPurchase() {
       
       if (paymentType !== 'credito') {
         const paidAmountBs = totalPaidUsd * rateNum;
-        const accountingEntry: AccountingEntryLocal = {
-          _id: generateLocalId(),
+        const accountingEntry = {
           id: String(Date.now()),
           date: timestamp,
-          type: 'egreso',
+          type: 'egreso' as const,
           category: 'compra_mercancia',
           subcategory: 'compra',
           concept: `Compra de mercancía - Factura ${invoiceNumber} (Pago contado)`,
           description: `Proveedor: ${supplier?.name || 'N/A'} | Total factura: ${formatUsd(totalInvoiceUsd)} | Pagado: ${formatUsd(totalPaidUsd)}`,
           amount: paidAmountBs,
           referenceId: invoiceId,
-          referenceType: 'purchase',
+          referenceType: 'purchase' as const,
           createdAt: timestamp,
         };
         await syncService.saveAccountingEntry(accountingEntry);
@@ -481,7 +413,7 @@ export default function RegisterPurchase() {
       
       await syncService.loadAllDataToCache();
       
-      alert(`✅ Compra registrada exitosamente\nEstado: ${invoiceStatus}\nTotal: ${formatUsd(totalInvoiceUsd, 4)}\nPagado: ${formatUsd(totalPaidUsd)}\nSaldo: ${formatUsd(remainingUsd, 4)}`);
+      alert(`✅ Compra registrada exitosamente\nEstado: ${getInvoiceStatus()}\nTotal: ${formatUsd(totalInvoiceUsd, 4)}\nPagado: ${formatUsd(totalPaidUsd)}\nSaldo: ${formatUsd(remainingUsd, 4)}`);
       setTempItems([]);
       setInvoiceNumber('');
       setSelectedSupplierId(0);
@@ -570,7 +502,6 @@ export default function RegisterPurchase() {
     let priceUsd = localPriceUsd !== '' ? parseFloat(localPriceUsd) : 0;
     let priceBs = priceRetailBs !== '' ? parseFloat(priceRetailBs) : 0;
     
-    // Si no hay precio pero hay costo y porcentaje, calcular automáticamente
     if (priceUsd === 0 && priceBs === 0 && cost > 0 && profitPercent > 0) {
       priceUsd = calculatePriceUsdFromCostAndProfit(cost, profitPercent);
       priceBs = priceUsd * state.exchangeRate;
@@ -596,7 +527,6 @@ export default function RegisterPurchase() {
       return;
     }
     
-    // Validar código de barras duplicado
     const existingProduct = state.products.find(p => p.barcode === productForm.barcode);
     if (existingProduct) {
       toast({ 
@@ -634,7 +564,6 @@ export default function RegisterPurchase() {
     try {
       await syncService.saveProduct(productData);
       const kardexEntry = {
-        _id: generateLocalId(),
         id: `${Date.now()}_${Math.random()}`,
         productId: productData.id,
         date: getVenezuelaISOString(),
@@ -673,7 +602,6 @@ export default function RegisterPurchase() {
 
         <div className="flex-1 overflow-y-auto scrollbar-thin mt-3">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            {/* Columna izquierda */}
             <div className="lg:col-span-1 space-y-4">
               <div className="bg-white border border-[#9E9E9E] rounded-xl p-4 shadow-sm">
                 <h3 className="text-[11px] font-black uppercase text-black/60 mb-3 flex items-center gap-2">
@@ -899,7 +827,6 @@ export default function RegisterPurchase() {
               </div>
             </div>
 
-            {/* Columna derecha: tabla de items */}
             <div className="lg:col-span-2 flex flex-col">
               <div className="bg-white border border-[#9E9E9E] rounded-xl shadow-sm overflow-hidden flex flex-col">
                 <div className="bg-[#1A2C4E] p-3 text-white flex justify-between items-center">
@@ -970,7 +897,6 @@ export default function RegisterPurchase() {
         </div>
       </div>
 
-      {/* Modal arrastrable para crear nuevo producto */}
       {showProductModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowProductModal(false)}>
           <div
@@ -995,7 +921,6 @@ export default function RegisterPurchase() {
 
             <form onSubmit={handleSaveProduct} className="flex-1 overflow-y-auto p-4">
               <div className="grid grid-cols-2 gap-3">
-                {/* Columna izquierda */}
                 <div className="space-y-2">
                   <div>
                     <label className="text-[8px] font-black uppercase">Código de Barras</label>
@@ -1188,7 +1113,6 @@ export default function RegisterPurchase() {
                   )}
                 </div>
                 
-                {/* Columna derecha: costos y precios */}
                 <div className="bg-[#F5F5F5] rounded-lg p-3 space-y-2">
                   <div className="w-3/4">
                     <label className="text-[7px] font-bold uppercase">Costo Unitario USD</label>

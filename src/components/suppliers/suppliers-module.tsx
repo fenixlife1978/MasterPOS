@@ -111,25 +111,25 @@ export default function SuppliersModule() {
 
   // ✅ Suscripción en tiempo real a proveedores
   useEffect(() => {
-    const unsubscribe = syncService.subscribeToSuppliersRealtime((data) => {
+    const unsubscribe = syncService.subscribeToSuppliersRealtime((data: any[]) => {
       setSuppliers(data);
     });
     return () => unsubscribe();
   }, []);
 
   useEffect(() => {
-    const unsubscribePayments = syncService.subscribeToSupplierPayments((data) => {
+    const unsubscribePayments = syncService.subscribeToSupplierPayments((data: any[]) => {
       setSupplierPayments(data);
     });
     return () => unsubscribePayments();
   }, []);
 
   useEffect(() => {
-    const unsubscribeInvoices = syncService.subscribeToPurchaseInvoices((data) => {
+    const unsubscribeInvoices = syncService.subscribeToPurchaseInvoices((data: any[]) => {
       setInvoices(data);
     });
-    const unsubscribeItems = syncService.subscribeToPurchaseItems((data) => {
-      const grouped = data.reduce((acc, item) => {
+    const unsubscribeItems = syncService.subscribeToPurchaseItems((data: any[]) => {
+      const grouped = data.reduce((acc: Record<number, PurchaseInvoiceItem[]>, item: PurchaseInvoiceItem) => {
         const invoiceId = item.invoiceId;
         if (!acc[invoiceId]) acc[invoiceId] = [];
         acc[invoiceId].push(item);

@@ -9,12 +9,14 @@ import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 import { formatBs, formatUsd, formatBsNumber, formatUsdNumber } from '@/lib/currency-formatter';
+import { useToast } from '@/hooks/use-toast';
 
 interface ClientsModuleProps {
   state: ReturnType<typeof usePOSState>;
 }
 
 export default function ClientsModule({ state }: ClientsModuleProps) {
+  const { toast } = useToast();
   const [search, setSearch] = useState('');
   const [showNewClientModal, setShowNewClientModal] = useState(false);
   const [showEditClientModal, setShowEditClientModal] = useState(false);
@@ -27,27 +29,38 @@ export default function ClientsModule({ state }: ClientsModuleProps) {
     debt: 0
   });
 
-  const filteredClients = state.clients.filter(c => 
-    c.name.toLowerCase().includes(search.toLowerCase()) || 
-    c.cedula.toLowerCase().includes(search.toLowerCase())
+  // ✅ Obtener clientes del estado global (sincronizado con Firebase)
+  const clients = state.clients || [];
+
+  const filteredClients = clients.filter(c => 
+    c.name?.toLowerCase().includes(search.toLowerCase()) || 
+    c.cedula?.toLowerCase().includes(search.toLowerCase())
   );
 
   // ✅ Validar cédula duplicada (excluyendo el cliente actual en edición)
   const isCedulaDuplicada = (cedula: string, excludeId?: number): boolean => {
-    return state.clients.some(c => 
-      c.cedula.toLowerCase() === cedula.toLowerCase() && 
+    return clients.some(c => 
+      c.cedula?.toLowerCase() === cedula?.toLowerCase() && 
       (excludeId === undefined || c.id !== excludeId)
     );
   };
 
   const handleNewClient = async () => {
     if (!newClientData.name || !newClientData.cedula) {
-      alert('El nombre y cédula son requeridos');
+      toast({ 
+        title: "Error", 
+        description: "El nombre y cédula son requeridos", 
+        variant: "destructive" 
+      });
       return;
     }
 
     if (isCedulaDuplicada(newClientData.cedula)) {
-      alert(`Ya existe un cliente con la cédula ${newClientData.cedula}. No se puede duplicar.`);
+      toast({ 
+        title: "Cédula duplicada", 
+        description: `Ya existe un cliente con la cédula ${newClientData.cedula}`, 
+        variant: "destructive" 
+      });
       return;
     }
 
@@ -58,31 +71,77 @@ export default function ClientsModule({ state }: ClientsModuleProps) {
       debt: 0
     };
 
-    await state.saveClient(newClient);
-    setNewClientData({ name: '', cedula: '', phone: '', address: '', debt: 0 });
-    setShowNewClientModal(false);
-    alert('Cliente creado correctamente');
+    try {
+      await state.saveClient(newClient);
+      setNewClientData({ name: '', cedula: '', phone: '', address: '', debt: 0 });
+      setShowNewClientModal(false);
+      toast({ 
+        title: "Cliente creado", 
+        description: `${newClient.name} ha sido registrado correctamente.` 
+      });
+    } catch (error) {
+      console.error('Error creando cliente:', error);
+      toast({ 
+        title: "Error", 
+        description: "No se pudo crear el cliente", 
+        variant: "destructive" 
+      });
+    }
   };
 
   const handleEditClient = async () => {
     if (!editingClient) return;
 
     if (isCedulaDuplicada(editingClient.cedula, editingClient.id)) {
-      alert(`Ya existe otro cliente con la cédula ${editingClient.cedula}. No se puede usar.`);
+      toast({ 
+        title: "Cédula duplicada", 
+        description: `Ya existe otro cliente con la cédula ${editingClient.cedula}`, 
+        variant: "destructive" 
+      });
       return;
     }
     
-    await state.saveClient(editingClient);
-    setShowEditClientModal(false);
-    setEditingClient(null);
-    alert('Cliente actualizado correctamente');
+    try {
+      await state.saveClient(editingClient);
+      setShowEditClientModal(false);
+      setEditingClient(null);
+      toast({ 
+        title: "Cliente actualizado", 
+        description: `${editingClient.name} ha sido actualizado correctamente.` 
+      });
+    } catch (error) {
+      console.error('Error editando cliente:', error);
+      toast({ 
+        title: "Error", 
+        description: "No se pudo actualizar el cliente", 
+        variant: "destructive" 
+      });
+    }
   };
 
   const handleDeleteClient = async (client: any) => {
     if (confirm(`¿Está seguro de eliminar a ${client.name} PERMANENTEMENTE del sistema? Esta acción no se puede deshacer.`)) {
-      await state.deleteClient(client.id);
-      alert('Cliente eliminado correctamente');
+      try {
+        await state.deleteClient(client.id);
+        toast({ 
+          title: "Cliente eliminado", 
+          description: `${client.name} ha sido eliminado correctamente.` 
+        });
+      } catch (error) {
+        console.error('Error eliminando cliente:', error);
+        toast({ 
+          title: "Error", 
+          description: "No se pudo eliminar el cliente", 
+          variant: "destructive" 
+        });
+      }
     }
+  };
+
+  // ✅ Calcular deuda en USD
+  const getClientDebtUsd = (client: any): number => {
+    const debtBs = client.debt || 0;
+    return debtBs / state.exchangeRate;
   };
 
   return (
@@ -116,13 +175,14 @@ export default function ClientsModule({ state }: ClientsModuleProps) {
                 <TableHead className="text-[10px] font-black text-black uppercase tracking-widest">Cédula</TableHead>
                 <TableHead className="text-[10px] font-black text-black uppercase tracking-widest">Nombre</TableHead>
                 <TableHead className="text-[10px] font-black text-black uppercase tracking-widest">Contacto</TableHead>
-                <TableHead className="text-[10px] font-black text-black uppercase tracking-widest">Deuda</TableHead>
+                <TableHead className="text-[10px] font-black text-black uppercase tracking-widest">Deuda (USD)</TableHead>
                 <TableHead className="text-[10px] font-black text-black uppercase tracking-widest text-right">Acciones</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filteredClients.map((c) => {
-                const hasDebt = c.debt > 0;
+                const debtUsd = getClientDebtUsd(c);
+                const hasDebt = debtUsd > 0;
                 
                 return (
                   <TableRow key={c.id} className="border-b border-[#9E9E9E] hover:bg-[#F5F5F5]">
@@ -139,7 +199,7 @@ export default function ClientsModule({ state }: ClientsModuleProps) {
                         "px-3 py-1 rounded-full text-[10px] font-black border shadow-sm",
                         hasDebt ? "bg-red-100 text-red-700 border-red-300" : "bg-green-100 text-green-700 border-green-300"
                       )}>
-                        {formatBs(c.debt)}
+                        {formatUsd(debtUsd)}
                       </span>
                     </TableCell>
                     <TableCell className="text-right">

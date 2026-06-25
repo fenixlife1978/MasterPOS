@@ -1,16 +1,12 @@
 // src/services/syncService.ts
 // ============================================================
-// SERVICIO DE SINCRONIZACIÓN - SIN TURSO
-// Usa Firebase Firestore como fuente principal + RTDB como respaldo
+// SERVICIO DE SINCRONIZACIÓN - FIREBASE
+// Usa Firebase Firestore como fuente principal para usuarios/transacciones
+// y RTDB para inventario/caja/proveedores
 // ============================================================
 
-import { ref, get, set, update, remove, push, onValue } from 'firebase/database';
+import { ref, get, set, update, remove, onValue } from 'firebase/database';
 import { rtdb } from '@/lib/firebase';
-
-// ============================================================
-// IMPORTS PARA FIRESTORE
-// ============================================================
-
 import { 
   collection, 
   doc, 
@@ -19,13 +15,7 @@ import {
   setDoc, 
   updateDoc, 
   deleteDoc, 
-  query, 
-  where, 
-  onSnapshot,
-  orderBy,
-  limit,
-  startAfter,
-  Timestamp
+  onSnapshot
 } from 'firebase/firestore';
 import { db as firestoreDb } from '@/lib/firebase';
 
@@ -34,7 +24,6 @@ import { db as firestoreDb } from '@/lib/firebase';
 // ============================================================
 
 const CACHE_PREFIX = 'pos_cache_';
-const STOCK_CACHE_KEY = `${CACHE_PREFIX}stock`;
 const USERS_COLLECTION = 'users';
 const TRANSACTIONS_COLLECTION = 'transactions';
 
@@ -63,7 +52,10 @@ function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
 }
 
-// ✅ Función para limpiar objetos y eliminar undefined (convertir a null)
+function processId(id: string): string | number {
+  return isNaN(Number(id)) ? id : Number(id);
+}
+
 function cleanForFirebase(obj: any): any {
   if (obj === undefined) return null;
   if (obj === null) return null;
@@ -81,787 +73,188 @@ function cleanForFirebase(obj: any): any {
 }
 
 // ============================================================
-// USUARIOS - FIRESTORE PRIMERO, RTDB COMO RESPALDO
+// USUARIOS (FIRESTORE)
 // ============================================================
 
 export async function getUserByUid(uid: string) {
-  console.log(`📡 Buscando usuario ${uid} en Firestore...`);
-  
   try {
     const userDoc = await getDoc(doc(firestoreDb, USERS_COLLECTION, uid));
     if (userDoc.exists()) {
-      const data = userDoc.data();
-      console.log(`✅ Usuario encontrado en Firestore: ${data.name}`);
-      return {
-        id: uid,
-        uid: data.uid || uid,
-        name: data.name || '',
-        email: data.email || '',
-        role: data.role || 'user',
-        terminalId: data.terminalId || null,
-        terminalName: data.terminalName || null,
-        status: data.status || 'active',
-        createdAt: data.createdAt || new Date().toISOString(),
-        updatedAt: data.updatedAt || new Date().toISOString()
-      };
-    }
-    
-    console.log(`⚠️ Usuario no encontrado en Firestore, buscando en RTDB...`);
-    const usersRef = ref(rtdb, 'users');
-    const snapshot = await get(usersRef);
-    if (!snapshot.exists()) return null;
-    
-    const users = snapshot.val();
-    for (const [key, user] of Object.entries(users)) {
-      if ((user as any).uid === uid) {
-        const userData = {
-          uid: (user as any).uid,
-          name: (user as any).name || '',
-          email: (user as any).email || '',
-          role: (user as any).role || 'user',
-          terminalId: (user as any).terminalId || null,
-          terminalName: (user as any).terminalName || null,
-          status: (user as any).status || 'active',
-          createdAt: (user as any).createdAt || new Date().toISOString(),
-          updatedAt: new Date().toISOString()
-        };
-        await setDoc(doc(firestoreDb, USERS_COLLECTION, uid), userData);
-        console.log(`✅ Usuario ${userData.name} migrado de RTDB a Firestore`);
-        return { id: uid, ...userData };
-      }
+      return { id: uid, ...userDoc.data() };
     }
     return null;
   } catch (error) {
     console.error('Error obteniendo usuario:', error);
-    const usersRef = ref(rtdb, 'users');
-    const snapshot = await get(usersRef);
-    if (!snapshot.exists()) return null;
-    const users = snapshot.val();
-    for (const [key, user] of Object.entries(users)) {
-      if ((user as any).uid === uid) {
-        return { id: key, ...(user as any) };
-      }
-    }
     return null;
   }
 }
 
 export async function saveUser(user: any) {
-  console.log(`📡 Guardando usuario ${user.name || 'sin nombre'}...`);
+  const userId = user.uid || user.id || generateId();
+  const userData = {
+    uid: userId,
+    name: user.name || '',
+    email: user.email || '',
+    role: user.role || 'cashier',
+    terminalId: user.terminalId || null,
+    terminalName: user.terminalName || null,
+    status: user.status || 'active',
+    updatedAt: new Date().toISOString()
+  };
   
-  try {
-    const userId = user.uid || user.id || generateId();
-    const now = new Date().toISOString();
-    
-    const userData = {
-      uid: userId,
-      name: user.name || 'Usuario sin nombre',
-      email: user.email || '',
-      role: user.role || 'user',
-      terminalId: user.terminalId || null,
-      terminalName: user.terminalName || null,
-      status: user.status || 'active',
-      createdAt: user.createdAt || now,
-      updatedAt: now
-    };
-    
-    await setDoc(doc(firestoreDb, USERS_COLLECTION, userId), userData);
-    console.log(`✅ Usuario ${userData.name} guardado en Firestore (ID: ${userId})`);
-    
-    const rtdbData = {
-      uid: userId,
-      name: userData.name,
-      email: userData.email,
-      role: userData.role,
-      terminalId: userData.terminalId,
-      terminalName: userData.terminalName,
-      status: userData.status,
-      createdAt: userData.createdAt,
-      updatedAt: userData.updatedAt
-    };
-    await set(ref(rtdb, `users/${userId}`), rtdbData);
-    console.log(`✅ Usuario ${userData.name} sincronizado con RTDB`);
-    
-    return { id: userId, ...userData };
-  } catch (error) {
-    console.error('❌ Error guardando usuario en Firestore:', error);
-    const userId = user.uid || user.id || generateId();
-    const userData = {
-      uid: user.uid || userId,
-      name: user.name,
-      email: user.email,
-      role: user.role || 'user',
-      terminalId: user.terminalId || null,
-      terminalName: user.terminalName || null,
-      status: user.status || 'active',
-      updatedAt: new Date().toISOString()
-    };
-    await set(ref(rtdb, `users/${userId}`), userData);
-    console.log(`⚠️ Usuario guardado solo en RTDB (fallback)`);
-    return { id: userId, ...userData };
-  }
+  await setDoc(doc(firestoreDb, USERS_COLLECTION, userId), userData, { merge: true });
+  await set(ref(rtdb, `users/${userId}`), userData);
+  return { id: userId, ...userData };
 }
 
 export async function getAllUsers() {
-  console.log(`📡 Obteniendo todos los usuarios desde Firestore...`);
-  
   try {
-    const usersRef = collection(firestoreDb, USERS_COLLECTION);
-    const snapshot = await getDocs(usersRef);
-    
-    if (!snapshot.empty) {
-      const users: any[] = [];
-      snapshot.forEach(doc => {
-        const data = doc.data();
-        users.push({
-          id: doc.id,
-          uid: data.uid || doc.id,
-          name: data.name || '',
-          email: data.email || '',
-          role: data.role || 'user',
-          terminalId: data.terminalId || null,
-          terminalName: data.terminalName || null,
-          status: data.status || 'active',
-          createdAt: data.createdAt || new Date().toISOString(),
-          updatedAt: data.updatedAt || new Date().toISOString()
-        });
-      });
-      
-      console.log(`✅ ${users.length} usuarios obtenidos de Firestore`);
-      setCachedData(getCacheKey('users'), users);
-      return users;
-    }
-    
-    console.log(`⚠️ No hay usuarios en Firestore, consultando RTDB...`);
-    const usersRefRtdb = ref(rtdb, 'users');
-    const snapshotRtdb = await get(usersRefRtdb);
-    if (!snapshotRtdb.exists()) {
-      const cached = getCachedData<any[]>(getCacheKey('users'));
-      return cached || [];
-    }
-    
-    const data = snapshotRtdb.val();
-    const users = Object.entries(data).map(([id, user]) => {
-      const u = user as any;
-      return {
-        id: id,
-        uid: u.uid || id,
-        name: u.name || '',
-        email: u.email || '',
-        role: u.role || 'user',
-        terminalId: u.terminalId || null,
-        terminalName: u.terminalName || null,
-        status: u.status || 'active',
-        createdAt: u.createdAt || new Date().toISOString(),
-        updatedAt: u.updatedAt || new Date().toISOString()
-      };
-    });
-    
-    console.log(`📡 Migrando ${users.length} usuarios de RTDB a Firestore...`);
-    for (const user of users) {
-      try {
-        await setDoc(doc(firestoreDb, USERS_COLLECTION, user.uid || user.id), {
-          uid: user.uid || user.id,
-          name: user.name,
-          email: user.email,
-          role: user.role,
-          terminalId: user.terminalId,
-          terminalName: user.terminalName,
-          status: user.status,
-          createdAt: user.createdAt,
-          updatedAt: new Date().toISOString()
-        });
-        console.log(`✅ Usuario ${user.name} migrado a Firestore`);
-      } catch (error) {
-        console.error(`❌ Error migrando usuario ${user.name}:`, error);
-      }
-    }
-    
+    const snapshot = await getDocs(collection(firestoreDb, USERS_COLLECTION));
+    const users = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     setCachedData(getCacheKey('users'), users);
     return users;
   } catch (error) {
     console.error('Error obteniendo usuarios:', error);
-    const cached = getCachedData<any[]>(getCacheKey('users'));
-    return cached || [];
+    return getCachedData<any[]>(getCacheKey('users')) || [];
   }
+}
+
+export function subscribeToUsers(callback: (users: any[]) => void) {
+  return onSnapshot(collection(firestoreDb, USERS_COLLECTION), (snapshot) => {
+    const users = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    callback(users);
+  });
 }
 
 export async function deleteUser(uid: string) {
-  console.log(`📡 Eliminando usuario ${uid}...`);
-  
-  try {
-    await deleteDoc(doc(firestoreDb, USERS_COLLECTION, uid));
-    console.log(`✅ Usuario ${uid} eliminado de Firestore`);
-  } catch (error) {
-    console.error('Error eliminando usuario de Firestore:', error);
-  }
-  
-  const usersRef = ref(rtdb, 'users');
-  const snapshot = await get(usersRef);
-  if (!snapshot.exists()) return;
-  
-  const users = snapshot.val();
-  for (const [key, user] of Object.entries(users)) {
-    if ((user as any).uid === uid) {
-      await remove(ref(rtdb, `users/${key}`));
-      console.log(`✅ Usuario ${uid} eliminado de RTDB`);
-      break;
-    }
-  }
+  await deleteDoc(doc(firestoreDb, USERS_COLLECTION, uid));
+  await remove(ref(rtdb, `users/${uid}`));
 }
 
 export async function updateUserTerminalId(userId: string, terminalId: string | null, terminalName: string | null = null) {
-  console.log(`📡 Actualizando terminal para usuario ${userId}: terminalId=${terminalId}, terminalName=${terminalName}`);
-  
-  try {
-    const now = new Date().toISOString();
-    
-    let userDocRef = doc(firestoreDb, USERS_COLLECTION, userId);
-    let userDoc = await getDoc(userDocRef);
-    let userUid = userId;
-    
-    if (!userDoc.exists()) {
-      console.log(`⚠️ Usuario ${userId} no encontrado en Firestore, buscando por uid...`);
-      const usersRef = collection(firestoreDb, USERS_COLLECTION);
-      const q = query(usersRef, where('uid', '==', userId));
-      const querySnapshot = await getDocs(q);
-      
-      if (!querySnapshot.empty) {
-        const docSnap = querySnapshot.docs[0];
-        userDocRef = docSnap.ref;
-        userDoc = docSnap;
-        userUid = docSnap.data().uid || docSnap.id;
-        console.log(`✅ Usuario encontrado por uid: ${docSnap.id}`);
-      } else {
-        console.log(`⚠️ Usuario no encontrado en Firestore, buscando en RTDB...`);
-        const usersRefRtdb = ref(rtdb, 'users');
-        const snapshot = await get(usersRefRtdb);
-        if (snapshot.exists()) {
-          const users = snapshot.val();
-          let foundKey = null;
-          let foundUser = null;
-          for (const [key, user] of Object.entries(users)) {
-            const u = user as any;
-            if (u.uid === userId || key === userId) {
-              foundKey = key;
-              foundUser = u;
-              break;
-            }
-          }
-          if (foundKey && foundUser) {
-            console.log(`✅ Usuario encontrado en RTDB: ${foundKey}`);
-            const newUserData = {
-              uid: foundUser.uid || foundKey,
-              name: foundUser.name || '',
-              email: foundUser.email || '',
-              role: foundUser.role || 'user',
-              terminalId: terminalId,
-              terminalName: terminalName,
-              status: foundUser.status || 'active',
-              createdAt: foundUser.createdAt || now,
-              updatedAt: now
-            };
-            await setDoc(doc(firestoreDb, USERS_COLLECTION, newUserData.uid), newUserData);
-            console.log(`✅ Usuario migrado a Firestore con terminalId=${terminalId}`);
-            
-            await update(ref(rtdb, `users/${foundKey}`), {
-              terminalId: terminalId,
-              terminalName: terminalName,
-              updatedAt: now
-            });
-            console.log(`✅ RTDB actualizado para usuario ${foundKey}`);
-            return;
-          }
-        }
-        console.error(`❌ Usuario ${userId} no encontrado en Firestore ni RTDB`);
-        return;
-      }
-    } else {
-      userUid = userDoc.data().uid || userId;
-    }
-    
-    const updateData: any = {
-      terminalId: terminalId,
-      updatedAt: now
-    };
-    if (terminalName !== null) {
-      updateData.terminalName = terminalName;
-    }
-    
-    await updateDoc(userDocRef, updateData);
-    console.log(`✅ Firestore actualizado: usuario ${userDocRef.id} -> terminalId=${terminalId}, terminalName=${terminalName}`);
-    
-    const usersRefRtdb = ref(rtdb, 'users');
-    const snapshotRtdb = await get(usersRefRtdb);
-    if (snapshotRtdb.exists()) {
-      const users = snapshotRtdb.val();
-      let foundKey = null;
-      for (const [key, user] of Object.entries(users)) {
-        const u = user as any;
-        if (u.uid === userUid || key === userUid || u.uid === userId || key === userId) {
-          foundKey = key;
-          break;
-        }
-      }
-      
-      if (foundKey) {
-        const rtdbUpdateData: any = {
-          terminalId: terminalId,
-          updatedAt: now
-        };
-        if (terminalName !== null) {
-          rtdbUpdateData.terminalName = terminalName;
-        }
-        await update(ref(rtdb, `users/${foundKey}`), rtdbUpdateData);
-        console.log(`✅ RTDB actualizado: usuario ${foundKey} -> terminalId=${terminalId}`);
-      } else {
-        const userData = (await getDoc(userDocRef)).data();
-        if (userData) {
-          await set(ref(rtdb, `users/${userData.uid || userDocRef.id}`), {
-            uid: userData.uid || userDocRef.id,
-            name: userData.name || '',
-            email: userData.email || '',
-            role: userData.role || 'user',
-            terminalId: terminalId,
-            terminalName: terminalName,
-            status: userData.status || 'active',
-            createdAt: userData.createdAt || now,
-            updatedAt: now
-          });
-          console.log(`✅ Usuario creado en RTDB con terminalId=${terminalId}`);
-        }
-      }
-    }
-  } catch (error) {
-    console.error('❌ Error en updateUserTerminalId:', error);
-    throw error;
-  }
-}
-
-export async function getUserByTerminalId(terminalId: string) {
-  console.log(`📡 Buscando usuario por terminalId: ${terminalId}`);
-  
-  try {
-    const usersRef = collection(firestoreDb, USERS_COLLECTION);
-    const q = query(usersRef, where('terminalId', '==', terminalId));
-    const snapshot = await getDocs(q);
-    
-    if (!snapshot.empty) {
-      const docSnap = snapshot.docs[0];
-      const data = docSnap.data();
-      console.log(`✅ Usuario encontrado en Firestore: ${data.name}`);
-      return {
-        id: docSnap.id,
-        uid: data.uid || docSnap.id,
-        name: data.name || '',
-        email: data.email || '',
-        role: data.role || 'user',
-        terminalId: data.terminalId || null,
-        terminalName: data.terminalName || null,
-        status: data.status || 'active',
-        createdAt: data.createdAt || new Date().toISOString(),
-        updatedAt: data.updatedAt || new Date().toISOString()
-      };
-    }
-    
-    console.log(`⚠️ Usuario no encontrado en Firestore, buscando en RTDB...`);
-    const usersRefRtdb = ref(rtdb, 'users');
-    const snapshotRtdb = await get(usersRefRtdb);
-    if (!snapshotRtdb.exists()) return null;
-    
-    const users = snapshotRtdb.val();
-    for (const [key, user] of Object.entries(users)) {
-      const u = user as any;
-      if (u.terminalId === terminalId) {
-        return {
-          id: key,
-          uid: u.uid || key,
-          name: u.name || '',
-          email: u.email || '',
-          role: u.role || 'user',
-          terminalId: u.terminalId || null,
-          terminalName: u.terminalName || null,
-          status: u.status || 'active',
-          createdAt: u.createdAt || new Date().toISOString(),
-          updatedAt: u.updatedAt || new Date().toISOString()
-        };
-      }
-    }
-    return null;
-  } catch (error) {
-    console.error('Error obteniendo usuario por terminal:', error);
-    return null;
-  }
-}
-
-export async function updateUserProfile(userId: string, data: { name?: string; email?: string; role?: string; status?: string }) {
-  console.log(`📡 Actualizando perfil de usuario ${userId}...`);
-  
-  try {
-    const now = new Date().toISOString();
-    
-    let userDocRef = doc(firestoreDb, USERS_COLLECTION, userId);
-    let userDoc = await getDoc(userDocRef);
-    
-    if (!userDoc.exists()) {
-      const usersRef = collection(firestoreDb, USERS_COLLECTION);
-      const q = query(usersRef, where('uid', '==', userId));
-      const querySnapshot = await getDocs(q);
-      if (!querySnapshot.empty) {
-        userDocRef = querySnapshot.docs[0].ref;
-      }
-    }
-    
-    await updateDoc(userDocRef, {
-      ...data,
-      updatedAt: now
-    });
-    console.log(`✅ Perfil de usuario ${userId} actualizado en Firestore`);
-    
-    const usersRefRtdb = ref(rtdb, 'users');
-    const snapshotRtdb = await get(usersRefRtdb);
-    if (snapshotRtdb.exists()) {
-      const users = snapshotRtdb.val();
-      for (const [key, user] of Object.entries(users)) {
-        if ((user as any).uid === userId) {
-          await update(ref(rtdb, `users/${key}`), {
-            ...data,
-            updatedAt: now
-          });
-          console.log(`✅ Perfil de usuario ${userId} actualizado en RTDB`);
-          break;
-        }
-      }
-    }
-  } catch (error) {
-    console.error('Error actualizando perfil:', error);
-    throw error;
-  }
-}
-
-export function subscribeToUsers(callback: (data: any[]) => void) {
-  console.log(`📡 Suscribiendo a cambios de usuarios (Firestore)...`);
-  let isUnsubscribed = false;
-  let firestoreUnsubscribe: (() => void) | null = null;
-  let rtdbUnsubscribe: (() => void) | null = null;
-
-  try {
-    const usersRef = collection(firestoreDb, USERS_COLLECTION);
-    firestoreUnsubscribe = onSnapshot(usersRef, (snapshot) => {
-      if (isUnsubscribed) return;
-      const users: any[] = [];
-      snapshot.forEach(doc => {
-        const data = doc.data();
-        users.push({
-          id: doc.id,
-          uid: data.uid || doc.id,
-          name: data.name || '',
-          email: data.email || '',
-          role: data.role || 'user',
-          terminalId: data.terminalId || null,
-          terminalName: data.terminalName || null,
-          status: data.status || 'active',
-          createdAt: data.createdAt || new Date().toISOString(),
-          updatedAt: data.updatedAt || new Date().toISOString()
-        });
-      });
-      
-      console.log(`🔄 ${users.length} usuarios actualizados desde Firestore`);
-      setCachedData(getCacheKey('users'), users);
-      callback(users);
-    }, (error) => {
-      console.error('Error en suscripción de usuarios (Firestore):', error);
-      if (!isUnsubscribed && !rtdbUnsubscribe) {
-        const usersRefRtdb = ref(rtdb, 'users');
-        rtdbUnsubscribe = onValue(usersRefRtdb, (snapshot) => {
-          if (isUnsubscribed) return;
-          if (snapshot.exists()) {
-            const data = snapshot.val();
-            const users = Object.entries(data).map(([key, user]) => {
-              const u = user as any;
-              return {
-                id: key,
-                uid: u.uid || key,
-                name: u.name || '',
-                email: u.email || '',
-                role: u.role || 'user',
-                terminalId: u.terminalId || null,
-                terminalName: u.terminalName || null,
-                status: u.status || 'active',
-                createdAt: u.createdAt || new Date().toISOString(),
-                updatedAt: u.updatedAt || new Date().toISOString()
-              };
-            });
-            setCachedData(getCacheKey('users'), users);
-            callback(users);
-          } else {
-            const cached = getCachedData<any[]>(getCacheKey('users'));
-            if (cached) callback(cached);
-          }
-        });
-      }
-    });
-  } catch (error) {
-    console.error('Error iniciando suscripción a usuarios:', error);
-    if (!rtdbUnsubscribe) {
-      const usersRefRtdb = ref(rtdb, 'users');
-      rtdbUnsubscribe = onValue(usersRefRtdb, (snapshot) => {
-        if (isUnsubscribed) return;
-        if (snapshot.exists()) {
-          const data = snapshot.val();
-          const users = Object.entries(data).map(([key, user]) => {
-            const u = user as any;
-            return {
-              id: key,
-              uid: u.uid || key,
-              name: u.name || '',
-              email: u.email || '',
-              role: u.role || 'user',
-              terminalId: u.terminalId || null,
-              terminalName: u.terminalName || null,
-              status: u.status || 'active',
-              createdAt: u.createdAt || new Date().toISOString(),
-              updatedAt: u.updatedAt || new Date().toISOString()
-            };
-          });
-          setCachedData(getCacheKey('users'), users);
-          callback(users);
-        } else {
-          const cached = getCachedData<any[]>(getCacheKey('users'));
-          if (cached) callback(cached);
-        }
-      });
-    }
-  }
-  
-  return () => {
-    isUnsubscribed = true;
-    if (firestoreUnsubscribe) {
-      firestoreUnsubscribe();
-      firestoreUnsubscribe = null;
-    }
-    if (rtdbUnsubscribe) {
-      rtdbUnsubscribe();
-      rtdbUnsubscribe = null;
-    }
+  const updateData: any = { 
+    terminalId, 
+    updatedAt: new Date().toISOString() 
   };
+  if (terminalName !== null) updateData.terminalName = terminalName;
+  
+  await updateDoc(doc(firestoreDb, USERS_COLLECTION, userId), updateData);
+  await update(ref(rtdb, `users/${userId}`), updateData);
 }
 
 // ============================================================
-// PRODUCTOS
+// PRODUCTOS (RTDB)
 // ============================================================
 
 export async function getAllProducts() {
   try {
-    const productsRef = ref(rtdb, 'products');
-    const snapshot = await get(productsRef);
-    
+    const snapshot = await get(ref(rtdb, 'products'));
     if (snapshot.exists()) {
       const data = snapshot.val();
       const products = Object.entries(data)
-        .map(([id, product]) => {
-          const p = product as any;
-          return {
-            id: parseInt(id),
-            barcode: p.barcode || '',
-            name: p.name || '',
-            department: p.department || null,
-            category: p.category || null,
-            stock: p.stock || 0,
-            minStock: p.min_stock || 5,
-            costUsd: p.cost_usd || 0,
-            costBs: p.cost_bs || 0,
-            profitPercent: p.profit_percent || 30,
-            priceUsd: p.price_usd || 0,
-            priceBs: p.price_bs || 0,
-            priceRetail: p.price_retail || 0,
-            priceWholesale: p.price_wholesale || 0,
-            priceCost: p.price_cost || 0,
-            ivaType: p.iva_type || 'con_iva',
-            ivaPercentage: p.iva_percentage || 16,
-            isKit: p.is_kit === 1,
-            kitHasOwnStock: p.kit_has_own_stock === 1,
-            kitComponents: p.kit_components ? JSON.parse(p.kit_components) : [],
-            isPriceFixed: p.is_price_fixed === 1,
-            activo: p.activo !== undefined ? p.activo : 1,
-            updatedAt: p.updatedAt || new Date().toISOString()
-          };
-        })
-        .filter((p: any) => p.activo !== 0);
-      
+        .map(([id, p]: [string, any]) => ({
+          id: processId(id) as number,
+          ...p,
+          isKit: p.isKit === 1,
+          kitHasOwnStock: p.kitHasOwnStock === 1,
+          kitComponents: p.kitComponents ? (typeof p.kitComponents === 'string' ? JSON.parse(p.kitComponents) : p.kitComponents) : [],
+          isPriceFixed: p.isPriceFixed === 1
+        }))
+        .filter(p => p.activo !== 0);
       setCachedData(getCacheKey('products'), products);
       return products;
     }
-    
-    const cached = getCachedData<any[]>(getCacheKey('products'));
-    return cached || [];
-  } catch (error) {
-    console.error('Error obteniendo productos:', error);
-    const cached = getCachedData<any[]>(getCacheKey('products'));
-    return cached || [];
+    return getCachedData<any[]>(getCacheKey('products')) || [];
+  } catch {
+    return getCachedData<any[]>(getCacheKey('products')) || [];
   }
 }
 
 export async function saveProduct(product: any) {
-  const allProducts = await getAllProducts();
-  const existingProduct = allProducts.find(
-    p => p.barcode === product.barcode && p.id !== product.id
-  );
-  
-  if (existingProduct) {
-    throw new Error(`Ya existe un producto con el código de barras "${product.barcode}"`);
-  }
-  
   const productId = product.id || generateId();
-  const productRef = ref(rtdb, `products/${productId}`);
-  
   const productData = {
-    barcode: product.barcode || '',
-    name: product.name || '',
-    department: product.department || null,
-    category: product.category || null,
-    stock: product.stock || 0,
-    min_stock: product.minStock || 5,
-    cost_usd: product.costUsd || 0,
-    cost_bs: product.costBs || 0,
-    profit_percent: product.profitPercent || 30,
-    price_usd: product.priceUsd || 0,
-    price_bs: product.priceBs || 0,
-    price_retail: product.priceRetail || 0,
-    price_wholesale: product.priceWholesale || 0,
-    price_cost: product.priceCost || 0,
-    iva_type: product.ivaType || 'con_iva',
-    iva_percentage: product.ivaPercentage || 16,
-    is_kit: product.isKit ? 1 : 0,
-    kit_has_own_stock: product.kitHasOwnStock ? 1 : 0,
-    kit_components: product.kitComponents ? JSON.stringify(product.kitComponents) : null,
-    is_price_fixed: product.isPriceFixed ? 1 : 0,
+    ...product,
+    id: productId,
+    isKit: product.isKit ? 1 : 0,
+    kitHasOwnStock: product.kitHasOwnStock ? 1 : 0,
+    kitComponents: product.kitComponents ? JSON.stringify(product.kitComponents) : null,
+    isPriceFixed: product.isPriceFixed ? 1 : 0,
     activo: product.activo !== undefined ? product.activo : 1,
     updatedAt: new Date().toISOString()
   };
-  
-  await set(productRef, productData);
-  
-  const cached = getCachedData<any[]>(getCacheKey('products')) || [];
-  const finalProduct = { 
-    id: typeof productId === 'string' ? parseInt(productId) : productId,
-    barcode: productData.barcode,
-    name: productData.name,
-    department: productData.department,
-    category: productData.category,
-    stock: productData.stock,
-    minStock: productData.min_stock,
-    costUsd: productData.cost_usd,
-    costBs: productData.cost_bs,
-    profitPercent: productData.profit_percent,
-    priceUsd: productData.price_usd,
-    priceBs: productData.price_bs,
-    priceRetail: productData.price_retail,
-    priceWholesale: productData.price_wholesale,
-    priceCost: productData.price_cost,
-    ivaType: productData.iva_type,
-    ivaPercentage: productData.iva_percentage,
-    isKit: productData.is_kit === 1,
-    kitHasOwnStock: productData.kit_has_own_stock === 1,
-    kitComponents: productData.kit_components ? JSON.parse(productData.kit_components) : [],
-    isPriceFixed: productData.is_price_fixed === 1,
-    activo: productData.activo,
-    updatedAt: productData.updatedAt
-  };
-  
-  const index = cached.findIndex(p => p.id === productId || p.id === product.id);
-  if (index >= 0) {
-    cached[index] = finalProduct;
-  } else {
-    cached.push(finalProduct);
-  }
-  setCachedData(getCacheKey('products'), cached);
-  
-  return finalProduct;
-}
-
-export async function saveProducts(products: any[]) {
-  for (const product of products) {
-    await saveProduct(product);
-  }
+  await set(ref(rtdb, `products/${productId}`), productData);
+  return productData;
 }
 
 export async function deleteProduct(id: number) {
-  const productRef = ref(rtdb, `products/${id}`);
-  await update(productRef, { activo: 0, updatedAt: new Date().toISOString() });
-  
-  const cached = getCachedData<any[]>(getCacheKey('products')) || [];
-  const product = cached.find(p => p.id === id);
-  if (product) {
-    product.activo = 0;
-    setCachedData(getCacheKey('products'), cached);
-  }
-}
-
-export async function updateProductWithWeightedAverageCost(
-  productId: number, 
-  newQty: number, 
-  newCostUsd: number, 
-  exchangeRate: number
-) {
-  const productRef = ref(rtdb, `products/${productId}`);
-  const snapshot = await get(productRef);
-  if (!snapshot.exists()) return;
-  
-  const product = snapshot.val();
-  const oldStock = Number(product.stock) || 0;
-  const oldCost = Number(product.cost_usd) || 0;
-  const newStock = oldStock + newQty;
-  let newAvgCost = oldCost;
-  
-  if (newStock > 0) {
-    newAvgCost = ((oldStock * oldCost) + (newQty * newCostUsd)) / newStock;
-  }
-  
-  await update(productRef, {
-    stock: newStock,
-    cost_usd: newAvgCost,
-    cost_bs: newAvgCost * exchangeRate,
-    updatedAt: new Date().toISOString()
-  });
+  await update(ref(rtdb, `products/${id}`), { activo: 0, updatedAt: new Date().toISOString() });
 }
 
 // ============================================================
-// CLIENTES
+// TRANSACCIONES (RTDB + FIRESTORE)
+// ============================================================
+
+export async function getAllTransactions() {
+  try {
+    const snapshot = await get(ref(rtdb, 'transactions'));
+    if (snapshot.exists()) {
+      const data = snapshot.val();
+      const transactions = Object.entries(data).map(([id, t]: [string, any]) => ({
+        id: processId(id) as number,
+        ...t,
+        items: t.items ? (typeof t.items === 'string' ? JSON.parse(t.items) : t.items) : [],
+        payments: t.payments ? (typeof t.payments === 'string' ? JSON.parse(t.payments) : t.payments) : []
+      })).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      setCachedData(getCacheKey('transactions'), transactions);
+      return transactions;
+    }
+    return getCachedData<any[]>(getCacheKey('transactions')) || [];
+  } catch {
+    return getCachedData<any[]>(getCacheKey('transactions')) || [];
+  }
+}
+
+export async function saveTransaction(tx: any) {
+  const txId = tx.id || generateId();
+  const txData = cleanForFirebase({
+    ...tx,
+    items: tx.items ? JSON.stringify(tx.items) : null,
+    payments: tx.payments ? JSON.stringify(tx.payments) : null,
+    updatedAt: new Date().toISOString()
+  });
+  
+  await set(ref(rtdb, `transactions/${txId}`), txData);
+  try {
+    await setDoc(doc(firestoreDb, TRANSACTIONS_COLLECTION, String(txId)), cleanForFirebase(tx));
+  } catch (e) {
+    console.warn('Firestore fallback failed', e);
+  }
+  return tx;
+}
+
+// ============================================================
+// CLIENTES (RTDB)
 // ============================================================
 
 export async function getAllClients() {
   try {
-    const clientsRef = ref(rtdb, 'clients');
-    const snapshot = await get(clientsRef);
-    
+    const snapshot = await get(ref(rtdb, 'clients'));
     if (snapshot.exists()) {
-      const data = snapshot.val();
-      const clients = Object.entries(data).map(([id, client]) => ({ id, ...(client as any) }));
+      const clients = Object.entries(snapshot.val()).map(([id, c]: [string, any]) => ({
+        id: processId(id) as number,
+        ...c
+      }));
       setCachedData(getCacheKey('clients'), clients);
       return clients;
     }
-    
-    const cached = getCachedData<any[]>(getCacheKey('clients'));
-    return cached || [];
-  } catch {
-    return getCachedData<any[]>(getCacheKey('clients')) || [];
-  }
+    return [];
+  } catch { return []; }
 }
 
 export async function saveClient(client: any) {
-  const clientId = client.id || generateId();
-  const clientRef = ref(rtdb, `clients/${clientId}`);
-  const clientData = {
-    name: client.name,
-    cedula: client.cedula || '',
-    phone: client.phone || '',
-    address: client.address || '',
-    debt: client.debt || 0,
-    updatedAt: new Date().toISOString()
-  };
-  await set(clientRef, clientData);
-  return { id: clientId, ...clientData };
+  const id = client.id || generateId();
+  await set(ref(rtdb, `clients/${id}`), { ...client, id, updatedAt: new Date().toISOString() });
+  return { ...client, id };
 }
 
 export async function deleteClient(id: number) {
@@ -869,634 +262,209 @@ export async function deleteClient(id: number) {
 }
 
 // ============================================================
-// TRANSACCIONES - FIRESTORE (NUEVO)
-// ============================================================
-
-// ✅ Guardar transacción en Firestore (además de RTDB)
-export async function saveTransactionFirestore(transaction: any) {
-  try {
-    const txId = transaction.id || generateId();
-    const txRef = doc(firestoreDb, TRANSACTIONS_COLLECTION, String(txId));
-    
-    const txData = {
-      id: txId,
-      date: transaction.date || new Date().toISOString(),
-      type: transaction.type || 'sale',
-      items: transaction.items || [],
-      subtotal: transaction.subtotal || 0,
-      iva: transaction.iva || 0,
-      total: transaction.total || 0,
-      totalUsd: transaction.totalUsd || 0,
-      payMethod: transaction.payMethod || null,
-      paidBs: transaction.paidBs || 0,
-      change: transaction.change || 0,
-      clientId: transaction.clientId || null,
-      clientName: transaction.clientName || null,
-      exchangeRate: transaction.exchangeRate || null,
-      receiptNumber: transaction.receiptNumber || null,
-      notes: transaction.notes || null,
-      sessionId: transaction.sessionId || null,
-      terminalId: transaction.terminalId || null,
-      originalSaleId: transaction.originalSaleId || null,
-      originalReceiptNumber: transaction.originalReceiptNumber || null,
-      returnMethod: transaction.returnMethod || null,
-      payments: transaction.payments || [],
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-    
-    await setDoc(txRef, txData);
-    console.log(`✅ Transacción ${txId} guardada en Firestore`);
-  } catch (error) {
-    console.error('❌ Error guardando transacción en Firestore:', error);
-    throw error;
-  }
-}
-
-// ✅ Obtener transacciones paginadas desde Firestore
-export async function getTransactionsFirestorePaginated(
-  terminalId: string,
-  pageSize: number = 5,
-  lastDoc?: any
-) {
-  try {
-    let q = query(
-      collection(firestoreDb, TRANSACTIONS_COLLECTION),
-      where('terminalId', '==', terminalId),
-      orderBy('date', 'desc'),
-      limit(pageSize)
-    );
-    
-    if (lastDoc) {
-      q = query(
-        collection(firestoreDb, TRANSACTIONS_COLLECTION),
-        where('terminalId', '==', terminalId),
-        orderBy('date', 'desc'),
-        startAfter(lastDoc),
-        limit(pageSize)
-      );
-    }
-    
-    const snapshot = await getDocs(q);
-    const transactions: any[] = [];
-    let lastVisible = null;
-    
-    snapshot.forEach(doc => {
-      transactions.push({ id: doc.id, ...doc.data() });
-      lastVisible = doc;
-    });
-    
-    return { transactions, lastVisible };
-  } catch (error) {
-    console.error('Error obteniendo transacciones paginadas:', error);
-    return { transactions: [], lastVisible: null };
-  }
-}
-
-// ✅ Buscar transacción por número de recibo
-export async function getTransactionByReceiptNumber(terminalId: string, receiptNumber: number) {
-  try {
-    const q = query(
-      collection(firestoreDb, TRANSACTIONS_COLLECTION),
-      where('terminalId', '==', terminalId),
-      where('receiptNumber', '==', receiptNumber)
-    );
-    const snapshot = await getDocs(q);
-    if (!snapshot.empty) {
-      const doc = snapshot.docs[0];
-      return { id: doc.id, ...doc.data() };
-    }
-    return null;
-  } catch (error) {
-    console.error('Error buscando transacción por recibo:', error);
-    return null;
-  }
-}
-
-// ✅ Obtener última transacción de Firestore (para saber el último recibo)
-export async function getLastTransactionFirestore(terminalId: string) {
-  try {
-    const q = query(
-      collection(firestoreDb, TRANSACTIONS_COLLECTION),
-      where('terminalId', '==', terminalId),
-      orderBy('receiptNumber', 'desc'),
-      limit(1)
-    );
-    const snapshot = await getDocs(q);
-    if (!snapshot.empty) {
-      const doc = snapshot.docs[0];
-      return { id: doc.id, ...doc.data() };
-    }
-    return null;
-  } catch (error) {
-    console.error('Error obteniendo última transacción:', error);
-    return null;
-  }
-}
-
-// ✅ Suscripción en tiempo real a transacciones de Firestore (solo las más recientes)
-export function subscribeToTransactionsFirestore(
-  terminalId: string,
-  callback: (data: any[]) => void,
-  pageSize: number = 5
-) {
-  console.log(`📡 Suscribiendo a transacciones Firestore para terminal ${terminalId}...`);
-  
-  const q = query(
-    collection(firestoreDb, TRANSACTIONS_COLLECTION),
-    where('terminalId', '==', terminalId),
-    orderBy('date', 'desc'),
-    limit(pageSize)
-  );
-  
-  const unsubscribe = onSnapshot(q, (snapshot) => {
-    const transactions: any[] = [];
-    snapshot.forEach(doc => {
-      transactions.push({ id: doc.id, ...doc.data() });
-    });
-    console.log(`🔄 ${transactions.length} transacciones actualizadas desde Firestore`);
-    callback(transactions);
-  }, (error) => {
-    console.error('Error en suscripción Firestore:', error);
-  });
-  
-  return unsubscribe;
-}
-
-// ============================================================
-// TRANSACCIONES - RTDB (LEGACY)
-// ============================================================
-
-export async function getAllTransactions() {
-  try {
-    const transactionsRef = ref(rtdb, 'transactions');
-    const snapshot = await get(transactionsRef);
-    
-    if (snapshot.exists()) {
-      const data = snapshot.val();
-      const transactions = Object.entries(data)
-        .map(([id, tx]) => ({ id, ...(tx as any) }))
-        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-      
-      setCachedData(getCacheKey('transactions'), transactions);
-      return transactions;
-    }
-    
-    const cached = getCachedData<any[]>(getCacheKey('transactions'));
-    return cached || [];
-  } catch {
-    return getCachedData<any[]>(getCacheKey('transactions')) || [];
-  }
-}
-
-export async function saveTransaction(transaction: any) {
-  const txId = transaction.id || generateId();
-  const txRef = ref(rtdb, `transactions/${txId}`);
-  const txData = {
-    date: transaction.date || new Date().toISOString(),
-    type: transaction.type || 'sale',
-    items: transaction.items ? JSON.stringify(transaction.items) : null,
-    subtotal: transaction.subtotal || 0,
-    iva: transaction.iva || 0,
-    total: transaction.total || 0,
-    total_usd: transaction.totalUsd || 0,
-    pay_method: transaction.payMethod || null,
-    paid_bs: transaction.paidBs || 0,
-    change: transaction.change || 0,
-    client_id: transaction.clientId || null,
-    client_name: transaction.clientName || null,
-    exchange_rate: transaction.exchangeRate || null,
-    receipt_number: transaction.receiptNumber || null,
-    notes: transaction.notes || null,
-    session_id: transaction.sessionId || null,
-    terminal_id: transaction.terminalId || null,
-    original_sale_id: transaction.originalSaleId || null,
-    original_receipt_number: transaction.originalReceiptNumber || null,
-    return_method: transaction.returnMethod || null,
-    payments: transaction.payments ? JSON.stringify(transaction.payments) : null,
-    updatedAt: new Date().toISOString()
-  };
-  await set(txRef, txData);
-  
-  // ✅ También guardar en Firestore
-  try {
-    await saveTransactionFirestore(transaction);
-  } catch (e) {
-    console.warn('⚠️ No se pudo guardar en Firestore, solo RTDB:', e);
-  }
-  
-  return { id: txId, ...txData };
-}
-
-// ============================================================
-// CUENTAS POR COBRAR
+// CUENTAS (RTDB)
 // ============================================================
 
 export async function getAllAccounts() {
   try {
-    const accountsRef = ref(rtdb, 'accounts');
-    const snapshot = await get(accountsRef);
-    
+    const snapshot = await get(ref(rtdb, 'accounts'));
     if (snapshot.exists()) {
-      const data = snapshot.val();
-      const accounts = Object.entries(data).map(([id, account]) => ({ id, ...(account as any) }));
-      setCachedData(getCacheKey('accounts'), accounts);
-      return accounts;
+      return Object.entries(snapshot.val()).map(([id, a]: [string, any]) => ({
+        id: processId(id) as number,
+        ...a
+      }));
     }
-    
-    return getCachedData<any[]>(getCacheKey('accounts')) || [];
-  } catch {
-    return getCachedData<any[]>(getCacheKey('accounts')) || [];
-  }
+    return [];
+  } catch { return []; }
 }
 
 export async function saveAccount(account: any) {
-  const accountId = account.id || generateId();
-  const accountRef = ref(rtdb, `accounts/${accountId}`);
-  const accountData = {
-    client_id: account.clientId,
-    client_name: account.clientName || null,
-    client_cedula: account.clientCedula || null,
-    amount_bs: account.amountBs || 0,
-    amount_usd: account.amountUsd || 0,
-    paid_amount: account.paidAmount || 0,
-    status: account.status || 'pendiente',
-    date: account.date || new Date().toISOString(),
-    products: account.products || null,
-    exchange_rate: account.exchangeRate || null,
-    tx_id: account.txId || null,
-    updatedAt: new Date().toISOString()
-  };
-  await set(accountRef, accountData);
-  return { id: accountId, ...accountData };
-}
-
-export async function deleteAccount(id: number) {
-  await remove(ref(rtdb, `accounts/${id}`));
+  const id = account.id || generateId();
+  await set(ref(rtdb, `accounts/${id}`), { ...account, id, updatedAt: new Date().toISOString() });
+  return account;
 }
 
 // ============================================================
-// PROVEEDORES
+// PROVEEDORES Y COMPRAS (RTDB)
 // ============================================================
 
 export async function getAllSuppliers() {
   try {
-    const suppliersRef = ref(rtdb, 'suppliers');
-    const snapshot = await get(suppliersRef);
-    
+    const snapshot = await get(ref(rtdb, 'suppliers'));
     if (snapshot.exists()) {
-      const data = snapshot.val();
-      const suppliers = Object.entries(data).map(([id, supplier]) => ({ id, ...(supplier as any) }));
+      const suppliers = Object.entries(snapshot.val()).map(([id, s]: [string, any]) => ({
+        id: processId(id) as number,
+        ...s
+      }));
       setCachedData(getCacheKey('suppliers'), suppliers);
       return suppliers;
     }
-    
-    return getCachedData<any[]>(getCacheKey('suppliers')) || [];
-  } catch {
-    return getCachedData<any[]>(getCacheKey('suppliers')) || [];
-  }
+    return [];
+  } catch { return []; }
 }
 
 export async function saveSupplier(supplier: any) {
-  const supplierId = supplier.id || generateId();
-  const supplierRef = ref(rtdb, `suppliers/${supplierId}`);
-  const supplierData = {
-    name: supplier.name,
-    rif: supplier.rif || '',
-    phone: supplier.phone || '',
-    email: supplier.email || '',
-    address: supplier.address || '',
-    contact_person: supplier.contactPerson || '',
-    total_debt: supplier.totalDebt || 0,
-    updatedAt: new Date().toISOString()
-  };
-  await set(supplierRef, supplierData);
-  return { id: supplierId, ...supplierData };
+  const id = supplier.id || generateId();
+  await set(ref(rtdb, `suppliers/${id}`), { ...supplier, id, updatedAt: new Date().toISOString() });
+  return { ...supplier, id };
 }
 
 export async function deleteSupplier(id: number) {
   await remove(ref(rtdb, `suppliers/${id}`));
 }
 
-// ============================================================
-// FACTURAS DE COMPRA
-// ============================================================
-
 export async function getAllPurchaseInvoices() {
   try {
-    const invoicesRef = ref(rtdb, 'purchase_invoices');
-    const snapshot = await get(invoicesRef);
-    
+    const snapshot = await get(ref(rtdb, 'purchase_invoices'));
     if (snapshot.exists()) {
-      const data = snapshot.val();
-      return Object.entries(data).map(([id, invoice]) => ({ id, ...(invoice as any) }));
+      return Object.entries(snapshot.val()).map(([id, inv]: [string, any]) => ({
+        id: processId(id) as number,
+        ...inv
+      }));
     }
     return [];
-  } catch {
-    return [];
-  }
+  } catch { return []; }
 }
 
 export async function savePurchaseInvoice(invoice: any) {
-  const invoiceId = invoice.id || generateId();
-  const invoiceRef = ref(rtdb, `purchase_invoices/${invoiceId}`);
-  const invoiceData = {
-    supplier_id: invoice.supplierId,
-    invoice_number: invoice.invoiceNumber,
-    date: invoice.date || new Date().toISOString(),
-    due_date: invoice.dueDate || null,
-    subtotal: invoice.subtotal || 0,
-    iva: invoice.iva || 0,
-    total: invoice.total || 0,
-    paid_amount: invoice.paidAmount || 0,
-    status: invoice.status || 'pendiente',
-    notes: invoice.notes || null,
-    exchange_rate: invoice.exchangeRate || null,
-    items_count: invoice.itemsCount || 0,
-    updatedAt: new Date().toISOString()
-  };
-  await set(invoiceRef, invoiceData);
-  return { id: invoiceId, ...invoiceData };
-}
-
-// ============================================================
-// ITEMS DE COMPRA
-// ============================================================
-
-export async function getAllPurchaseItems() {
-  try {
-    const itemsRef = ref(rtdb, 'purchase_items');
-    const snapshot = await get(itemsRef);
-    
-    if (snapshot.exists()) {
-      const data = snapshot.val();
-      return Object.entries(data).map(([id, item]) => ({ id, ...(item as any) }));
-    }
-    return [];
-  } catch {
-    return [];
-  }
+  const id = invoice.id || generateId();
+  await set(ref(rtdb, `purchase_invoices/${id}`), { 
+    ...invoice, 
+    id, 
+    updatedAt: new Date().toISOString() 
+  });
+  return invoice;
 }
 
 export async function savePurchaseInvoiceItems(invoiceId: number, items: any[]) {
   for (const item of items) {
     const itemId = item.id || generateId();
-    const itemRef = ref(rtdb, `purchase_items/${itemId}`);
-    const itemData = {
-      invoice_id: invoiceId,
-      product_id: item.productId,
-      product_name: item.productName,
-      qty: item.qty || 0,
-      cost_usd: item.costUsd || 0,
-      total_usd: item.totalUsd || 0,
-      updatedAt: new Date().toISOString()
-    };
-    await set(itemRef, itemData);
+    await set(ref(rtdb, `purchase_items/${itemId}`), { 
+      ...item, 
+      invoiceId, 
+      updatedAt: new Date().toISOString() 
+    });
   }
 }
 
-// ============================================================
-// PAGOS A PROVEEDORES
-// ============================================================
-
-export async function getAllSupplierPayments() {
+export async function getAllPurchaseItems() {
   try {
-    const paymentsRef = ref(rtdb, 'supplier_payments');
-    const snapshot = await get(paymentsRef);
-    
+    const snapshot = await get(ref(rtdb, 'purchase_items'));
     if (snapshot.exists()) {
-      const data = snapshot.val();
-      return Object.entries(data).map(([id, payment]) => ({ id, ...(payment as any) }));
+      return Object.entries(snapshot.val()).map(([id, item]: [string, any]) => ({
+        id,
+        ...item
+      }));
     }
     return [];
-  } catch {
-    return [];
-  }
+  } catch { return []; }
 }
 
 export async function saveSupplierPayment(payment: any) {
-  const paymentId = payment.id || generateId();
-  const paymentRef = ref(rtdb, `supplier_payments/${paymentId}`);
-  const paymentData = {
-    supplier_id: payment.supplierId,
-    invoice_id: payment.invoiceId || null,
-    date: payment.date || new Date().toISOString(),
-    amount: payment.amount || 0,
-    method: payment.method || 'efectivo',
-    reference: payment.reference || null,
-    bank: payment.bank || null,
-    notes: payment.notes || null,
-    updatedAt: new Date().toISOString()
-  };
-  await set(paymentRef, paymentData);
-  return { id: paymentId, ...paymentData };
+  const id = payment.id || generateId();
+  await set(ref(rtdb, `supplier_payments/${id}`), { 
+    ...payment, 
+    id, 
+    updatedAt: new Date().toISOString() 
+  });
+  return payment;
 }
 
 export async function deleteSupplierPayment(id: number) {
   await remove(ref(rtdb, `supplier_payments/${id}`));
 }
 
-// ============================================================
-// ASIENTOS CONTABLES
-// ============================================================
-
-export async function getAllAccountingEntries() {
+export async function getAllSupplierPayments() {
   try {
-    const entriesRef = ref(rtdb, 'accounting_entries');
-    const snapshot = await get(entriesRef);
-    
+    const snapshot = await get(ref(rtdb, 'supplier_payments'));
     if (snapshot.exists()) {
-      const data = snapshot.val();
-      return Object.entries(data)
-        .map(([id, entry]) => ({ id, ...(entry as any) }))
-        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      return Object.entries(snapshot.val()).map(([id, p]: [string, any]) => ({
+        id: processId(id) as number,
+        ...p
+      }));
     }
     return [];
-  } catch {
-    return [];
-  }
+  } catch { return []; }
 }
+
+// ============================================================
+// CONTABILIDAD Y KARDEX (RTDB)
+// ============================================================
 
 export async function saveAccountingEntry(entry: any) {
-  const entryId = entry.id || generateId();
-  const entryRef = ref(rtdb, `accounting_entries/${entryId}`);
-  const entryData = {
-    date: entry.date || new Date().toISOString(),
-    type: entry.type || 'ingreso',
-    category: entry.category || 'ventas',
-    subcategory: entry.subcategory || null,
-    concept: entry.concept || null,
-    description: entry.description || null,
-    amount: entry.amount || 0,
-    reference_id: entry.referenceId || null,
-    reference_type: entry.referenceType || null,
-    updatedAt: new Date().toISOString()
-  };
-  await set(entryRef, entryData);
-  return { id: entryId, ...entryData };
+  const id = entry.id || generateId();
+  await set(ref(rtdb, `accounting_entries/${id}`), { ...entry, id, updatedAt: new Date().toISOString() });
 }
 
-// ============================================================
-// KARDEX
-// ============================================================
+export async function saveAccountingBatch(entries: any[]) {
+  const batch: any = {};
+  entries.forEach(e => { batch[e.id || generateId()] = { ...e, updatedAt: new Date().toISOString() }; });
+  await update(ref(rtdb, 'accounting_entries'), batch);
+}
 
-export async function getAllKardexEntries() {
-  try {
-    const kardexRef = ref(rtdb, 'kardex_entries');
-    const snapshot = await get(kardexRef);
-    
-    if (snapshot.exists()) {
-      const data = snapshot.val();
-      return Object.entries(data)
-        .map(([id, entry]) => {
-          const e = entry as any;
-          return {
-            id: id,
-            productId: e.product_id,
-            date: e.date,
-            type: e.type,
-            quantity: e.quantity,
-            previousStock: e.previous_stock,
-            newStock: e.new_stock,
-            reference: e.reference,
-            note: e.note,
-            costUsd: e.cost_usd,
-            updatedAt: e.updatedAt
-          };
-        })
-        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-    }
-    return [];
-  } catch {
-    return [];
+export async function getAllAccountingEntries() {
+  const snapshot = await get(ref(rtdb, 'accounting_entries'));
+  if (snapshot.exists()) {
+    return Object.entries(snapshot.val()).map(([id, e]: [string, any]) => ({ id, ...e }));
   }
+  return [];
 }
 
 export async function saveKardexEntry(entry: any) {
-  const entryId = entry.id || `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-  const cleanId = entryId.replace(/[.#$[\]]/g, '_');
-  const entryRef = ref(rtdb, `kardex_entries/${cleanId}`);
-  
-  const typeMap: Record<string, string> = {
-    'INICIAL': 'ajuste_inicial',
-    'venta': 'salida_venta',
-    'compra': 'entrada_compra',
-    'colaboracion': 'colaboracion',
-    'consumo': 'consumo',
-    'devolucion': 'devolucion',
-    'ajuste_manual': 'ajuste_manual',
-    'ajuste_positivo': 'ajuste_positivo',
-    'ajuste_negativo': 'ajuste_negativo',
-    'ajuste_inicial': 'ajuste_inicial',
-    'entrada_compra': 'entrada_compra',
-    'salida_venta': 'salida_venta',
-    'consumo_propio': 'consumo',
-  };
-  
-  const type = typeMap[entry.type] || entry.type || 'entrada_compra';
-  
-  const entryData = {
-    product_id: entry.productId,
-    date: entry.date || new Date().toISOString(),
-    type: type,
-    quantity: entry.quantity || 0,
-    previous_stock: entry.previousStock || 0,
-    new_stock: entry.newStock || 0,
-    reference: entry.reference || null,
-    note: entry.note || null,
-    cost_usd: entry.costUsd || null,
-    updatedAt: new Date().toISOString()
-  };
-  
-  await set(entryRef, entryData);
-  
-  return {
-    id: cleanId,
-    productId: entryData.product_id,
-    date: entryData.date,
-    type: entryData.type,
-    quantity: entryData.quantity,
-    previousStock: entryData.previous_stock,
-    newStock: entryData.new_stock,
-    reference: entryData.reference,
-    note: entryData.note,
-    costUsd: entryData.cost_usd,
-    updatedAt: entryData.updatedAt
-  };
+  const id = entry.id || generateId();
+  const cleanId = String(id).replace(/[.#$[\]]/g, '_');
+  await set(ref(rtdb, `kardex_entries/${cleanId}`), { ...entry, id: cleanId, updatedAt: new Date().toISOString() });
+}
+
+export async function saveKardexBatch(entries: any[]) {
+  const batch: any = {};
+  entries.forEach(e => {
+    const cleanId = String(e.id || generateId()).replace(/[.#$[\]]/g, '_');
+    batch[cleanId] = { ...e, id: cleanId, updatedAt: new Date().toISOString() };
+  });
+  await update(ref(rtdb, 'kardex_entries'), batch);
+}
+
+export async function getAllKardexEntries() {
+  const snapshot = await get(ref(rtdb, 'kardex_entries'));
+  if (snapshot.exists()) {
+    return Object.entries(snapshot.val()).map(([id, e]: [string, any]) => ({ id, ...e }));
+  }
+  return [];
 }
 
 // ============================================================
-// REGISTROS DE CAJA (SESIONES)
+// CAJA Y SESIONES
 // ============================================================
 
 export async function getRegisterByTerminal(terminalId: string) {
-  try {
-    const registerRef = ref(rtdb, `registers/${terminalId}`);
-    const snapshot = await get(registerRef);
-    
-    if (snapshot.exists()) {
-      const data = snapshot.val();
-      return {
-        terminalId: terminalId,
-        isOpen: data.is_open === 1,
-        openTime: data.open_time,
-        openAmountBs: data.open_amount_bs || 0,
-        openAmountUsd: data.open_amount_usd || 0,
-        exchangeRate: data.exchange_rate || null,
-        txs: data.txs || []
-      };
-    }
-    return null;
-  } catch {
-    return null;
+  const snapshot = await get(ref(rtdb, `registers/${terminalId}`));
+  if (snapshot.exists()) {
+    const data = snapshot.val();
+    return { ...data, terminalId, isOpen: data.isOpen === 1 };
   }
+  return null;
 }
 
 export async function saveRegisterByTerminal(terminalId: string, register: any) {
-  const cleanRegister = cleanForFirebase(register);
-  
-  const registerRef = ref(rtdb, `registers/${terminalId}`);
-  await set(registerRef, {
-    is_open: cleanRegister.isOpen ? 1 : 0,
-    open_time: cleanRegister.openTime || null,
-    open_amount_bs: cleanRegister.openAmountBs || 0,
-    open_amount_usd: cleanRegister.openAmountUsd || 0,
-    exchange_rate: cleanRegister.exchangeRate || null,
-    txs: cleanRegister.txs || [],
+  await set(ref(rtdb, `registers/${terminalId}`), {
+    ...register,
+    isOpen: register.isOpen ? 1 : 0,
     updatedAt: new Date().toISOString()
   });
 }
 
-// ============================================================
-// CIERRES DE CAJA
-// ============================================================
-
 export async function getAllCashCloses() {
-  try {
-    const closesRef = ref(rtdb, 'cash_closes');
-    const snapshot = await get(closesRef);
-    
-    if (snapshot.exists()) {
-      const data = snapshot.val();
-      return Object.entries(data)
-        .map(([id, close]) => ({ id, ...(close as any) }))
-        .sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
-    }
-    return [];
-  } catch {
-    return [];
+  const snapshot = await get(ref(rtdb, 'cash_closes'));
+  if (snapshot.exists()) {
+    return Object.entries(snapshot.val()).map(([id, c]: [string, any]) => ({ id, ...c }));
   }
+  return [];
 }
 
 export async function saveCashClose(close: any) {
-  const closeId = close.id || generateId();
-  const closeRef = ref(rtdb, `cash_closes/${closeId}`);
-  await set(closeRef, {
-    fecha: close.fecha || new Date().toISOString(),
-    tipo: close.tipo || 'cierre',
-    data: close,
-    updatedAt: new Date().toISOString()
-  });
+  const id = close.id || generateId();
+  await set(ref(rtdb, `cash_closes/${id}`), { ...close, id, updatedAt: new Date().toISOString() });
 }
 
 export async function deleteCashClose(id: string) {
@@ -1508,61 +476,24 @@ export async function deleteCashClose(id: string) {
 // ============================================================
 
 export async function getAllTerminals() {
-  try {
-    const terminalsRef = ref(rtdb, 'terminals');
-    const snapshot = await get(terminalsRef);
-    
-    if (snapshot.exists()) {
-      const data = snapshot.val();
-      return Object.entries(data).map(([id, terminal]) => {
-        const t = terminal as any;
-        return {
-          id: id,
-          name: t.name || '',
-          description: t.description || '',
-          location: t.location || '',
-          assignedTo: t.assigned_to || null,
-          assignedToName: t.assignedToName || null,
-          status: t.status || 'active',
-          isBlocked: t.is_blocked === 1,
-          createdAt: t.createdAt || new Date().toISOString(),
-          updatedAt: t.updatedAt || new Date().toISOString()
-        };
-      });
-    }
-    return [];
-  } catch {
-    return [];
+  const snapshot = await get(ref(rtdb, 'terminals'));
+  if (snapshot.exists()) {
+    return Object.entries(snapshot.val()).map(([id, t]: [string, any]) => ({ id, ...t }));
   }
+  return [];
 }
 
 export async function saveTerminal(terminal: any) {
-  const terminalId = terminal.id || generateId();
-  const terminalRef = ref(rtdb, `terminals/${terminalId}`);
-  const terminalData = {
-    name: terminal.name,
-    description: terminal.description || null,
-    location: terminal.location || null,
-    assigned_to: terminal.assignedTo || null,
-    assignedToName: terminal.assignedToName || null,
-    status: terminal.status || 'active',
-    is_blocked: terminal.isBlocked ? 1 : 0,
-    createdAt: terminal.createdAt || new Date().toISOString(),
-    updatedAt: new Date().toISOString()
-  };
-  await set(terminalRef, terminalData);
-  return { id: terminalId, ...terminalData };
+  const id = terminal.id || generateId();
+  await set(ref(rtdb, `terminals/${id}`), { ...terminal, id, updatedAt: new Date().toISOString() });
 }
 
 export async function deleteTerminal(id: string) {
   await remove(ref(rtdb, `terminals/${id}`));
 }
 
-export async function updateTerminalBlockStatus(terminalId: string, isBlocked: boolean) {
-  await update(ref(rtdb, `terminals/${terminalId}`), {
-    is_blocked: isBlocked ? 1 : 0,
-    updatedAt: new Date().toISOString()
-  });
+export async function updateTerminalBlockStatus(id: string, isBlocked: boolean) {
+  await update(ref(rtdb, `terminals/${id}`), { isBlocked, updatedAt: new Date().toISOString() });
 }
 
 // ============================================================
@@ -1570,475 +501,232 @@ export async function updateTerminalBlockStatus(terminalId: string, isBlocked: b
 // ============================================================
 
 export async function getGlobalSettings() {
-  try {
-    const settingsRef = ref(rtdb, 'global_settings');
-    const snapshot = await get(settingsRef);
-    
-    if (snapshot.exists()) {
-      const data = snapshot.val();
-      const settings: any = {};
-      for (const [key, value] of Object.entries(data)) {
-        try {
-          settings[key] = JSON.parse(value as string);
-        } catch {
-          settings[key] = value;
-        }
-      }
-      setCachedData(getCacheKey('settings'), settings);
-      return settings;
-    }
-    
-    return getCachedData<any>(getCacheKey('settings')) || {};
-  } catch {
-    return getCachedData<any>(getCacheKey('settings')) || {};
-  }
+  const snapshot = await get(ref(rtdb, 'global_settings'));
+  return snapshot.exists() ? snapshot.val() : null;
 }
 
 export async function saveGlobalSettings(settings: any) {
-  const settingsRef = ref(rtdb, 'global_settings');
-  const updates: any = {};
-  for (const [key, value] of Object.entries(settings)) {
-    updates[key] = JSON.stringify(value);
-  }
-  await update(settingsRef, updates);
-  setCachedData(getCacheKey('settings'), settings);
+  await update(ref(rtdb, 'global_settings'), { ...settings, updatedAt: new Date().toISOString() });
 }
 
 export async function getAdminCode() {
-  try {
-    const result = await getGlobalSettings();
-    return { code: result.admin_code || '123456' };
-  } catch {
-    return { code: '123456' };
-  }
+  const snapshot = await get(ref(rtdb, 'global_settings/admin_code'));
+  return snapshot.exists() ? { code: snapshot.val() } : { code: '123456' };
 }
 
 // ============================================================
-// SUSCRIPCIÓN EN TIEMPO REAL A TRANSACCIONES (RTDB - LEGACY)
+// SUSCRIPCIONES
 // ============================================================
 
-export function subscribeToTransactionsRTDB(callback: (data: any[]) => void) {
-  console.log('📡 Suscribiendo a transacciones en RTDB en tiempo real...');
-  
-  const transactionsRef = ref(rtdb, 'transactions');
-  
-  const unsubscribe = onValue(transactionsRef, (snapshot) => {
+export function subscribeToSuppliersRealtime(callback: (data: any[]) => void) {
+  return onValue(ref(rtdb, 'suppliers'), (snapshot) => {
     if (snapshot.exists()) {
-      const data = snapshot.val();
-      const transactions = Object.entries(data).map(([id, tx]) => ({ 
-        id: id, 
-        ...(tx as any) 
-      }));
-      
-      transactions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-      
-      console.log(`🔄 ${transactions.length} transacciones actualizadas desde RTDB`);
-      callback(transactions);
-    } else {
-      console.log('⚠️ No hay transacciones en RTDB');
-      callback([]);
-    }
-  }, (error) => {
-    console.error('Error en suscripción RTDB:', error);
+      callback(Object.entries(snapshot.val()).map(([id, s]: [string, any]) => ({ id: processId(id) as number, ...s })));
+    } else callback([]);
   });
-  
-  return unsubscribe;
-}
-
-// ============================================================
-// SUSCRIPCIONES EN TIEMPO REAL (Firebase)
-// ============================================================
-
-export function subscribeToStockRTDB(callback: (stockData: Record<string, number>) => void) {
-  const stockRef = ref(rtdb, 'products');
-  
-  const unsubscribe = onValue(stockRef, (snapshot) => {
-    if (snapshot.exists()) {
-      const data = snapshot.val();
-      const stockMap: Record<string, number> = {};
-      
-      for (const [id, product] of Object.entries(data)) {
-        const p = product as any;
-        if (p.activo !== 0) {
-          stockMap[id] = p.stock || 0;
-        }
-      }
-      
-      callback(stockMap);
-      setCachedData(STOCK_CACHE_KEY, stockMap);
-    } else {
-      const cached = getCachedData<Record<string, number>>(STOCK_CACHE_KEY);
-      if (cached) callback(cached);
-    }
-  });
-  
-  return unsubscribe;
-}
-
-export function subscribeToProducts(callback: (data: any[]) => void) {
-  const productsRef = ref(rtdb, 'products');
-  
-  const unsubscribe = onValue(productsRef, async (snapshot) => {
-    if (snapshot.exists()) {
-      const data = snapshot.val();
-      const products = Object.entries(data)
-        .map(([id, product]) => {
-          const p = product as any;
-          return {
-            id: parseInt(id),
-            barcode: p.barcode || '',
-            name: p.name || '',
-            department: p.department || null,
-            category: p.category || null,
-            stock: p.stock || 0,
-            minStock: p.min_stock || 5,
-            costUsd: p.cost_usd || 0,
-            costBs: p.cost_bs || 0,
-            profitPercent: p.profit_percent || 30,
-            priceUsd: p.price_usd || 0,
-            priceBs: p.price_bs || 0,
-            priceRetail: p.price_retail || 0,
-            priceWholesale: p.price_wholesale || 0,
-            priceCost: p.price_cost || 0,
-            ivaType: p.iva_type || 'con_iva',
-            ivaPercentage: p.iva_percentage || 16,
-            isKit: p.is_kit === 1,
-            kitHasOwnStock: p.kit_has_own_stock === 1,
-            kitComponents: p.kit_components ? JSON.parse(p.kit_components) : [],
-            isPriceFixed: p.is_price_fixed === 1,
-            activo: p.activo !== undefined ? p.activo : 1,
-            updatedAt: p.updatedAt || new Date().toISOString()
-          };
-        })
-        .filter((p: any) => p.activo !== 0);
-      
-      setCachedData(getCacheKey('products'), products);
-      callback(products);
-    } else {
-      const cached = getCachedData<any[]>(getCacheKey('products'));
-      if (cached) callback(cached);
-    }
-  });
-  
-  return unsubscribe;
-}
-
-export function subscribeToClients(callback: (data: any[]) => void) {
-  const clientsRef = ref(rtdb, 'clients');
-  
-  const unsubscribe = onValue(clientsRef, (snapshot) => {
-    if (snapshot.exists()) {
-      const data = snapshot.val();
-      const clients = Object.entries(data).map(([id, client]) => ({ id, ...(client as any) }));
-      setCachedData(getCacheKey('clients'), clients);
-      callback(clients);
-    } else {
-      const cached = getCachedData<any[]>(getCacheKey('clients'));
-      if (cached) callback(cached);
-    }
-  });
-  
-  return unsubscribe;
-}
-
-export function subscribeToTransactions(callback: (data: any[]) => void) {
-  const transactionsRef = ref(rtdb, 'transactions');
-  
-  const unsubscribe = onValue(transactionsRef, (snapshot) => {
-    if (snapshot.exists()) {
-      const data = snapshot.val();
-      const transactions = Object.entries(data)
-        .map(([id, tx]) => ({ id, ...(tx as any) }))
-        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-      
-      setCachedData(getCacheKey('transactions'), transactions);
-      callback(transactions);
-    } else {
-      const cached = getCachedData<any[]>(getCacheKey('transactions'));
-      if (cached) callback(cached);
-    }
-  });
-  
-  return unsubscribe;
-}
-
-export function subscribeToAccounts(callback: (data: any[]) => void) {
-  const accountsRef = ref(rtdb, 'accounts');
-  
-  const unsubscribe = onValue(accountsRef, (snapshot) => {
-    if (snapshot.exists()) {
-      const data = snapshot.val();
-      const accounts = Object.entries(data).map(([id, account]) => ({ id, ...(account as any) }));
-      setCachedData(getCacheKey('accounts'), accounts);
-      callback(accounts);
-    } else {
-      const cached = getCachedData<any[]>(getCacheKey('accounts'));
-      if (cached) callback(cached);
-    }
-  });
-  
-  return unsubscribe;
-}
-
-export function subscribeToRegisterRealtime(terminalId: string, callback: (data: any) => void) {
-  const registerRef = ref(rtdb, `registers/${terminalId}`);
-  
-  const unsubscribe = onValue(registerRef, (snapshot) => {
-    if (snapshot.exists()) {
-      const data = snapshot.val();
-      callback({
-        terminalId: terminalId,
-        isOpen: data.is_open === 1,
-        openTime: data.open_time,
-        openAmountBs: data.open_amount_bs || 0,
-        openAmountUsd: data.open_amount_usd || 0,
-        exchangeRate: data.exchange_rate || null,
-        txs: data.txs || []
-      });
-    } else {
-      callback(null);
-    }
-  });
-  
-  return unsubscribe;
-}
-
-export function subscribeToSuppliers(callback: (data: any[]) => void) {
-  const suppliersRef = ref(rtdb, 'suppliers');
-  
-  const unsubscribe = onValue(suppliersRef, (snapshot) => {
-    if (snapshot.exists()) {
-      const data = snapshot.val();
-      const suppliers = Object.entries(data).map(([id, supplier]) => ({ id, ...(supplier as any) }));
-      setCachedData(getCacheKey('suppliers'), suppliers);
-      callback(suppliers);
-    } else {
-      const cached = getCachedData<any[]>(getCacheKey('suppliers'));
-      if (cached) callback(cached);
-    }
-  });
-  
-  return unsubscribe;
 }
 
 export function subscribeToPurchaseInvoices(callback: (data: any[]) => void) {
-  const invoicesRef = ref(rtdb, 'purchase_invoices');
-  
-  const unsubscribe = onValue(invoicesRef, (snapshot) => {
+  return onValue(ref(rtdb, 'purchase_invoices'), (snapshot) => {
     if (snapshot.exists()) {
-      const data = snapshot.val();
-      callback(Object.entries(data).map(([id, invoice]) => ({ id, ...(invoice as any) })));
-    } else {
-      callback([]);
-    }
+      callback(Object.entries(snapshot.val()).map(([id, inv]: [string, any]) => ({ id: processId(id) as number, ...inv })));
+    } else callback([]);
   });
-  
-  return unsubscribe;
 }
 
 export function subscribeToPurchaseItems(callback: (data: any[]) => void) {
-  const itemsRef = ref(rtdb, 'purchase_items');
-  
-  const unsubscribe = onValue(itemsRef, (snapshot) => {
+  return onValue(ref(rtdb, 'purchase_items'), (snapshot) => {
     if (snapshot.exists()) {
-      const data = snapshot.val();
-      callback(Object.entries(data).map(([id, item]) => ({ id, ...(item as any) })));
-    } else {
-      callback([]);
-    }
+      callback(Object.entries(snapshot.val()).map(([id, i]: [string, any]) => ({ id, ...i })));
+    } else callback([]);
   });
-  
-  return unsubscribe;
 }
 
 export function subscribeToSupplierPayments(callback: (data: any[]) => void) {
-  const paymentsRef = ref(rtdb, 'supplier_payments');
-  
-  const unsubscribe = onValue(paymentsRef, (snapshot) => {
+  return onValue(ref(rtdb, 'supplier_payments'), (snapshot) => {
     if (snapshot.exists()) {
-      const data = snapshot.val();
-      callback(Object.entries(data).map(([id, payment]) => ({ id, ...(payment as any) })));
-    } else {
-      callback([]);
-    }
+      callback(Object.entries(snapshot.val()).map(([id, p]: [string, any]) => ({ id: processId(id) as number, ...p })));
+    } else callback([]);
   });
-  
-  return unsubscribe;
+}
+
+export function subscribeToProducts(callback: (data: any[]) => void) {
+  return onValue(ref(rtdb, 'products'), (snapshot) => {
+    if (snapshot.exists()) {
+      const products = Object.entries(snapshot.val()).map(([id, p]: [string, any]) => ({
+        id: processId(id) as number,
+        ...p,
+        isKit: p.isKit === 1,
+        kitHasOwnStock: p.kitHasOwnStock === 1,
+        kitComponents: p.kitComponents ? (typeof p.kitComponents === 'string' ? JSON.parse(p.kitComponents) : p.kitComponents) : [],
+        isPriceFixed: p.isPriceFixed === 1
+      })).filter(p => p.activo !== 0);
+      callback(products);
+    } else callback([]);
+  });
+}
+
+export function subscribeToClients(callback: (data: any[]) => void) {
+  return onValue(ref(rtdb, 'clients'), (snapshot) => {
+    if (snapshot.exists()) {
+      callback(Object.entries(snapshot.val()).map(([id, c]: [string, any]) => ({ id: processId(id) as number, ...c })));
+    } else callback([]);
+  });
+}
+
+export function subscribeToTransactions(callback: (data: any[]) => void) {
+  return onValue(ref(rtdb, 'transactions'), (snapshot) => {
+    if (snapshot.exists()) {
+      const transactions = Object.entries(snapshot.val()).map(([id, t]: [string, any]) => ({
+        id: processId(id) as number,
+        ...t,
+        items: t.items ? (typeof t.items === 'string' ? JSON.parse(t.items) : t.items) : [],
+        payments: t.payments ? (typeof t.payments === 'string' ? JSON.parse(t.payments) : t.payments) : []
+      })).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      callback(transactions);
+    } else callback([]);
+  });
+}
+
+export function subscribeToAccounts(callback: (data: any[]) => void) {
+  return onValue(ref(rtdb, 'accounts'), (snapshot) => {
+    if (snapshot.exists()) {
+      callback(Object.entries(snapshot.val()).map(([id, a]: [string, any]) => ({ id: processId(id) as number, ...a })));
+    } else callback([]);
+  });
+}
+
+export function subscribeToRegisterRealtime(terminalId: string, callback: (data: any) => void) {
+  return onValue(ref(rtdb, `registers/${terminalId}`), (snapshot) => {
+    if (snapshot.exists()) {
+      const d = snapshot.val();
+      callback({ ...d, terminalId, isOpen: d.isOpen === 1 });
+    } else callback(null);
+  });
 }
 
 export function subscribeToAccounting(callback: (data: any[]) => void) {
-  const entriesRef = ref(rtdb, 'accounting_entries');
-  
-  const unsubscribe = onValue(entriesRef, (snapshot) => {
+  return onValue(ref(rtdb, 'accounting_entries'), (snapshot) => {
     if (snapshot.exists()) {
-      const data = snapshot.val();
-      callback(Object.entries(data)
-        .map(([id, entry]) => ({ id, ...(entry as any) }))
-        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-      );
-    } else {
-      callback([]);
-    }
+      callback(Object.entries(snapshot.val()).map(([id, e]: [string, any]) => ({ id: processId(id) as number, ...e })).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+    } else callback([]);
   });
-  
-  return unsubscribe;
 }
 
 export function subscribeToKardex(callback: (data: any[]) => void) {
-  const kardexRef = ref(rtdb, 'kardex_entries');
-  
-  const unsubscribe = onValue(kardexRef, (snapshot) => {
+  return onValue(ref(rtdb, 'kardex_entries'), (snapshot) => {
     if (snapshot.exists()) {
-      const data = snapshot.val();
-      const entries = Object.entries(data)
-        .map(([id, entry]) => {
-          const e = entry as any;
-          return {
-            id: id,
-            productId: e.product_id,
-            date: e.date,
-            type: e.type,
-            quantity: e.quantity,
-            previousStock: e.previous_stock,
-            newStock: e.new_stock,
-            reference: e.reference,
-            note: e.note,
-            costUsd: e.cost_usd,
-            updatedAt: e.updatedAt
-          };
-        })
-        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-      callback(entries);
-    } else {
-      callback([]);
-    }
+      callback(Object.entries(snapshot.val()).map(([id, e]: [string, any]) => ({ id: processId(id) as number, ...e })).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+    } else callback([]);
   });
-  
-  return unsubscribe;
 }
 
 export function subscribeToGlobalSettings(callback: (data: any) => void) {
-  const settingsRef = ref(rtdb, 'global_settings');
-  
-  const unsubscribe = onValue(settingsRef, (snapshot) => {
-    if (snapshot.exists()) {
-      const data = snapshot.val();
-      const settings: any = {};
-      for (const [key, value] of Object.entries(data)) {
-        try {
-          settings[key] = JSON.parse(value as string);
-        } catch {
-          settings[key] = value;
-        }
-      }
-      setCachedData(getCacheKey('settings'), settings);
-      callback(settings);
-    } else {
-      const cached = getCachedData<any>(getCacheKey('settings'));
-      if (cached) callback(cached);
-    }
+  return onValue(ref(rtdb, 'global_settings'), (snapshot) => {
+    if (snapshot.exists()) callback(snapshot.val());
   });
-  
-  return unsubscribe;
 }
 
-// ============================================================
-// FUNCIONES DE SINCRONIZACIÓN (simplificadas)
-// ============================================================
-
-export function sendSyncCommandToAllTerminals() {
-  console.log('📡 Comando de sincronización enviado a todas las terminales');
+export function subscribeToStockRTDB(callback: (stockData: Record<string, number>) => void) {
+  return onValue(ref(rtdb, 'products'), (snapshot) => {
+    if (snapshot.exists()) {
+      const stockMap: Record<string, number> = {};
+      Object.entries(snapshot.val()).forEach(([id, p]: [string, any]) => {
+        if (p.activo !== 0) stockMap[id] = p.stock || 0;
+      });
+      callback(stockMap);
+    }
+  });
 }
 
 export function listenForSyncCommands(terminalId: string, onSync: () => Promise<void>) {
-  const interval = setInterval(() => {
-    onSync().catch(console.error);
-  }, 30000);
-  
+  const interval = setInterval(() => { onSync().catch(console.error); }, 30000);
   return () => clearInterval(interval);
 }
 
-export async function loadAllDataToCache() {
-  console.log('📡 Cargando datos a caché local...');
-  try {
-    await getAllProducts();
-    await getAllClients();
-    await getAllTransactions();
-    await getAllAccounts();
-    await getAllSuppliers();
-    await getGlobalSettings();
-    console.log('✅ Datos cargados a caché');
-  } catch (error) {
-    console.error('❌ Error cargando caché:', error);
-  }
-}
-
-export async function syncAllPending() {
-  console.log('📡 Sincronizando operaciones locales...');
-  return true;
-}
+// ============================================================
+// OPERACIONES MASIVAS
+// ============================================================
 
 export async function runAtomicSale(terminalId: string, transaction: any, updates: any) {
   try {
-    const cleanTransaction = cleanForFirebase(transaction);
-    await saveTransaction(cleanTransaction);
-    
+    await saveTransaction(transaction);
     if (updates.products) {
-      for (const [id, data] of Object.entries(updates.products)) {
-        const productRef = ref(rtdb, `products/${id}`);
-        await update(productRef, {
-          stock: (data as any).newStock,
-          updatedAt: new Date().toISOString()
-        });
+      for (const [id, data] of updates.products.entries()) {
+        await update(ref(rtdb, `products/${id}`), { stock: (data as any).newStock, updatedAt: new Date().toISOString() });
       }
     }
-    
     if (updates.kardexEntries) {
-      for (const entry of updates.kardexEntries) {
-        const cleanEntry = cleanForFirebase(entry);
-        await saveKardexEntry(cleanEntry);
-      }
+      for (const entry of updates.kardexEntries) await saveKardexEntry(entry);
     }
-    
-    if (updates.accountingEntry) {
-      const cleanEntry = cleanForFirebase(updates.accountingEntry);
-      await saveAccountingEntry(cleanEntry);
-    }
-    
+    if (updates.accountingEntry) await saveAccountingEntry(updates.accountingEntry);
     if (updates.registerUpdate) {
       const reg = await getRegisterByTerminal(terminalId);
-      if (reg) {
-        const cleanTxs = (updates.registerUpdate.txs || []).map((tx: any) => cleanForFirebase(tx));
-        await saveRegisterByTerminal(terminalId, { 
-          ...reg, 
-          txs: cleanTxs 
-        });
-      }
+      if (reg) await saveRegisterByTerminal(terminalId, { ...reg, txs: updates.registerUpdate.txs });
     }
-    
-    console.log('✅ Venta atómica completada');
   } catch (error) {
-    console.error('❌ Error en venta atómica:', error);
+    console.error('Error en venta atómica:', error);
     throw error;
   }
 }
 
-export function getPendingQueueLength() { 
-  return 0; 
+export async function loadAllDataToCache() {
+  try {
+    await Promise.all([
+      getAllProducts(),
+      getAllClients(),
+      getAllTransactions(),
+      getAllSuppliers(),
+      getGlobalSettings()
+    ]);
+  } catch (error) {
+    console.error('Error cargando caché:', error);
+  }
 }
 
-export function unsubscribeAll() {
-  console.log('📡 Desuscribiendo todas las suscripciones...');
-}
-
-export function setLoggingOut(val: boolean) {
-  // No necesario con Firebase
-}
+export async function syncAllPending() { return true; }
+export function getPendingQueueLength() { return 0; }
+export function unsubscribeAll() {}
+export function setLoggingOut(val: boolean) {}
 
 // ============================================================
-// EXPORTACIÓN DE FUNCIONES ALIAS (compatibilidad)
+// EXPORT DEFAULT Y ALIAS
 // ============================================================
 
+const syncService = {
+  getUserByUid, saveUser, getAllUsers, deleteUser, updateUserTerminalId,
+  subscribeToUsers,
+  getAllProducts, saveProduct, deleteProduct,
+  getAllClients, saveClient, deleteClient,
+  getAllTransactions, saveTransaction,
+  getRegisterByTerminal, saveRegisterByTerminal,
+  getAllCashCloses, saveCashClose, deleteCashClose,
+  getAllTerminals, saveTerminal, deleteTerminal, updateTerminalBlockStatus,
+  getGlobalSettings, saveGlobalSettings, getAdminCode,
+  getAllSuppliers, saveSupplier, deleteSupplier,
+  getAllPurchaseInvoices, savePurchaseInvoice, savePurchaseInvoiceItems, getAllPurchaseItems,
+  getAllSupplierPayments, saveSupplierPayment, deleteSupplierPayment,
+  getAllAccountingEntries, saveAccountingEntry, saveAccountingBatch,
+  getAllKardexEntries, saveKardexEntry, saveKardexBatch, getKardexEntries: getAllKardexEntries,
+  subscribeToProducts, subscribeToClients, subscribeToTransactions, subscribeToAccounts,
+  subscribeToRegisterRealtime, subscribeToPurchaseInvoices, subscribeToPurchaseItems,
+  subscribeToSupplierPayments, subscribeToSuppliersRealtime, subscribeToGlobalSettings,
+  subscribeToKardex, subscribeToAccounting, subscribeToStockRTDB,
+  listenForSyncCommands, loadAllDataToCache, syncAllPending, runAtomicSale,
+  getPendingQueueLength, unsubscribeAll, setLoggingOut,
+  // Alias
+  getProducts: getAllProducts,
+  getClients: getAllClients,
+  getTransactions: getAllTransactions,
+  getAccounts: getAllAccounts,
+  getSuppliers: getAllSuppliers,
+  getPurchaseInvoices: getAllPurchaseInvoices,
+  getPurchaseItems: getAllPurchaseItems,
+  getSupplierPayments: getAllSupplierPayments,
+  getAccountingEntries: getAllAccountingEntries,
+};
+
+export default syncService;
 export const getProducts = getAllProducts;
 export const getClients = getAllClients;
 export const getTransactions = getAllTransactions;
@@ -2049,57 +737,3 @@ export const getPurchaseItems = getAllPurchaseItems;
 export const getSupplierPayments = getAllSupplierPayments;
 export const getAccountingEntries = getAllAccountingEntries;
 export const getKardexEntries = getAllKardexEntries;
-
-export const subscribeToSuppliersRealtime = subscribeToSuppliers;
-
-// ============================================================
-// EXPORT DEFAULT
-// ============================================================
-
-const syncService = {
-  getUserByUid, saveUser, getAllUsers, deleteUser, updateUserTerminalId,
-  getUserByTerminalId, updateUserProfile, subscribeToUsers,
-  getAllProducts, getProducts, saveProduct, saveProducts, deleteProduct, updateProductWithWeightedAverageCost,
-  getAllClients, getClients, saveClient, deleteClient,
-  getAllTransactions, getTransactions, saveTransaction,
-  saveTransactionFirestore,
-  getTransactionsFirestorePaginated,
-  getTransactionByReceiptNumber,
-  getLastTransactionFirestore,
-  subscribeToTransactionsFirestore,
-  getAllAccounts, getAccounts, saveAccount, deleteAccount,
-  getAllSuppliers, getSuppliers, saveSupplier, deleteSupplier,
-  getAllPurchaseInvoices, getPurchaseInvoices, savePurchaseInvoice,
-  getAllPurchaseItems, getPurchaseItems, savePurchaseInvoiceItems,
-  getAllSupplierPayments, getSupplierPayments, saveSupplierPayment, deleteSupplierPayment,
-  getAllAccountingEntries, getAccountingEntries, saveAccountingEntry,
-  getAllKardexEntries, getKardexEntries, saveKardexEntry,
-  getRegisterByTerminal, saveRegisterByTerminal,
-  getAllCashCloses, saveCashClose, deleteCashClose,
-  getAllTerminals, saveTerminal, deleteTerminal, updateTerminalBlockStatus,
-  getGlobalSettings, saveGlobalSettings, getAdminCode,
-  subscribeToTransactionsRTDB,
-  subscribeToStockRTDB,
-  subscribeToProducts, 
-  subscribeToClients, 
-  subscribeToTransactions, 
-  subscribeToAccounts,
-  subscribeToRegisterRealtime, 
-  subscribeToPurchaseInvoices, 
-  subscribeToPurchaseItems,
-  subscribeToSupplierPayments, 
-  subscribeToSuppliersRealtime, 
-  subscribeToGlobalSettings,
-  subscribeToKardex, 
-  subscribeToAccounting,
-  sendSyncCommandToAllTerminals, 
-  listenForSyncCommands,
-  loadAllDataToCache, 
-  syncAllPending, 
-  runAtomicSale, 
-  getPendingQueueLength, 
-  unsubscribeAll, 
-  setLoggingOut
-};
-
-export default syncService;

@@ -41,7 +41,7 @@ export default function ClientPanel({ client, state, onClose }: ClientPanelProps
   const clientAccounts = useMemo(() => {
     return state.accounts
       .filter(a => a.clientId === client.id)
-      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      .sort((a, b) => new Date(a.date).getTime() - new Date(a.date).getTime());
   }, [state.accounts, client.id]);
 
   // ✅ CORREGIDO: Calcular deuda EN BS usando la TASA ACTUAL del sistema
@@ -58,13 +58,6 @@ export default function ClientPanel({ client, state, onClose }: ClientPanelProps
         return sum + Math.max(0, remainingBs);
       }, 0);
   }, [clientAccounts, currentExchangeRate]);
-
-  // ✅ Memoizar abonos
-  const abonosForClient = useMemo(() => {
-    return state.transactions
-      .filter(t => t.type === 'cobro_deuda' && t.clientId === client.id)
-      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-  }, [state.transactions, client.id]);
 
   // ✅ Obtener la tasa BCV HISTÓRICA guardada en la transacción (para el detalle)
   const getHistoricalExchangeRate = useCallback(() => {
@@ -145,15 +138,6 @@ export default function ClientPanel({ client, state, onClose }: ClientPanelProps
       year: 'numeric',
       hour: '2-digit',
       minute: '2-digit'
-    });
-  }, []);
-
-  const formatDateShort = useCallback((dateStr: string) => {
-    const d = new Date(dateStr);
-    return d.toLocaleDateString('es-VE', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric'
     });
   }, []);
 
@@ -539,55 +523,6 @@ export default function ClientPanel({ client, state, onClose }: ClientPanelProps
                     ⚠️ Los valores en USD son fijos desde el momento del crédito
                   </div>
                 </div>
-
-                {/* Historial de Abonos */}
-                {(selectedTransaction.accountInfo.paidAmount || 0) > 0 && (
-                  <div>
-                    <label className="text-[10px] font-black text-black/60 uppercase tracking-widest flex items-center gap-2 mb-3">
-                      <History size={12} /> HISTORIAL DE ABONOS
-                    </label>
-                    <div className="border border-[#9E9E9E] rounded-lg overflow-hidden">
-                      <table className="w-full text-sm">
-                        <thead className="bg-[#E8E8E8]">
-                          <tr className="border-b border-[#9E9E9E]">
-                            <th className="text-left p-3 text-[10px] font-black text-black uppercase">FECHA</th>
-                            <th className="text-right p-3 text-[10px] font-black text-black uppercase">MONTO</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {(() => {
-                            const abonos = abonosForClient;
-                            if (abonos.length === 0) {
-                              return (
-                                <tr>
-                                  <td colSpan={2} className="text-center p-4 text-black/50 italic">
-                                    No hay registros de abonos individuales
-                                  </td>
-                                </tr>
-                              );
-                            }
-                            return abonos.map((abono, idx) => (
-                              <tr key={idx} className="border-b border-[#9E9E9E]/50 hover:bg-[#F5F5F5]">
-                                <td className="p-3 text-xs font-bold text-black">{formatDateShort(abono.date)}</td>
-                                <td className="p-3 text-right text-xs font-bold text-green-600">
-                                  {formatBs(abono.total)}
-                                </td>
-                              </tr>
-                            ));
-                          })()}
-                        </tbody>
-                        <tfoot className="bg-[#F0F0F0]">
-                          <tr>
-                            <td className="p-3 text-xs font-bold text-black">TOTAL ABONADO (Bs)</td>
-                            <td className="p-3 text-right text-sm font-black text-green-700">
-                              {formatBs(selectedTransaction.accountInfo.paidAmount || 0)}
-                            </td>
-                          </tr>
-                        </tfoot>
-                      </table>
-                    </div>
-                  </div>
-                )}
               </div>
 
               {/* Footer */}

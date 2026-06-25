@@ -128,20 +128,9 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
     return [];
   };
 
-  const getAbonosForClient = () => {
-    if (!selectedTransaction?.accountInfo) return [];
-    return state.transactions
-      .filter(t => t.type === 'cobro_deuda' && String(t.clientId) === String(selectedTransaction.accountInfo.clientId))
-      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-  };
-
   const formatDate = (dateStr: string) => {
     const d = new Date(dateStr);
     return d.toLocaleDateString('es-VE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-  };
-
-  const formatDateShort = (dateStr: string) => {
-    return new Date(dateStr).toLocaleDateString('es-VE', { day: '2-digit', month: '2-digit', year: 'numeric' });
   };
 
   const historicalRate = useMemo(() => {
@@ -502,30 +491,6 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
                     </span>
                   </div>
                 </div>
-
-                {getAbonosForClient().length > 0 && (
-                  <div>
-                    <label className="text-[10px] font-black text-black/60 uppercase flex items-center gap-2 mb-3"><History size={12} /> HISTORIAL DE ABONOS</label>
-                    <div className="border border-[#9E9E9E] rounded-lg overflow-hidden">
-                      <table className="w-full text-sm">
-                        <thead className="bg-[#E8E8E8]">
-                          <tr>
-                            <th className="text-left p-3 text-[10px] font-black uppercase">FECHA</th>
-                            <th className="text-right p-3 text-[10px] font-black uppercase">MONTO</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {getAbonosForClient().map((abono, idx) => (
-                            <tr key={idx} className="border-b border-[#9E9E9E]/50">
-                              <td className="p-3 text-xs text-black font-bold">{formatDateShort(abono.date)}</td>
-                              <td className="p-3 text-right text-xs font-bold text-green-600">{formatBs(abono.total)}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )}
               </div>
               <div className="bg-[#F5F5F5] p-4 border-t flex justify-end">
                 <Button onClick={() => setShowDetailModal(false)}>CERRAR</Button>

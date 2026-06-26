@@ -31,10 +31,12 @@ function getVenezuelaDate(): string {
     month: '2-digit',
     day: '2-digit',
   });
-  const parts = formatter.formatToParts(new Date());
+  const parts = formatter.formatToParts(now);
   const partMap = Object.fromEntries(parts.map(p => [p.type, p.value]));
   return `${partMap.year}-${partMap.month}-${partMap.day}`;
 }
+
+const now = new Date();
 
 function getVenezuelaTimestamp(): number {
   return Date.now();
@@ -380,7 +382,7 @@ export function usePOSState() {
       return [...prev, { 
         productId: product.id, name: product.name, priceBs: product.priceBs,
         priceUsd: product.priceUsd, qty: 1, category: product.category,
-        ivaType: product.ivaType, ivaPercentage: product.ivaPercentage, isKit: product.isKit || false
+        ivaType: product.ivaType || 'sin_iva', ivaPercentage: product.ivaPercentage || 0, isKit: product.isKit || false
       }];
     });
     return true;
@@ -583,11 +585,10 @@ export function usePOSState() {
         const newStock = product.stock - discountItem.quantity;
         stockUpdates.set(product.id, { newStock });
         
-        let kardexType: string = 'venta';
+        let kardexType: any = 'venta';
         if (isSpecial) {
           if (type === 'colaboracion') kardexType = 'colaboracion';
           else if (type === 'consumo_propio') kardexType = 'consumo';
-          else kardexType = 'ajuste_manual';
         }
         
         kardexEntries.push({
@@ -656,9 +657,9 @@ export function usePOSState() {
         amountBs: total, 
         amountUsd: roundTo2(total / exchangeRate), 
         paidAmount: 0, 
+        paidAmountUsd: 0,
         status: 'pendiente', 
         exchangeRate,
-        paidAmountUsd: 0,
       };
       await syncService.saveAccount(newAcc);
       
@@ -676,18 +677,18 @@ export function usePOSState() {
   const applyAbono = useCallback(async (clientId: number, amount: number, method: string = 'efectivo_bs') => {
     if (!register?.isOpen) {
       console.warn("Caja no abierta, no se puede registrar el pago");
-      return;
+      return null;
     }
     const client = clients.find(c => c.id === clientId);
     if (!client) {
       console.warn("Cliente no encontrado");
-      return;
+      return null;
     }
 
     let remaining = amount;
     const clientAccounts = accounts
       .filter(a => Number(a.clientId) === Number(clientId) && a.status !== 'pagada')
-      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      .sort((a, b) => new Date(a.date).getTime() - new Date(a.date).getTime());
 
     for (const acc of clientAccounts) {
       if (remaining <= 0) break;
@@ -700,6 +701,9 @@ export function usePOSState() {
       await syncService.saveAccount(updatedAcc);
       remaining -= pay;
     }
+
+    const isLiquidacion = remaining === 0 && amount >= (client.debt || 0);
+    const note = isLiquidacion ? 'LIQUIDACIÓN DE DEUDA' : 'ABONO DE DEUDA';
 
     const txId = getVenezuelaTimestamp();
     const tx: Transaction = {
@@ -718,7 +722,7 @@ export function usePOSState() {
       clientName: client.name,
       exchangeRate,
       sessionId: currentSession?.id || undefined,
-      notes: `Abono de Bs ${amount.toFixed(2)}`,
+      notes: note,
     };
 
     const accountingEntry = {
@@ -745,6 +749,8 @@ export function usePOSState() {
     const newDebt = Math.max(0, (client.debt || 0) - amount);
     const updatedClient = { ...client, debt: newDebt };
     await syncService.saveClient(updatedClient);
+    
+    return tx;
   }, [register, clients, accounts, exchangeRate, terminalId, currentSession]);
 
   const registerCashEgress = useCallback(async (

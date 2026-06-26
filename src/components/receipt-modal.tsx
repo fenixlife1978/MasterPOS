@@ -247,11 +247,10 @@ export default function ReceiptModal({ transaction, exchangeRate, receiptNumber,
 
   const special = getSpecialMessage();
 
-  // ✅ Renderizar la sección de pagos (compuestos o simple) - CORREGIDO
+  // ✅ Renderizar la sección de pagos (compuestos o simple)
   const renderPaymentSection = () => {
     if (isCredito || isCobroDeuda || isColaboracion || isConsumoPropio) return null;
 
-    // Si hay pagos compuestos (múltiples métodos)
     if (transactionPayments && transactionPayments.length > 0) {
       return (
         <div className="payment-list" style={{ border: '1px solid #000', padding: '4px', margin: '8px 0' }}>
@@ -260,11 +259,9 @@ export default function ReceiptModal({ transaction, exchangeRate, receiptNumber,
             const isUsd = payment.method === 'usd_efectivo' || payment.method === 'zelle';
             let amountDisplay = '';
             if (isUsd) {
-              // Para pagos en USD, usar usdAmount si existe, o amount (que viene en USD)
               const usdValue = payment.usdAmount !== undefined ? payment.usdAmount : payment.amount;
               amountDisplay = formatUsd(usdValue);
             } else {
-              // Pagos en Bs
               amountDisplay = formatBs(payment.amount);
             }
             return (
@@ -277,7 +274,6 @@ export default function ReceiptModal({ transaction, exchangeRate, receiptNumber,
         </div>
       );
     } else {
-      // Pago simple (compatibilidad con transacciones antiguas)
       return (
         <div className="payment-method" style={{ border: '1px solid #000', padding: '3px', margin: '8px 0', textAlign: 'center', fontWeight: 'bold', fontSize: '10px' }}>
           FORMA DE PAGO: {paymentMethodLabels[transactionPayMethod] || transactionPayMethod.toUpperCase()}
@@ -328,7 +324,7 @@ export default function ReceiptModal({ transaction, exchangeRate, receiptNumber,
 
             <div style={{ margin: '6px 0', fontSize: '9px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span>{isCobroDeuda ? 'NOTA N°:' : (isCredito ? 'CRÉDITO N°:' : 'RECIBO N°:')} <span style={{ fontWeight: 'bold' }}>{formattedReceiptNumber}</span></span>
+                <span>{isCobroDeuda ? 'NOTA N°:' : (isCredito ? 'CRÉDITO N°:' : 'RECIBO N°:') } <span style={{ fontWeight: 'bold' }}>{formattedReceiptNumber}</span></span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', margin: '2px 0' }}>
                 <span>FECHA: {transactionDate}</span>
@@ -351,9 +347,6 @@ export default function ReceiptModal({ transaction, exchangeRate, receiptNumber,
                 <p style={{ margin: '2px 0', fontWeight: 'bold', color: '#8e44ad' }}>{special.title}</p>
                 <p style={{ margin: '2px 0' }}>{special.description}</p>
                 <p style={{ margin: '2px 0', fontStyle: 'italic', fontSize: '8px' }}>Motivo: {special.note}</p>
-                {special.showPrice && (
-                  <p style={{ margin: '2px 0', fontWeight: 'bold' }}>Costo operación: {formatUsd(transaction.costoTotalOperacion || 0)}</p>
-                )}
               </div>
             )}
 
@@ -381,25 +374,28 @@ export default function ReceiptModal({ transaction, exchangeRate, receiptNumber,
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={3} style={{ textAlign: 'center', padding: '8px 0', color: '#666', fontStyle: 'italic' }}>
-                      {isCobroDeuda ? '* ABONO / LIQUIDACIÓN DE CUENTA *' : '* Operación de Pago *'}
+                    <td colSpan={3} style={{ textAlign: 'center', padding: '8px 0', color: '#000', fontStyle: 'italic', fontWeight: 'bold' }}>
+                      {isCobroDeuda ? `* ${transaction.notes?.toUpperCase() || 'PAGO DE DEUDA'} *` : '* Operación de Pago *'}
                     </td>
                   </tr>
                 )}
               </tbody>
             </table>
 
-            {/* Mostrar solo subtotal/IVA si no es colaboración/consumo (estos tienen total 0) */}
             {!isColaboracion && !isConsumoPropio && (
               <div style={{ borderTop: '1px dashed #000', paddingTop: '4px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', margin: '2px 0' }}>
-                  <span>SUBTOTAL:</span>
-                  <span>{formatBs(transactionSubtotal)}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', margin: '2px 0' }}>
-                  <span>IVA (16.00%):</span>
-                  <span>{formatBs(transactionIva)}</span>
-                </div>
+                {transactionSubtotal > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', margin: '2px 0' }}>
+                    <span>SUBTOTAL:</span>
+                    <span>{formatBs(transactionSubtotal)}</span>
+                  </div>
+                )}
+                {transactionIva > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', margin: '2px 0' }}>
+                    <span>IVA (16.00%):</span>
+                    <span>{formatBs(transactionIva)}</span>
+                  </div>
+                )}
                 
                 <div style={{ fontSize: '13px', fontWeight: 'bold', margin: '5px 0', padding: '3px 0', borderTop: '1px solid #000', borderBottom: '1px solid #000' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
@@ -411,13 +407,6 @@ export default function ReceiptModal({ transaction, exchangeRate, receiptNumber,
                     <span>{formatUsd(transactionTotal / transactionExchangeRate)}</span>
                   </div>
                 </div>
-
-                {isCredito && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '8px', margin: '2px 0', color: '#e67e22' }}>
-                    <span>TASA BCV APLICADA:</span>
-                    <span>1 USD = {formatBsNumber(transactionExchangeRate)}</span>
-                  </div>
-                )}
 
                 {!isCredito && !isCobroDeuda && (
                   <>
@@ -436,7 +425,6 @@ export default function ReceiptModal({ transaction, exchangeRate, receiptNumber,
               </div>
             )}
 
-            {/* Renderizar pagos compuestos o simple */}
             {!isCredito && !isColaboracion && !isConsumoPropio && renderPaymentSection()}
 
             {isCredito && (
@@ -444,38 +432,11 @@ export default function ReceiptModal({ transaction, exchangeRate, receiptNumber,
                 <p style={{ margin: '2px 0', fontWeight: 'bold', color: '#e74c3c' }}>📋 ESTE ES UN DOCUMENTO DE CRÉDITO</p>
                 <p style={{ margin: '2px 0' }}>El cliente ha recibido los productos a crédito</p>
                 <p style={{ margin: '2px 0', fontWeight: 'bold' }}>Saldo pendiente: {formatBs(transactionTotal)}</p>
-                <p style={{ margin: '2px 0', fontSize: '8px' }}>Conserve este documento como comprobante de deuda</p>
-              </div>
-            )}
-
-            {isCobroDeuda && (
-              <div style={{ border: '1px solid #27ae60', padding: '4px', margin: '8px 0', textAlign: 'center', fontSize: '9px', background: '#e8f8f5' }}>
-                <p style={{ margin: '2px 0', fontWeight: 'bold', color: '#27ae60' }}>
-                  {transaction.notes?.toLowerCase().includes('abono') ? '✓ ABONO DE DEUDA' : '✓ LIQUIDACIÓN DE DEUDA'}
-                </p>
-                <p style={{ margin: '2px 0', fontSize: '8px' }}>La deuda ha sido actualizada</p>
               </div>
             )}
 
             <div style={{ textAlign: 'center', marginTop: '12px', paddingTop: '6px', borderTop: '1px dashed #000', fontSize: '8px' }}>
-              {isCredito ? (
-                <>
-                  <p style={{ margin: '2px 0', fontWeight: 'bold' }}>CONDICIONES DE CRÉDITO</p>
-                  <p style={{ margin: '2px 0' }}>El pago debe realizarse en la fecha acordada</p>
-                </>
-              ) : isColaboracion ? (
-                <>
-                  <p style={{ margin: '2px 0', fontWeight: 'bold' }}>🎁 SALIDA POR COLABORACIÓN</p>
-                  <p style={{ margin: '2px 0' }}>Este movimiento no genera ingreso en caja</p>
-                </>
-              ) : isConsumoPropio ? (
-                <>
-                  <p style={{ margin: '2px 0', fontWeight: 'bold' }}>🍽️ SALIDA POR CONSUMO PROPIO</p>
-                  <p style={{ margin: '2px 0' }}>Este movimiento no genera ingreso en caja</p>
-                </>
-              ) : (
-                <p style={{ margin: '2px 0', fontWeight: 'bold' }}>¡GRACIAS POR SU PREFERENCIA!</p>
-              )}
+              <p style={{ margin: '2px 0', fontWeight: 'bold' }}>¡GRACIAS POR SU PREFERENCIA!</p>
               <p style={{ margin: '2px 0' }}>CONSERVE ESTE TICKET COMO COMPROBANTE</p>
               <p style={{ fontSize: '7px', marginTop: '6px', color: '#444' }}>Desarrollado por MasterPOS v1.0</p>
             </div>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { Client, CartItem } from '@/lib/types';
+import { Client, CartItem, Transaction } from '@/lib/types';
 import { UserCircle, X, CheckCircle, HandCoins, Eye, History, DollarSign, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { usePOSState } from '@/hooks/use-pos-state';
@@ -9,6 +9,7 @@ import FloatingPaymentModal from './FloatingPaymentModal';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { formatBs, formatUsd, formatBsNumber, formatUsdNumber } from '@/lib/currency-formatter';
+import ReceiptModal from '@/components/receipt-modal';
 
 interface ClientPanelProps {
   client: Client;
@@ -31,6 +32,9 @@ export default function ClientPanel({ client, state, onClose }: ClientPanelProps
   const [selectedTransaction, setSelectedTransaction] = useState<any>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [currentExchangeRate, setCurrentExchangeRate] = useState(state.exchangeRate);
+  
+  const [showReceipt, setShowReceipt] = useState(false);
+  const [lastTx, setLastTx] = useState<Transaction | null>(null);
   
   // ✅ Suscripción a cambios de tasa BCV en tiempo real
   useEffect(() => {
@@ -96,7 +100,7 @@ export default function ClientPanel({ client, state, onClose }: ClientPanelProps
       alert('Ingrese un monto válido');
       return;
     }
-    if (amount > totalDebt) {
+    if (amount > totalDebt + 0.01) {
       alert('El abono no puede ser mayor a la deuda total');
       return;
     }
@@ -105,12 +109,19 @@ export default function ClientPanel({ client, state, onClose }: ClientPanelProps
     setShowPaymentModal(true);
   }, [abono, totalDebt]);
 
-  const handlePaymentConfirm = useCallback((paymentData: any) => {
+  const handlePaymentConfirm = useCallback(async (paymentData: any) => {
     const amountPaid = paymentData.totalPaid;
-    state.applyAbono(client.id, amountPaid);
+    const tx = await state.applyAbono(client.id, amountPaid);
+    
     setShowPaymentModal(false);
     setAbono('');
-    alert(`Pago registrado correctamente. Monto: ${formatBs(amountPaid)}`);
+    
+    if (tx) {
+      setLastTx(tx);
+      setShowReceipt(true);
+    } else {
+      alert(`Pago registrado correctamente. Monto: ${formatBs(amountPaid)}`);
+    }
   }, [state, client.id]);
 
   const handleTransactionClick = useCallback((account: any) => {
@@ -182,21 +193,6 @@ export default function ClientPanel({ client, state, onClose }: ClientPanelProps
     }
     return [];
   }, [selectedTransaction]);
-
-  // ✅ CORREGIDO: Obtener SOLO los abonos de esta cuenta específica
-  const getAbonosForCurrentAccount = useCallback(() => {
-    if (!selectedTransaction?.accountInfo) return [];
-    const currentTxId = selectedTransaction.accountInfo.txId;
-    return state.transactions
-      .filter(t => {
-        if (t.type !== 'cobro_deuda' && t.type !== 'devolucion') return false;
-        if (t.referenceId && String(t.referenceId) === String(currentTxId)) return true;
-        if (t.txId && String(t.txId) === String(currentTxId)) return true;
-        if (t.notes && t.notes.includes(String(currentTxId))) return true;
-        return false;
-      })
-      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-  }, [selectedTransaction, state.transactions]);
 
   const historicalRate = getHistoricalExchangeRate();
 
@@ -334,11 +330,6 @@ export default function ClientPanel({ client, state, onClose }: ClientPanelProps
                           )}>
                             {a.status === 'pagada' ? 'PAGADA' : a.status === 'parcial' ? 'PARCIAL' : 'PENDIENTE'}
                           </span>
-                          {(a.paidAmount || 0) > 0 && !isPaid && (
-                            <span className="text-[9px] font-bold text-black">
-                              Abonado: {formatBs(a.paidAmount || 0)}
-                            </span>
-                          )}
                         </div>
                         <div className="text-[8px] font-bold text-black mt-0.5">
                           Original: {formatUsd(totalUsd)} al {a.exchangeRate ? formatBsNumber(a.exchangeRate) : 'tasa histórica'}
@@ -365,7 +356,7 @@ export default function ClientPanel({ client, state, onClose }: ClientPanelProps
         </div>
       </div>
 
-      {/* Modal de pago usando la nueva calculadora (FloatingPaymentModal) */}
+      {/* Modal de pago usando la calculadora */}
       {showPaymentModal && (
         <FloatingPaymentModal 
           total={paymentAmount}
@@ -375,7 +366,7 @@ export default function ClientPanel({ client, state, onClose }: ClientPanelProps
         />
       )}
 
-      {/* Modal de detalle de transacción con Tasa BCV HISTÓRICA */}
+      {/* Modal de detalle de transacción */}
       <Dialog open={showDetailModal} onOpenChange={setShowDetailModal}>
         <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-2xl p-0 overflow-hidden rounded-2xl shadow-xl max-h-[85vh] overflow-y-auto">
           <DialogHeader className="sr-only">
@@ -407,15 +398,10 @@ export default function ClientPanel({ client, state, onClose }: ClientPanelProps
 
               {/* Cuerpo */}
               <div className="p-6 space-y-6">
-                {/* Información general */}
                 <div className="grid grid-cols-2 gap-4 pb-4 border-b border-[#9E9E9E]">
                   <div>
                     <label className="text-[10px] font-black text-black/60 uppercase tracking-widest">Fecha</label>
                     <p className="text-sm font-bold text-black">{formatDate(selectedTransaction.accountInfo.date)}</p>
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-black text-black/60 uppercase tracking-widest">Tipo</label>
-                    <p className="text-sm font-bold text-black uppercase">CRÉDITO</p>
                   </div>
                   <div>
                     <label className="text-[10px] font-black text-black/60 uppercase tracking-widest">Monto Original (USD)</label>
@@ -424,38 +410,21 @@ export default function ClientPanel({ client, state, onClose }: ClientPanelProps
                         (selectedTransaction.accountInfo.amountBs / (selectedTransaction.accountInfo.exchangeRate || currentExchangeRate)))}
                     </p>
                   </div>
-                  <div>
-                    <label className="text-[10px] font-black text-black/60 uppercase tracking-widest">Estado</label>
-                    <div className="mt-1">
-                      <span className={cn(
-                        "inline-block px-3 py-1 rounded-full text-[10px] font-bold border",
-                        selectedTransaction.accountInfo.status === 'pagada' ? "bg-green-100 text-green-700 border-green-300" :
-                        selectedTransaction.accountInfo.status === 'parcial' ? "bg-yellow-100 text-yellow-700 border-yellow-300" :
-                        "bg-red-100 text-red-700 border-red-300"
-                      )}>
-                        {selectedTransaction.accountInfo.status === 'pagada' ? 'PAGADA' :
-                         selectedTransaction.accountInfo.status === 'parcial' ? 'PARCIAL' : 'PENDIENTE'}
-                      </span>
-                    </div>
-                  </div>
                 </div>
 
-                {/* ✅ Tasa BCV HISTÓRICA */}
                 <div className="bg-amber-50 rounded-lg p-4 border border-amber-200">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <DollarSign size={16} className="text-amber-700" />
                       <label className="text-[10px] font-black text-amber-800 uppercase tracking-widest">
-                        Tasa BCV al Momento del Crédito
+                        Tasa BCV del Crédito
                       </label>
                     </div>
                     <div className="text-right">
                       {historicalRate ? (
-                        <>
-                          <p className="text-lg font-black text-amber-800">
-                            1 USD = {formatBsNumber(historicalRate)}
-                          </p>
-                        </>
+                        <p className="text-lg font-black text-amber-800">
+                          1 USD = {formatBsNumber(historicalRate)}
+                        </p>
                       ) : (
                         <p className="text-sm font-bold text-red-600">No registrada</p>
                       )}
@@ -463,7 +432,6 @@ export default function ClientPanel({ client, state, onClose }: ClientPanelProps
                   </div>
                 </div>
 
-                {/* Tabla de Productos */}
                 <div>
                   <label className="text-[10px] font-black text-black/60 uppercase tracking-widest flex items-center gap-2 mb-3">
                     📦 PRODUCTOS
@@ -504,7 +472,6 @@ export default function ClientPanel({ client, state, onClose }: ClientPanelProps
                   </div>
                 </div>
 
-                {/* Totales */}
                 <div className="bg-[#F5F5F5] rounded-lg p-4 space-y-2">
                   <div className="flex justify-between text-sm">
                     <span className="text-black/60">Pagado en Bs:</span>
@@ -517,38 +484,6 @@ export default function ClientPanel({ client, state, onClose }: ClientPanelProps
                     </span>
                   </div>
                 </div>
-
-                {/* ✅ HISTORIAL DE ABONOS CORREGIDO */}
-                {(() => {
-                  const abonos = getAbonosForCurrentAccount();
-                  return abonos.length > 0 ? (
-                    <div>
-                      <label className="text-[10px] font-black text-black/60 uppercase flex items-center gap-2 mb-3">
-                        <History size={12} /> HISTORIAL DE ABONOS - Cuenta #{selectedTransaction.accountInfo.txId}
-                      </label>
-                      <div className="border border-[#9E9E9E] rounded-lg overflow-hidden">
-                        <table className="w-full text-sm">
-                          <thead className="bg-[#E8E8E8]">
-                            <tr>
-                              <th className="text-left p-3 text-[10px] font-black uppercase">FECHA</th>
-                              <th className="text-right p-3 text-[10px] font-black uppercase">MONTO</th>
-                              <th className="text-left p-3 text-[10px] font-black uppercase">MÉTODO</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {abonos.map((abono, idx) => (
-                              <tr key={idx} className="border-b border-[#9E9E9E]/50">
-                                <td className="p-3 text-xs text-black font-bold">{new Date(abono.date).toLocaleDateString('es-VE')}</td>
-                                <td className="p-3 text-right text-xs font-bold text-green-600">{formatBs(abono.total)}</td>
-                                <td className="p-3 text-xs text-black">{abono.payMethod || 'Efectivo BS'}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  ) : null;
-                })()}
               </div>
 
               {/* Footer */}
@@ -564,6 +499,17 @@ export default function ClientPanel({ client, state, onClose }: ClientPanelProps
           )}
         </DialogContent>
       </Dialog>
+
+      {showReceipt && lastTx && (
+        <ReceiptModal 
+          transaction={lastTx}
+          exchangeRate={state.exchangeRate}
+          onClose={() => {
+            setShowReceipt(false);
+            setLastTx(null);
+          }}
+        />
+      )}
     </>
   );
 }

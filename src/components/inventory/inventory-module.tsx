@@ -769,7 +769,8 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
   
   const verifyAuthCode = async () => {
     const adminCodeData = await syncService.getAdminCode();
-    if (adminCodeData && adminCodeData.code === authCodeInput) {
+    // ✅ CORRECCIÓN QUIRÚRGICA: Forzar comparación de cadenas de texto para evitar fallos de tipo
+    if (adminCodeData && String(adminCodeData.code) === String(authCodeInput)) {
       if (pendingAdjustment) {
         const { product, delta, reason } = pendingAdjustment;
         const previousStock = product.stock;
@@ -1168,7 +1169,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
         await syncService.saveProduct(product);
         
         const kardexEntry: any = {
-          id: `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          id: `${Date.now()}_${Math.random()}`,
           productId: product.id,
           date: new Date().toISOString(),
           type: 'ajuste_inicial',

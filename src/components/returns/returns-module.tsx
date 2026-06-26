@@ -481,13 +481,13 @@ export default function ReturnsModule({ userRole = 'cashier' }: ReturnsModulePro
     return totalDisplayed < totalAvailable;
   }, [filteredTransactions, allTransactions]);
 
-  // ✅ Obtener texto descriptivo de la terminal seleccionada
+  // ✅ CORRECCIÓN QUIRÚRGICA: Mostrar el Nombre de la Terminal asignado al usuario
   const getTerminalDisplayText = useCallback(() => {
-    if (!isAdmin) return `Terminal ${currentTerminalId}`;
+    if (!isAdmin) return user?.terminalName || `Terminal ${currentTerminalId}`;
     if (selectedTerminal === 'all') return 'Todas las terminales';
     const term = availableTerminals.find(t => t.id === selectedTerminal);
     return term ? term.name : `Terminal ${selectedTerminal}`;
-  }, [isAdmin, selectedTerminal, availableTerminals, currentTerminalId]);
+  }, [isAdmin, selectedTerminal, availableTerminals, currentTerminalId, user?.terminalName]);
 
   if (isLoading && allTransactions.length === 0) {
     return (

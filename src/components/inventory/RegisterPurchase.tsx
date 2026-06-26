@@ -832,10 +832,24 @@ export default function RegisterPurchase() {
                 </div>
 
                 <div className="bg-[#F5F5F5] p-3 border-t flex justify-between items-center">
-                  <div className="flex gap-3">
-                    <div className="bg-white border border-gray-300 rounded px-2 py-1">
-                      <span className="text-[8px] block text-gray-500 uppercase">Total en Bolívares</span>
+                  <div className="flex gap-3 flex-wrap">
+                    <div className="bg-white border border-gray-300 rounded px-2 py-1 shadow-sm">
+                      <span className="text-[8px] block text-gray-500 uppercase font-black">Total en Bolívares</span>
                       <span className="text-xs font-black text-secondary">{formatBs(totalInvoiceBs)}</span>
+                    </div>
+                    <div className="bg-white border border-gray-300 rounded px-2 py-1 shadow-sm">
+                      <span className="text-[8px] block text-gray-500 uppercase font-black">Total Factura USD</span>
+                      <span className="text-xs font-black text-black">{formatUsd(totalInvoiceUsd, 4)}</span>
+                    </div>
+                    <div className="bg-white border border-gray-300 rounded px-2 py-1 shadow-sm">
+                      <span className="text-[8px] block text-gray-500 uppercase font-black text-green-600">Total Pagado USD</span>
+                      <span className="text-xs font-black text-green-600">{formatUsd(totalPaidUsd, 4)}</span>
+                    </div>
+                    <div className="bg-white border border-gray-300 rounded px-2 py-1 shadow-sm">
+                      <span className="text-[8px] block text-gray-500 uppercase font-black text-red-600">Saldo Pendiente USD</span>
+                      <span className={cn("text-xs font-black", remainingUsd > 0 ? "text-red-600" : "text-green-600")}>
+                        {formatUsd(remainingUsd, 4)}
+                      </span>
                     </div>
                   </div>
                   <Button 

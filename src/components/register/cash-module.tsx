@@ -5,9 +5,8 @@ import { usePOSState } from '@/hooks/use-pos-state';
 import { 
   Vault, Banknote, Smartphone, Fingerprint, 
   Plane, DollarSign, CreditCard, Receipt, 
-  BarChart3, Clock, Percent, Eye, Wifi, WifiOff, X,
-  RefreshCw, Search, ChevronLeft, ChevronRight,
-  ArrowLeftRight, Package
+  BarChart3, Clock, Percent, Eye, X,
+  RefreshCw, Search, Package
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -116,8 +115,11 @@ export default function CashModule({ state }: CashModuleProps) {
         }));
 
         todayTx = allTx.filter(tx => {
+          // Robustez: verificar terminalId directo o desde la sesión
           const sid = tx.sessionId || tx.session_id;
-          const txTerminal = extractTerminalIdFromSession(sid);
+          const tid = tx.terminalId || tx.terminal_id;
+          const txTerminal = tid || extractTerminalIdFromSession(sid);
+          
           if (txTerminal !== terminalId) return false;
           
           const txDate = getLocalDateStr(tx.date);
@@ -173,7 +175,7 @@ export default function CashModule({ state }: CashModuleProps) {
           const method = p.method || 'efectivo_bs';
           const isUsd = method === 'usd_efectivo' || method === 'zelle';
           if (isUsd) {
-            const usdAmount = p.usdAmount || (p.amount / currentRate) || 0;
+            const usdAmount = p.usdAmount !== undefined ? p.usdAmount : (p.amount / currentRate) || 0;
             totalsUsd[method] = (totalsUsd[method] || 0) + usdAmount;
           } else {
             const bsAmount = p.amount || 0;
@@ -201,6 +203,12 @@ export default function CashModule({ state }: CashModuleProps) {
       .filter(t => t.type === 'credito')
       .reduce((sum, t) => sum + (t.total || 0), 0);
   }, [todaysTransactions]);
+
+  const totalDevolucionesBs = useMemo(() => 
+    todaysTransactions
+      .filter(t => t.type === 'devolucion')
+      .reduce((sum, t) => sum + (t.total || 0), 0)
+  , [todaysTransactions]);
 
   const totalContadoBs = useMemo(() => {
     let total = 0;
@@ -386,8 +394,6 @@ export default function CashModule({ state }: CashModuleProps) {
   const totalPages = Math.ceil(filteredTransactions.length / itemsPerPage);
   const goToPage = (page: number) => setCurrentPage(Math.min(totalPages, Math.max(1, page)));
 
-  const totalDevolucionesBs = useMemo(() => todaysTransactions.filter(t => t.type === 'devolucion').reduce((sum, t) => sum + (t.total || 0), 0), [todaysTransactions]);
-
   const txItems = useMemo(() => {
     if (!selectedTransaction?.items) return [];
     if (typeof selectedTransaction.items === 'string') {
@@ -505,6 +511,9 @@ export default function CashModule({ state }: CashModuleProps) {
 
       <Dialog open={showDetailModal} onOpenChange={setShowDetailModal}>
         <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-2xl p-0 overflow-hidden rounded-2xl shadow-xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader className="sr-only">
+            <DialogTitle>Detalle de Transacción {selectedTransaction ? getDisplayReceipt(selectedTransaction) : ''}</DialogTitle>
+          </DialogHeader>
           {selectedTransaction && (
             <div className="flex flex-col">
               <div className="bg-[#1A2C4E] p-4 text-white sticky top-0 z-10 flex justify-between items-center"><h3 className="text-lg font-black">Detalle de Transacción #{getDisplayReceipt(selectedTransaction)}</h3><button onClick={() => setShowDetailModal(false)}><X size={18} /></button></div>

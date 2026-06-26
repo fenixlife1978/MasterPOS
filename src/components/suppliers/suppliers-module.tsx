@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useMemo, useEffect, useCallback, memo } from 'react';
@@ -203,7 +204,7 @@ export default function SuppliersModule() {
   ): Promise<void> => {
     const pendingInvoices = invoices
       .filter(inv => inv.supplierId === supplierId && inv.status !== 'pagada' && !excludeInvoiceIds.includes(inv.id))
-      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      .sort((a, b) => new Date(a.date).getTime() - new Date(a.date).getTime());
     let remaining = totalPaidUsd;
     const updatedInvoices = [...invoices];
     for (const invoice of pendingInvoices) {
@@ -597,7 +598,7 @@ export default function SuppliersModule() {
           <p className="text-xs text-black/50">Directorio de proveedores y auditoría de compras</p>
         </div>
         <Button onClick={() => { resetForm(); setEditingSupplier(null); setIsAdding(true); }} className="bg-primary text-black font-black h-8 text-xs px-3">
-          <Plus size={13} className="mr-1" /> NUEVO PROVEEDOR
+          <Plus size={13} className="mr-1" /> NUEVA PROVEEDOR
         </Button>
       </div>
 
@@ -790,9 +791,13 @@ export default function SuppliersModule() {
       {/* Modal de detalles de factura */}
       {selectedInvoiceModal.invoice && (
         <InvoiceDetailModal
-          invoice={selectedInvoiceModal.invoice}
+          invoice={{
+            ...selectedInvoiceModal.invoice,
+            items: purchaseItems[selectedInvoiceModal.invoice.id] || []
+          }}
           isOpen={selectedInvoiceModal.isOpen}
           onClose={() => setSelectedInvoiceModal({ invoice: null, isOpen: false })}
+          exchangeRate={state.exchangeRate}
           supplierPayments={supplierPayments}
           supplierName={suppliers.find(s => s.id === selectedInvoiceModal.invoice?.supplierId)?.name || ''}
         />

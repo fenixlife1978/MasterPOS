@@ -377,6 +377,7 @@ export default function CashSupervision() {
                         <span className="text-[8px] font-bold uppercase text-gray-500">Efectivo BS</span>
                       </div>
                       <p className="text-lg font-black text-black">{formatBs(totals.efectivo_bs)}</p>
+                      <p className="text-[10px] text-black/40 font-mono">≈ {formatUsd(totals.efectivo_bs / (selectedRegister?.exchangeRate || 1))}</p>
                     </div>
                     <div className="bg-white rounded-lg p-2 border">
                       <div className="flex items-center gap-2 mb-1">
@@ -384,6 +385,7 @@ export default function CashSupervision() {
                         <span className="text-[8px] font-bold uppercase text-gray-500">Efectivo USD</span>
                       </div>
                       <p className="text-lg font-black text-black">{formatBs(totals.usd_efectivo)}</p>
+                      <p className="text-[10px] text-black/40 font-mono">≈ {formatUsd(totals.usd_efectivo / (selectedRegister?.exchangeRate || 1))}</p>
                     </div>
                     <div className="bg-white rounded-lg p-2 border">
                       <div className="flex items-center gap-2 mb-1">
@@ -391,6 +393,7 @@ export default function CashSupervision() {
                         <span className="text-[8px] font-bold uppercase text-gray-500">Tarjeta</span>
                       </div>
                       <p className="text-lg font-black text-black">{formatBs(totals.tarjeta)}</p>
+                      <p className="text-[10px] text-black/40 font-mono">≈ {formatUsd(totals.tarjeta / (selectedRegister?.exchangeRate || 1))}</p>
                     </div>
                     <div className="bg-white rounded-lg p-2 border">
                       <div className="flex items-center gap-2 mb-1">
@@ -398,6 +401,7 @@ export default function CashSupervision() {
                         <span className="text-[8px] font-bold uppercase text-gray-500">Biopago</span>
                       </div>
                       <p className="text-lg font-black text-black">{formatBs(totals.biopago)}</p>
+                      <p className="text-[10px] text-black/40 font-mono">≈ {formatUsd(totals.biopago / (selectedRegister?.exchangeRate || 1))}</p>
                     </div>
                     <div className="bg-white rounded-lg p-2 border">
                       <div className="flex items-center gap-2 mb-1">
@@ -405,6 +409,7 @@ export default function CashSupervision() {
                         <span className="text-[8px] font-bold uppercase text-gray-500">Pago Móvil</span>
                       </div>
                       <p className="text-lg font-black text-black">{formatBs(totals.pago_movil)}</p>
+                      <p className="text-[10px] text-black/40 font-mono">≈ {formatUsd(totals.pago_movil / (selectedRegister?.exchangeRate || 1))}</p>
                     </div>
                     <div className="bg-white rounded-lg p-2 border">
                       <div className="flex items-center gap-2 mb-1">
@@ -412,6 +417,7 @@ export default function CashSupervision() {
                         <span className="text-[8px] font-bold uppercase text-gray-500">Zelle</span>
                       </div>
                       <p className="text-lg font-black text-black">{formatBs(totals.zelle)}</p>
+                      <p className="text-[10px] text-black/40 font-mono">≈ {formatUsd(totals.zelle / (selectedRegister?.exchangeRate || 1))}</p>
                     </div>
                   </div>
                 </div>
@@ -423,6 +429,7 @@ export default function CashSupervision() {
                       <span className="text-[8px] font-bold uppercase text-amber-700">Ventas a Crédito</span>
                     </div>
                     <p className="text-xl font-black text-amber-700">{formatBs(totals.credito)}</p>
+                    <p className="text-[10px] text-amber-600/60 font-mono">≈ {formatUsd(totals.credito / (selectedRegister?.exchangeRate || 1))}</p>
                     <p className="text-[8px] text-amber-500 mt-1">Cuentas por cobrar</p>
                   </div>
                   <div className="bg-red-50 rounded-xl p-3 border border-red-200">
@@ -430,7 +437,9 @@ export default function CashSupervision() {
                       <TrendingDown size={12} className="text-red-600" />
                       <span className="text-[8px] font-bold uppercase text-red-700">Colaboraciones / Consumo</span>
                     </div>
-                    <p className="text-xl font-black text-red-700">{formatBs(totals.colaboracion)}</p>
+                    {/* ✅ CORREGIDO: USD como principal y Bs como secundario */}
+                    <p className="text-xl font-black text-red-700">{formatUsd(totals.colaboracion)}</p>
+                    <p className="text-[10px] text-red-600/60 font-mono">≈ {formatBs(totals.colaboracion * (selectedRegister?.exchangeRate || 1))}</p>
                     <p className="text-[8px] text-red-500 mt-1">Costo de salidas</p>
                   </div>
                 </div>

@@ -37,11 +37,10 @@ export default function ExpenseModal({ open, onClose, onConfirm }: ExpenseModalP
   const [concept, setConcept] = useState('');
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
-  // ✅ CORREGIDO: Usar fecha de Venezuela
   const [date, setDate] = useState(getVenezuelaDateString);
 
-  const currentCategory = EXPENSE_CATEGORIES.find(c => c.id === selectedCategory);
-  const showSubcategory = currentCategory?.subcategories && currentCategory.subcategories.length > 0;
+  // ✅ Obtener la categoría seleccionada
+  const currentCategory = EXPENSE_CATEGORIES.find(c => c.value === selectedCategory);
 
   const handleConfirm = () => {
     if (!selectedCategory) {
@@ -60,8 +59,8 @@ export default function ExpenseModal({ open, onClose, onConfirm }: ExpenseModalP
 
     onConfirm({
       category: selectedCategory,
-      subcategory: showSubcategory ? selectedSubcategory : undefined,
-      concept: concept || currentCategory?.name || '',
+      subcategory: selectedSubcategory || undefined,
+      concept: concept || currentCategory?.label || '',
       description,
       amount: amountNum,
       date
@@ -76,11 +75,11 @@ export default function ExpenseModal({ open, onClose, onConfirm }: ExpenseModalP
     setConcept('');
     setDescription('');
     setAmount('');
-    setDate(getVenezuelaDateString());
+    setDate(getVenezuelaDateString);
   };
 
-  const getCategoryLabel = (id: string) => {
-    return EXPENSE_CATEGORIES.find(c => c.id === id)?.name || id;
+  const getCategoryLabel = (value: string) => {
+    return EXPENSE_CATEGORIES.find(c => c.value === value)?.label || value;
   };
 
   return (
@@ -103,18 +102,20 @@ export default function ExpenseModal({ open, onClose, onConfirm }: ExpenseModalP
                   <label className="text-[10px] font-bold text-black/60 uppercase tracking-widest block mb-1">Categoría *</label>
                   <select value={selectedCategory} onChange={(e) => { setSelectedCategory(e.target.value); setSelectedSubcategory(''); }} className="w-full h-10 bg-white border border-[#9E9E9E] rounded-lg px-3 text-sm">
                     <option value="">Seleccione una categoría</option>
-                    {EXPENSE_CATEGORIES.map(cat => (<option key={cat.id} value={cat.id}>{cat.name}</option>))}
+                    {EXPENSE_CATEGORIES.map(cat => (
+                      <option key={cat.value} value={cat.value}>{cat.label}</option>
+                    ))}
                   </select>
                 </div>
-                {showSubcategory && (
-                  <div>
-                    <label className="text-[10px] font-bold text-black/60 uppercase tracking-widest block mb-1">Subcategoría</label>
-                    <select value={selectedSubcategory} onChange={(e) => setSelectedSubcategory(e.target.value)} className="w-full h-10 bg-white border border-[#9E9E9E] rounded-lg px-3 text-sm">
-                      <option value="">Seleccione una subcategoría</option>
-                      {currentCategory?.subcategories?.map(sub => (<option key={sub} value={sub}>{sub}</option>))}
-                    </select>
-                  </div>
-                )}
+                <div>
+                  <label className="text-[10px] font-bold text-black/60 uppercase tracking-widest block mb-1">Subcategoría (opcional)</label>
+                  <Input 
+                    value={selectedSubcategory} 
+                    onChange={(e) => setSelectedSubcategory(e.target.value)} 
+                    placeholder="Ej: Electricidad, Agua, etc." 
+                    className="bg-white border-[#9E9E9E]" 
+                  />
+                </div>
                 <div>
                   <label className="text-[10px] font-bold text-black/60 uppercase tracking-widest block mb-1">Concepto</label>
                   <Input value={concept} onChange={(e) => setConcept(e.target.value)} placeholder="Ej: Pago de nómina, reparación, etc." className="bg-white border-[#9E9E9E]" />

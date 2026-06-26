@@ -17,7 +17,7 @@ import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
-import { Product, Category, AdminCode, KitComponent } from '@/lib/types';
+import { Product, Category, AdminCode, KitComponent, getCategoryId, getCategoryName } from '@/lib/types';
 import syncService from '@/services/syncService';
 import * as XLSX from 'xlsx';
 import { formatBs, formatUsd, formatBsNumber, formatUsdNumber } from '@/lib/currency-formatter';
@@ -188,7 +188,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
   const [newCategory, setNewCategory] = useState('');
   const [newDepartment, setNewDepartment] = useState('');
   
-  const [ivaType, setIvaType] = useState<'con_iva' | 'sin_iva'>('con_iva');
+  const [ivaType, setIvaType] = useState<'con_iva' | 'sin_iva' | 'exento'>('con_iva');
   const [ivaPercentage, setIvaPercentage] = useState(16);
   
   const products = state.products;
@@ -902,7 +902,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
     
     const pdfProducts = products.filter(p => {
       const matchSearch = p.name.toLowerCase().includes(search.toLowerCase()) || (p.barcode || '').includes(search);
-      const matchCat = filterCategory === 'all' || (typeof p.category === 'string' ? p.category === filterCategory : p.category?.id === filterCategory);
+      const matchCat = filterCategory === 'all' || (getCategoryId(p.category) === filterCategory);
       const matchDept = filterDepartment === 'all' || (p.department === filterDepartment);
       return matchSearch && matchCat && matchDept;
     });
@@ -955,7 +955,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                 <tr>
                   <td>${p.barcode || ""}</td>
                   <td class="bold">${p.name}</td>
-                  <td>${typeof p.category === 'string' ? p.category : p.category?.name || 'Otro'}</td>
+                  <td>${getCategoryName(p.category)}</td>
                   <td class="text-center ${p.stock <= getProductMinStock(p) ? 'low-stock' : ''}">${p.stock}</td>
                   <td class="text-right">${formatUsd(p.priceUsd)}</td>
                   <td class="text-right">${formatBs(p.priceBs)}</td>
@@ -1000,7 +1000,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
         matchesBarcode = (p.barcode || "").toLowerCase().includes(term.toLowerCase());
       }
       
-      const matchCat = filterCategory === 'all' || (typeof p.category === 'string' ? p.category === filterCategory : p.category?.id === filterCategory);
+      const matchCat = filterCategory === 'all' || (getCategoryId(p.category) === filterCategory);
       const matchDept = filterDepartment === 'all' || (p.department === filterDepartment);
       
       return (matchesName || matchesBarcode) && matchCat && matchDept;
@@ -1021,7 +1021,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
       filtered = filtered.filter(p => p.department === filterDepartment);
     }
     if (filterCategory !== 'all') {
-      filtered = filtered.filter(p => typeof p.category === 'string' ? p.category === filterCategory : p.category?.id === filterCategory);
+      filtered = filtered.filter(p => getCategoryId(p.category) === filterCategory);
     }
     
     if (search.trim()) {
@@ -1338,7 +1338,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                         <TableCell className="font-mono text-[10px] text-black/60">{p.barcode || ""}</TableCell>
                         <TableCell>
                           <p className="font-bold text-xs text-black">{p.name}</p>
-                          <p className="text-[8px] font-bold text-primary uppercase">{typeof p.category === 'string' ? p.category : p.category?.name || 'Otro'} | {p.department || 'Sin Dept.'}</p>
+                          <p className="text-[8px] font-bold text-primary uppercase">{getCategoryName(p.category)} | {p.department || 'Sin Dept.'}</p>
                         </TableCell>
                         <TableCell className="text-center">
                           <span className={cn("px-2 py-0.5 rounded-full text-[8px] font-black border", p.stock <= getProductMinStock(p) ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700")}>
@@ -1411,7 +1411,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                     .map((p, index) => (
                       <TableRow key={`${p.id}-${index}`} className="border-b border-[#9E9E9E]/30 hover:bg-[#F5F5F5] py-1">
                         <TableCell className="font-mono text-[9px] text-black/60 py-1.5">{p.barcode || ""}</TableCell>
-                        <TableCell className="py-1.5"><p className="font-bold text-xs text-black">{p.name}</p><p className="text-[7px] font-bold text-primary/70 uppercase">{typeof p.category === 'string' ? p.category : p.category?.name || 'Otro'} | {p.department || 'Sin Dept.'}</p></TableCell>
+                        <TableCell className="py-1.5"><p className="font-bold text-xs text-black">{p.name}</p><p className="text-[7px] font-bold text-primary/70 uppercase">{getCategoryName(p.category)} | {p.department || 'Sin Dept.'}</p></TableCell>
                         <TableCell className="text-right font-mono text-[10px] font-bold text-black/80 py-1.5">{formatUsd(p.costUsd || 0, 4)}</TableCell>
                         <TableCell className="text-center py-1.5"><span className={cn("px-2 py-0.5 rounded-full text-[8px] font-black", p.stock <= getProductMinStock(p) ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700")}>{p.stock} UDS</span></TableCell>
                         <TableCell className="text-right font-mono text-[10px] font-black text-black/80 py-1.5">{formatUsd((p.costUsd || 0) * p.stock)}</TableCell>

@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
-import { Transaction, CartItem } from '@/lib/types';
+import { Transaction, CartItem, getCategoryById } from '@/lib/types';
 import syncService from '@/services/syncService';
 import { formatBs } from '@/lib/currency-formatter';
 import { useAuth } from '@/context/AuthContext';
@@ -369,7 +369,7 @@ export default function ReturnsModule({ userRole = 'cashier' }: ReturnsModulePro
         priceBs: i.priceBs,
         priceUsd: i.priceBs / exchangeRate,
         qty: i.returnQty,
-        category: 'Otro',
+        category: getCategoryById('otros'),
         ivaType: 'sin_iva',
         ivaPercentage: 0,
         isKit: false

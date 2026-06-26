@@ -139,6 +139,37 @@ export default function AccountingModule() {
     return found ? found.label : categoryId;
   };
 
+  // ✅ Función para determinar si un egreso es de colaboración o consumo propio
+  const isColaboracionOrConsumo = (entry: any): boolean => {
+    if (entry.type !== 'egreso') return false;
+    if (entry.category !== 'otros') return false;
+    const conceptLower = (entry.concept || '').toLowerCase();
+    return conceptLower.includes('colaboracion') || 
+           conceptLower.includes('colaboración') || 
+           conceptLower.includes('consumo_propio') || 
+           conceptLower.includes('consumo');
+  };
+
+  // ✅ Función para obtener el monto en USD de un egreso
+  const getAmountUsd = (entry: any): number => {
+    // Si es colaboración o consumo propio, el amount guardado en Bs es realmente el valor en USD
+    if (isColaboracionOrConsumo(entry)) {
+      return entry.amount; // El valor guardado es el monto en USD
+    }
+    // Para el resto, convertir de Bs a USD usando la tasa de cambio
+    return entry.amount / (entry.exchangeRate || globalExchangeRate);
+  };
+
+  // ✅ Función para obtener el monto en Bs de un egreso
+  const getAmountBs = (entry: any): number => {
+    // Si es colaboración o consumo propio, calcular Bs multiplicando el USD por la tasa
+    if (isColaboracionOrConsumo(entry)) {
+      return entry.amount * (entry.exchangeRate || globalExchangeRate);
+    }
+    // Para el resto, el amount guardado ya está en Bs
+    return entry.amount;
+  };
+
   return (
     <div className="p-6 h-full overflow-y-auto scrollbar-thin bg-background">
       <div className="flex justify-between items-center mb-6">
@@ -232,7 +263,10 @@ export default function AccountingModule() {
             </TableHeader>
             <TableBody>
               {filteredEntries.map((entry, idx) => {
-                const amountUsd = entry.amount / (entry.exchangeRate || globalExchangeRate);
+                // ✅ Obtener montos corregidos según el tipo de egreso
+                const amountUsd = getAmountUsd(entry);
+                const amountBs = getAmountBs(entry);
+                
                 return (
                   <TableRow 
                     key={`${entry.id}_${idx}`} 
@@ -252,7 +286,7 @@ export default function AccountingModule() {
                       {entry.type === 'ingreso' ? '+' : '-'} {formatUsd(amountUsd)}
                     </TableCell>
                     <TableCell className="text-right text-[10px] text-black/40 font-mono">
-                      {formatBs(entry.amount)}
+                      {formatBs(amountBs)}
                     </TableCell>
                     <TableCell className="text-center">
                       <button className="text-primary text-[10px] font-bold hover:underline">Ver</button>
@@ -339,13 +373,13 @@ export default function AccountingModule() {
                 <div className="grid grid-cols-2 gap-2">
                   <p className="text-[10px] font-bold text-black/60">Monto USD</p>
                   <p className={cn("text-lg font-black", selectedEntry.type === 'ingreso' ? "text-green-600" : "text-red-600")}>
-                    {formatUsd(selectedEntry.amount / (selectedEntry.exchangeRate || globalExchangeRate))}
+                    {formatUsd(getAmountUsd(selectedEntry))}
                   </p>
                 </div>
                 <div className="grid grid-cols-2 gap-2 border-t border-gray-100 pt-2">
                   <p className="text-[10px] font-bold text-black/40">Monto Bs</p>
                   <p className="text-sm font-mono text-black/60">
-                    {formatBs(selectedEntry.amount)}
+                    {formatBs(getAmountBs(selectedEntry))}
                   </p>
                 </div>
                 {selectedEntry.description && (

@@ -617,7 +617,7 @@ export function usePOSState() {
         subcategory: type === 'colaboracion' ? 'Donaciones' : 'Consumo Interno',
         concept: `Salida por ${type}`,
         description: paymentData.notes || 'Sin motivo',
-        amount: costoTotalOperacion,
+        amount: roundTo2(costoTotalOperacion * exchangeRate),
         referenceId: tx.id,
         referenceType: type,
         createdAt: getVenezuelaISOString(),

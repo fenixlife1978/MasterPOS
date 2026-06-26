@@ -162,33 +162,77 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
     } else if (activeReport === 'summary' && hasSearched) {
       content = `
         <div class="summary-grid">
-          <div class="summary-card"><div class="card-title">Total General</div><div class="card-value text-primary">${formatBs(totalGeneral)}</div></div>
-          <div class="summary-card"><div class="card-title">Ventas Contado</div><div class="card-value text-green">${formatBs(contadoTotal)}</div></div>
-          <div class="summary-card"><div class="card-title">Ventas Crédito</div><div class="card-value text-orange">${formatBs(creditoTotal)}</div></div>
-          <div class="summary-card"><div class="card-title">Cobros de Deuda</div><div class="card-value text-purple">${formatBs(cobroTotal)}</div></div>
-          <div class="summary-card"><div class="card-title">Colaboraciones/Consumo</div><div class="card-value text-red">${formatBs(colaboracionTotal)}</div></div>
-          <div class="summary-card"><div class="card-title">Costo de Operación</div><div class="card-value">${formatBs(costoTotalOperacion)}</div></div>
+          <div class="summary-card">
+            <div class="card-title">Total General</div>
+            <div class="card-value text-primary">${formatUsd(totalGeneral / state.exchangeRate)}</div>
+            <div class="card-subtitle"><strong>${formatBs(totalGeneral)}</strong></div>
+          </div>
+          <div class="summary-card">
+            <div class="card-title">Ventas Contado</div>
+            <div class="card-value text-green">${formatUsd(contadoTotal / state.exchangeRate)}</div>
+            <div class="card-subtitle"><strong>${formatBs(contadoTotal)}</strong></div>
+          </div>
+          <div class="summary-card">
+            <div class="card-title">Ventas Crédito</div>
+            <div class="card-value text-orange">${formatUsd(creditoTotal / state.exchangeRate)}</div>
+            <div class="card-subtitle"><strong>${formatBs(creditoTotal)}</strong></div>
+          </div>
+          <div class="summary-card">
+            <div class="card-title">Cobros de Deuda</div>
+            <div class="card-value text-purple">${formatUsd(cobroTotal / state.exchangeRate)}</div>
+            <div class="card-subtitle"><strong>${formatBs(cobroTotal)}</strong></div>
+          </div>
+          <div class="summary-card">
+            <div class="card-title">Colaboraciones/Consumo (Costo)</div>
+            <div class="card-value text-red">${formatUsd(colaboracionTotal / state.exchangeRate)}</div>
+            <div class="card-subtitle"><strong>${formatBs(colaboracionTotal)}</strong></div>
+          </div>
+          <div class="summary-card">
+            <div class="card-title">Costo de Operación</div>
+            <div class="card-value">${formatUsd(costoTotalOperacion / state.exchangeRate)}</div>
+            <div class="card-subtitle"><strong>${formatBs(costoTotalOperacion)}</strong></div>
+          </div>
         </div>
       `;
     } else if (activeReport === 'consolidated') {
       content = `
         <table class="report-table">
-          <thead><tr><th>Mes</th><th class="text-right">Ingresos (Bs)</th><th class="text-right">Egresos (Bs)</th><th class="text-right">Balance (Bs)</th></td></thead>
+          <thead><tr><th>Mes</th><th class="text-right">Ingresos ($)</th><th class="text-right">Egresos ($)</th><th class="text-right">Balance ($)</th></td></thead>
           <tbody>
-            ${monthlyConsolidated.map(row => `
+            ${monthlyConsolidated.map(row => {
+              const balance = row.income - row.expense;
+              return `
               <tr>
                 <td>${row.label} ${row.year}</td>
-                <td class="text-right text-green">${formatBs(row.income)}</td>
-                <td class="text-right text-red">${formatBs(row.expense)}</td>
-                <td class="text-right ${row.income - row.expense >= 0 ? 'text-green' : 'text-red'}">${formatBs(row.income - row.expense)}</td>
-              </tr>
-            `).join('')}
+                <td class="text-right text-green">
+                  <div>${formatUsd(row.income / state.exchangeRate)}</div>
+                  <div class="small"><strong>${formatBs(row.income)}</strong></div>
+                </td>
+                <td class="text-right text-red">
+                  <div>${formatUsd(row.expense / state.exchangeRate)}</div>
+                  <div class="small"><strong>${formatBs(row.expense)}</strong></div>
+                </td>
+                <td class="text-right ${balance >= 0 ? 'text-green' : 'text-red'}">
+                  <div>${formatUsd(balance / state.exchangeRate)}</div>
+                  <div class="small"><strong>${formatBs(balance)}</strong></div>
+                </td>
+              </tr>`;
+            }).join('')}
           </tbody>
           <tfoot>
             <tr><td class="text-right"><strong>TOTAL</strong></td>
-            <td class="text-right"><strong>${formatBs(monthlyConsolidated.reduce((s,r)=>s+r.income,0))}</strong></td>
-            <td class="text-right"><strong>${formatBs(monthlyConsolidated.reduce((s,r)=>s+r.expense,0))}</strong></td>
-            <td class="text-right"><strong>${formatBs(monthlyConsolidated.reduce((s,r)=>s+r.income,0) - monthlyConsolidated.reduce((s,r)=>s+r.expense,0))}</strong></td>
+            <td class="text-right">
+              <div><strong>${formatUsd(monthlyConsolidated.reduce((s,r)=>s+r.income,0) / state.exchangeRate)}</strong></div>
+              <div class="small"><strong>${formatBs(monthlyConsolidated.reduce((s,r)=>s+r.income,0))}</strong></div>
+            </td>
+            <td class="text-right">
+              <div><strong>${formatUsd(monthlyConsolidated.reduce((s,r)=>s+r.expense,0) / state.exchangeRate)}</strong></div>
+              <div class="small"><strong>${formatBs(monthlyConsolidated.reduce((s,r)=>s+r.expense,0))}</strong></div>
+            </td>
+            <td class="text-right">
+              <div><strong>${formatUsd((monthlyConsolidated.reduce((s,r)=>s+r.income,0) - monthlyConsolidated.reduce((s,r)=>s+r.expense,0)) / state.exchangeRate)}</strong></div>
+              <div class="small"><strong>${formatBs(monthlyConsolidated.reduce((s,r)=>s+r.income,0) - monthlyConsolidated.reduce((s,r)=>s+r.expense,0))}</strong></div>
+            </td>
           </tr>
           </tfoot>
         </table>
@@ -294,6 +338,15 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
           font-weight: bold;
           margin-top: 10px;
         }
+        .card-subtitle {
+          font-size: 13px;
+          margin-top: 5px;
+          color: #333;
+        }
+        .small {
+          font-size: 10px;
+          color: #444;
+        }
         .text-primary { color: #1A2C4E; }
         .text-green { color: #2ECC71; }
         .text-orange { color: #F39C12; }
@@ -369,21 +422,33 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
         csvRows.push([formatLocalDate(t.date), t.type, t.clientName || '—', terminalDisplay, formatBsNumber(t.total)]);
       });
     } else if (activeReport === 'summary' && hasSearched) {
-      csvRows.push(['Concepto', 'Monto Bs']);
-      csvRows.push(['Total General', formatBsNumber(totalGeneral)]);
-      csvRows.push(['Ventas Contado', formatBsNumber(contadoTotal)]);
-      csvRows.push(['Ventas Crédito', formatBsNumber(creditoTotal)]);
-      csvRows.push(['Cobros de Deuda', formatBsNumber(cobroTotal)]);
-      csvRows.push(['Colaboraciones/Consumo (Costo)', formatBsNumber(colaboracionTotal)]);
-      csvRows.push(['Costo Total Operación', formatBsNumber(costoTotalOperacion)]);
+      csvRows.push(['Concepto', 'Monto USD', 'Equivalente Bs']);
+      csvRows.push(['Total General', formatUsdNumber(totalGeneral / state.exchangeRate), formatBsNumber(totalGeneral)]);
+      csvRows.push(['Ventas Contado', formatUsdNumber(contadoTotal / state.exchangeRate), formatBsNumber(contadoTotal)]);
+      csvRows.push(['Ventas Crédito', formatUsdNumber(creditoTotal / state.exchangeRate), formatBsNumber(creditoTotal)]);
+      csvRows.push(['Cobros de Deuda', formatUsdNumber(cobroTotal / state.exchangeRate), formatBsNumber(cobroTotal)]);
+      csvRows.push(['Colaboraciones/Consumo (Costo)', formatUsdNumber(colaboracionTotal / state.exchangeRate), formatBsNumber(colaboracionTotal)]);
+      csvRows.push(['Costo Total Operación', formatUsdNumber(costoTotalOperacion / state.exchangeRate), formatBsNumber(costoTotalOperacion)]);
     } else if (activeReport === 'consolidated') {
-      csvRows.push(['Mes', 'Ingresos (Bs)', 'Egresos (Bs)', 'Balance (Bs)']);
+      csvRows.push(['Mes', 'Ingresos ($)', 'Ingresos (Bs)', 'Egresos ($)', 'Egresos (Bs)', 'Balance ($)', 'Balance (Bs)']);
       monthlyConsolidated.forEach(row => {
-        csvRows.push([`${row.label} ${row.year}`, formatBsNumber(row.income), formatBsNumber(row.expense), formatBsNumber(row.income - row.expense)]);
+        const balance = row.income - row.expense;
+        csvRows.push([
+          `${row.label} ${row.year}`, 
+          formatUsdNumber(row.income / state.exchangeRate), formatBsNumber(row.income),
+          formatUsdNumber(row.expense / state.exchangeRate), formatBsNumber(row.expense),
+          formatUsdNumber(balance / state.exchangeRate), formatBsNumber(balance)
+        ]);
       });
       const totalIncome = monthlyConsolidated.reduce((s, r) => s + r.income, 0);
       const totalExpense = monthlyConsolidated.reduce((s, r) => s + r.expense, 0);
-      csvRows.push(['TOTAL', formatBsNumber(totalIncome), formatBsNumber(totalExpense), formatBsNumber(totalIncome - totalExpense)]);
+      const totalBalance = totalIncome - totalExpense;
+      csvRows.push([
+        'TOTAL', 
+        formatUsdNumber(totalIncome / state.exchangeRate), formatBsNumber(totalIncome),
+        formatUsdNumber(totalExpense / state.exchangeRate), formatBsNumber(totalExpense),
+        formatUsdNumber(totalBalance / state.exchangeRate), formatBsNumber(totalBalance)
+      ]);
     } else {
       alert('No hay datos para exportar. Realice una búsqueda primero.');
       return;
@@ -481,12 +546,36 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
             {hasSearched && (
               <div className="bg-gray-50 rounded-xl p-5 border border-gray-200 space-y-3">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="bg-white p-4 rounded-xl shadow-sm border-l-4 border-primary"><p className="text-[10px] font-black text-black/40">Total General</p><p className="text-2xl font-black text-primary">{formatBs(totalGeneral)}</p></div>
-                  <div className="bg-white p-4 rounded-xl shadow-sm border-l-4 border-green-500"><p className="text-[10px] font-black text-black/40">Ventas Contado</p><p className="text-2xl font-black text-green-600">{formatBs(contadoTotal)}</p></div>
-                  <div className="bg-white p-4 rounded-xl shadow-sm border-l-4 border-orange-500"><p className="text-[10px] font-black text-black/40">Ventas Crédito</p><p className="text-2xl font-black text-orange-600">{formatBs(creditoTotal)}</p></div>
-                  <div className="bg-white p-4 rounded-xl shadow-sm border-l-4 border-purple-500"><p className="text-[10px] font-black text-black/40">Cobros de Deuda</p><p className="text-2xl font-black text-purple-600">{formatBs(cobroTotal)}</p></div>
-                  <div className="bg-white p-4 rounded-xl shadow-sm border-l-4 border-red-500"><p className="text-[10px] font-black text-black/40">Colaboraciones/Consumo (Costo)</p><p className="text-2xl font-black text-red-600">{formatBs(colaboracionTotal)}</p></div>
-                  <div className="bg-white p-4 rounded-xl shadow-sm border-l-4 border-gray-500"><p className="text-[10px] font-black text-black/40">Costo Total de Operación</p><p className="text-2xl font-black">{formatBs(costoTotalOperacion)}</p></div>
+                  <div className="bg-white p-4 rounded-xl shadow-sm border-l-4 border-primary">
+                    <p className="text-[10px] font-black text-black/40">Total General</p>
+                    <p className="text-2xl font-black text-primary">{formatUsd(totalGeneral / state.exchangeRate)}</p>
+                    <p className="text-[11px] font-black text-black/60">{formatBs(totalGeneral)}</p>
+                  </div>
+                  <div className="bg-white p-4 rounded-xl shadow-sm border-l-4 border-green-500">
+                    <p className="text-[10px] font-black text-black/40">Ventas Contado</p>
+                    <p className="text-2xl font-black text-green-600">{formatUsd(contadoTotal / state.exchangeRate)}</p>
+                    <p className="text-[11px] font-black text-black/60">{formatBs(contadoTotal)}</p>
+                  </div>
+                  <div className="bg-white p-4 rounded-xl shadow-sm border-l-4 border-orange-500">
+                    <p className="text-[10px] font-black text-black/40">Ventas Crédito</p>
+                    <p className="text-2xl font-black text-orange-600">{formatUsd(creditoTotal / state.exchangeRate)}</p>
+                    <p className="text-[11px] font-black text-black/60">{formatBs(creditoTotal)}</p>
+                  </div>
+                  <div className="bg-white p-4 rounded-xl shadow-sm border-l-4 border-purple-500">
+                    <p className="text-[10px] font-black text-black/40">Cobros de Deuda</p>
+                    <p className="text-2xl font-black text-purple-600">{formatUsd(cobroTotal / state.exchangeRate)}</p>
+                    <p className="text-[11px] font-black text-black/60">{formatBs(cobroTotal)}</p>
+                  </div>
+                  <div className="bg-white p-4 rounded-xl shadow-sm border-l-4 border-red-500">
+                    <p className="text-[10px] font-black text-black/40">Colaboraciones/Consumo (Costo)</p>
+                    <p className="text-2xl font-black text-red-600">{formatUsd(colaboracionTotal / state.exchangeRate)}</p>
+                    <p className="text-[11px] font-black text-black/60">{formatBs(colaboracionTotal)}</p>
+                  </div>
+                  <div className="bg-white p-4 rounded-xl shadow-sm border-l-4 border-gray-500">
+                    <p className="text-[10px] font-black text-black/40">Costo Total de Operación</p>
+                    <p className="text-2xl font-black">{formatUsd(costoTotalOperacion / state.exchangeRate)}</p>
+                    <p className="text-[11px] font-black text-black/60">{formatBs(costoTotalOperacion)}</p>
+                  </div>
                 </div>
               </div>
             )}
@@ -505,9 +594,18 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
                     return (
                       <tr key={idx} className="hover:bg-[#F5F5F5]">
                         <td className="p-3"><p className="font-black">{row.label}</p><p className="text-[10px] text-black/50">{row.year}</p></td>
-                        <td className="p-3 text-right text-green-600 font-bold">{formatBs(row.income)}</td>
-                        <td className="p-3 text-right text-red-600 font-bold">{formatBs(row.expense)}</td>
-                        <td className={cn("p-3 text-right font-black", balance >= 0 ? "text-green-700" : "text-red-700")}>{formatBs(balance)}</td>
+                        <td className="p-3 text-right">
+                          <p className="text-green-600 font-bold">{formatUsd(row.income / state.exchangeRate)}</p>
+                          <p className="text-[10px] font-black text-black/60">{formatBs(row.income)}</p>
+                        </td>
+                        <td className="p-3 text-right">
+                          <p className="text-red-600 font-bold">{formatUsd(row.expense / state.exchangeRate)}</p>
+                          <p className="text-[10px] font-black text-black/60">{formatBs(row.expense)}</p>
+                        </td>
+                        <td className="p-3 text-right">
+                          <p className={cn("font-black", balance >= 0 ? "text-green-700" : "text-red-700")}>{formatUsd(balance / state.exchangeRate)}</p>
+                          <p className="text-[10px] font-black text-black/60">{formatBs(balance)}</p>
+                        </td>
                       </tr>
                     );
                   })}
@@ -515,9 +613,18 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
                 <tfoot className="bg-[#F0F0F0]">
                   <tr className="font-black">
                     <td className="p-4">TOTAL HISTÓRICO</td>
-                    <td className="p-4 text-right text-green-700">{formatBs(monthlyConsolidated.reduce((s, r) => s + r.income, 0))}</td>
-                    <td className="p-4 text-right text-red-700">{formatBs(monthlyConsolidated.reduce((s, r) => s + r.expense, 0))}</td>
-                    <td className="p-4 text-right">{formatBs(monthlyConsolidated.reduce((s, r) => s + r.income, 0) - monthlyConsolidated.reduce((s, r) => s + r.expense, 0))}</td>
+                    <td className="p-4 text-right">
+                      <p className="text-green-700">{formatUsd(monthlyConsolidated.reduce((s, r) => s + r.income, 0) / state.exchangeRate)}</p>
+                      <p className="text-[10px] font-black text-black/60">{formatBs(monthlyConsolidated.reduce((s, r) => s + r.income, 0))}</p>
+                    </td>
+                    <td className="p-4 text-right">
+                      <p className="text-red-700">{formatUsd(monthlyConsolidated.reduce((s, r) => s + r.expense, 0) / state.exchangeRate)}</p>
+                      <p className="text-[10px] font-black text-black/60">{formatBs(monthlyConsolidated.reduce((s, r) => s + r.expense, 0))}</p>
+                    </td>
+                    <td className="p-4 text-right">
+                      <p>{formatUsd((monthlyConsolidated.reduce((s, r) => s + r.income, 0) - monthlyConsolidated.reduce((s, r) => s + r.expense, 0)) / state.exchangeRate)}</p>
+                      <p className="text-[10px] font-black text-black/60">{formatBs(monthlyConsolidated.reduce((s, r) => s + r.income, 0) - monthlyConsolidated.reduce((s, r) => s + r.expense, 0))}</p>
+                    </td>
                   </tr>
                 </tfoot>
               </table>

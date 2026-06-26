@@ -560,8 +560,13 @@ export async function saveGlobalSettings(settings: any) {
 }
 
 export async function getAdminCode() {
-  const snapshot = await get(ref(rtdb, 'global_settings/admin_code'));
-  return snapshot.exists() ? { code: snapshot.val() } : { code: '123456' };
+  const snapshot = await get(ref(rtdb, 'global_settings'));
+  if (snapshot.exists()) {
+    const data = snapshot.val();
+    const code = data.adminCode || data.admin_code || '123456';
+    return { code: String(code) };
+  }
+  return { code: '123456' };
 }
 
 // ============================================================
@@ -824,6 +829,3 @@ export const getPurchaseItems = getAllPurchaseItems;
 export const getSupplierPayments = getAllSupplierPayments;
 export const getAccountingEntries = getAllAccountingEntries;
 export const getKardexEntries = getAllKardexEntries;
-
-// ✅ ELIMINADA la exportación duplicada de subscribeToAccounts
-// Ya está exportada como función normal arriba (línea ~662)

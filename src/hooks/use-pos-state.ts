@@ -687,6 +687,7 @@ export function usePOSState() {
     }
 
     let remaining = amount;
+    const paidAccountRefs: string[] = [];
     const clientAccounts = accounts
       .filter(a => Number(a.clientId) === Number(clientId) && a.status !== 'pagada')
       .sort((a, b) => new Date(a.date).getTime() - new Date(a.date).getTime());
@@ -700,11 +701,12 @@ export function usePOSState() {
       const newStatus: 'pagada' | 'parcial' = newPaid >= acc.amountBs ? 'pagada' : 'parcial';
       const updatedAcc = { ...acc, paidAmount: newPaid, paidAmountUsd: newPaidUsd, status: newStatus };
       await syncService.saveAccount(updatedAcc);
+      paidAccountRefs.push(String(acc.txId));
       remaining -= pay;
     }
 
     const isLiquidacion = remaining === 0 && amount >= (client.debt || 0);
-    const note = isLiquidacion ? 'LIQUIDACIÓN DE DEUDA' : 'ABONO DE DEUDA';
+    const note = `${isLiquidacion ? 'LIQUIDACIÓN DE DEUDA' : 'ABONO DE DEUDA'} - Ref Credits: [${paidAccountRefs.join(',')}]`;
 
     const txId = getVenezuelaTimestamp();
     const tx: Transaction = {

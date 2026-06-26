@@ -194,6 +194,21 @@ export default function ClientPanel({ client, state, onClose }: ClientPanelProps
     return [];
   }, [selectedTransaction]);
 
+  // ✅ Obtener abonos específicos de esta factura
+  const getAbonosForCurrentAccount = useCallback(() => {
+    if (!selectedTransaction?.accountInfo) return [];
+    const currentTxId = String(selectedTransaction.accountInfo.txId);
+    
+    return state.transactions
+      .filter(t => {
+        if (t.type !== 'cobro_deuda' && t.type !== 'devolucion') return false;
+        if (t.referenceId && String(t.referenceId) === currentTxId) return true;
+        if (t.notes && t.notes.includes(currentTxId)) return true;
+        return false;
+      })
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  }, [state.transactions, selectedTransaction]);
+
   const historicalRate = getHistoricalExchangeRate();
 
   return (
@@ -484,6 +499,40 @@ export default function ClientPanel({ client, state, onClose }: ClientPanelProps
                     </span>
                   </div>
                 </div>
+
+                {/* ✅ HISTORIAL DE ABONOS CORREGIDO */}
+                {(() => {
+                  const abonos = getAbonosForCurrentAccount();
+                  return abonos.length > 0 ? (
+                    <div>
+                      <label className="text-[10px] font-black text-black/60 uppercase flex items-center gap-2 mb-3">
+                        <History size={12} /> HISTORIAL DE ABONOS - Cuenta #{selectedTransaction.accountInfo.txId}
+                      </label>
+                      <div className="border border-[#9E9E9E] rounded-lg overflow-hidden">
+                        <table className="w-full text-sm">
+                          <thead className="bg-[#E8E8E8]">
+                            <tr>
+                              <th className="text-left p-3 text-[10px] font-black uppercase">FECHA</th>
+                              <th className="text-right p-3 text-[10px] font-black uppercase">MONTO</th>
+                              <th className="text-left p-3 text-[10px] font-black uppercase">MÉTODO</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {abonos.map((abono, idx) => (
+                              <tr key={idx} className="border-b border-[#9E9E9E]/50">
+                                <td className="p-3 text-xs text-black font-bold">
+                                  {new Date(abono.date).toLocaleDateString('es-VE', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                                </td>
+                                <td className="p-3 text-right text-xs font-bold text-green-600">{formatBs(abono.total)}</td>
+                                <td className="p-3 text-xs text-black">{abono.payMethod || 'Efectivo BS'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  ) : null;
+                })()}
               </div>
 
               {/* Footer */}

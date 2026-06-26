@@ -144,7 +144,7 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
   const getAbonosForCurrentAccount = () => {
     if (!selectedTransaction?.accountInfo) return [];
     
-    const currentTxId = selectedTransaction.accountInfo.txId;
+    const currentTxId = String(selectedTransaction.accountInfo.txId);
     
     // Buscar transacciones de tipo 'cobro_deuda' o 'devolucion' que correspondan a este crédito
     return state.transactions
@@ -153,11 +153,11 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
         if (t.type !== 'cobro_deuda' && t.type !== 'devolucion') return false;
         
         // Si la transacción tiene un referenceId que coincide con el txId de la cuenta
-        if (t.referenceId && String(t.referenceId) === String(currentTxId)) return true;
+        if (t.referenceId && String(t.referenceId) === currentTxId) return true;
         // Si la transacción tiene un txId que coincide (para abonos directos antiguos)
-        if (t.txId && String(t.txId) === String(currentTxId)) return true;
+        if (t.txId && String(t.txId) === currentTxId) return true;
         // Si la transacción tiene un notes que contiene el txId de la cuenta
-        if (t.notes && t.notes.includes(String(currentTxId))) return true;
+        if (t.notes && t.notes.includes(currentTxId)) return true;
         
         return false;
       })
@@ -315,13 +315,13 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
 
   // ✅ Función para calcular el total de abonos de una cuenta específica
   const getTotalAbonosForAccount = (account: any) => {
-    const txId = account.txId;
+    const txId = String(account.txId);
     return state.transactions
       .filter(t => {
         if (t.type !== 'cobro_deuda' && t.type !== 'devolucion') return false;
-        if (t.referenceId && String(t.referenceId) === String(txId)) return true;
-        if (t.txId && String(t.txId) === String(txId)) return true;
-        if (t.notes && t.notes.includes(String(txId))) return true;
+        if (t.referenceId && String(t.referenceId) === txId) return true;
+        if (t.txId && String(t.txId) === txId) return true;
+        if (t.notes && t.notes.includes(txId)) return true;
         return false;
       })
       .reduce((sum, t) => sum + (t.total || 0), 0);

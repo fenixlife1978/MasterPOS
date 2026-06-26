@@ -192,7 +192,7 @@ export default function POSModule({ state }: POSModuleProps) {
     
     try {
       const adminCodeData = await syncService.getAdminCode();
-      if (!adminCodeData || adminCodeData.code !== pin) {
+      if (!adminCodeData || String(adminCodeData.code) !== String(pin)) {
         alert('PIN de autorización incorrecto');
         setIsVerifying(false);
         setIsProcessingAutorizacion(false);

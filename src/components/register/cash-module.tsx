@@ -115,7 +115,6 @@ export default function CashModule({ state }: CashModuleProps) {
         }));
 
         todayTx = allTx.filter(tx => {
-          // Robustez: verificar terminalId directo o desde la sesión
           const sid = tx.sessionId || tx.session_id;
           const tid = tx.terminalId || tx.terminal_id;
           const txTerminal = tid || extractTerminalIdFromSession(sid);
@@ -173,8 +172,8 @@ export default function CashModule({ state }: CashModuleProps) {
       if (Array.isArray(payments) && payments.length > 0) {
         for (const p of payments) {
           const method = p.method || 'efectivo_bs';
-          const isUsd = method === 'usd_efectivo' || method === 'zelle';
-          if (isUsd) {
+          const isUsdMethod = method === 'usd_efectivo' || method === 'zelle';
+          if (isUsdMethod) {
             const usdAmount = p.usdAmount !== undefined ? p.usdAmount : (p.amount / currentRate) || 0;
             totalsUsd[method] = (totalsUsd[method] || 0) + usdAmount;
           } else {
@@ -184,8 +183,8 @@ export default function CashModule({ state }: CashModuleProps) {
         }
       } else {
         const method = tx.pay_method || tx.payMethod || 'efectivo_bs';
-        const isUsd = method === 'usd_efectivo' || method === 'zelle';
-        if (isUsd) {
+        const isUsdMethod = method === 'usd_efectivo' || method === 'zelle';
+        if (isUsdMethod) {
           const usdAmount = tx.total_usd || tx.totalUsd || 0;
           totalsUsd[method] = (totalsUsd[method] || 0) + usdAmount;
         } else {
@@ -330,24 +329,27 @@ export default function CashModule({ state }: CashModuleProps) {
     if (typeof payments === 'string') {
       try { payments = JSON.parse(payments); } catch(e) { payments = []; }
     }
+    
+    // ✅ REGLA DE ORO: Solo sumar montos de métodos USD reales (Efectivo USD o Zelle)
     if (Array.isArray(payments) && payments.length > 0) {
-      let totalUsd = 0;
+      let totalUsdReceived = 0;
+      let hasUsdMethod = false;
       for (const p of payments) {
         if (p.method === 'usd_efectivo' || p.method === 'zelle') {
-          totalUsd += p.usdAmount || (p.amount / (tx.exchangeRate || state.exchangeRate)) || 0;
+          hasUsdMethod = true;
+          totalUsdReceived += p.usdAmount !== undefined ? p.usdAmount : (p.amount / (tx.exchangeRate || state.exchangeRate)) || 0;
         }
       }
-      return totalUsd;
+      return hasUsdMethod ? totalUsdReceived : 0;
     }
+    
     const method = tx.pay_method || tx.payMethod || '';
-    if (method === 'usd_efectivo' || method === 'zelle') return tx.total_usd || tx.totalUsd || 0;
-    
-    // Para colaboraciones/consumos, mostrar el costo en la columna USD
-    if (tx.type === 'colaboracion' || tx.type === 'consumo_propio') {
-      return tx.totalUsd || tx.total_usd || 0;
+    if (method === 'usd_efectivo' || method === 'zelle') {
+      return tx.total_usd || tx.totalUsd || 0;
     }
     
-    return tx.totalUsd || tx.total_usd || (tx.total / (tx.exchangeRate || state.exchangeRate)) || 0;
+    // Si no es un método USD, no mostrar equivalencia
+    return 0;
   };
 
   const getBsPaid = (tx: any): number => {
@@ -491,7 +493,9 @@ export default function CashModule({ state }: CashModuleProps) {
                         <td className="p-2 text-center"><span className={cn("text-[8px] font-black px-2 py-0.5 rounded-full", getTransactionColor(t.type))}>{getTransactionTypeLabel(t.type)}</span></td>
                         <td className="p-2 text-center font-bold">{getPaymentMethodLabel(t)}</td>
                         <td className="p-2 text-right font-bold">{formatBs(getBsPaid(t))}</td>
-                        <td className="p-2 text-right font-bold text-cyan-700">{formatUsd(getUsdPaid(t))}</td>
+                        <td className="p-2 text-right font-bold text-cyan-700">
+                          {getUsdPaid(t) > 0 ? formatUsd(getUsdPaid(t)) : '—'}
+                        </td>
                         <td className="p-2 text-center"><button onClick={() => { setSelectedTransaction(t); setShowDetailModal(true); }} className="p-1 hover:bg-primary/20 rounded-lg"><Eye size={14} className="text-[#1E3A8A]" /></button></td>
                       </tr>
                     ))}

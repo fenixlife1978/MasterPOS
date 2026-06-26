@@ -159,8 +159,9 @@ export default function CartPanel({
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* Cabecera */}
           <div className="grid grid-cols-12 gap-2 px-4 py-3 bg-gray-100 border-b border-black text-[11px] font-black uppercase tracking-wider text-black shrink-0">
-            <div className="col-span-5 text-left">Descripción</div>
+            <div className="col-span-4 text-left">Descripción</div>
             <div className="col-span-1 text-center">Cant</div>
+            <div className="col-span-1 text-center">U.M.</div>
             <div className="col-span-2 text-center">
               Precio <span className="block text-[9px] font-normal">(USD)</span>
             </div>
@@ -201,7 +202,7 @@ export default function CartPanel({
                     )}
                   >
                     {/* Descripción */}
-                    <div className="col-span-5">
+                    <div className="col-span-4">
                       <div className="flex items-center justify-between gap-2">
                         <div 
                           className="relative flex items-center gap-2 font-mono text-sm font-bold text-black truncate flex-1"
@@ -280,6 +281,11 @@ export default function CartPanel({
                         }}
                         className="w-14 text-center text-base font-black text-black bg-gray-100 rounded-lg px-2 py-1.5 border border-gray-200 focus:border-primary focus:outline-none"
                       />
+                    </div>
+
+                    {/* U.M. */}
+                    <div className="col-span-1 flex items-center justify-center">
+                      <span className="text-[10px] font-bold text-black/60 uppercase">{item.unitMeasure || 'UNID'}</span>
                     </div>
                     
                     {/* Precio USD */}

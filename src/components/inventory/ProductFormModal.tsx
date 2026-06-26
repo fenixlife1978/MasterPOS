@@ -55,6 +55,7 @@ const ProductFormModal = memo(function ProductFormModal({
   const [name, setName] = useState('');
   const [department, setDepartment] = useState('Otros');
   const [category, setCategory] = useState('Otro');
+  const [unitMeasure, setUnitMeasure] = useState('');
   const [stockInput, setStockInput] = useState('');
   const [minStockInput, setMinStockInput] = useState('');
   const [priceWholesaleInput, setPriceWholesaleInput] = useState('');
@@ -82,6 +83,7 @@ const ProductFormModal = memo(function ProductFormModal({
       setName(editingProduct.name);
       setDepartment(editingProduct.department || 'Otros');
       setCategory(typeof editingProduct.category === 'string' ? editingProduct.category : editingProduct.category?.id || 'Otro');
+      setUnitMeasure(editingProduct.unitMeasure || '');
       setStockInput(editingProduct.stock.toString());
       setMinStockInput((editingProduct.minStock || 5).toString());
       setPriceWholesaleInput(editingProduct.priceWholesale?.toString() || '');
@@ -100,6 +102,7 @@ const ProductFormModal = memo(function ProductFormModal({
       setName('');
       setDepartment('Otros');
       setCategory('Otro');
+      setUnitMeasure('');
       setStockInput('');
       setMinStockInput('5');
       setPriceWholesaleInput('');
@@ -207,6 +210,7 @@ const ProductFormModal = memo(function ProductFormModal({
       name,
       department: department || 'Otros',
       category: category as unknown as Category,
+      unitMeasure,
       stock: parseInt(stockInput) || 0,
       minStock: parseInt(minStockInput) || 5,
       costUsd: roundTo4(cost),
@@ -281,6 +285,10 @@ const ProductFormModal = memo(function ProductFormModal({
                       {categories.map((c, i) => <option key={`${c}-${i}`} value={c}>{c}</option>)}
                     </select>
                   </div>
+                </div>
+                <div>
+                  <label className="text-[8px] font-black uppercase">Unidad de Medida</label>
+                  <Input value={unitMeasure} onChange={e => setUnitMeasure(e.target.value)} className="h-7 text-xs" placeholder="UNID, KG, LTS..." />
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div>

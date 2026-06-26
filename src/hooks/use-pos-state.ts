@@ -382,7 +382,8 @@ export function usePOSState() {
       return [...prev, { 
         productId: product.id, name: product.name, priceBs: product.priceBs,
         priceUsd: product.priceUsd, qty: 1, category: product.category,
-        ivaType: product.ivaType || 'sin_iva', ivaPercentage: product.ivaPercentage || 0, isKit: product.isKit || false
+        ivaType: product.ivaType || 'sin_iva', ivaPercentage: product.ivaPercentage || 0, isKit: product.isKit || false,
+        unitMeasure: product.unitMeasure || ''
       }];
     });
     return true;

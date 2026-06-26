@@ -28,6 +28,7 @@ export interface Product {
   activo?: boolean;
   createdAt?: string;
   updatedAt?: string;
+  unitMeasure?: string;
 }
 
 export interface KitComponent {
@@ -92,6 +93,7 @@ export interface CartItem {
   ivaType: string;
   ivaPercentage: number;
   isKit: boolean;
+  unitMeasure?: string;
 }
 
 export interface Account {

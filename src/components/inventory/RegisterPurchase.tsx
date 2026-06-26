@@ -70,10 +70,6 @@ function generateUniquePaymentId(): string {
   return String(Date.now() + Math.floor(Math.random() * 10000));
 }
 
-function generateLocalId(): string {
-  return `local_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-}
-
 const calculatePriceUsdFromCostAndProfit = (cost: number, profitPercent: number): number => {
   if (cost <= 0 || profitPercent <= 0) return 0;
   if (profitPercent >= 99.99) return cost * 100;
@@ -128,6 +124,7 @@ export default function RegisterPurchase() {
     costUsd: 0,
     priceWholesale: 0,
     priceCost: 0,
+    unitMeasure: ''
   });
   const [costUsdInput, setCostUsdInput] = useState('');
   const [priceWholesaleInput, setPriceWholesaleInput] = useState('');
@@ -161,7 +158,6 @@ export default function RegisterPurchase() {
       const settings = await syncService.getGlobalSettings();
       if (settings) {
         if (settings.categories) {
-          // ✅ Normalizar: convertir strings a objetos Category
           const cats = Array.isArray(settings.categories) ? settings.categories : [];
           const normalized = cats.map((c: any) => typeof c === 'string' ? { id: c, name: c } : c);
           setCategories(normalized as Category[]);
@@ -170,16 +166,6 @@ export default function RegisterPurchase() {
       }
     };
     loadSettings();
-  }, []);
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
-        // no hacer nada
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -285,9 +271,7 @@ export default function RegisterPurchase() {
   };
 
   const totalPaidUsd = paymentType === 'contado' ? totalInvoiceUsd : (paymentType === 'credito' ? 0 : paidUsd);
-  const totalPaidBs = roundTo2(totalPaidUsd * rateNum);
   const remainingUsd = parseFloat(Math.max(0, totalInvoiceUsd - totalPaidUsd).toFixed(4));
-  const remainingBs = roundTo2(remainingUsd * rateNum);
 
   const getInvoiceStatus = (): 'pagada' | 'pendiente' | 'parcial' => {
     if (paymentType === 'contado') return 'pagada';
@@ -346,9 +330,9 @@ export default function RegisterPurchase() {
       
       await syncService.savePurchaseInvoiceItems(invoiceId, items);
       
-      const products = await syncService.getProducts();
+      const productsFromSync = await syncService.getProducts();
       for (const item of tempItems) {
-        const product = products.find(p => p.id === item.productId);
+        const product = productsFromSync.find(p => p.id === item.productId);
         if (product) {
           const currentStock = product.stock || 0;
           const currentCost = product.costUsd || 0;
@@ -363,7 +347,7 @@ export default function RegisterPurchase() {
           };
           await syncService.saveProduct(updatedProduct);
           
-          const kardexEntry: any = {
+          await syncService.saveKardexEntry({
             id: `${Date.now()}_${item.productId}_${Math.random().toString(36).substr(2, 6)}`,
             productId: item.productId,
             date: timestamp,
@@ -374,8 +358,7 @@ export default function RegisterPurchase() {
             reference: `Compra ${invoiceNumber}`,
             note: `Compra de ${item.qty} unidades a ${formatUsd(item.costUsd, 4)} USD c/u - Factura #${invoiceNumber}`,
             costUsd: item.costUsd,
-          };
-          await syncService.saveKardexEntry(kardexEntry);
+          });
         }
       }
       
@@ -385,7 +368,7 @@ export default function RegisterPurchase() {
         const paymentMethod = paymentType === 'contado' ? 'efectivo' : 'mixto';
         const totalPaidUsdAmount = paymentType === 'contado' ? totalInvoiceUsd : paidUsd;
         if (totalPaidUsdAmount > 0) {
-          const payment = {
+          await syncService.saveSupplierPayment({
             id: generateUniquePaymentId(),
             supplierId: selectedSupplierId,
             invoiceId: invoiceId,
@@ -395,8 +378,7 @@ export default function RegisterPurchase() {
             reference: `Pago automático - Factura ${invoiceNumber}`,
             bank: '',
             notes: `Pago realizado al momento de la compra. Tasa: ${rateNum} Bs/USD`
-          };
-          await syncService.saveSupplierPayment(payment);
+          });
         }
       }
       
@@ -410,7 +392,7 @@ export default function RegisterPurchase() {
       
       if (paymentType !== 'credito') {
         const paidAmountBs = totalPaidUsd * rateNum;
-        const accountingEntry = {
+        await syncService.saveAccountingEntry({
           id: String(Date.now()),
           date: timestamp,
           type: 'egreso' as const,
@@ -422,8 +404,7 @@ export default function RegisterPurchase() {
           referenceId: invoiceId,
           referenceType: 'purchase' as const,
           createdAt: timestamp,
-        };
-        await syncService.saveAccountingEntry(accountingEntry);
+        });
       }
       
       await syncService.loadAllDataToCache();
@@ -463,11 +444,7 @@ export default function RegisterPurchase() {
       alert('El producto ya está en la lista');
       return;
     }
-    const newComponent: KitComponent = {
-      productId: selectedChildProduct.id,
-      quantity: qty
-    };
-    setKitComponents(prev => [...prev, newComponent]);
+    setKitComponents(prev => [...prev, { productId: selectedChildProduct.id, quantity: qty }]);
     setSelectedChildProduct(null);
     setSearchChildProduct('');
     setChildQuantity('1');
@@ -480,15 +457,8 @@ export default function RegisterPurchase() {
 
   const resetProductForm = () => {
     setProductForm({
-      barcode: '',
-      name: '',
-      department: 'Otros',
-      category: 'Otro' as unknown as Category,
-      stock: 0,
-      minStock: 5,
-      costUsd: 0,
-      priceWholesale: 0,
-      priceCost: 0,
+      barcode: '', name: '', department: 'Otros', category: 'Otro' as unknown as Category,
+      stock: 0, minStock: 5, costUsd: 0, priceWholesale: 0, priceCost: 0, unitMeasure: ''
     });
     setCostUsdInput('');
     setPriceWholesaleInput('');
@@ -520,35 +490,19 @@ export default function RegisterPurchase() {
     if (priceUsd === 0 && priceBs === 0 && cost > 0 && profitPercent > 0) {
       priceUsd = calculatePriceUsdFromCostAndProfit(cost, profitPercent);
       priceBs = priceUsd * state.exchangeRate;
-      setLocalPriceUsd(priceUsd.toFixed(2));
-      setPriceRetailBs(priceBs.toFixed(2));
     }
     
-    if (priceBs > 0 && priceUsd === 0) {
-      priceUsd = priceBs / state.exchangeRate;
-    }
-    
-    if (priceUsd > 0 && priceBs === 0) {
-      priceBs = priceUsd * state.exchangeRate;
-    }
+    if (priceBs > 0 && priceUsd === 0) priceUsd = priceBs / state.exchangeRate;
+    if (priceUsd > 0 && priceBs === 0) priceBs = priceUsd * state.exchangeRate;
     
     if (profitPercent >= 99.99) {
-      toast({ 
-        title: "Porcentaje no válido", 
-        description: "El porcentaje de ganancia no puede ser tan alto", 
-        variant: "destructive",
-        duration: 3000
-      });
+      toast({ title: "Porcentaje no válido", description: "El porcentaje de ganancia no puede ser tan alto", variant: "destructive" });
       return;
     }
     
     const existingProduct = state.products.find(p => p.barcode === productForm.barcode);
     if (existingProduct && productForm.barcode !== '') {
-      toast({ 
-        title: "Código de barras duplicado", 
-        description: `Ya existe un producto con el código "${productForm.barcode}" (${existingProduct.name})`, 
-        variant: "destructive" 
-      });
+      toast({ title: "Código de barras duplicado", description: `Ya existe un producto con el código "${productForm.barcode}" (${existingProduct.name})`, variant: "destructive" });
       return;
     }
     
@@ -558,10 +512,11 @@ export default function RegisterPurchase() {
       name: productForm.name,
       department: productForm.department,
       category: productForm.category,
+      unitMeasure: productForm.unitMeasure,
       stock: parseInt(stockInput) || 0,
       minStock: parseInt(minStockInput) || 5,
       costUsd: roundTo4(cost),
-      costBs: cost > 0 ? roundTo2(cost * state.exchangeRate) : 0,
+      costBs: roundTo2(cost * state.exchangeRate),
       profitPercent: profitPercent,
       priceUsd: roundTo2(priceUsd),
       priceBs: roundTo2(priceBs),
@@ -579,7 +534,7 @@ export default function RegisterPurchase() {
     setIsSubmittingProduct(true);
     try {
       await syncService.saveProduct(productData);
-      const kardexEntry: any = {
+      await syncService.saveKardexEntry({
         id: `${Date.now()}_${Math.random()}`,
         productId: productData.id,
         date: getVenezuelaISOString(),
@@ -590,8 +545,7 @@ export default function RegisterPurchase() {
         reference: 'Creación de producto',
         note: 'Stock inicial',
         costUsd: productData.costUsd,
-      };
-      await syncService.saveKardexEntry(kardexEntry);
+      });
       await syncService.loadAllDataToCache();
       toast({ title: "Producto creado", description: `${productData.name} registrado correctamente.` });
       setShowProductModal(false);
@@ -768,11 +722,6 @@ export default function RegisterPurchase() {
                       <span>Saldo pendiente USD:</span>
                       <span className={remainingUsd > 0 ? "text-red-600" : "text-green-600"}>{formatUsd(remainingUsd, 4)}</span>
                     </div>
-                    {paymentType === 'credito' && (
-                      <div className="text-[8px] text-amber-600 mt-1 text-center">
-                        Plazo de crédito: {creditTermDays} días
-                      </div>
-                    )}
                   </div>
                 </div>
               </div>
@@ -792,7 +741,7 @@ export default function RegisterPurchase() {
                     />
                     <Button
                       type="button"
-                      onClick={() => setShowProductModal(true)}
+                      onClick={() => { resetProductForm(); setShowProductModal(true); }}
                       className="absolute right-1 top-1/2 -translate-y-1/2 h-6 w-6 p-0 bg-transparent hover:bg-primary/20 text-primary"
                       title="Crear nuevo producto"
                     >
@@ -888,16 +837,6 @@ export default function RegisterPurchase() {
                       <span className="text-[8px] block text-gray-500 uppercase">Total en Bolívares</span>
                       <span className="text-xs font-black text-secondary">{formatBs(totalInvoiceBs)}</span>
                     </div>
-                    <div className="bg-white border border-gray-300 rounded px-2 py-1">
-                      <span className="text-[8px] block text-gray-500 uppercase">Total USD</span>
-                      <span className="text-xs font-black text-secondary">{formatUsd(totalInvoiceUsd, 4)}</span>
-                    </div>
-                    {paymentType !== 'contado' && remainingUsd > 0 && (
-                      <div className="bg-yellow-50 border border-yellow-200 rounded px-2 py-1">
-                        <span className="text-[8px] block text-yellow-700 uppercase">Crédito pendiente</span>
-                        <span className="text-xs font-black text-yellow-800">{formatUsd(remainingUsd, 4)}</span>
-                      </div>
-                    )}
                   </div>
                   <Button 
                     disabled={isProcessing || tempItems.length === 0}
@@ -940,103 +879,56 @@ export default function RegisterPurchase() {
                 <div className="space-y-2">
                   <div>
                     <label className="text-[8px] font-black uppercase">Código de Barras</label>
-                    <Input 
-                      value={productForm.barcode} 
-                      onChange={e => setProductForm({...productForm, barcode: e.target.value})} 
-                      className="h-7 text-xs" 
-                    />
+                    <Input value={productForm.barcode} onChange={e => setProductForm({...productForm, barcode: e.target.value})} className="h-7 text-xs" />
                   </div>
                   <div>
                     <label className="text-[8px] font-black uppercase">Nombre del Producto</label>
-                    <Input 
-                      value={productForm.name} 
-                      onChange={e => setProductForm({...productForm, name: e.target.value})} 
-                      className="h-7 text-xs" 
-                      required 
-                    />
+                    <Input value={productForm.name} onChange={e => setProductForm({...productForm, name: e.target.value})} className="h-7 text-xs" required />
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     <div>
                       <label className="text-[8px] font-black uppercase">Departamento</label>
-                      <select 
-                        value={productForm.department} 
-                        onChange={e => setProductForm({...productForm, department: e.target.value})} 
-                        className="w-full h-7 border rounded px-2 text-xs bg-white"
-                      >
+                      <select value={productForm.department} onChange={e => setProductForm({...productForm, department: e.target.value})} className="w-full h-7 border rounded px-2 text-xs bg-white">
                         {departments.map((d, i) => <option key={`${d}-${i}`} value={d}>{d}</option>)}
                       </select>
                     </div>
                     <div>
                       <label className="text-[8px] font-black uppercase">Categoría</label>
-                      <select 
-                        value={productForm.category as any} 
-                        onChange={e => setProductForm({...productForm, category: e.target.value as any})} 
-                        className="w-full h-7 border rounded px-2 text-xs bg-white"
-                      >
+                      <select value={productForm.category as any} onChange={e => setProductForm({...productForm, category: e.target.value as any})} className="w-full h-7 border rounded px-2 text-xs bg-white">
                         {categories.map((c, i) => <option key={`${c.id}-${i}`} value={c.id}>{c.name}</option>)}
                       </select>
                     </div>
                   </div>
+                  <div>
+                    <label className="text-[8px] font-black uppercase">Unidad de Medida</label>
+                    <Input value={productForm.unitMeasure} onChange={e => setProductForm({...productForm, unitMeasure: e.target.value})} className="h-7 text-xs" placeholder="UNID, KG, LTS..." />
+                  </div>
                   <div className="grid grid-cols-2 gap-2">
                     <div>
                       <label className="text-[8px] font-black uppercase">Stock Inicial</label>
-                      <Input 
-                        type="text"
-                        inputMode="numeric"
-                        value={stockInput}
-                        onChange={(e) => setStockInput(e.target.value)}
-                        className="h-7 text-xs" 
-                        placeholder="0"
-                      />
+                      <Input type="text" inputMode="numeric" value={stockInput} onChange={(e) => setStockInput(e.target.value)} className="h-7 text-xs" placeholder="0" />
                     </div>
                     <div>
                       <label className="text-[8px] font-black uppercase">Stock Mínimo</label>
-                      <Input 
-                        type="text"
-                        inputMode="numeric"
-                        value={minStockInput}
-                        onChange={(e) => setMinStockInput(e.target.value)}
-                        className="h-7 text-xs" 
-                        placeholder="5"
-                      />
+                      <Input type="text" inputMode="numeric" value={minStockInput} onChange={(e) => setMinStockInput(e.target.value)} className="h-7 text-xs" placeholder="5" />
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     <div>
                       <label className="text-[8px] font-black uppercase">Precio Mayor (USD)</label>
-                      <Input 
-                        type="text"
-                        inputMode="decimal"
-                        value={priceWholesaleInput}
-                        onChange={(e) => setPriceWholesaleInput(e.target.value)}
-                        className="h-7 text-xs" 
-                        placeholder="0.00"
-                      />
+                      <Input type="text" inputMode="decimal" value={priceWholesaleInput} onChange={(e) => setPriceWholesaleInput(e.target.value)} className="h-7 text-xs" placeholder="0.00" />
                     </div>
                     <div>
                       <label className="text-[8px] font-black uppercase">Precio Costo (USD)</label>
-                      <Input 
-                        type="text"
-                        inputMode="decimal"
-                        value={priceCostInput}
-                        onChange={(e) => setPriceCostInput(e.target.value)}
-                        className="h-7 text-xs" 
-                        placeholder="0.00"
-                      />
+                      <Input type="text" inputMode="decimal" value={priceCostInput} onChange={(e) => setPriceCostInput(e.target.value)} className="h-7 text-xs" placeholder="0.00" />
                     </div>
                   </div>
                   
                   <div className="border-t pt-2 mt-1">
                     <label className="flex items-center gap-2 cursor-pointer">
-                      <input 
-                        type="checkbox" 
-                        checked={isKit} 
-                        onChange={e => setIsKit(e.target.checked)} 
-                        className="rounded text-primary" 
-                      />
+                      <input type="checkbox" checked={isKit} onChange={e => setIsKit(e.target.checked)} className="rounded text-primary" />
                       <span className="text-[9px] font-black uppercase">Es kit / compuesto</span>
                     </label>
-                    <p className="text-[7px] text-black/40 mt-1">Al vender este producto, se descontarán las cantidades de sus componentes.</p>
                   </div>
                   
                   {isKit && (
@@ -1044,70 +936,51 @@ export default function RegisterPurchase() {
                       <div className="flex items-center justify-between bg-white/50 rounded p-1.5">
                         <span className="text-[8px] font-bold uppercase">Stock del kit:</span>
                         <div className="flex gap-2">
-                          <button
-                            type="button"
-                            onClick={() => setKitHasOwnStock(false)}
-                            className={cn(
-                              "px-2 py-0.5 rounded text-[9px] font-bold transition-all",
-                              !kitHasOwnStock ? "bg-primary text-black" : "bg-gray-200 text-gray-600"
-                            )}
-                          >
-                            Sin stock propio
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setKitHasOwnStock(true)}
-                            className={cn(
-                              "px-2 py-0.5 rounded text-[9px] font-bold transition-all",
-                              kitHasOwnStock ? "bg-primary text-black" : "bg-gray-200 text-gray-600"
-                            )}
-                          >
-                            Con stock propio
-                          </button>
+                          <button type="button" onClick={() => setKitHasOwnStock(false)} className={cn("px-2 py-0.5 rounded text-[9px] font-bold transition-all", !kitHasOwnStock ? "bg-primary text-black" : "bg-gray-200 text-gray-600")}>Sin stock propio</button>
+                          <button type="button" onClick={() => setKitHasOwnStock(true)} className={cn("px-2 py-0.5 rounded text-[9px] font-bold transition-all", kitHasOwnStock ? "bg-primary text-black" : "bg-gray-200 text-gray-600")}>Con stock propio</button>
                         </div>
                       </div>
-                      <p className="text-[7px] text-blue-700 bg-blue-100 rounded px-2 py-1">
-                        {!kitHasOwnStock 
-                          ? "📦 Sin stock propio: El kit siempre se puede vender si hay suficiente stock de sus componentes. Al vender, SOLO se descuentan los componentes."
-                          : "⚠️ Con stock propio: El kit tiene su propio inventario. Al vender, se descuenta 1 del kit + las cantidades de sus componentes."
-                        }
-                      </p>
                       <p className="text-[8px] font-bold text-blue-800 mb-1 flex items-center gap-1"><Package size={10} /> Componentes del kit</p>
                       <div className="space-y-2">
                         {kitComponents.length > 0 && (
                           <div className="max-h-24 overflow-y-auto space-y-1">
                             {kitComponents.map(comp => {
                               const childProd = state.products.find(p => p.id === comp.productId);
-                              return <div key={comp.productId} className="flex justify-between items-center bg-white rounded px-2 py-1 text-[10px]"><span>{childProd?.name || 'Producto'} x{comp.quantity}</span><button type="button" onClick={() => removeKitComponent(comp.productId)} className="text-red-500"><Trash2 size={10} /></button></div>;
+                              return (
+                                <div key={comp.productId} className="flex justify-between items-center bg-white rounded px-2 py-1 text-[10px]">
+                                  <span>{childProd?.name || 'Producto'} x{comp.quantity}</span>
+                                  <button type="button" onClick={() => removeKitComponent(comp.productId)} className="text-red-500"><Trash2 size={10} /></button>
+                                </div>
+                              );
                             })}
                           </div>
                         )}
                         <div className="flex flex-col gap-1">
                           <div className="relative">
                             <Input 
-                              type="text"
-                              placeholder="Buscar producto componente..."
-                              value={searchChildProduct}
+                              type="text" 
+                              placeholder="Buscar producto componente..." 
+                              value={searchChildProduct} 
                               onChange={(e) => {
                                 setSearchChildProduct(e.target.value);
                                 setHideChildResults(false);
                                 if (selectedChildProduct && e.target.value !== selectedChildProduct.name) {
                                   setSelectedChildProduct(null);
                                 }
-                              }}
-                              className="h-7 text-xs pr-7"
+                              }} 
+                              className="h-7 text-xs pr-7" 
                             />
                             {!hideChildResults && searchChildProduct && childProductResults.length > 0 && (
                               <div className="absolute top-full left-0 right-0 bg-white border rounded shadow z-20 mt-1 max-h-24 overflow-y-auto">
                                 {childProductResults.map((p, i) => (
-                                  <button
-                                    key={`${p.id}-${i}`}
-                                    type="button"
+                                  <button 
+                                    key={`${p.id}-${i}`} 
+                                    type="button" 
                                     onClick={() => {
                                       setSelectedChildProduct(p);
                                       setSearchChildProduct(p.name);
                                       setHideChildResults(true);
-                                    }}
+                                    }} 
                                     className="w-full text-left px-2 py-1 text-[10px] hover:bg-primary/10"
                                   >
                                     {p.name} ({formatUsd(p.priceUsd)})
@@ -1164,26 +1037,14 @@ export default function RegisterPurchase() {
                         onChange={(e) => {
                           let raw = e.target.value;
                           let numValue = parseFloat(raw);
-                          
-                          if (!isNaN(numValue) && numValue > 99.99) {
-                            toast({ 
-                              title: "Porcentaje no válido", 
-                              description: "El porcentaje de ganancia no puede superar 99.99%", 
-                              variant: "destructive",
-                              duration: 3000
-                            });
-                            return;
-                          }
-                          
+                          if (!isNaN(numValue) && numValue > 99.99) return;
                           setProfitPercentInput(raw);
                           const newProfit = isNaN(numValue) ? 0 : numValue;
                           const costVal = parseFloat(costUsdInput) || 0;
-                          
                           if (costVal > 0 && newProfit > 0 && newProfit < 100) {
                             const newPriceUsd = calculatePriceUsdFromCostAndProfit(costVal, newProfit);
-                            const newPriceBs = roundTo2(newPriceUsd * state.exchangeRate);
                             setLocalPriceUsd(newPriceUsd.toFixed(2));
-                            setPriceRetailBs(newPriceBs.toFixed(2));
+                            setPriceRetailBs(roundTo2(newPriceUsd * state.exchangeRate).toFixed(2));
                           } 
                           else if (costVal === 0) {
                             setLocalPriceUsd('');
@@ -1194,22 +1055,6 @@ export default function RegisterPurchase() {
                       />
                       <span className="text-[9px] text-black/60">%</span>
                     </div>
-                  </div>
-
-                  <div className="mt-1 pt-1 border-t border-dashed border-gray-300">
-                    <div className="flex justify-between items-center">
-                      <label className="text-[7px] font-bold uppercase text-green-600">Ganancia por unidad (USD)</label>
-                      <span className="text-xs font-black text-green-700 bg-green-50 px-2 py-0.5 rounded border border-green-200">
-                        {(() => {
-                          const cost = parseFloat(costUsdInput) || 0;
-                          const priceUsd = parseFloat(localPriceUsd) || 0;
-                          if (cost <= 0 || priceUsd <= 0 || priceUsd <= cost) return '$0.00';
-                          const profitUsd = priceUsd - cost;
-                          return `$${profitUsd.toFixed(2)}`;
-                        })()}
-                      </span>
-                    </div>
-                    <p className="text-[6px] text-green-600/80 mt-0.5">Ganancia en USD por cada unidad vendida (Precio Detal - Costo)</p>
                   </div>
                   
                   <div className="grid grid-cols-2 gap-2">
@@ -1222,43 +1067,22 @@ export default function RegisterPurchase() {
                         placeholder="0.00"
                         onChange={(e) => {
                           const raw = e.target.value;
-                          if (raw === '' || /^\d*\.?\d*$/.test(raw)) {
-                            const usdVal = parseFloat(raw);
-                            const costVal = parseFloat(costUsdInput) || 0;
-                            
-                            if (!isNaN(usdVal) && usdVal > 0 && costVal > 0) {
-                              let newProfit = calculateProfitFromCostAndPriceUsd(costVal, usdVal);
-                              if (newProfit > 99.99) {
-                                toast({ 
-                                  title: "Precio no válido", 
-                                  description: "El precio implicaría una ganancia superior al 99.99%", 
-                                  variant: "destructive",
-                                  duration: 3000
-                                });
-                                return;
-                              }
-                              setLocalPriceUsd(raw);
-                              setProfitPercentInput(newProfit.toString());
-                              setPriceRetailBs(roundTo2(usdVal * state.exchangeRate).toFixed(2));
-                            } else if (usdVal === 0 || costVal === 0) {
-                              setLocalPriceUsd(raw);
-                              if (costVal === 0 && usdVal > 0) {
-                                setProfitPercentInput('');
-                                setPriceRetailBs(roundTo2(usdVal * state.exchangeRate).toFixed(2));
-                              } else if (usdVal === 0) {
-                                setProfitPercentInput('');
-                                setPriceRetailBs('');
-                              }
-                            } else {
-                              setLocalPriceUsd(raw);
-                            }
+                          const usdVal = parseFloat(raw);
+                          const costVal = parseFloat(costUsdInput) || 0;
+                          if (!isNaN(usdVal) && usdVal > 0 && costVal > 0) {
+                            let newProfit = calculateProfitFromCostAndPriceUsd(costVal, usdVal);
+                            setLocalPriceUsd(raw);
+                            setProfitPercentInput(newProfit.toString());
+                            setPriceRetailBs(roundTo2(usdVal * state.exchangeRate).toFixed(2));
+                          } else {
+                            setLocalPriceUsd(raw);
                           }
                         }}
                         className="bg-white h-7 text-xs font-mono"
                       />
                     </div>
                     <div>
-                      <label className="text-[7px] font-bold uppercase">Precio Detal Bs (final)</label>
+                      <label className="text-[7px] font-bold uppercase">Precio Detal Bs</label>
                       <Input 
                         type="text" 
                         inputMode="decimal" 
@@ -1267,124 +1091,24 @@ export default function RegisterPurchase() {
                         onChange={(e) => { 
                           const newValue = e.target.value;
                           const bs = parseFloat(newValue);
-                          
                           if (!isNaN(bs) && bs > 0) {
                             const usd = bs / state.exchangeRate;
                             const costVal = parseFloat(costUsdInput) || 0;
-                            
-                            if (costVal > 0 && usd > 0) {
-                              let newProfit = calculateProfitFromCostAndPriceUsd(costVal, usd);
-                              if (newProfit > 99.99) {
-                                toast({ 
-                                  title: "Precio no válido", 
-                                  description: "El precio implicaría una ganancia superior al 99.99%", 
-                                  variant: "destructive",
-                                  duration: 3000
-                                });
-                                return;
-                              }
-                              setPriceRetailBs(newValue);
-                              setLocalPriceUsd(usd.toFixed(2));
-                              setProfitPercentInput(newProfit.toString());
-                            } else {
-                              setPriceRetailBs(newValue);
-                              if (costVal === 0 && usd > 0) {
-                                setLocalPriceUsd(usd.toFixed(2));
-                                setProfitPercentInput('');
-                              }
-                            }
+                            setPriceRetailBs(newValue);
+                            setLocalPriceUsd(usd.toFixed(2));
+                            if (costVal > 0) setProfitPercentInput(calculateProfitFromCostAndPriceUsd(costVal, usd).toString());
                           } else {
                             setPriceRetailBs(newValue);
-                            if (bs === 0) {
-                              setLocalPriceUsd('');
-                              setProfitPercentInput('');
-                            }
                           }
                         }} 
                         className="bg-white h-7 text-xs font-mono w-full" 
                       />
                     </div>
                   </div>
-                  
-                  <div className="border-t pt-2 mt-1">
-                    <label className="text-[7px] font-bold uppercase text-black/60 block mb-1">Configuración de IVA</label>
-                    <div className="flex gap-2">
-                      <button 
-                        type="button"
-                        onClick={() => setIvaType('con_iva')}
-                        className={cn(
-                          "flex-1 py-1 text-[9px] font-bold rounded border transition-all",
-                          ivaType === 'con_iva' ? "bg-primary text-black border-primary" : "bg-white text-black/60 border-gray-300"
-                        )}
-                      >
-                        Con I.V.A.
-                      </button>
-                      <button 
-                        type="button"
-                        onClick={() => setIvaType('sin_iva')}
-                        className={cn(
-                          "flex-1 py-1 text-[9px] font-bold rounded border transition-all",
-                          ivaType === 'sin_iva' ? "bg-primary text-black border-primary" : "bg-white text-black/60 border-gray-300"
-                        )}
-                      >
-                        Sin I.V.A.
-                      </button>
-                    </div>
-                    {ivaType === 'con_iva' && (
-                      <div className="flex items-center gap-2 mt-2">
-                        <Percent size={10} className="text-black/40" />
-                        <Input 
-                          type="text"
-                          inputMode="decimal"
-                          value={isNaN(ivaPercentage) ? '' : ivaPercentage}
-                          onChange={(e) => setIvaPercentage(e.target.value === '' ? 0 : Number(e.target.value))}
-                          className="h-6 text-[9px] w-20 text-center"
-                        />
-                        <span className="text-[8px] text-black/60">% de I.V.A.</span>
-                      </div>
-                    )}
-                  </div>
-                  
-                  <div className="bg-white rounded p-1.5 border mt-2">
-                    <div className="flex justify-between text-[10px]">
-                      <span className="text-black/60">Precio Base USD (sin IVA):</span>
-                      <span className="font-black text-secondary">
-                        {(() => {
-                          const priceUsd = parseFloat(localPriceUsd) || (calculatePriceUsdFromCostAndProfit(parseFloat(costUsdInput) || 0, parseFloat(profitPercentInput) || 0));
-                          if (ivaType === 'con_iva' && ivaPercentage > 0 && priceUsd > 0) {
-                            return formatUsd(roundTo2(priceUsd / (1 + ivaPercentage / 100)));
-                          }
-                          return formatUsd(priceUsd);
-                        })()}
-                      </span>
-                    </div>
-                    {ivaType === 'con_iva' && (
-                      <div className="flex justify-between text-[9px]">
-                        <span className="text-black/60">+ IVA ({isNaN(ivaPercentage) ? 0 : ivaPercentage}%):</span>
-                        <span className="text-black/70">
-                          {formatUsd((() => {
-                            const priceUsd = parseFloat(localPriceUsd) || (calculatePriceUsdFromCostAndProfit(parseFloat(costUsdInput) || 0, parseFloat(profitPercentInput) || 0));
-                            if (priceUsd > 0) {
-                              return roundTo2(priceUsd * (isNaN(ivaPercentage) ? 0 : ivaPercentage) / 100);
-                            }
-                            return 0;
-                          })())}
-                        </span>
-                      </div>
-                    )}
-                    <div className="flex justify-between text-[10px] pt-1 border-t mt-1">
-                      <span className="text-black/60">Precio Mayor USD:</span>
-                      <span className="font-black text-secondary">{formatUsd(parseFloat(priceWholesaleInput) || 0)}</span>
-                    </div>
-                    <div className="flex justify-between text-[10px]">
-                      <span className="text-black/60">Precio Costo USD:</span>
-                      <span className="font-black text-secondary">{formatUsd(parseFloat(priceCostInput) || 0)}</span>
-                    </div>
-                  </div>
                 </div>
               </div>
               
-              <div className="bg-[#F5F5F5] p-3 border-t flex justify-end gap-2 mt-4">
+              <div className="bg-[#F5F5F5] p-3 border-t flex justify-end gap-2 flex-shrink-0">
                 <Button type="submit" disabled={isSubmittingProduct} className="bg-primary text-black font-black px-6 h-8 text-xs">
                   {isSubmittingProduct ? <Loader2 size={14} className="animate-spin" /> : 'GUARDAR PRODUCTO'}
                 </Button>

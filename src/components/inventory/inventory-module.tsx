@@ -323,7 +323,12 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
   useEffect(() => {
     const cachedCategories = localStorage.getItem(CACHE_KEYS.CATEGORIES);
     if (cachedCategories) {
-      try { setCategories(JSON.parse(cachedCategories)); } catch(e) {}
+      try { 
+        const parsed = JSON.parse(cachedCategories);
+        // ✅ Normalizar: convertir strings a objetos Category
+        const normalized = Array.isArray(parsed) ? parsed.map((c: any) => typeof c === 'string' ? { id: c, name: c } : c) : [];
+        setCategories(normalized); 
+      } catch(e) {}
     }
     const cachedDepartments = localStorage.getItem(CACHE_KEYS.DEPARTMENTS);
     if (cachedDepartments) {
@@ -340,7 +345,9 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
         if (settings) {
           if (settings.categories) {
             const cats = Array.isArray(settings.categories) ? settings.categories : [];
-            setCategories(cats as unknown as Category[]);
+            // ✅ Normalizar: convertir strings a objetos Category
+            const normalized = cats.map((c: any) => typeof c === 'string' ? { id: c, name: c } : c);
+            setCategories(normalized as Category[]);
           }
           if (settings.departments) {
             const depts = Array.isArray(settings.departments) ? settings.departments : [];
@@ -1286,7 +1293,11 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
             <div className="flex items-center gap-1">
               <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)} className="h-8 border rounded-lg px-2 text-xs font-bold bg-white">
                 <option value="all">🏷️ Todas las Cats.</option>
-                {Array.isArray(categories) && categories.map((c, i) => <option key={`${c.id}-${i}`} value={c.id}>{c.name}</option>)}
+                {Array.isArray(categories) && categories.map((c: any, i) => {
+                  const id = typeof c === 'string' ? c : c.id;
+                  const name = typeof c === 'string' ? c : c.name;
+                  return <option key={`${id}-${i}`} value={id}>{name}</option>;
+                })}
               </select>
               <button onClick={() => setShowCategoryModal(true)} className="h-8 w-8 border rounded-lg flex items-center justify-center hover:bg-gray-100"><Settings size={13} /></button>
             </div>
@@ -1368,7 +1379,11 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
             <div className="flex items-center gap-1">
               <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)} className="h-8 border rounded-lg px-2 text-xs font-bold bg-white">
                 <option value="all">🏷️ Todas las Cats.</option>
-                {Array.isArray(categories) && categories.map((c, i) => <option key={`${c.id}-${i}`} value={c.id}>{c.name}</option>)}
+                {Array.isArray(categories) && categories.map((c: any, i) => {
+                  const id = typeof c === 'string' ? c : c.id;
+                  const name = typeof c === 'string' ? c : c.name;
+                  return <option key={`${id}-${i}`} value={id}>{name}</option>;
+                })}
               </select>
             </div>
             <div className="flex items-center gap-1 ml-auto">
@@ -1696,7 +1711,14 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
           <DialogHeader className="bg-[#1A2C4E] p-3 text-white rounded-t-xl"><DialogTitle className="text-xs font-black">🏷️ Gestionar Categorías</DialogTitle></DialogHeader>
           <div className="p-3">
             <div className="flex gap-2 mb-3"><Input placeholder="Nueva categoría..." value={newCategory} onChange={(e) => setNewCategory(e.target.value)} className="flex-1 h-7 text-xs" onKeyPress={(e) => e.key === 'Enter' && addCategory()} /><Button onClick={addCategory} className="bg-primary text-black h-7 text-xs px-3">AGREGAR</Button></div>
-            <div className="max-h-52 overflow-y-auto border rounded-lg divide-y">{Array.isArray(categories) && categories.map((cat, i) => (<div key={`${cat.id}-${i}`} className="flex justify-between items-center px-2 py-1.5"><span className="text-xs">{cat.name}</span>{cat.id !== 'Otro' && (<button onClick={() => deleteCategory(cat)} className="text-red-500 hover:text-red-700"><Trash2 size={12} /></button>)}</div>))}</div>
+            <div className="max-h-52 overflow-y-auto border rounded-lg divide-y">{Array.isArray(categories) && categories.map((cat: any, i) => (
+              <div key={`${typeof cat === 'string' ? cat : cat.id}-${i}`} className="flex justify-between items-center px-2 py-1.5">
+                <span className="text-xs">{typeof cat === 'string' ? cat : cat.name}</span>
+                {(typeof cat === 'string' ? cat : cat.id) !== 'Otro' && (
+                  <button onClick={() => deleteCategory(typeof cat === 'string' ? {id: cat, name: cat} : cat)} className="text-red-500 hover:text-red-700"><Trash2 size={12} /></button>
+                )}
+              </div>
+            ))}</div>
             <p className="text-[8px] text-black/40 mt-2 text-center">* La categoría "Otro" no se puede eliminar</p>
           </div>
         </DialogContent>
@@ -1731,7 +1753,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
         onSave={handleProductSave}
         exchangeRate={state.exchangeRate}
         products={products}
-        categories={categories.map(c => c.id)}
+        categories={categories.map((c: any) => typeof c === 'string' ? c : c.id)}
         departments={departments}
       />
     </div>

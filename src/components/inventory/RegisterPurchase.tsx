@@ -160,7 +160,12 @@ export default function RegisterPurchase() {
     const loadSettings = async () => {
       const settings = await syncService.getGlobalSettings();
       if (settings) {
-        if (settings.categories) setCategories(settings.categories as unknown as Category[]);
+        if (settings.categories) {
+          // ✅ Normalizar: convertir strings a objetos Category
+          const cats = Array.isArray(settings.categories) ? settings.categories : [];
+          const normalized = cats.map((c: any) => typeof c === 'string' ? { id: c, name: c } : c);
+          setCategories(normalized as Category[]);
+        }
         if (settings.departments) setDepartments(settings.departments);
       }
     };

@@ -166,12 +166,14 @@ export default function CashModule({ state }: CashModuleProps) {
         try { payments = JSON.parse(payments); } catch(e) { payments = []; }
       }
       
+      const currentRate = tx.exchangeRate || state.exchangeRate;
+
       if (Array.isArray(payments) && payments.length > 0) {
         for (const p of payments) {
           const method = p.method || 'efectivo_bs';
           const isUsd = method === 'usd_efectivo' || method === 'zelle';
           if (isUsd) {
-            const usdAmount = p.usdAmount || p.amount || 0;
+            const usdAmount = p.usdAmount || (p.amount / currentRate) || 0;
             totalsUsd[method] = (totalsUsd[method] || 0) + usdAmount;
           } else {
             const bsAmount = p.amount || 0;
@@ -185,14 +187,14 @@ export default function CashModule({ state }: CashModuleProps) {
           const usdAmount = tx.total_usd || tx.totalUsd || 0;
           totalsUsd[method] = (totalsUsd[method] || 0) + usdAmount;
         } else {
-          const bsAmount = tx.total || 0;
+          const bsAmount = tx.type === 'cobro_deuda' ? (tx.paidBs || tx.total || 0) : (tx.total || 0);
           totalsBs[method] = (totalsBs[method] || 0) + bsAmount;
         }
       }
     }
     
     return { totalsBs, totalsUsd };
-  }, [todaysTransactions]);
+  }, [todaysTransactions, state.exchangeRate]);
 
   const totalCreditoBs = useMemo(() => {
     return todaysTransactions
@@ -322,12 +324,22 @@ export default function CashModule({ state }: CashModuleProps) {
     }
     if (Array.isArray(payments) && payments.length > 0) {
       let totalUsd = 0;
-      for (const p of payments) if (p.method === 'usd_efectivo' || p.method === 'zelle') totalUsd += p.usdAmount || p.amount || 0;
+      for (const p of payments) {
+        if (p.method === 'usd_efectivo' || p.method === 'zelle') {
+          totalUsd += p.usdAmount || (p.amount / (tx.exchangeRate || state.exchangeRate)) || 0;
+        }
+      }
       return totalUsd;
     }
     const method = tx.pay_method || tx.payMethod || '';
     if (method === 'usd_efectivo' || method === 'zelle') return tx.total_usd || tx.totalUsd || 0;
-    return 0;
+    
+    // Para colaboraciones/consumos, mostrar el costo en la columna USD
+    if (tx.type === 'colaboracion' || tx.type === 'consumo_propio') {
+      return tx.totalUsd || tx.total_usd || 0;
+    }
+    
+    return tx.totalUsd || tx.total_usd || (tx.total / (tx.exchangeRate || state.exchangeRate)) || 0;
   };
 
   const getBsPaid = (tx: any): number => {
@@ -442,7 +454,7 @@ export default function CashModule({ state }: CashModuleProps) {
                       <tr key={id} className="hover:bg-slate-50"><td className="p-2"><div className="flex items-center gap-2"><Icon size={12} className="text-[#1E3A8A]" /><span className="font-bold">{label}</span></div></td><td className="p-2 text-right font-mono font-bold">{!isUsd ? formatBs(salesBreakdown.totalsBs[id] || 0) : '—'}</td><td className="p-2 text-right font-mono font-bold">{isUsd ? formatUsd(salesBreakdown.totalsUsd[id] || 0) : '—'}</td></tr>
                     ))}
                     <tr className="bg-blue-50/30 font-bold"><td className="p-2">VENTAS A CRÉDITO</td><td className="p-2 text-right font-mono text-blue-700">{formatBs(totalCreditoBs)}</td><td className="p-2 text-right">—</td></tr>
-                    {totalDevolucionesBs > 0 && <tr className="bg-red-50 text-red-700 font-bold"><td className="p-2">TOTAL DEVOLUCIONES</td><td className="p-2 text-right font-mono">-{formatBs(totalDevolucionesBs)}</td><td className="p-2 text-right">—</td></tr>}
+                    <tr className="bg-red-50 text-red-700 font-bold"><td className="p-2">TOTAL DEVOLUCIONES</td><td className="p-2 text-right font-mono">{totalDevolucionesBs > 0 ? `-${formatBs(totalDevolucionesBs)}` : 'Bs. 0,00'}</td><td className="p-2 text-right">—</td></tr>
                   </tbody>
                 </table>
               </div>
@@ -452,11 +464,36 @@ export default function CashModule({ state }: CashModuleProps) {
               <div className="flex items-center justify-between mb-3"><h3 className="text-xs font-black uppercase flex items-center gap-2 text-[#1E3A8A]"><Receipt size={12} /> Transacciones del Día</h3><Input placeholder="Buscar recibo..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="h-7 text-[10px] w-40 border-slate-200" /></div>
               <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-md">
                 <table className="w-full text-left border-collapse text-[10px]">
-                  <thead><tr className="bg-[#2c3e50] text-white text-[9px] uppercase font-bold tracking-wider"><th className="p-2"># RECIBO</th><th className="p-2">HORA</th><th className="p-2">CLIENTE</th><th className="p-2 text-center">TIPO</th><th className="p-2 text-center">MÉTODO</th><th className="p-2 text-right">TOTAL (Bs)</th><th className="p-2 text-center">VER</th></tr></thead>
+                  <thead>
+                    <tr className="bg-[#2c3e50] text-white text-[9px] uppercase font-bold tracking-wider">
+                      <th className="p-2"># RECIBO</th>
+                      <th className="p-2">HORA</th>
+                      <th className="p-2">CLIENTE</th>
+                      <th className="p-2 text-center">TIPO</th>
+                      <th className="p-2 text-center">MÉTODO</th>
+                      <th className="p-2 text-right">TOTAL (Bs)</th>
+                      <th className="p-2 text-right">TOTAL (USD)</th>
+                      <th className="p-2 text-center">VER</th>
+                    </tr>
+                  </thead>
                   <tbody className="divide-y divide-slate-200">
                     {paginatedTransactions.map((t: any) => (
-                      <tr key={t.id} className="hover:bg-slate-50"><td className="p-2 font-mono font-bold">{getDisplayReceipt(t)}</td><td className="p-2 font-mono">{new Date(t.date).toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' })}</td><td className="p-2 truncate max-w-[150px]">{t.client_name || t.clientName || 'Cliente Final'}</td><td className="p-2 text-center"><span className={cn("text-[8px] font-black px-2 py-0.5 rounded-full", getTransactionColor(t.type))}>{getTransactionTypeLabel(t.type)}</span></td><td className="p-2 text-center font-bold">{getPaymentMethodLabel(t)}</td><td className="p-2 text-right font-bold">{formatBs(getBsPaid(t))}</td><td className="p-2 text-center"><button onClick={() => { setSelectedTransaction(t); setShowDetailModal(true); }} className="p-1 hover:bg-primary/20 rounded-lg"><Eye size={14} className="text-[#1E3A8A]" /></button></td></tr>
+                      <tr key={t.id} className="hover:bg-slate-50">
+                        <td className="p-2 font-mono font-bold">{getDisplayReceipt(t)}</td>
+                        <td className="p-2 font-mono">{new Date(t.date).toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' })}</td>
+                        <td className="p-2 truncate max-w-[150px]">{t.client_name || t.clientName || 'Cliente Final'}</td>
+                        <td className="p-2 text-center"><span className={cn("text-[8px] font-black px-2 py-0.5 rounded-full", getTransactionColor(t.type))}>{getTransactionTypeLabel(t.type)}</span></td>
+                        <td className="p-2 text-center font-bold">{getPaymentMethodLabel(t)}</td>
+                        <td className="p-2 text-right font-bold">{formatBs(getBsPaid(t))}</td>
+                        <td className="p-2 text-right font-bold text-cyan-700">{formatUsd(getUsdPaid(t))}</td>
+                        <td className="p-2 text-center"><button onClick={() => { setSelectedTransaction(t); setShowDetailModal(true); }} className="p-1 hover:bg-primary/20 rounded-lg"><Eye size={14} className="text-[#1E3A8A]" /></button></td>
+                      </tr>
                     ))}
+                    {filteredTransactions.length === 0 && (
+                      <tr>
+                        <td colSpan={8} className="text-center py-10 text-black/40 italic">No hay transacciones registradas</td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
                 {totalPages > 1 && <div className="p-3 border-t flex justify-between"><Button variant="outline" size="sm" onClick={() => goToPage(currentPage-1)} disabled={currentPage===1} className="h-6 text-[9px]">Anterior</Button><Button variant="outline" size="sm" onClick={() => goToPage(currentPage+1)} disabled={currentPage===totalPages} className="h-6 text-[9px]">Siguiente</Button></div>}

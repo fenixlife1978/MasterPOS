@@ -192,34 +192,41 @@ export default function SuppliersModule() {
     setShowPaymentModal(true);
   };
 
-  // ✅ Distribuir pago entre facturas (orden cronológico ascendente)
+  // ✅ Distribuir pago entre facturas (orden cronológico ascendente - FIFO)
   const distributePayment = async (
     supplierId: number,
     totalPaidUsd: number,
     exchangeRate: number,
     paymentMethod: string,
     reference?: string,
-    bank?: string,
-    excludeInvoiceIds: number[] = []
+    bank?: string
   ): Promise<void> => {
+    // Obtener facturas pendientes ordenadas de la más antigua a la más reciente
     const pendingInvoices = invoices
-      .filter(inv => inv.supplierId === supplierId && inv.status !== 'pagada' && !excludeInvoiceIds.includes(inv.id))
-      .sort((a, b) => new Date(a.date).getTime() - new Date(a.date).getTime());
+      .filter(inv => inv.supplierId === supplierId && inv.status !== 'pagada')
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      
     let remaining = totalPaidUsd;
     const updatedInvoices = [...invoices];
+    
     for (const invoice of pendingInvoices) {
       if (remaining <= 0) break;
+      
       const paid = invoice.paidAmount || 0;
       const owed = invoice.total - paid;
       const payAmount = Math.min(remaining, owed);
+      
       const updatedInvoice: SupplierInvoice = {
         ...invoice,
         paidAmount: paid + payAmount,
         status: (paid + payAmount) >= invoice.total ? 'pagada' : 'parcial'
       };
+      
       await syncService.savePurchaseInvoice(updatedInvoice);
+      
       const index = updatedInvoices.findIndex(i => i.id === invoice.id);
       if (index !== -1) updatedInvoices[index] = updatedInvoice;
+      
       const newPayment: SupplierPayment = {
         id: generateUniquePaymentId(),
         supplierId: supplierId,
@@ -231,9 +238,11 @@ export default function SuppliersModule() {
         method: paymentMethod,
         reference: reference || '',
         bank: bank || '',
-        notes: `Pago parcial distribuido. Tasa: ${formatBsNumber(exchangeRate)} Bs/USD`
+        notes: `Pago parcial distribuido (FIFO). Tasa: ${formatBsNumber(exchangeRate)} Bs/USD`
       };
+      
       await syncService.saveSupplierPayment(newPayment);
+      
       const amountBs = payAmount * exchangeRate;
       // ✅ Asiento contable con fecha/hora exacta
       await syncService.saveAccountingEntry({
@@ -243,12 +252,13 @@ export default function SuppliersModule() {
         category: 'pagos_proveedores',
         subcategory: 'abono',
         concept: `Pago a proveedor (Factura ${invoice.invoiceNumber || invoice.id})`,
-        description: `Abono de ${formatUsd(payAmount)} USD (tasa ${formatBsNumber(exchangeRate)}) = ${formatBs(amountBs)}`,
+        description: `Abono FIFO de ${formatUsd(payAmount)} USD (tasa ${formatBsNumber(exchangeRate)}) = ${formatBs(amountBs)}`,
         amount: amountBs,
         referenceId: newPayment.id,
         referenceType: 'supplier_payment',
         createdAt: getVenezuelaISOString(),
       });
+      
       remaining -= payAmount;
     }
     setInvoices(updatedInvoices);
@@ -257,126 +267,27 @@ export default function SuppliersModule() {
   const handlePaymentConfirm = async (paymentData: { amount: number; method: string; reference?: string; bank?: string; usdAmount?: number; exchangeRate?: number }) => {
     if (!selectedSupplierForPayment) return;
     setIsProcessing(true);
+    
     try {
       const exchangeRateUsed = paymentData.exchangeRate || state.exchangeRate;
-      if (selectedInvoiceForPayment) {
-        const invoice = selectedInvoiceForPayment;
-        const paid = invoice.paidAmount || 0;
-        const owed = invoice.total - paid;
-        const totalPaid = paymentData.amount;
-        
-        if (totalPaid > owed) {
-          // 1. Pagar la factura seleccionada completamente
-          const updatedInvoice: SupplierInvoice = {
-            ...invoice,
-            paidAmount: invoice.total,
-            status: 'pagada'
-          };
-          await syncService.savePurchaseInvoice(updatedInvoice);
-          setInvoices(prev => prev.map(i => i.id === invoice.id ? updatedInvoice : i));
-          
-          // 2. Crear pago por el monto owed
-          const paymentForThisInvoice: SupplierPayment = {
-            id: generateUniquePaymentId(),
-            supplierId: selectedSupplierForPayment.id,
-            supplierName: selectedSupplierForPayment.name,
-            invoiceId: invoice.id,
-            date: getVenezuelaDateForFirestore(),
-            amount: owed,
-            exchangeRate: exchangeRateUsed,
-            method: paymentData.method,
-            reference: paymentData.reference || '',
-            bank: paymentData.bank || '',
-            notes: `Pago completo de factura ${invoice.invoiceNumber || invoice.id}. Tasa: ${formatBsNumber(exchangeRateUsed)}`
-          };
-          await syncService.saveSupplierPayment(paymentForThisInvoice);
-          setSupplierPayments(prev => [paymentForThisInvoice, ...prev]);
-          
-          const amountBs = owed * exchangeRateUsed;
-          // ✅ Asiento contable con fecha/hora exacta
-          await syncService.saveAccountingEntry({
-            id: generateUniquePaymentId(),
-            date: getVenezuelaISOString(),
-            type: 'egreso',
-            category: 'pagos_proveedores',
-            subcategory: 'abono',
-            concept: `Pago a proveedor (Factura ${invoice.invoiceNumber || invoice.id})`,
-            description: `Pago completo de ${formatUsd(owed)} USD (tasa ${formatBsNumber(exchangeRateUsed)}) = ${formatBs(amountBs)}`,
-            amount: amountBs,
-            referenceId: paymentForThisInvoice.id,
-            referenceType: 'supplier_payment',
-            createdAt: getVenezuelaISOString(),
-          });
-          
-          // 3. Distribuir el excedente
-          const remainingAmount = totalPaid - owed;
-          if (remainingAmount > 0) {
-            await distributePayment(
-              selectedSupplierForPayment.id,
-              remainingAmount,
-              exchangeRateUsed,
-              paymentData.method,
-              paymentData.reference,
-              paymentData.bank,
-              [invoice.id]
-            );
-          }
-          
-          toast({ title: "Pago registrado", description: `Factura #${invoice.invoiceNumber || invoice.id} pagada completamente. El excedente se distribuyó a otras facturas.` });
-        } else {
-          // Pago parcial o total sin excedente
-          const payAmount = totalPaid;
-          const updatedInvoice: SupplierInvoice = {
-            ...invoice,
-            paidAmount: paid + payAmount,
-            status: (paid + payAmount) >= invoice.total ? 'pagada' : 'parcial'
-          };
-          await syncService.savePurchaseInvoice(updatedInvoice);
-          setInvoices(prev => prev.map(i => i.id === invoice.id ? updatedInvoice : i));
-          const newPayment: SupplierPayment = {
-            id: generateUniquePaymentId(),
-            supplierId: selectedSupplierForPayment.id,
-            supplierName: selectedSupplierForPayment.name,
-            invoiceId: invoice.id,
-            date: getVenezuelaDateForFirestore(),
-            amount: payAmount,
-            exchangeRate: exchangeRateUsed,
-            method: paymentData.method,
-            reference: paymentData.reference || '',
-            bank: paymentData.bank || '',
-            notes: `Pago registrado. Tasa: ${formatBsNumber(exchangeRateUsed)}`
-          };
-          await syncService.saveSupplierPayment(newPayment);
-          setSupplierPayments(prev => [newPayment, ...prev]);
-          const amountBs = payAmount * exchangeRateUsed;
-          // ✅ Asiento contable con fecha/hora exacta
-          await syncService.saveAccountingEntry({
-            id: generateUniquePaymentId(),
-            date: getVenezuelaISOString(),
-            type: 'egreso',
-            category: 'pagos_proveedores',
-            subcategory: 'abono',
-            concept: `Pago a proveedor ${selectedSupplierForPayment.name} (Factura ${invoice.invoiceNumber || invoice.id})`,
-            description: `Pago de ${formatUsd(payAmount)} USD (tasa ${formatBsNumber(exchangeRateUsed)}) = ${formatBs(amountBs)}`,
-            amount: amountBs,
-            referenceId: newPayment.id,
-            referenceType: 'supplier_payment',
-            createdAt: getVenezuelaISOString(),
-          });
-          toast({ title: "Pago registrado", description: `Pago de ${formatUsd(payAmount)} a ${selectedSupplierForPayment.name}` });
-        }
-      } else {
-        // Pago global
-        await distributePayment(
-          selectedSupplierForPayment.id,
-          paymentData.amount,
-          exchangeRateUsed,
-          paymentData.method,
-          paymentData.reference,
-          paymentData.bank
-        );
-        toast({ title: "Pago global aplicado", description: `Distribuido ${formatUsd(paymentData.amount)} entre facturas pendientes de ${selectedSupplierForPayment.name}` });
-      }
+      const totalPaid = paymentData.amount;
+      
+      // ✅ REGLA DE ORO: Liquidación Cronológica Estricta (FIFO)
+      // Todo pago recibido para un proveedor se aplica desde la factura más antigua a la más reciente.
+      // Incluso si se abrió el modal desde una factura específica, el sistema prioriza la deuda más vieja.
+      await distributePayment(
+        selectedSupplierForPayment.id,
+        totalPaid,
+        exchangeRateUsed,
+        paymentData.method,
+        paymentData.reference,
+        paymentData.bank
+      );
+      
+      toast({ 
+        title: "Pago procesado", 
+        description: `Se aplicaron ${formatUsd(totalPaid)} a las deudas más antiguas de ${selectedSupplierForPayment.name}.` 
+      });
       
       setShowPaymentModal(false);
       setSelectedSupplierForPayment(null);

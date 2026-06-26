@@ -164,12 +164,39 @@ export default function ClientPanel({ client, state, onClose }: ClientPanelProps
               priceUsd: 0
             };
           }
+          
+          // Surgical fix for Deuda Inicial visibility
+          const name = item.trim();
+          if (name.includes("DEUDA INICIAL")) {
+            return {
+              name,
+              qty: 1,
+              priceBs: selectedTransaction.accountInfo.amountBs,
+              priceUsd: selectedTransaction.accountInfo.amountUsd
+            };
+          }
+          
           return { name: item, qty: 1, priceBs: 0, priceUsd: 0 };
         });
       }
     }
     return [];
   }, [selectedTransaction]);
+
+  // ✅ CORREGIDO: Obtener SOLO los abonos de esta cuenta específica
+  const getAbonosForCurrentAccount = useCallback(() => {
+    if (!selectedTransaction?.accountInfo) return [];
+    const currentTxId = selectedTransaction.accountInfo.txId;
+    return state.transactions
+      .filter(t => {
+        if (t.type !== 'cobro_deuda' && t.type !== 'devolucion') return false;
+        if (t.referenceId && String(t.referenceId) === String(currentTxId)) return true;
+        if (t.txId && String(t.txId) === String(currentTxId)) return true;
+        if (t.notes && t.notes.includes(String(currentTxId))) return true;
+        return false;
+      })
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  }, [selectedTransaction, state.transactions]);
 
   const historicalRate = getHistoricalExchangeRate();
 
@@ -338,7 +365,7 @@ export default function ClientPanel({ client, state, onClose }: ClientPanelProps
         </div>
       </div>
 
-      {/* ✅ Modal de pago usando la nueva calculadora (FloatingPaymentModal) */}
+      {/* Modal de pago usando la nueva calculadora (FloatingPaymentModal) */}
       {showPaymentModal && (
         <FloatingPaymentModal 
           total={paymentAmount}
@@ -399,19 +426,21 @@ export default function ClientPanel({ client, state, onClose }: ClientPanelProps
                   </div>
                   <div>
                     <label className="text-[10px] font-black text-black/60 uppercase tracking-widest">Estado</label>
-                    <p className={cn(
-                      "inline-block px-3 py-1 rounded-full text-[10px] font-bold",
-                      selectedTransaction.accountInfo.status === 'pagada' ? "bg-green-100 text-green-700" :
-                      selectedTransaction.accountInfo.status === 'parcial' ? "bg-yellow-100 text-yellow-700" :
-                      "bg-red-100 text-red-700"
-                    )}>
-                      {selectedTransaction.accountInfo.status === 'pagada' ? 'PAGADA' :
-                       selectedTransaction.accountInfo.status === 'parcial' ? 'PARCIAL' : 'PENDIENTE'}
-                    </p>
+                    <div className="mt-1">
+                      <span className={cn(
+                        "inline-block px-3 py-1 rounded-full text-[10px] font-bold border",
+                        selectedTransaction.accountInfo.status === 'pagada' ? "bg-green-100 text-green-700 border-green-300" :
+                        selectedTransaction.accountInfo.status === 'parcial' ? "bg-yellow-100 text-yellow-700 border-yellow-300" :
+                        "bg-red-100 text-red-700 border-red-300"
+                      )}>
+                        {selectedTransaction.accountInfo.status === 'pagada' ? 'PAGADA' :
+                         selectedTransaction.accountInfo.status === 'parcial' ? 'PARCIAL' : 'PENDIENTE'}
+                      </span>
+                    </div>
                   </div>
                 </div>
 
-                {/* ✅ Tasa BCV HISTÓRICA - Valor FIJO e INMUTABLE */}
+                {/* ✅ Tasa BCV HISTÓRICA */}
                 <div className="bg-amber-50 rounded-lg p-4 border border-amber-200">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
@@ -425,9 +454,6 @@ export default function ClientPanel({ client, state, onClose }: ClientPanelProps
                         <>
                           <p className="text-lg font-black text-amber-800">
                             1 USD = {formatBsNumber(historicalRate)}
-                          </p>
-                          <p className="text-[8px] text-amber-600">
-                            Valor fijo aplicado el {new Date(selectedTransaction.accountInfo.date).toLocaleDateString('es-VE')}
                           </p>
                         </>
                       ) : (
@@ -448,7 +474,6 @@ export default function ClientPanel({ client, state, onClose }: ClientPanelProps
                         <tr className="border-b border-[#9E9E9E]">
                           <th className="text-left p-3 text-[10px] font-black text-black uppercase">CANT</th>
                           <th className="text-left p-3 text-[10px] font-black text-black uppercase">PRODUCTO</th>
-                          <th className="text-right p-3 text-[10px] font-black text-black uppercase">PRECIO</th>
                           <th className="text-right p-3 text-[10px] font-black text-black uppercase">TOTAL</th>
                         </tr>
                       </thead>
@@ -461,19 +486,14 @@ export default function ClientPanel({ client, state, onClose }: ClientPanelProps
                                 <td className="p-3 text-xs font-bold text-black">{item.qty}</td>
                                 <td className="p-3 text-xs font-bold text-black">{item.name}</td>
                                 <td className="p-3 text-right text-xs font-bold text-black">
-                                  {item.priceBs > 0 ? formatBs(item.priceBs) : 
-                                   item.priceUsd > 0 ? formatUsd(item.priceUsd) : '—'}
-                                </td>
-                                <td className="p-3 text-right text-xs font-bold text-black">
-                                  {item.priceBs > 0 ? formatBs(item.priceBs * item.qty) : 
-                                   item.priceUsd > 0 ? formatUsd(item.priceUsd * item.qty) : '—'}
+                                  {item.priceUsd > 0 ? formatUsd(item.priceUsd * item.qty) : '—'}
                                 </td>
                               </tr>
                             ));
                           }
                           return (
                             <tr>
-                              <td colSpan={4} className="text-center p-4 text-black/50 italic">
+                              <td colSpan={3} className="text-center p-4 text-black/50 italic">
                                 No se pudieron cargar los productos
                               </td>
                             </tr>
@@ -484,45 +504,51 @@ export default function ClientPanel({ client, state, onClose }: ClientPanelProps
                   </div>
                 </div>
 
-                {/* Totales con tasa histórica */}
+                {/* Totales */}
                 <div className="bg-[#F5F5F5] rounded-lg p-4 space-y-2">
                   <div className="flex justify-between text-sm">
-                    <span className="text-black/60">Monto Original en USD:</span>
-                    <span className="font-bold text-black">
-                      {formatUsd(selectedTransaction.accountInfo.amountUsd || 
-                        (selectedTransaction.accountInfo.amountBs / (selectedTransaction.accountInfo.exchangeRate || currentExchangeRate)))}
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-black/60">Monto Pagado (USD):</span>
-                    <span className="font-bold text-green-600">
-                      {formatUsd((selectedTransaction.accountInfo.paidAmount || 0) / 
-                        (selectedTransaction.accountInfo.exchangeRate || currentExchangeRate))}
-                    </span>
+                    <span className="text-black/60">Pagado en Bs:</span>
+                    <span className="font-bold text-green-600">{formatBs(selectedTransaction.accountInfo.paidAmount || 0)}</span>
                   </div>
                   <div className="flex justify-between text-sm pt-1 border-t border-dashed border-[#9E9E9E]">
-                    <span className="text-black/60">Saldo Pendiente (USD):</span>
+                    <span className="text-black/60 font-bold">Saldo Pendiente (USD Fijo):</span>
                     <span className="font-bold text-red-600">
-                      {formatUsd((selectedTransaction.accountInfo.amountUsd || 
-                        (selectedTransaction.accountInfo.amountBs / (selectedTransaction.accountInfo.exchangeRate || currentExchangeRate))) - 
-                        ((selectedTransaction.accountInfo.paidAmount || 0) / (selectedTransaction.accountInfo.exchangeRate || currentExchangeRate)))}
+                      {formatUsd((selectedTransaction.accountInfo.amountUsd || 0) - ((selectedTransaction.accountInfo.paidAmount || 0) / (selectedTransaction.accountInfo.exchangeRate || currentExchangeRate)))}
                     </span>
                   </div>
-                  <div className="flex justify-between text-sm pt-1">
-                    <span className="text-black/60">Equivalente hoy (Tasa actual):</span>
-                    <div className="text-right">
-                      <span className="font-bold text-amber-700">
-                        {formatBs(selectedTransaction.accountInfo.amountUsd ? 
-                          selectedTransaction.accountInfo.amountUsd * currentExchangeRate : 
-                          (selectedTransaction.accountInfo.amountBs / (selectedTransaction.accountInfo.exchangeRate || currentExchangeRate)) * currentExchangeRate)}
-                      </span>
-                      <span className="text-xs text-black/50 ml-2">(tasa actual)</span>
-                    </div>
-                  </div>
-                  <div className="text-[8px] text-amber-600 text-center pt-2 border-t border-dashed border-[#9E9E9E]">
-                    ⚠️ Los valores en USD son fijos desde el momento del crédito
-                  </div>
                 </div>
+
+                {/* ✅ HISTORIAL DE ABONOS CORREGIDO */}
+                {(() => {
+                  const abonos = getAbonosForCurrentAccount();
+                  return abonos.length > 0 ? (
+                    <div>
+                      <label className="text-[10px] font-black text-black/60 uppercase flex items-center gap-2 mb-3">
+                        <History size={12} /> HISTORIAL DE ABONOS - Cuenta #{selectedTransaction.accountInfo.txId}
+                      </label>
+                      <div className="border border-[#9E9E9E] rounded-lg overflow-hidden">
+                        <table className="w-full text-sm">
+                          <thead className="bg-[#E8E8E8]">
+                            <tr>
+                              <th className="text-left p-3 text-[10px] font-black uppercase">FECHA</th>
+                              <th className="text-right p-3 text-[10px] font-black uppercase">MONTO</th>
+                              <th className="text-left p-3 text-[10px] font-black uppercase">MÉTODO</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {abonos.map((abono, idx) => (
+                              <tr key={idx} className="border-b border-[#9E9E9E]/50">
+                                <td className="p-3 text-xs text-black font-bold">{new Date(abono.date).toLocaleDateString('es-VE')}</td>
+                                <td className="p-3 text-right text-xs font-bold text-green-600">{formatBs(abono.total)}</td>
+                                <td className="p-3 text-xs text-black">{abono.payMethod || 'Efectivo BS'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  ) : null;
+                })()}
               </div>
 
               {/* Footer */}

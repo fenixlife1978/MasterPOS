@@ -122,6 +122,18 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
       return productsStr.split(',').map((item: string): ProductItem => {
         const match = item.trim().match(/(.+)\sx(\d+)$/);
         if (match) return { name: match[1], qty: parseInt(match[2]), priceBs: 0, priceUsd: 0 };
+        
+        // Surgical fix for Deuda Inicial visibility
+        const name = item.trim();
+        if (name.includes("DEUDA INICIAL")) {
+          return { 
+            name, 
+            qty: 1, 
+            priceBs: selectedTransaction.accountInfo.amountBs, 
+            priceUsd: selectedTransaction.accountInfo.amountUsd 
+          };
+        }
+        
         return { name: item.trim(), qty: 1, priceBs: 0, priceUsd: 0 };
       });
     }
@@ -134,22 +146,19 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
     
     const currentTxId = selectedTransaction.accountInfo.txId;
     
-    // Buscar transacciones de tipo 'cobro_deuda' que tengan el mismo txId de referencia
-    // o que estén asociadas a esta cuenta específica
+    // Buscar transacciones de tipo 'cobro_deuda' o 'devolucion' que correspondan a este crédito
     return state.transactions
       .filter(t => {
+        // Solo transacciones de abono o devolución
+        if (t.type !== 'cobro_deuda' && t.type !== 'devolucion') return false;
+        
         // Si la transacción tiene un referenceId que coincide con el txId de la cuenta
-        if (t.referenceId && String(t.referenceId) === String(currentTxId)) {
-          return true;
-        }
-        // Si la transacción tiene un txId que coincide (para abonos directos)
-        if (t.txId && String(t.txId) === String(currentTxId)) {
-          return true;
-        }
+        if (t.referenceId && String(t.referenceId) === String(currentTxId)) return true;
+        // Si la transacción tiene un txId que coincide (para abonos directos antiguos)
+        if (t.txId && String(t.txId) === String(currentTxId)) return true;
         // Si la transacción tiene un notes que contiene el txId de la cuenta
-        if (t.notes && t.notes.includes(String(currentTxId))) {
-          return true;
-        }
+        if (t.notes && t.notes.includes(String(currentTxId))) return true;
+        
         return false;
       })
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
@@ -309,6 +318,7 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
     const txId = account.txId;
     return state.transactions
       .filter(t => {
+        if (t.type !== 'cobro_deuda' && t.type !== 'devolucion') return false;
         if (t.referenceId && String(t.referenceId) === String(txId)) return true;
         if (t.txId && String(t.txId) === String(txId)) return true;
         if (t.notes && t.notes.includes(String(txId))) return true;
@@ -548,7 +558,7 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
                   </div>
                 </div>
 
-                {/* ✅ AHORA SOLO MUESTRA LOS ABONOS DE ESTA CUENTA ESPECÍFICA */}
+                {/* ✅ HISTORIAL DE ABONOS CORREGIDO */}
                 {(() => {
                   const abonos = getAbonosForCurrentAccount();
                   return abonos.length > 0 ? (

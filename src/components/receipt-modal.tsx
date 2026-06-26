@@ -211,7 +211,7 @@ export default function ReceiptModal({ transaction, exchangeRate, receiptNumber,
   // Determinar título según tipo de transacción
   const getDocumentTitle = () => {
     if (isCredito) return 'DOCUMENTO DE CRÉDITO';
-    if (isCobroDeuda) return 'RECIBO DE PAGO';
+    if (isCobroDeuda) return 'NOTA';
     if (isColaboracion) return 'COLABORACIÓN';
     if (isConsumoPropio) return 'CONSUMO PROPIO';
     return 'RECIBO';
@@ -328,7 +328,7 @@ export default function ReceiptModal({ transaction, exchangeRate, receiptNumber,
 
             <div style={{ margin: '6px 0', fontSize: '9px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span>{isCredito ? 'CRÉDITO N°:' : 'RECIBO N°:'} <span style={{ fontWeight: 'bold' }}>{formattedReceiptNumber}</span></span>
+                <span>{isCobroDeuda ? 'NOTA N°:' : (isCredito ? 'CRÉDITO N°:' : 'RECIBO N°:')} <span style={{ fontWeight: 'bold' }}>{formattedReceiptNumber}</span></span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', margin: '2px 0' }}>
                 <span>FECHA: {transactionDate}</span>
@@ -382,7 +382,7 @@ export default function ReceiptModal({ transaction, exchangeRate, receiptNumber,
                 ) : (
                   <tr>
                     <td colSpan={3} style={{ textAlign: 'center', padding: '8px 0', color: '#666', fontStyle: 'italic' }}>
-                      {isCobroDeuda ? '* Abono de cuenta aplicado *' : '* Operación de Pago *'}
+                      {isCobroDeuda ? '* ABONO / LIQUIDACIÓN DE CUENTA *' : '* Operación de Pago *'}
                     </td>
                   </tr>
                 )}
@@ -403,7 +403,7 @@ export default function ReceiptModal({ transaction, exchangeRate, receiptNumber,
                 
                 <div style={{ fontSize: '13px', fontWeight: 'bold', margin: '5px 0', padding: '3px 0', borderTop: '1px solid #000', borderBottom: '1px solid #000' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
-                    <span>{isCredito ? 'TOTAL ADEUDADO:' : 'TOTAL A PAGAR:'}</span>
+                    <span>{isCredito ? 'TOTAL ADEUDADO:' : (isCobroDeuda ? 'MONTO ABONADO:' : 'TOTAL A PAGAR:')}</span>
                     <span>{formatBs(transactionTotal)}</span>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#333', fontWeight: 'normal', marginTop: '2px' }}>
@@ -419,7 +419,7 @@ export default function ReceiptModal({ transaction, exchangeRate, receiptNumber,
                   </div>
                 )}
 
-                {!isCredito && (
+                {!isCredito && !isCobroDeuda && (
                   <>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', margin: '2px 0' }}>
                       <span>MONTO RECIBIDO:</span>
@@ -450,7 +450,9 @@ export default function ReceiptModal({ transaction, exchangeRate, receiptNumber,
 
             {isCobroDeuda && (
               <div style={{ border: '1px solid #27ae60', padding: '4px', margin: '8px 0', textAlign: 'center', fontSize: '9px', background: '#e8f8f5' }}>
-                <p style={{ margin: '2px 0', fontWeight: 'bold', color: '#27ae60' }}>✓ PAGO REGISTRADO EXITOSAMENTE</p>
+                <p style={{ margin: '2px 0', fontWeight: 'bold', color: '#27ae60' }}>
+                  {transaction.notes?.toLowerCase().includes('abono') ? '✓ ABONO DE DEUDA' : '✓ LIQUIDACIÓN DE DEUDA'}
+                </p>
                 <p style={{ margin: '2px 0', fontSize: '8px' }}>La deuda ha sido actualizada</p>
               </div>
             )}

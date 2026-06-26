@@ -52,7 +52,7 @@ const formatDateFriendly = (dateStr: string): string => {
 export default function AccountingModule() {
   const { entries, addEntry, getTotalIngresos, getTotalEgresos } = useAccounting();
   const state = usePOSState();
-  const exchangeRate = state.exchangeRate || 1;
+  const globalExchangeRate = state.exchangeRate || 1;
   
   const [filterType, setFilterType] = useState<'todos' | 'ingreso' | 'egreso'>('todos');
   const [filterCategory, setFilterCategory] = useState('todas');
@@ -90,20 +90,21 @@ export default function AccountingModule() {
     return true;
   }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-  // ✅ Calcular totales en Bs (original) y convertir a USD
-  const totalIngresosBs = getTotalIngresos ? getTotalIngresos() : 0;
-  const totalEgresosBs = getTotalEgresos ? getTotalEgresos() : 0;
+  // ✅ Calcular totales en Bs (original) y convertir a USD usando las tasas individuales si existen
+  const totalIngresosBs = filteredEntries.filter(e => e.type === 'ingreso').reduce((sum, e) => sum + e.amount, 0);
+  const totalEgresosBs = filteredEntries.filter(e => e.type === 'egreso').reduce((sum, e) => sum + e.amount, 0);
   const balanceBs = totalIngresosBs - totalEgresosBs;
   
-  // ✅ Convertir a USD usando la tasa de cambio
-  const totalIngresosUsd = totalIngresosBs / exchangeRate;
-  const totalEgresosUsd = totalEgresosBs / exchangeRate;
-  const balanceUsd = balanceBs / exchangeRate;
-
-  // ✅ Función para convertir monto individual a USD
-  const getUsdAmount = (amountBs: number): number => {
-    return amountBs / exchangeRate;
-  };
+  // ✅ Calcular totales en USD sumando la conversión individual para mayor precisión
+  const totalIngresosUsd = filteredEntries
+    .filter(e => e.type === 'ingreso')
+    .reduce((sum, e) => sum + (e.amount / (e.exchangeRate || globalExchangeRate)), 0);
+  
+  const totalEgresosUsd = filteredEntries
+    .filter(e => e.type === 'egreso')
+    .reduce((sum, e) => sum + (e.amount / (e.exchangeRate || globalExchangeRate)), 0);
+    
+  const balanceUsd = totalIngresosUsd - totalEgresosUsd;
 
   const handleExpenseConfirm = async (data: any) => {
     if (!addEntry) {
@@ -124,6 +125,7 @@ export default function AccountingModule() {
       concept: data.concept || data.category,
       description: data.description || '',
       amount: typeof data.amount === 'number' ? data.amount : parseFloat(data.amount) || 0,
+      exchangeRate: globalExchangeRate,
       referenceType: 'expense',
       createdAt: new Date().toISOString()
     });
@@ -230,7 +232,7 @@ export default function AccountingModule() {
             </TableHeader>
             <TableBody>
               {filteredEntries.map((entry, idx) => {
-                const amountUsd = getUsdAmount(entry.amount);
+                const amountUsd = entry.amount / (entry.exchangeRate || globalExchangeRate);
                 return (
                   <TableRow 
                     key={`${entry.id}_${idx}`} 
@@ -337,7 +339,7 @@ export default function AccountingModule() {
                 <div className="grid grid-cols-2 gap-2">
                   <p className="text-[10px] font-bold text-black/60">Monto USD</p>
                   <p className={cn("text-lg font-black", selectedEntry.type === 'ingreso' ? "text-green-600" : "text-red-600")}>
-                    {formatUsd(getUsdAmount(selectedEntry.amount))}
+                    {formatUsd(selectedEntry.amount / (selectedEntry.exchangeRate || globalExchangeRate))}
                   </p>
                 </div>
                 <div className="grid grid-cols-2 gap-2 border-t border-gray-100 pt-2">
@@ -353,8 +355,8 @@ export default function AccountingModule() {
                   </div>
                 )}
                 <div className="grid grid-cols-2 gap-2 border-t border-gray-100 pt-2">
-                  <p className="text-[10px] font-bold text-black/40">Tasa BCV</p>
-                  <p className="text-sm font-mono text-black/60">{formatBs(exchangeRate)}</p>
+                  <p className="text-[10px] font-bold text-black/40">Tasa Aplicada</p>
+                  <p className="text-sm font-mono text-black/60">{formatBs(selectedEntry.exchangeRate || globalExchangeRate)}</p>
                 </div>
               </div>
               <div className="bg-[#F5F5F5] p-4 border-t flex justify-end">

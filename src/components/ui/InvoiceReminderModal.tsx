@@ -132,11 +132,11 @@ export default function InvoiceReminderModal({ onAcknowledge }: InvoiceReminderM
                         </div>
                         <div>
                           <p className="text-[10px] text-black/50">Total Factura</p>
-                          <p className="font-bold text-black">{formatBs(notif.total)}</p>
+                          <p className="font-bold text-black">{formatUsd(notif.total)}</p>
                         </div>
                         <div>
                           <p className="text-[10px] text-black/50">Monto Pendiente</p>
-                          <p className="font-bold text-red-600">{formatBs(notif.remaining)}</p>
+                          <p className="font-bold text-red-600">{formatUsd(notif.remaining)}</p>
                         </div>
                       </div>
                     </div>
@@ -148,7 +148,7 @@ export default function InvoiceReminderModal({ onAcknowledge }: InvoiceReminderM
             {/* Resumen */}
             <div className="mt-4 p-3 bg-[#1A2C4E] rounded-xl text-white text-center">
               <p className="text-[10px] text-white/60">Total pendiente por pagar</p>
-              <p className="text-2xl font-black">{formatBs(totalPending)}</p>
+              <p className="text-2xl font-black">{formatUsd(totalPending)}</p>
             </div>
           </div>
           

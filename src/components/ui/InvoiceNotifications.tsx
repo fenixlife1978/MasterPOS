@@ -123,8 +123,8 @@ export default function InvoiceNotifications({ variant = 'dashboard' }: InvoiceN
                             <div className="flex-1">
                               <p className="text-sm font-bold">{notif.message}</p>
                               <p className="text-[10px] mt-1">Proveedor: {notif.supplierName}</p>
-                              <p className="text-[9px]">Monto pendiente: <span className="font-bold">{formatBs(remaining)}</span></p>
-                              <p className="text-[9px]">Total factura: {formatBs(notif.total)} | Pagado: {formatBs(notif.paidAmount)}</p>
+                              <p className="text-[9px]">Monto pendiente: <span className="font-bold">{formatUsd(remaining)}</span></p>
+                              <p className="text-[9px]">Total factura: {formatUsd(notif.total)} | Pagado: {formatUsd(notif.paidAmount)}</p>
                             </div>
                           </div>
                         </div>
@@ -201,7 +201,7 @@ export default function InvoiceNotifications({ variant = 'dashboard' }: InvoiceN
                           <div className="flex-1">
                             <p className="text-sm font-bold">{notif.message}</p>
                             <p className="text-[10px] mt-1">Proveedor: {notif.supplierName}</p>
-                            <p className="text-[9px]">Monto pendiente: <span className="font-bold">{formatBs(remaining)}</span></p>
+                            <p className="text-[9px]">Monto pendiente: <span className="font-bold">{formatUsd(remaining)}</span></p>
                           </div>
                         </div>
                       </div>

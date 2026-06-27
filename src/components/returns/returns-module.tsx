@@ -70,8 +70,9 @@ function extractTerminalIdFromSession(sessionId: string | null | undefined): str
   return 'default';
 }
 
-function formatReceipt(num?: number): string {
-  return (num || 0).toString().padStart(8, '0');
+function formatReceipt(num?: number | string): string {
+  if (!num) return '00000000';
+  return num.toString().padStart(8, '0');
 }
 
 export default function ReturnsModule() {
@@ -105,8 +106,18 @@ export default function ReturnsModule() {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
-  // ✅ Alias para compatibilidad con el JSX de la tabla
-  const salesTransactions = filteredTransactions;
+  // Contador de devoluciones independiente por terminal
+  const getReturnStorageKey = () => `last_return_number_${currentTerminalId}`;
+  const [nextReturnNumber, setNextReturnNumber] = useState(1);
+
+  useEffect(() => {
+    const last = localStorage.getItem(getReturnStorageKey());
+    if (last) {
+      setNextReturnNumber(parseInt(last) + 1);
+    } else {
+      setNextReturnNumber(1);
+    }
+  }, [currentTerminalId]);
 
   useEffect(() => {
     if (isAdmin) {
@@ -151,12 +162,10 @@ export default function ReturnsModule() {
         }));
         
         transactions = transactions.filter(tx => {
-          const sid = tx.sessionId || tx.session_id;
-          const tid = tx.terminalId || tx.terminal_id;
-          const txTerminal = tid || extractTerminalIdFromSession(sid);
+          const tid = tx.terminalId || tx.terminal_id || extractTerminalIdFromSession(tx.sessionId || tx.session_id);
           
           if (targetTerminal) {
-            return txTerminal === targetTerminal;
+            return tid === targetTerminal;
           }
           return true;
         });
@@ -187,25 +196,33 @@ export default function ReturnsModule() {
   }, [loadTransactions]);
 
   const handleSearchByReceipt = useCallback(() => {
-    const receipt = searchReceipt.trim();
-    if (!receipt) {
+    const receiptQuery = searchReceipt.trim();
+    if (!receiptQuery) {
       loadTransactions();
       return;
     }
     
-    const num = parseInt(receipt);
-    const found = allTransactions.filter(tx => 
-      (tx.receipt_number || tx.receiptNumber) === num || 
-      String(tx.id).includes(receipt)
-    );
+    const targetTerminal = getTargetTerminal();
+    const num = parseInt(receiptQuery);
+    
+    // ✅ Búsqueda estrictamente por número de recibo y terminal aislada
+    const found = allTransactions.filter(tx => {
+      const txReceipt = tx.receiptNumber || tx.receipt_number;
+      const tid = tx.terminalId || tx.terminal_id || extractTerminalIdFromSession(tx.sessionId || tx.session_id);
+      
+      const matchesReceipt = txReceipt === num;
+      const matchesTerminal = !targetTerminal || tid === targetTerminal;
+      
+      return matchesReceipt && matchesTerminal;
+    });
     
     setFilteredTransactions(found);
     if (found.length === 0) {
-      setMessage({ type: 'error', text: 'No se encontró la transacción' });
+      setMessage({ type: 'error', text: `No se encontró el recibo #${formatReceipt(num)} en esta terminal` });
     } else {
       setMessage(null);
     }
-  }, [allTransactions, searchReceipt, loadTransactions]);
+  }, [allTransactions, searchReceipt, loadTransactions, getTargetTerminal]);
 
   const openReturnModal = (tx: any) => {
     if (tx.return_status === 'total') {
@@ -313,6 +330,9 @@ export default function ReturnsModule() {
 
       const reasonLabel = RETURN_REASONS.find(r => r.id === selectedReason)?.label || 'Sin motivo';
 
+      // ✅ Usar el contador de devoluciones DEV-
+      const returnReceiptNumber = nextReturnNumber;
+
       const returnTransaction = {
         id: Date.now(),
         date: new Date().toISOString(),
@@ -329,6 +349,7 @@ export default function ReturnsModule() {
         clientName: selectedTransaction.clientName || 'CLIENTE FINAL',
         originalSaleId: saleId,
         originalReceiptNumber: selectedTransaction.receiptNumber || selectedTransaction.receipt_number,
+        receiptNumber: returnReceiptNumber, // ✅ Guardar número correlativo DEV
         returnMethod: selectedMethod,
         notes: `Motivo: ${reasonLabel}. Autorizado por supervisor.`,
         authorizedBy: 'Supervisor (PIN)',
@@ -345,6 +366,10 @@ export default function ReturnsModule() {
           updatedAt: new Date().toISOString()
         })
       ]);
+
+      // Incrementar y guardar contador DEV
+      localStorage.setItem(getReturnStorageKey(), returnReceiptNumber.toString());
+      setNextReturnNumber(returnReceiptNumber + 1);
 
       for (const ret of returnItems.filter(i => i.returnQty > 0)) {
         const prod = products.find(p => p.id === ret.productId);
@@ -389,7 +414,7 @@ export default function ReturnsModule() {
         });
       }
 
-      setMessage({ type: 'success', text: '✅ Devolución procesada y stock actualizado correctamente.' });
+      setMessage({ type: 'success', text: `✅ Devolución DEV-${returnReceiptNumber.toString().padStart(6, '0')} procesada correctamente.` });
       loadTransactions();
       setTimeout(() => {
         setShowReturnModal(false);
@@ -451,14 +476,14 @@ export default function ReturnsModule() {
         
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
           <div className="md:col-span-2">
-            <label className="text-[9px] font-black text-black/40 uppercase block mb-1">Buscar por Número de Recibo o ID</label>
+            <label className="text-[9px] font-black text-black/40 uppercase block mb-1">Buscar por Número de Recibo Correlativo</label>
             <div className="flex gap-2">
               <div className="relative flex-1">
                 <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                 <Input 
                   value={searchReceipt}
                   onChange={(e) => setSearchReceipt(e.target.value)}
-                  placeholder="Escanee el ticket o escriba el número..."
+                  placeholder="Ej: 00000019"
                   className="pl-10 h-11 text-base font-mono font-bold border-slate-300 focus:border-red-500 focus:ring-red-500/20 transition-all"
                   onKeyDown={(e) => e.key === 'Enter' && handleSearchByReceipt()}
                 />
@@ -502,7 +527,7 @@ export default function ReturnsModule() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {salesTransactions.length === 0 ? (
+            {filteredTransactions.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={6} className="text-center py-16">
                   <div className="max-w-xs mx-auto opacity-30">
@@ -512,16 +537,16 @@ export default function ReturnsModule() {
                 </TableCell>
               </TableRow>
             ) : (
-              salesTransactions.map((tx) => {
+              filteredTransactions.map((tx) => {
                 const returned = tx.return_status === 'total' || tx.return_status === 'partial';
                 return (
                   <TableRow key={tx.id} className={cn("group hover:bg-slate-50 transition-colors", returned && "bg-red-50/30")}>
                     <TableCell className="font-mono font-black text-slate-700">
-                      #{formatReceipt(tx.receipt_number || tx.receiptNumber)}
+                      #{formatReceipt(tx.receiptNumber || tx.receipt_number)}
                     </TableCell>
                     <TableCell>
                       <span className="text-[10px] font-bold bg-slate-100 px-2 py-0.5 rounded-full text-slate-600">
-                        {extractTerminalIdFromSession(tx.session_id || tx.sessionId)}
+                        {tx.terminalId || extractTerminalIdFromSession(tx.sessionId || tx.session_id)}
                       </span>
                     </TableCell>
                     <TableCell className="font-bold text-slate-900">{tx.clientName || tx.client_name || 'CONSUMIDOR FINAL'}</TableCell>
@@ -562,7 +587,7 @@ export default function ReturnsModule() {
                 <div>
                   <DialogTitle className="text-xl font-black">Procesar Devolución</DialogTitle>
                   <p className="text-xs text-white/60 font-bold uppercase tracking-widest">
-                    Venta Original: #{selectedTransaction ? formatReceipt(selectedTransaction.receipt_number || selectedTransaction.receiptNumber) : ''}
+                    Venta Original: #{selectedTransaction ? formatReceipt(selectedTransaction.receiptNumber || selectedTransaction.receipt_number) : ''}
                   </p>
                 </div>
               </div>

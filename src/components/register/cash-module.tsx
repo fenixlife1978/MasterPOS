@@ -56,15 +56,11 @@ function getLocalDateStr(isoString: string): string {
 
 function extractTerminalIdFromSession(sessionId: string | null | undefined): string {
   if (!sessionId) return 'default';
-  const lastIndex = sessionId.lastIndexOf('_');
-  if (lastIndex !== -1) {
-    return sessionId.substring(0, lastIndex);
+  const parts = sessionId.split('_');
+  if (parts.length > 0 && parts[0]) {
+    return parts[0];
   }
-  return sessionId;
-}
-
-function formatReceipt(num?: number): string {
-  return (num || 0).toString().padStart(8, '0');
+  return 'default';
 }
 
 export default function CashModule({ state }: CashModuleProps) {
@@ -330,7 +326,6 @@ export default function CashModule({ state }: CashModuleProps) {
       try { payments = JSON.parse(payments); } catch(e) { payments = []; }
     }
     
-    // ✅ REGLA DE ORO: Solo sumar montos de métodos USD reales (Efectivo USD o Zelle)
     if (Array.isArray(payments) && payments.length > 0) {
       let totalUsdReceived = 0;
       let hasUsdMethod = false;
@@ -348,7 +343,6 @@ export default function CashModule({ state }: CashModuleProps) {
       return tx.total_usd || tx.totalUsd || 0;
     }
     
-    // Si no es un método USD, no mostrar equivalencia
     return 0;
   };
 
@@ -368,15 +362,11 @@ export default function CashModule({ state }: CashModuleProps) {
   };
 
   const getDisplayReceipt = (tx: any): string => {
+    const receipt = tx.receiptNumber || tx.receipt_number || 0;
     if (tx.type === 'devolucion') {
-      const directOriginalReceipt = tx.original_receipt_number || tx.originalReceiptNumber;
-      if (directOriginalReceipt) return formatReceipt(directOriginalReceipt);
-      const ownReceipt = tx.receipt_number || tx.receiptNumber;
-      if (ownReceipt) return formatReceipt(ownReceipt);
-      return `#${String(tx.id).slice(0, 8)}`;
+      return `DEV-${receipt.toString().padStart(6, '0')}`;
     }
-    const receipt = tx.receipt_number || tx.receiptNumber;
-    return formatReceipt(receipt || parseInt(tx.id));
+    return receipt.toString().padStart(8, '0');
   };
 
   const filteredTransactions = useMemo(() => {
@@ -384,7 +374,7 @@ export default function CashModule({ state }: CashModuleProps) {
     const s = searchTerm.toLowerCase();
     return todaysTransactions.filter(tx => {
       const displayReceipt = getDisplayReceipt(tx);
-      return displayReceipt.includes(s) || (tx.client_name?.toLowerCase().includes(s)) || (tx.clientName?.toLowerCase().includes(s)) || String(tx.id).includes(s);
+      return displayReceipt.toLowerCase().includes(s) || (tx.client_name?.toLowerCase().includes(s)) || (tx.clientName?.toLowerCase().includes(s)) || String(tx.id).includes(s);
     });
   }, [todaysTransactions, searchTerm]);
 
@@ -487,7 +477,9 @@ export default function CashModule({ state }: CashModuleProps) {
                   <tbody className="divide-y divide-slate-200">
                     {paginatedTransactions.map((t: any) => (
                       <tr key={t.id} className="hover:bg-slate-50">
-                        <td className="p-2 font-mono font-bold">{getDisplayReceipt(t)}</td>
+                        <td className={cn("p-2 font-mono font-bold", t.type === 'devolucion' ? "text-red-600" : "text-slate-700")}>
+                          {getDisplayReceipt(t)}
+                        </td>
                         <td className="p-2 font-mono">{new Date(t.date).toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' })}</td>
                         <td className="p-2 truncate max-w-[150px]">{t.client_name || t.clientName || 'Cliente Final'}</td>
                         <td className="p-2 text-center"><span className={cn("text-[8px] font-black px-2 py-0.5 rounded-full", getTransactionColor(t.type))}>{getTransactionTypeLabel(t.type)}</span></td>

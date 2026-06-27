@@ -24,18 +24,6 @@ function getVenezuelaISOString(): string {
   return `${partMap.year}-${partMap.month}-${partMap.day}T${partMap.hour}:${partMap.minute}:${partMap.second}.${partMap.fractionalSecond}-04:00`;
 }
 
-function getVenezuelaDate(): string {
-  const formatter = new Intl.DateTimeFormat('sv-SE', {
-    timeZone: 'America/Caracas',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  });
-  const parts = formatter.formatToParts(now);
-  const partMap = Object.fromEntries(parts.map(p => [p.type, p.value]));
-  return `${partMap.year}-${partMap.month}-${partMap.day}`;
-}
-
 const now = new Date();
 
 function getVenezuelaTimestamp(): number {
@@ -514,7 +502,7 @@ export function usePOSState() {
     return result;
   }, [products]);
 
-  const finalizeSale = useCallback(async (type: 'contado' | 'credito' | 'cobro_deuda' | 'colaboracion' | 'consumo_propio', paymentData: any) => {
+  const finalizeSale = useCallback(async (type: 'contado' | 'credito' | 'cobro_deuda' | 'colaboracion' | 'consumo_propio' | 'devolucion', paymentData: any) => {
     if (!register?.isOpen) throw new Error('Caja no abierta');
 
     const isSpecial = type === 'colaboracion' || type === 'consumo_propio';
@@ -567,18 +555,19 @@ export function usePOSState() {
       clientId: targetClientId, 
       clientName: paymentData.clientName || undefined,
       exchangeRate, 
-      receiptNumber: paymentData.receiptNumber || undefined, 
+      receiptNumber: paymentData.receiptNumber || undefined, // ✅ Asegurar que se guarde el número correlativo
       costoTotalOperacion: isSpecial ? costoTotalOperacion : undefined,
       notes: isSpecial ? paymentData.notes : undefined, 
       authorizedBy: isSpecial ? paymentData.authorizedBy : undefined,
       sessionId: currentSession?.id || undefined, 
       ajusteRedondeoBs: paymentData.ajusteRedondeoBs || 0,
+      terminalId: terminalId, // ✅ Guardar terminal ID
     };
     if (type === 'contado' && paymentData.payments) tx.payments = paymentData.payments;
 
     const stockUpdates: Map<number, { newStock: number }> = new Map();
     const kardexEntries: any[] = [];
-    if (type !== 'cobro_deuda') {
+    if (type !== 'cobro_deuda' && type !== 'devolucion') {
       const itemsToDiscountList = getItemsToDiscount(cart);
       for (const discountItem of itemsToDiscountList) {
         const product = discountItem.product;
@@ -728,6 +717,7 @@ export function usePOSState() {
       exchangeRate,
       sessionId: currentSession?.id || undefined,
       notes: note,
+      terminalId: terminalId,
     };
 
     const accountingEntry = {
@@ -789,6 +779,7 @@ export function usePOSState() {
       exchangeRate,
       notes: reason,
       sessionId: currentSession?.id || undefined,
+      terminalId: terminalId,
       payments: [{
         id: crypto.randomUUID(),
         method: payMethod,

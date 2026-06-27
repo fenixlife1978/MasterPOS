@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef } from 'react';
-import { Printer, X, FileText, Share2 } from 'lucide-react';
+import { Printer, X, FileText, Share2, Zap } from 'lucide-react';
 import { Transaction } from '@/lib/types';
 import { formatBs, formatUsd, formatBsNumber, formatUsdNumber } from '@/lib/currency-formatter';
 
@@ -42,6 +42,23 @@ export default function ReceiptModal({ transaction, exchangeRate, receiptNumber,
   const formattedReceiptNumber = rawNumber 
     ? rawNumber.toString().padStart(8, '0')
     : (transaction?.id?.toString().slice(-8) || '00000000');
+
+  const isCredito = transaction?.type === 'credito';
+  const isCobroDeuda = transaction?.type === 'cobro_deuda';
+  const isColaboracion = transaction?.type === 'colaboracion';
+  const isConsumoPropio = transaction?.type === 'consumo_propio';
+
+  const transactionDate = transaction?.date ? formatToVenezuelaTime(transaction.date) : '';
+  const transactionClientName = transaction?.clientName || 'CONSUMIDOR FINAL';
+  const transactionSubtotal = transaction?.subtotal || 0;
+  const transactionIva = transaction?.iva || 0;
+  const transactionTotal = transaction?.total || 0;
+  const transactionPaidBs = transaction?.paidBs || 0;
+  const transactionChange = transaction?.change || 0;
+  const transactionPayMethod = transaction?.payMethod || 'efectivo_bs';
+  const transactionItems = transaction?.items || [];
+  const transactionExchangeRate = transaction?.exchangeRate || exchangeRate;
+  const transactionPayments = transaction?.payments || [];
 
   const handlePrint = () => {
     const printContent = printRef.current?.innerHTML;
@@ -166,7 +183,76 @@ export default function ReceiptModal({ transaction, exchangeRate, receiptNumber,
     printWindow?.document.close();
   };
 
-  const handleExportPDF = () => handlePrint();
+  // ========== LÓGICA DE IMPRESIÓN NATIVA USB (ELECTRON) ==========
+  const handleNativePrint = async () => {
+    if (!window.electronAPI) {
+      handlePrint();
+      return;
+    }
+
+    const printData = [
+      { type: 'text', value: 'LICORERIA CASTILLO', style: { fontWeight: "700", textAlign: 'center', fontSize: "18px" } },
+      { type: 'text', value: 'Calle Ayacucho entre Calles Occidente y La Cruz, Sector La Playita', style: { textAlign: 'center', fontSize: "10px" } },
+      { type: 'text', value: 'RIF: V-11654282-6', style: { textAlign: 'center', fontSize: "10px" } },
+      { type: 'text', value: 'TEL: 0424-5397181', style: { textAlign: 'center', fontSize: "10px" } },
+      { type: 'text', value: 'Guama - Yaracuy', style: { textAlign: 'center', fontSize: "10px" } },
+      { type: 'text', value: '--------------------------------', style: { textAlign: 'center' } },
+      { type: 'text', value: getDocumentTitle().toUpperCase(), style: { textAlign: 'center', fontWeight: "700", fontSize: "14px" } },
+      { type: 'text', value: '--------------------------------', style: { textAlign: 'center' } },
+      { type: 'text', value: `${isCobroDeuda ? 'NOTA' : 'RECIBO'} N: ${formattedReceiptNumber}`, style: { textAlign: 'left' } },
+      { type: 'text', value: `FECHA: ${transactionDate}`, style: { textAlign: 'left' } },
+      { type: 'text', value: `CLIENTE: ${transactionClientName.toUpperCase()}`, style: { textAlign: 'left' } },
+      { type: 'text', value: '--------------------------------', style: { textAlign: 'center' } }
+    ];
+
+    // Items
+    transactionItems.forEach(item => {
+      printData.push({
+        type: 'text',
+        value: `${item.qty}x ${item.name.toUpperCase().slice(0, 20)}`,
+        style: { fontWeight: "700" }
+      });
+      printData.push({
+        type: 'text',
+        value: `    Ref: ${formatBsNumber(item.priceBs)} | Total: ${formatBsNumber(item.priceBs * item.qty)}`,
+        style: { fontSize: "10px" }
+      });
+    });
+
+    printData.push({ type: 'text', value: '--------------------------------', style: { textAlign: 'center' } });
+
+    if (!isColaboracion && !isConsumoPropio) {
+      if (transactionSubtotal > 0) {
+        printData.push({ type: 'text', value: `SUBTOTAL: ${formatBs(transactionSubtotal)}`, style: { textAlign: 'right' } });
+      }
+      if (transactionIva > 0) {
+        printData.push({ type: 'text', value: `IVA (16%): ${formatBs(transactionIva)}`, style: { textAlign: 'right' } });
+      }
+      printData.push({ type: 'text', value: '--------------------------------', style: { textAlign: 'center' } });
+      printData.push({ 
+        type: 'text', 
+        value: `TOTAL: ${formatBs(transactionTotal)}`, 
+        style: { textAlign: 'right', fontWeight: "700", fontSize: "16px" } 
+      });
+      printData.push({ 
+        type: 'text', 
+        value: `REF: ${formatUsd(transactionTotal / transactionExchangeRate)}`, 
+        style: { textAlign: 'right', fontSize: "12px" } 
+      });
+    }
+
+    printData.push({ type: 'text', value: '--------------------------------', style: { textAlign: 'center' } });
+    printData.push({ type: 'text', value: '¡GRACIAS POR SU PREFERENCIA!', style: { textAlign: 'center', fontWeight: "700" } });
+    printData.push({ type: 'text', value: 'Desarrollado por MasterPOS v1.0', style: { textAlign: 'center', fontSize: "8px" } });
+
+    try {
+      await window.electronAPI.printTicket(printData);
+    } catch (e) {
+      console.error('Error de impresión Electron:', e);
+      handlePrint();
+    }
+  };
+
   const handleSharePDF = async () => {
     if (navigator.share) {
       try {
@@ -190,23 +276,6 @@ export default function ReceiptModal({ transaction, exchangeRate, receiptNumber,
     pago_movil: 'PAGO MÓVIL INTERBANCARIO',
     zelle: 'TRANSFERENCIA ZELLE',
   };
-
-  const isCredito = transaction?.type === 'credito';
-  const isCobroDeuda = transaction?.type === 'cobro_deuda';
-  const isColaboracion = transaction?.type === 'colaboracion';
-  const isConsumoPropio = transaction?.type === 'consumo_propio';
-
-  const transactionDate = transaction?.date ? formatToVenezuelaTime(transaction.date) : '';
-  const transactionClientName = transaction?.clientName || 'CONSUMIDOR FINAL';
-  const transactionSubtotal = transaction?.subtotal || 0;
-  const transactionIva = transaction?.iva || 0;
-  const transactionTotal = transaction?.total || 0;
-  const transactionPaidBs = transaction?.paidBs || 0;
-  const transactionChange = transaction?.change || 0;
-  const transactionPayMethod = transaction?.payMethod || 'efectivo_bs';
-  const transactionItems = transaction?.items || [];
-  const transactionExchangeRate = transaction?.exchangeRate || exchangeRate;
-  const transactionPayments = transaction?.payments || [];
 
   // Determinar título según tipo de transacción
   const getDocumentTitle = () => {
@@ -443,11 +512,17 @@ export default function ReceiptModal({ transaction, exchangeRate, receiptNumber,
           </div>
         </div>
 
-        <div className="p-3 bg-gray-50 border-t border-gray-200 flex gap-2">
-          <button onClick={onClose} className="flex-1 py-2 bg-gray-200 text-slate-800 font-bold text-xs rounded-lg hover:bg-gray-300 transition-colors uppercase tracking-wider">Cerrar</button>
-          <button onClick={handleExportPDF} className="flex-1 py-2 bg-red-600 text-white font-bold text-xs rounded-lg hover:bg-red-700 transition-colors flex items-center justify-center gap-2 uppercase tracking-wider shadow-sm"><FileText size={14} /> PDF</button>
-          <button onClick={handleSharePDF} className="flex-1 py-2 bg-green-600 text-white font-bold text-xs rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center gap-2 uppercase tracking-wider shadow-sm"><Share2 size={14} /> Compartir</button>
-          <button onClick={handlePrint} className="flex-1 py-2 bg-[#D4A017] text-slate-950 font-black text-xs rounded-lg hover:bg-[#C4940F] transition-colors flex items-center justify-center gap-2 uppercase tracking-wider shadow-sm"><Printer size={14} /> Imprimir</button>
+        <div className="p-3 bg-gray-50 border-t border-gray-200 flex flex-col gap-2">
+          <div className="flex gap-2">
+            <button onClick={onClose} className="flex-1 py-2 bg-gray-200 text-slate-800 font-bold text-xs rounded-lg hover:bg-gray-300 transition-colors uppercase tracking-wider">Cerrar</button>
+            <button onClick={handleSharePDF} className="flex-1 py-2 bg-green-600 text-white font-bold text-xs rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center gap-2 uppercase tracking-wider shadow-sm"><Share2 size={14} /> Compartir</button>
+          </div>
+          <div className="flex gap-2">
+             <button onClick={handlePrint} className="flex-1 py-2 bg-gray-800 text-white font-bold text-xs rounded-lg hover:bg-black transition-colors flex items-center justify-center gap-2 uppercase tracking-wider shadow-sm"><Printer size={14} /> Estándar</button>
+             <button onClick={handleNativePrint} className="flex-1 py-2 bg-[#D4A017] text-slate-950 font-black text-xs rounded-lg hover:bg-[#C4940F] transition-colors flex items-center justify-center gap-2 uppercase tracking-wider shadow-sm border-2 border-black/10">
+               <Zap size={14} className="fill-current" /> IMPRESIÓN USB
+             </button>
+          </div>
         </div>
 
       </div>

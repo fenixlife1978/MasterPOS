@@ -1,7 +1,8 @@
-const { app, BrowserWindow, dialog, protocol, net } = require('electron');
+const { app, BrowserWindow, dialog, protocol, net, ipcMain } = require('electron');
 const path = require('path');
 const { pathToFileURL } = require('url');
 const { autoUpdater } = require('electron-updater');
+const { PosPrinter } = require('electron-pos-printer');
 
 // ✅ FORZAR ZONA HORARIA DE VENEZUELA
 app.commandLine.appendSwitch('timezone', 'America/Caracas');
@@ -22,6 +23,7 @@ async function createWindow() {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
+      preload: path.join(__dirname, 'preload.js')
     },
     icon: path.join(__dirname, '../public/logo-master.png'),
     show: false,
@@ -42,6 +44,26 @@ async function createWindow() {
     mainWindow = null;
   });
 }
+
+// ========== MANEJADOR DE IMPRESIÓN POS ==========
+ipcMain.handle('print-ticket', async (event, data) => {
+  const options = {
+    preview: false,
+    margin: '0 0 0 0',
+    copies: 1,
+    printerName: '', // Usa la impresora predeterminada del sistema
+    timeOutPerLine: 400,
+    pageSize: '80mm'
+  };
+
+  try {
+    await PosPrinter.print(data, options);
+    return { success: true };
+  } catch (error) {
+    console.error('Error en impresión directa:', error);
+    return { success: false, error: error.message };
+  }
+});
 
 // ========== AUTO-UPDATER (Tu lógica intacta) ==========
 autoUpdater.setFeedURL({
@@ -125,4 +147,4 @@ app.on('activate', () => {
   if (mainWindow === null) {
     createWindow();
   }
-});;
+});

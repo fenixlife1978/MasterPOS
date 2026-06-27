@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useMemo, useRef, useEffect } from 'react';
@@ -32,7 +33,7 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
   
   const reportContentRef = useRef<HTMLDivElement>(null);
 
-  // ✅ Cargar terminales desde TURSO
+  // ✅ Cargar terminales desde FIREBASE
   useEffect(() => {
     const loadTerminals = async () => {
       setIsLoadingTerminals(true);
@@ -40,7 +41,8 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
       try {
         const terminalsData = await syncService.getAllTerminals();
         if (terminalsData && terminalsData.length > 0) {
-          setTerminals(terminalsData.map((t: any) => ({ id: t.id, name: t.name || t.id })));
+          // ✅ El ID del dropdown ahora es el NOMBRE legible para que coincida con el campo terminalId de las transacciones
+          setTerminals(terminalsData.map((t: any) => ({ id: t.name || t.id, name: t.name || t.id })));
         } else {
           setLoadError('No se encontraron terminales registradas.');
           setTerminals([]);
@@ -70,15 +72,15 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
       return txDate >= startLimit && txDate <= endLimit;
     });
     
-    // ✅ Filtrar por terminal correctamente (usando terminalId o sessionId)
+    // ✅ Filtrar por terminal (usando el nombre guardado en terminalId)
     if (selectedTerminalId !== 'all') {
       filtered = filtered.filter(t => {
-        // Si tiene terminalId directamente
+        // Coincidencia directa por el nombre (guardado ahora en terminalId)
         if (t.terminalId) return t.terminalId === selectedTerminalId;
-        // Si tiene sessionId, extraer el último segmento (formato: SES-{timestamp}-{terminal})
+        // Fallback por sesión
         if (t.sessionId) {
-          const parts = t.sessionId.split('-');
-          const terminalFromSession = parts[parts.length - 1];
+          const parts = t.sessionId.split('_');
+          const terminalFromSession = parts[0];
           return terminalFromSession === selectedTerminalId;
         }
         return false;
@@ -145,7 +147,7 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
           </thead>
           <tbody>
             ${filteredTransactions.map(t => {
-              let terminalDisplay = t.terminalId || (t.sessionId ? t.sessionId.split('-').pop() : '—');
+              let terminalDisplay = t.terminalId || (t.sessionId ? t.sessionId.split('_').shift() : '—');
               return `
               <tr>
                 <td>${formatLocalDate(t.date)}</td>
@@ -418,7 +420,7 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
     if (activeReport === 'transactions' && hasSearched) {
       csvRows.push(['Fecha', 'Tipo', 'Cliente', 'Terminal', 'Total Bs']);
       filteredTransactions.forEach(t => {
-        let terminalDisplay = t.terminalId || (t.sessionId ? t.sessionId.split('-').pop() : '—');
+        let terminalDisplay = t.terminalId || (t.sessionId ? t.sessionId.split('_').shift() : '—');
         csvRows.push([formatLocalDate(t.date), t.type, t.clientName || '—', terminalDisplay, formatBsNumber(t.total)]);
       });
     } else if (activeReport === 'summary' && hasSearched) {
@@ -517,8 +519,8 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
                   </thead>
                   <tbody>
                     {filteredTransactions.map((t) => {
-                      // ✅ Extraer terminal correctamente: usar terminalId o último segmento del sessionId
-                      let terminalDisplay = t.terminalId || (t.sessionId ? t.sessionId.split('-').pop() : '—');
+                      // ✅ El campo terminalId ahora guarda el nombre legible
+                      let terminalDisplay = t.terminalId || (t.sessionId ? t.sessionId.split('_').shift() : '—');
                       return (
                         <tr key={t.id} className="border-b hover:bg-[#F5F5F5]">
                           <td className="p-2 text-xs">{formatLocalDate(t.date)}</td>

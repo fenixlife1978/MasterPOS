@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from 'react';
@@ -35,8 +36,9 @@ interface POSModuleProps {
 
 export default function POSModule({ state }: POSModuleProps) {
   const { user } = useAuth();
-  const terminalId = user?.terminalId || 'default';
-  const terminalName = user?.terminalName || terminalId;
+  // ✅ Identificación bivalente: ID para sync, Nombre para registros de auditoría
+  const terminalSyncId = user?.terminalId || 'default';
+  const terminalName = user?.terminalName || 'Principal';
   
   const [showSaleType, setShowSaleType] = useState(false);
   const [showContado, setShowContado] = useState(false);
@@ -56,7 +58,8 @@ export default function POSModule({ state }: POSModuleProps) {
   const lastClickTimeRef = useRef<number>(0);
   const DEBOUNCE_MS = 2000;
 
-  const getStorageKey = () => `last_receipt_number_${terminalId}`;
+  // ✅ Correlativo aislado por NOMBRE de terminal (ej. 0001)
+  const getStorageKey = () => `last_receipt_number_${terminalName}`;
 
   const canExecuteOperation = useCallback((): boolean => {
     const now = Date.now();
@@ -71,7 +74,8 @@ export default function POSModule({ state }: POSModuleProps) {
   const checkAndGetNextTicketNumber = useCallback(async (): Promise<number> => {
     const usedNumbers = new Set<number>();
     for (const t of state.transactions) {
-      if (t.receiptNumber && (t.terminalId === terminalId || (t.sessionId && t.sessionId.includes(terminalId)))) {
+      // ✅ Comparar contra el nombre legible guardado en terminalId
+      if (t.receiptNumber && t.terminalId === terminalName) {
         usedNumbers.add(t.receiptNumber);
       }
     }
@@ -89,7 +93,7 @@ export default function POSModule({ state }: POSModuleProps) {
     }
     
     return number;
-  }, [nextReceiptNumber, state.transactions, terminalId]);
+  }, [nextReceiptNumber, state.transactions, terminalName]);
 
   useEffect(() => {
     const storageKey = getStorageKey();
@@ -107,7 +111,7 @@ export default function POSModule({ state }: POSModuleProps) {
       setNextReceiptNumber(1);
       lastReceiptNumberRef.current = 1;
     }
-  }, [terminalId]);
+  }, [terminalName]);
 
   const subtotal = state.cart.reduce((s, i) => s + (i.priceBs * i.qty), 0);
   const iva = state.cart.reduce((total, item) => {
@@ -127,10 +131,11 @@ export default function POSModule({ state }: POSModuleProps) {
     
     try {
       const safeReceiptNum = await checkAndGetNextTicketNumber();
+      // ✅ Guardar terminalName como terminalId en la transacción
       const tx = await state.finalizeSale('contado', { 
         ...data, 
         receiptNumber: safeReceiptNum,
-        terminalId: terminalId 
+        terminalId: terminalName 
       });
       
       if (tx) {
@@ -155,6 +160,7 @@ export default function POSModule({ state }: POSModuleProps) {
     
     try {
       const safeReceiptNum = await checkAndGetNextTicketNumber();
+      // ✅ Guardar terminalName como terminalId en la transacción
       const tx = await state.finalizeSale('credito', {
         clientId: data.clientId,
         clientName: data.clientName,
@@ -166,7 +172,7 @@ export default function POSModule({ state }: POSModuleProps) {
         totalBs: data.totalBs,
         totalUsd: data.totalUsd,
         receiptNumber: safeReceiptNum,
-        terminalId: terminalId
+        terminalId: terminalName
       });
       
       if (tx) {
@@ -200,11 +206,12 @@ export default function POSModule({ state }: POSModuleProps) {
       }
 
       const safeReceiptNum = await checkAndGetNextTicketNumber();
+      // ✅ Guardar terminalName como terminalId en la transacción
       const tx = await state.finalizeSale(type, {
         receiptNumber: safeReceiptNum,
         notes: motivo,
         authorizedBy: user?.name || 'Supervisor',
-        terminalId: terminalId
+        terminalId: terminalName
       });
       
       if (tx) {

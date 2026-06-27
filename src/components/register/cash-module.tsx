@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useMemo, useEffect, useCallback } from 'react';
@@ -65,8 +66,9 @@ function extractTerminalIdFromSession(sessionId: string | null | undefined): str
 
 export default function CashModule({ state }: CashModuleProps) {
   const { user } = useAuth();
-  const terminalId = user?.terminalId || 'default';
-  const terminalName = user?.terminalId ? `Terminal ${user.terminalId}` : 'Terminal Principal';
+  // ✅ Usar el NOMBRE legible de la terminal para los filtros de transacciones
+  const terminalId = user?.terminalName || user?.terminalId || 'default';
+  const terminalName = user?.terminalName ? `Terminal ${user.terminalName}` : 'Terminal Principal';
 
   const [openAmountBs, setOpenAmountBs] = useState('0.00');
   const [openAmountUsd, setOpenAmountUsd] = useState('0.00');
@@ -111,9 +113,8 @@ export default function CashModule({ state }: CashModuleProps) {
         }));
 
         todayTx = allTx.filter(tx => {
-          const sid = tx.sessionId || tx.session_id;
-          const tid = tx.terminalId || tx.terminal_id;
-          const txTerminal = tid || extractTerminalIdFromSession(sid);
+          // ✅ Priorizar el campo terminalId (que ahora guarda el nombre)
+          const txTerminal = tx.terminalId || tx.terminal_id || extractTerminalIdFromSession(tx.sessionId || tx.session_id);
           
           if (txTerminal !== terminalId) return false;
           
@@ -326,6 +327,7 @@ export default function CashModule({ state }: CashModuleProps) {
       try { payments = JSON.parse(payments); } catch(e) { payments = []; }
     }
     
+    // ✅ Solo mostrar USD si el método fue efectivamente divisas (No equivalencias)
     if (Array.isArray(payments) && payments.length > 0) {
       let totalUsdReceived = 0;
       let hasUsdMethod = false;

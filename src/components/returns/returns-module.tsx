@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useMemo, useCallback, useEffect } from 'react';
@@ -77,7 +78,8 @@ function formatReceipt(num?: number | string): string {
 
 export default function ReturnsModule() {
   const { user } = useAuth();
-  const currentTerminalId = user?.terminalId || 'default';
+  // ✅ Usar el NOMBRE legible para aislamiento de terminal
+  const currentTerminalName = user?.terminalName || 'Principal';
   const isAdmin = user?.role === 'admin';
 
   const { products, register, exchangeRate, registerCashEgress } = usePOSState();
@@ -106,8 +108,8 @@ export default function ReturnsModule() {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
-  // Contador de devoluciones independiente por terminal
-  const getReturnStorageKey = () => `last_return_number_${currentTerminalId}`;
+  // ✅ Contador de devoluciones independiente por NOMBRE de terminal
+  const getReturnStorageKey = () => `last_return_number_${currentTerminalName}`;
   const [nextReturnNumber, setNextReturnNumber] = useState(1);
 
   useEffect(() => {
@@ -117,7 +119,7 @@ export default function ReturnsModule() {
     } else {
       setNextReturnNumber(1);
     }
-  }, [currentTerminalId]);
+  }, [currentTerminalName]);
 
   useEffect(() => {
     if (isAdmin) {
@@ -125,7 +127,8 @@ export default function ReturnsModule() {
         setIsLoadingTerminals(true);
         try {
           const terms = await syncService.getAllTerminals();
-          setAvailableTerminals(terms.map(t => ({ id: t.id, name: t.name || t.id })));
+          // ✅ Usar nombre como ID para el filtro en devoluciones
+          setAvailableTerminals(terms.map(t => ({ id: t.name || t.id, name: t.name || t.id })));
         } catch (error) {
           console.error('Error cargando terminales:', error);
         } finally {
@@ -136,19 +139,19 @@ export default function ReturnsModule() {
     }
   }, [isAdmin]);
 
-  const getTargetTerminal = useCallback(() => {
+  const getTargetTerminalName = useCallback(() => {
     if (isAdmin) {
       return selectedTerminal === 'all' ? null : selectedTerminal;
     }
-    return currentTerminalId;
-  }, [isAdmin, selectedTerminal, currentTerminalId]);
+    return currentTerminalName;
+  }, [isAdmin, selectedTerminal, currentTerminalName]);
 
   const loadTransactions = useCallback(async () => {
     setIsLoading(true);
     setMessage(null);
     
     try {
-      const targetTerminal = getTargetTerminal();
+      const targetTerminalName = getTargetTerminalName();
       const db = getDatabase(app);
       const snapshot = await get(ref(db, 'transactions'));
       
@@ -162,10 +165,11 @@ export default function ReturnsModule() {
         }));
         
         transactions = transactions.filter(tx => {
+          // ✅ Priorizar el campo terminalId (Nombre) para la comparación
           const tid = tx.terminalId || tx.terminal_id || extractTerminalIdFromSession(tx.sessionId || tx.session_id);
           
-          if (targetTerminal) {
-            return tid === targetTerminal;
+          if (targetTerminalName) {
+            return tid === targetTerminalName;
           }
           return true;
         });
@@ -189,7 +193,7 @@ export default function ReturnsModule() {
     } finally {
       setIsLoading(false);
     }
-  }, [getTargetTerminal, startDate, endDate]);
+  }, [getTargetTerminalName, startDate, endDate]);
 
   useEffect(() => {
     loadTransactions();
@@ -202,27 +206,27 @@ export default function ReturnsModule() {
       return;
     }
     
-    const targetTerminal = getTargetTerminal();
+    const targetTerminalName = getTargetTerminalName();
     const num = parseInt(receiptQuery);
     
-    // ✅ Búsqueda estrictamente por número de recibo y terminal aislada
+    // ✅ Búsqueda estrictamente por número de recibo y NOMBRE de terminal
     const found = allTransactions.filter(tx => {
       const txReceipt = tx.receiptNumber || tx.receipt_number;
       const tid = tx.terminalId || tx.terminal_id || extractTerminalIdFromSession(tx.sessionId || tx.session_id);
       
       const matchesReceipt = txReceipt === num;
-      const matchesTerminal = !targetTerminal || tid === targetTerminal;
+      const matchesTerminal = !targetTerminalName || tid === targetTerminalName;
       
       return matchesReceipt && matchesTerminal;
     });
     
     setFilteredTransactions(found);
     if (found.length === 0) {
-      setMessage({ type: 'error', text: `No se encontró el recibo #${formatReceipt(num)} en esta terminal` });
+      setMessage({ type: 'error', text: `No se encontró el recibo #${formatReceipt(num)} en la terminal ${targetTerminalName || ''}` });
     } else {
       setMessage(null);
     }
-  }, [allTransactions, searchReceipt, loadTransactions, getTargetTerminal]);
+  }, [allTransactions, searchReceipt, loadTransactions, getTargetTerminalName]);
 
   const openReturnModal = (tx: any) => {
     if (tx.return_status === 'total') {
@@ -329,8 +333,6 @@ export default function ReturnsModule() {
       }));
 
       const reasonLabel = RETURN_REASONS.find(r => r.id === selectedReason)?.label || 'Sin motivo';
-
-      // ✅ Usar el contador de devoluciones DEV-
       const returnReceiptNumber = nextReturnNumber;
 
       const returnTransaction = {
@@ -349,11 +351,11 @@ export default function ReturnsModule() {
         clientName: selectedTransaction.clientName || 'CLIENTE FINAL',
         originalSaleId: saleId,
         originalReceiptNumber: selectedTransaction.receiptNumber || selectedTransaction.receipt_number,
-        receiptNumber: returnReceiptNumber, // ✅ Guardar número correlativo DEV
+        receiptNumber: returnReceiptNumber,
         returnMethod: selectedMethod,
         notes: `Motivo: ${reasonLabel}. Autorizado por supervisor.`,
         authorizedBy: 'Supervisor (PIN)',
-        terminalId: currentTerminalId,
+        terminalId: currentTerminalName, // ✅ Guardar Nombre como TerminalId
         sessionId: selectedTransaction.sessionId || selectedTransaction.session_id,
         exchangeRate: selectedTransaction.exchangeRate || exchangeRate
       };
@@ -367,7 +369,6 @@ export default function ReturnsModule() {
         })
       ]);
 
-      // Incrementar y guardar contador DEV
       localStorage.setItem(getReturnStorageKey(), returnReceiptNumber.toString());
       setNextReturnNumber(returnReceiptNumber + 1);
 
@@ -440,7 +441,7 @@ export default function ReturnsModule() {
             <div>
               <h2 className="text-2xl font-black text-red-900 tracking-tight">CENTRO DE DEVOLUCIONES</h2>
               <p className="text-[11px] font-bold text-red-600 uppercase tracking-widest">
-                Modo Seguro • Terminal: {user?.terminalName || currentTerminalId}
+                Modo Seguro • Terminal: {currentTerminalName}
               </p>
             </div>
           </div>
@@ -508,7 +509,7 @@ export default function ReturnsModule() {
           "mb-6 p-4 rounded-xl flex items-center gap-3 border-2 animate-in slide-in-from-top-2", 
           message.type === 'success' ? "bg-green-50 border-green-200 text-green-700" : "bg-red-50 border-red-200 text-red-700"
         )}>
-          {message.type === 'success' ? <CheckCircle size={24} /> : <AlertTriangle size={24} />}
+          {message.type === 'success' ? <CheckCircle size={24} /> : <AlertCircle size={24} />}
           <span className="flex-1 font-bold">{message.text}</span>
           <button onClick={() => setMessage(null)} className="hover:opacity-70"><X size={18} /></button>
         </div>

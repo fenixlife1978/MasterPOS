@@ -37,7 +37,11 @@ const STORAGE_KEYS = {
 
 export function usePOSState() {
   const { user, activeSession: authActiveSession, setActiveSession } = useAuth();
+  // ✅ Identificador técnico para rutas de base de datos
   const terminalId = user?.terminalId || 'default';
+  // ✅ Identificador legible para registros de auditoría y transacciones
+  const terminalNameId = user?.terminalName || user?.terminalId || 'default';
+  
   const registerRef = useRef<CashRegister | null>(null);
   const stockUnsubscribeRef = useRef<(() => void) | null>(null);
   
@@ -555,13 +559,13 @@ export function usePOSState() {
       clientId: targetClientId, 
       clientName: paymentData.clientName || undefined,
       exchangeRate, 
-      receiptNumber: paymentData.receiptNumber || undefined, // ✅ Asegurar que se guarde el número correlativo
+      receiptNumber: paymentData.receiptNumber || undefined,
       costoTotalOperacion: isSpecial ? costoTotalOperacion : undefined,
       notes: isSpecial ? paymentData.notes : undefined, 
       authorizedBy: isSpecial ? paymentData.authorizedBy : undefined,
       sessionId: currentSession?.id || undefined, 
       ajusteRedondeoBs: paymentData.ajusteRedondeoBs || 0,
-      terminalId: terminalId, // ✅ Guardar terminal ID
+      terminalId: terminalNameId, // ✅ Guardar Nombre como TerminalId principal
     };
     if (type === 'contado' && paymentData.payments) tx.payments = paymentData.payments;
 
@@ -664,7 +668,7 @@ export function usePOSState() {
 
     if (type !== 'cobro_deuda') setCart([]);
     return tx;
-  }, [cart, register, exchangeRate, clients, products, terminalId, getItemsToDiscount, currentSession]);
+  }, [cart, register, exchangeRate, clients, products, terminalId, terminalNameId, getItemsToDiscount, currentSession, user?.uid]);
 
   const applyAbono = useCallback(async (clientId: number, amount: number, method: string = 'efectivo_bs') => {
     if (!register?.isOpen) {
@@ -717,7 +721,7 @@ export function usePOSState() {
       exchangeRate,
       sessionId: currentSession?.id || undefined,
       notes: note,
-      terminalId: terminalId,
+      terminalId: terminalNameId, // ✅ Guardar Nombre como TerminalId
     };
 
     const accountingEntry = {
@@ -747,7 +751,7 @@ export function usePOSState() {
     await syncService.saveClient(updatedClient);
     
     return tx;
-  }, [register, clients, accounts, exchangeRate, terminalId, currentSession]);
+  }, [register, clients, accounts, exchangeRate, terminalId, terminalNameId, currentSession]);
 
   const registerCashEgress = useCallback(async (
     amount: number,
@@ -779,7 +783,7 @@ export function usePOSState() {
       exchangeRate,
       notes: reason,
       sessionId: currentSession?.id || undefined,
-      terminalId: terminalId,
+      terminalId: terminalNameId, // ✅ Guardar Nombre como TerminalId
       payments: [{
         id: crypto.randomUUID(),
         method: payMethod,
@@ -810,7 +814,7 @@ export function usePOSState() {
       registerUpdate: { txs: newTxs }
     });
     return tx;
-  }, [register, exchangeRate, terminalId, currentSession]);
+  }, [register, exchangeRate, terminalId, terminalNameId, currentSession]);
 
   const setExchangeRateProxy = useCallback(async (newRate: number) => {
     setExchangeRate(newRate);

@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useMemo, useEffect, useCallback } from 'react';
@@ -66,7 +65,7 @@ function extractTerminalIdFromSession(sessionId: string | null | undefined): str
 
 export default function CashModule({ state }: CashModuleProps) {
   const { user } = useAuth();
-  // ✅ Usar el NOMBRE legible de la terminal para los filtros de transacciones
+  // ✅ Usar el NOMBRE legible de la terminal para los filtros de transacciones (ej: "0001")
   const terminalId = user?.terminalName || user?.terminalId || 'default';
   const terminalName = user?.terminalName ? `Terminal ${user.terminalName}` : 'Terminal Principal';
 
@@ -113,10 +112,14 @@ export default function CashModule({ state }: CashModuleProps) {
         }));
 
         todayTx = allTx.filter(tx => {
-          // ✅ Priorizar el campo terminalId (que ahora guarda el nombre)
+          // ✅ Priorizar el campo terminalId (que ahora guarda el nombre legible)
+          // ✅ Fallback al ID de sesión (que usa el ID técnico) solo si no hay terminalId guardado
           const txTerminal = tx.terminalId || tx.terminal_id || extractTerminalIdFromSession(tx.sessionId || tx.session_id);
           
-          if (txTerminal !== terminalId) return false;
+          // ✅ Comparación bivalente para asegurar compatibilidad con registros antiguos (ID técnico) y nuevos (Nombre)
+          const matchesTerminal = txTerminal === terminalId || txTerminal === user?.terminalId;
+          
+          if (!matchesTerminal) return false;
           
           const txDate = getLocalDateStr(tx.date);
           return txDate === today;
@@ -131,7 +134,7 @@ export default function CashModule({ state }: CashModuleProps) {
     } finally {
       setIsLoading(false);
     }
-  }, [terminalId, isClosed]);
+  }, [terminalId, user?.terminalId, isClosed]);
 
   useEffect(() => {
     loadTodaysTransactions();
@@ -327,7 +330,6 @@ export default function CashModule({ state }: CashModuleProps) {
       try { payments = JSON.parse(payments); } catch(e) { payments = []; }
     }
     
-    // ✅ Solo mostrar USD si el método fue efectivamente divisas (No equivalencias)
     if (Array.isArray(payments) && payments.length > 0) {
       let totalUsdReceived = 0;
       let hasUsdMethod = false;

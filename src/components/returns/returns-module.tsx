@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useMemo, useCallback, useEffect } from 'react';
@@ -79,7 +78,7 @@ function formatReceipt(num?: number | string): string {
 export default function ReturnsModule() {
   const { user } = useAuth();
   // ✅ Usar el NOMBRE legible para aislamiento de terminal
-  const currentTerminalName = user?.terminalName || 'Principal';
+  const currentTerminalName = user?.terminalName || user?.terminalId || 'Principal';
   const isAdmin = user?.role === 'admin';
 
   const { products, register, exchangeRate, registerCashEgress } = usePOSState();
@@ -127,7 +126,6 @@ export default function ReturnsModule() {
         setIsLoadingTerminals(true);
         try {
           const terms = await syncService.getAllTerminals();
-          // ✅ Usar nombre como ID para el filtro en devoluciones
           setAvailableTerminals(terms.map(t => ({ id: t.name || t.id, name: t.name || t.id })));
         } catch (error) {
           console.error('Error cargando terminales:', error);
@@ -165,11 +163,11 @@ export default function ReturnsModule() {
         }));
         
         transactions = transactions.filter(tx => {
-          // ✅ Priorizar el campo terminalId (Nombre) para la comparación
           const tid = tx.terminalId || tx.terminal_id || extractTerminalIdFromSession(tx.sessionId || tx.session_id);
           
           if (targetTerminalName) {
-            return tid === targetTerminalName;
+            // ✅ Búsqueda bivalente (por nombre o por ID técnico para compatibilidad)
+            return tid === targetTerminalName || tid === user?.terminalId;
           }
           return true;
         });
@@ -193,7 +191,7 @@ export default function ReturnsModule() {
     } finally {
       setIsLoading(false);
     }
-  }, [getTargetTerminalName, startDate, endDate]);
+  }, [getTargetTerminalName, startDate, endDate, user?.terminalId]);
 
   useEffect(() => {
     loadTransactions();
@@ -209,13 +207,12 @@ export default function ReturnsModule() {
     const targetTerminalName = getTargetTerminalName();
     const num = parseInt(receiptQuery);
     
-    // ✅ Búsqueda estrictamente por número de recibo y NOMBRE de terminal
     const found = allTransactions.filter(tx => {
       const txReceipt = tx.receiptNumber || tx.receipt_number;
       const tid = tx.terminalId || tx.terminal_id || extractTerminalIdFromSession(tx.sessionId || tx.session_id);
       
       const matchesReceipt = txReceipt === num;
-      const matchesTerminal = !targetTerminalName || tid === targetTerminalName;
+      const matchesTerminal = !targetTerminalName || tid === targetTerminalName || tid === user?.terminalId;
       
       return matchesReceipt && matchesTerminal;
     });
@@ -226,7 +223,7 @@ export default function ReturnsModule() {
     } else {
       setMessage(null);
     }
-  }, [allTransactions, searchReceipt, loadTransactions, getTargetTerminalName]);
+  }, [allTransactions, searchReceipt, loadTransactions, getTargetTerminalName, user?.terminalId]);
 
   const openReturnModal = (tx: any) => {
     if (tx.return_status === 'total') {
@@ -355,7 +352,7 @@ export default function ReturnsModule() {
         returnMethod: selectedMethod,
         notes: `Motivo: ${reasonLabel}. Autorizado por supervisor.`,
         authorizedBy: 'Supervisor (PIN)',
-        terminalId: currentTerminalName, // ✅ Guardar Nombre como TerminalId
+        terminalId: currentTerminalName,
         sessionId: selectedTransaction.sessionId || selectedTransaction.session_id,
         exchangeRate: selectedTransaction.exchangeRate || exchangeRate
       };
@@ -429,6 +426,8 @@ export default function ReturnsModule() {
       setIsProcessing(false);
     }
   };
+
+  const salesTransactions = filteredTransactions;
 
   return (
     <div className="p-6 h-full overflow-auto bg-background">
@@ -528,7 +527,7 @@ export default function ReturnsModule() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filteredTransactions.length === 0 ? (
+            {salesTransactions.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={6} className="text-center py-16">
                   <div className="max-w-xs mx-auto opacity-30">
@@ -538,7 +537,7 @@ export default function ReturnsModule() {
                 </TableCell>
               </TableRow>
             ) : (
-              filteredTransactions.map((tx) => {
+              salesTransactions.map((tx) => {
                 const returned = tx.return_status === 'total' || tx.return_status === 'partial';
                 return (
                   <TableRow key={tx.id} className={cn("group hover:bg-slate-50 transition-colors", returned && "bg-red-50/30")}>

@@ -102,7 +102,11 @@ export default function AccountingModule() {
   
   const totalEgresosUsd = filteredEntries
     .filter(e => e.type === 'egreso')
-    .reduce((sum, e) => sum + (e.amount / (e.exchangeRate || globalExchangeRate)), 0);
+    .reduce((sum, e) => {
+      // ✅ Si el asiento ya tiene totalUsd guardado (como en consumos/colaboraciones), usarlo directamente
+      if (e.totalUsd && e.totalUsd > 0) return sum + e.totalUsd;
+      return sum + (e.amount / (e.exchangeRate || globalExchangeRate));
+    }, 0);
     
   const balanceUsd = totalIngresosUsd - totalEgresosUsd;
 
@@ -115,6 +119,7 @@ export default function AccountingModule() {
     
     const now = getVenezuelaDate();
     const entryId = getTimestamp();
+    const rateToSave = data.exchangeRate || globalExchangeRate;
     
     await addEntry({
       id: entryId,
@@ -125,12 +130,11 @@ export default function AccountingModule() {
       concept: data.concept || data.category,
       description: data.description || '',
       amount: typeof data.amount === 'number' ? data.amount : parseFloat(data.amount) || 0,
-      exchangeRate: globalExchangeRate,
+      exchangeRate: rateToSave,
       referenceType: 'expense',
       createdAt: new Date().toISOString()
     });
     
-    alert('Egreso registrado correctamente');
     setShowExpenseModal(false);
   };
 
@@ -152,21 +156,15 @@ export default function AccountingModule() {
 
   // ✅ Función para obtener el monto en USD de un egreso
   const getAmountUsd = (entry: any): number => {
-    // Si es colaboración o consumo propio, el amount guardado en Bs es realmente el valor en USD
-    if (isColaboracionOrConsumo(entry)) {
-      return entry.amount; // El valor guardado es el monto en USD
-    }
-    // Para el resto, convertir de Bs a USD usando la tasa de cambio
+    // Si el asiento tiene totalUsd guardado explícitamente, usarlo (vía POS)
+    if (entry.totalUsd && entry.totalUsd > 0) return entry.totalUsd;
+    
+    // Si es colaboración o consumo propio de los registrados vía contabilidad manual, el amount guardado es Bs
     return entry.amount / (entry.exchangeRate || globalExchangeRate);
   };
 
   // ✅ Función para obtener el monto en Bs de un egreso
   const getAmountBs = (entry: any): number => {
-    // Si es colaboración o consumo propio, calcular Bs multiplicando el USD por la tasa
-    if (isColaboracionOrConsumo(entry)) {
-      return entry.amount * (entry.exchangeRate || globalExchangeRate);
-    }
-    // Para el resto, el amount guardado ya está en Bs
     return entry.amount;
   };
 
@@ -182,7 +180,6 @@ export default function AccountingModule() {
         </Button>
       </div>
 
-      {/* ✅ TOTALES CORREGIDOS: USD como principal, Bs como secundario */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         <div className="bg-white rounded-xl border border-[#9E9E9E] p-4 shadow-sm">
           <div className="flex items-center gap-2 mb-2">
@@ -224,7 +221,6 @@ export default function AccountingModule() {
         </div>
       </div>
 
-      {/* Filtros */}
       <div className="bg-white border border-[#9E9E9E] rounded-xl p-4 mb-6">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
           <select value={filterType} onChange={(e) => { setFilterType(e.target.value as any); setFilterCategory('todas'); }} className="h-10 bg-white border border-[#9E9E9E] rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50">
@@ -245,7 +241,6 @@ export default function AccountingModule() {
         </div>
       </div>
 
-      {/* ✅ TABLA CORREGIDA: USD como principal, Bs como secundario */}
       <div className="bg-white border border-[#9E9E9E] rounded-xl overflow-hidden shadow-md">
         <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
           <Table>
@@ -263,7 +258,6 @@ export default function AccountingModule() {
             </TableHeader>
             <TableBody>
               {filteredEntries.map((entry, idx) => {
-                // ✅ Obtener montos corregidos según el tipo de egreso
                 const amountUsd = getAmountUsd(entry);
                 const amountBs = getAmountBs(entry);
                 
@@ -302,7 +296,6 @@ export default function AccountingModule() {
                 </TableRow>
               )}
             </TableBody>
-            {/* ✅ PIE DE TABLA CORREGIDO: USD como principal */}
             <tfoot className="bg-[#F0F0F0] sticky bottom-0">
               <TableRow className="border-t-2 border-[#9E9E9E]">
                 <TableCell colSpan={5} className="p-3 text-right font-black text-black">TOTAL FILTRADO INGRESOS:</TableCell>
@@ -331,9 +324,13 @@ export default function AccountingModule() {
         </div>
       </div>
 
-      <ExpenseModal open={showExpenseModal} onClose={() => setShowExpenseModal(false)} onConfirm={handleExpenseConfirm} />
+      <ExpenseModal 
+        open={showExpenseModal} 
+        onClose={() => setShowExpenseModal(false)} 
+        onConfirm={handleExpenseConfirm} 
+        exchangeRate={globalExchangeRate}
+      />
 
-      {/* ✅ DETALLE CORREGIDO: USD como principal, Bs como secundario */}
       <Dialog open={showEntryDetail} onOpenChange={setShowEntryDetail}>
         <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-md p-0 rounded-2xl">
           <DialogHeader className="sr-only"><DialogTitle>Detalle del Movimiento</DialogTitle></DialogHeader>

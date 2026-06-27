@@ -192,7 +192,16 @@ export default function ReturnsModule() {
   }, [loadTransactions]);
 
   const salesTransactions = useMemo(() => {
-    return allTransactions.filter(tx => tx.type !== 'devolucion');
+    return allTransactions.filter(tx => {
+      // No mostrar devoluciones en la pestaña de procesar
+      if (tx.type === 'devolucion') return false;
+      
+      // ✅ REGLA DE ORO: Excluir Deudas Iniciales (registradas vía modulo de cuentas)
+      // Estas deudas no deben aparecer porque no son ventas generadas en el POS actual.
+      if ((tx.notes || '').includes('DEUDA INICIAL')) return false;
+      
+      return true;
+    });
   }, [allTransactions]);
 
   const processedReturns = useMemo(() => {
@@ -217,6 +226,9 @@ export default function ReturnsModule() {
       const matchesTerminal = !targetTerminalName || tid === targetTerminalName || tid === user?.terminalId;
       const matchesType = activeTab === 'process' ? tx.type !== 'devolucion' : tx.type === 'devolucion';
       
+      // ✅ Excluir Deudas Iniciales al buscar una venta original
+      if (activeTab === 'process' && (tx.notes || '').includes('DEUDA INICIAL')) return false;
+
       return matchesReceipt && matchesTerminal && matchesType;
     });
     

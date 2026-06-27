@@ -110,7 +110,7 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
     const txDay = reg.txs.filter((t: any) => {
       const txDate = new Date(t.date);
       const formatter = new Intl.DateTimeFormat('fr-CA', { timeZone: 'America/Caracas', year: 'numeric', month: '2-digit', day: '2-digit' });
-      return formatter.format(txDate) === todayVzla && (t.type === 'contado' || t.type === 'credito');
+      return formatter.format(txDate) === todayVzla && (t.type === 'contado' || t.type === 'credito' || t.type === 'colaboracion' || t.type === 'consumo_propio');
     });
 
     const counts: Record<string, number> = {};
@@ -143,7 +143,8 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
     const txDay = reg.txs.filter((t: any) => {
       const txDate = new Date(t.date);
       const formatter = new Intl.DateTimeFormat('fr-CA', { timeZone: 'America/Caracas', year: 'numeric', month: '2-digit', day: '2-digit' });
-      return formatter.format(txDate) === todayVzla && (t.type === 'contado' || t.type === 'credito');
+      const types = ['contado', 'credito', 'colaboracion', 'consumo_propio', 'devolucion', 'cobro_deuda'];
+      return formatter.format(txDate) === todayVzla && types.includes(t.type);
     });
     
     const nums = txDay.map(t => t.receiptNumber || t.receipt_number).filter(n => typeof n === 'number');
@@ -180,22 +181,14 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
 
     let firstRate: number | null = null;
     let lastRate: number | null = null;
-    let firstRateTime = '';
-    let lastRateTime = '';
     const sortedByDate = [...txDay].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
     for (const tx of sortedByDate) {
       const rate = tx.exchangeRate || tasaActual;
-      if (firstRate === null) {
-        firstRate = rate;
-        firstRateTime = tx.date;
-      }
+      if (firstRate === null) firstRate = rate;
       lastRate = rate;
-      lastRateTime = tx.date;
     }
     if (firstRate !== null) setMorningRate(firstRate);
     if (lastRate !== null) setEveningRate(lastRate);
-    setMorningFirstTxTime(firstRateTime);
-    setEveningFirstTxTime(lastRateTime);
 
     const ventasAM: Record<string, { bs: number; usd: number }> = {};
     const vueltosAM: Record<string, number> = {};
@@ -223,8 +216,8 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
 
         if (!devolucionesTotales[methodDetected]) devolucionesTotales[methodDetected] = { bs: 0, usd: 0 };
 
-        if (methodDetected === 'usd_efectivo' || methodDetected === 'zelle') {
-          devolucionesTotales[methodDetected].usd += tx.totalUsd || 0;
+        if (methodDetected === 'usd_efectivo' || methodDetected === 'zelle' || methodDetected === 'efectivo_usd') {
+          devolucionesTotales[methodDetected === 'efectivo_usd' ? 'usd_efectivo' : methodDetected].usd += tx.totalUsd || 0;
         } else {
           devolucionesTotales[methodDetected].bs += tx.total || 0;
         }
@@ -288,27 +281,27 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
         const txDate = new Date(t.date);
         const formatter = new Intl.DateTimeFormat('fr-CA', { timeZone: 'America/Caracas', year: 'numeric', month: '2-digit', day: '2-digit' });
         if (formatter.format(txDate) !== todayVzla) return;
-        if (t.type !== 'contado') return;
-        if (t.payments) {
-          t.payments.forEach((p: any) => {
-            if (p.method === 'usd_efectivo') total += p.usdAmount !== undefined ? p.usdAmount : (p.amount || 0);
-          });
-        } else if (t.payMethod === 'usd_efectivo') {
-          total += t.totalUsd || 0;
+        if (t.type === 'contado') {
+          if (t.payments) {
+            t.payments.forEach((p: any) => {
+              if (p.method === 'usd_efectivo') total += p.usdAmount !== undefined ? p.usdAmount : (p.amount || 0);
+            });
+          } else if (t.payMethod === 'usd_efectivo') {
+            total += t.totalUsd || 0;
+          }
+        } else if (t.type === 'devolucion') {
+          const method = t.returnMethod || t.payMethod;
+          if (method === 'usd_efectivo' || method === 'efectivo_usd') {
+            total -= (t.totalUsd || 0);
+          }
         }
       });
     }
     return total;
   }, [reg, aperturaUsd]);
 
-  const allMethodsSet = new Set<string>();
-  Object.keys(devoluciones).forEach(m => allMethodsSet.add(m));
-  Object.keys(ventasManana).forEach(m => allMethodsSet.add(m));
-  Object.keys(ventasTarde).forEach(m => allMethodsSet.add(m));
   const baseMethods = ['efectivo_bs', 'usd_efectivo', 'tarjeta', 'biopago', 'pago_movil', 'zelle'];
-  baseMethods.forEach(m => allMethodsSet.add(m));
-  
-  const paymentMethods = Array.from(allMethodsSet).map(key => {
+  const paymentMethods = baseMethods.map(key => {
     let metodo = '';
     let isUsd = false;
     let saldoInicialVal = 0;
@@ -318,7 +311,6 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
     else if (key === 'biopago') { metodo = 'BIOPAGO'; isUsd = false; saldoInicialVal = 0; }
     else if (key === 'pago_movil') { metodo = 'PAGO MÓVIL'; isUsd = false; saldoInicialVal = 0; }
     else if (key === 'zelle') { metodo = 'ZELLE'; isUsd = true; saldoInicialVal = 0; }
-    else { metodo = key.toUpperCase(); isUsd = false; saldoInicialVal = 0; }
     return { metodo, key, isUsd, saldoInicialVal };
   });
 
@@ -486,7 +478,7 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
       <div className="bg-[#F9F4E1] w-full max-w-6xl rounded-xl shadow-2xl flex flex-col max-h-[98vh] overflow-hidden">
         <div className="bg-[#1E3A8A] text-white p-3 border-b-4 border-[#0284C7] sticky top-0 z-20 flex justify-between items-center">
           <div className="flex items-center gap-4">
-            <div className="bg-amber-500 text-slate-900 px-3 py-1 rounded font-black text-sm">{terminalName}</div>
+            <div className="bg-amber-50 text-slate-900 px-3 py-1 rounded font-black text-sm">{terminalName}</div>
             <h1 className="font-black uppercase text-base tracking-widest">ARQUEO Y CIERRE FINAL JORNADA</h1>
           </div>
           <div className="text-right">
@@ -605,62 +597,59 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
         <div className="fixed inset-0 bg-black/80 z-[200] flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl shadow-2xl max-w-lg w-full overflow-hidden flex flex-col animate-in zoom-in-95 duration-300">
             <div className="bg-[#1E3A8A] text-white p-4 text-center">
-              <div className="w-12 h-12 bg-white/10 rounded-full flex items-center justify-center mx-auto mb-2 border border-white/20">
-                <TrendingUp size={24} className="text-amber-400" />
+              <div className="w-10 h-10 bg-white/10 rounded-full flex items-center justify-center mx-auto mb-1 border border-white/20">
+                <TrendingUp size={20} className="text-amber-400" />
               </div>
-              <h2 className="text-xl font-black tracking-tight">RESUMEN DE JORNADA</h2>
-              <p className="text-blue-200 text-xs mt-0.5 uppercase font-bold tracking-widest">{closeReportData.terminal}</p>
+              <h2 className="text-lg font-black tracking-tight">RESUMEN DE JORNADA</h2>
+              <p className="text-blue-200 text-[10px] uppercase font-bold tracking-widest">{closeReportData.terminal}</p>
             </div>
             
-            <div className="p-4 space-y-4">
+            <div className="p-4 space-y-3">
               <div className="grid grid-cols-2 gap-3">
-                <div className="bg-slate-50 p-2.5 rounded-2xl border text-center">
+                <div className="bg-slate-50 p-2 rounded-xl border text-center">
                   <p className="text-[8px] font-black text-slate-400 uppercase">Artículos Vendidos</p>
-                  <p className="text-xl font-black text-slate-900">{closeReportData.productos.total}</p>
+                  <p className="text-lg font-black text-slate-900">{closeReportData.productos.total}</p>
                 </div>
-                <div className="bg-slate-50 p-2.5 rounded-2xl border text-center">
-                  <p className="text-[8px] font-black text-slate-400 uppercase">Recibos Emitidos</p>
-                  <p className="text-base font-black text-slate-900">#{closeReportData.recibos.last}</p>
+                <div className="bg-slate-50 p-2 rounded-xl border text-center">
+                  <p className="text-[8px] font-black text-slate-400 uppercase">Rango Recibos</p>
+                  <p className="text-[10px] font-black text-slate-900">#{closeReportData.recibos.first} - #{closeReportData.recibos.last}</p>
                 </div>
               </div>
 
               {closeReportData.productos.best && (
-                <div className="bg-amber-50 border-2 border-amber-100 rounded-2xl p-3 flex items-center gap-3">
-                  <div className="w-10 h-10 bg-amber-200 rounded-xl flex items-center justify-center shrink-0">
-                    <ShoppingBasket size={20} className="text-amber-700" />
+                <div className="bg-amber-50 border-2 border-amber-100 rounded-xl p-2 flex items-center gap-3">
+                  <div className="w-8 h-8 bg-amber-200 rounded-lg flex items-center justify-center shrink-0">
+                    <ShoppingBasket size={16} className="text-amber-700" />
                   </div>
                   <div className="min-w-0">
                     <p className="text-[8px] font-black text-amber-600 uppercase">Producto más vendido</p>
-                    <p className="text-sm font-black text-amber-900 truncate uppercase leading-tight">{closeReportData.productos.best.name}</p>
-                    <p className="text-[10px] font-bold text-amber-700">{closeReportData.productos.best.qty} unidades</p>
+                    <p className="text-xs font-black text-amber-900 truncate uppercase leading-tight">{closeReportData.productos.best.name}</p>
+                    <p className="text-[9px] font-bold text-amber-700">{closeReportData.productos.best.qty} unidades</p>
                   </div>
                 </div>
               )}
 
-              <div className="text-center py-4 bg-slate-900 rounded-3xl text-white shadow-xl relative overflow-hidden">
-                <div className="absolute top-0 right-0 p-3 opacity-10">
-                  <BarChart3 size={70} />
-                </div>
-                <p className="text-[9px] font-black uppercase tracking-widest text-white/50">Diferencia de Arqueo</p>
-                <p className={cn("text-4xl font-black mt-1", closeReportData.totales.diferencia > 0.01 ? "text-emerald-400" : closeReportData.totales.diferencia < -0.01 ? "text-red-400" : "text-blue-400")}>
-                  {Math.abs(closeReportData.totales.diferencia) < 0.01 ? '0,00' : (closeReportData.totales.diferencia > 0 ? '+' : '-') + formatBsNumber(Math.abs(closeReportData.totales.diferencia))}
+              <div className="text-center py-3 bg-slate-900 rounded-2xl text-white shadow-xl relative overflow-hidden">
+                <p className="text-[8px] font-black uppercase tracking-widest text-white/50">Diferencia de Arqueo</p>
+                <p className={cn("text-3xl font-black mt-1", closeReportData.totales.diferencia > 0.01 ? "text-emerald-400" : closeReportData.totales.diferencia < -0.01 ? "text-red-400" : "text-blue-400")}>
+                  {Math.abs(closeReportData.totales.diferencia) < 0.01 ? '✓' : (closeReportData.totales.diferencia > 0 ? '+' : '-') + formatBsNumber(Math.abs(closeReportData.totales.diferencia))}
                 </p>
-                <p className={cn("text-[10px] font-black mt-1 uppercase tracking-tighter", closeReportData.totales.diferencia > 0.01 ? "text-emerald-400" : closeReportData.totales.diferencia < -0.01 ? "text-red-400" : "text-blue-400")}>
+                <p className={cn("text-[9px] font-black mt-1 uppercase", closeReportData.totales.diferencia > 0.01 ? "text-emerald-400" : closeReportData.totales.diferencia < -0.01 ? "text-red-400" : "text-blue-400")}>
                   {closeReportData.totales.estado}
                 </p>
               </div>
 
               <div className="flex gap-2">
-                <Button onClick={handlePrint} className="flex-1 bg-slate-800 hover:bg-black text-white font-black h-10 text-xs"><Printer size={16} className="mr-2" /> PDF / IMPRIMIR</Button>
-                <Button onClick={generarReporte} variant="outline" className="flex-1 border-slate-300 font-bold h-10 text-xs"><Share2 size={16} className="mr-2" /> COMPARTIR</Button>
+                <Button onClick={handlePrint} className="flex-1 bg-slate-800 hover:bg-black text-white font-black h-9 text-[10px]"><Printer size={14} className="mr-2" /> PDF / IMPRIMIR</Button>
+                <Button onClick={generarReporte} variant="outline" className="flex-1 border-slate-300 font-bold h-9 text-[10px]"><Share2 size={14} className="mr-2" /> COMPARTIR</Button>
               </div>
               
               <Button 
                 onClick={finalizarCierre} 
                 disabled={isSubmitting}
-                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white h-12 text-base font-black rounded-2xl shadow-lg shadow-emerald-100"
+                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white h-10 text-sm font-black rounded-xl shadow-lg"
               >
-                {isSubmitting ? <Loader2 size={20} className="animate-spin" /> : 'FINALIZAR Y BLOQUEAR'}
+                {isSubmitting ? <Loader2 size={18} className="animate-spin" /> : 'FINALIZAR Y CERRAR SISTEMA'}
               </Button>
             </div>
           </div>

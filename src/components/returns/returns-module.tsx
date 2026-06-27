@@ -30,7 +30,7 @@ interface ReturnItem {
   amount: number;
 }
 
-type ReturnMethod = 'efectivo' | 'pago_movil' | 'nota_credito' | 'zelle' | 'tarjeta';
+type ReturnMethod = 'efectivo' | 'efectivo_usd' | 'pago_movil' | 'nota_credito' | 'zelle' | 'tarjeta';
 
 const RETURN_REASONS = [
   { id: 'defectuoso', label: 'Producto Defectuoso', type: 'merma' },
@@ -41,7 +41,8 @@ const RETURN_REASONS = [
 ];
 
 const returnMethodsList = [
-  { id: 'efectivo' as ReturnMethod, label: 'EFECTIVO', icon: Banknote, description: 'Resta del efectivo en caja' },
+  { id: 'efectivo' as ReturnMethod, label: 'EFECTIVO BS', icon: Banknote, description: 'Resta del efectivo en caja' },
+  { id: 'efectivo_usd' as ReturnMethod, label: 'EFECTIVO USD', icon: DollarSign, description: 'Reembolso en divisas' },
   { id: 'pago_movil' as ReturnMethod, label: 'PAGO MÓVIL', icon: Smartphone, description: 'Reversión bancaria' },
   { id: 'zelle' as ReturnMethod, label: 'ZELLE', icon: RefreshCw, description: 'Reversión de divisas' },
   { id: 'nota_credito' as ReturnMethod, label: 'NOTA CRÉDITO', icon: CreditCard, description: 'Saldo para cliente' },
@@ -210,7 +211,7 @@ export default function ReturnsModule() {
     setSelectedTransaction(tx);
     
     const originalMethod = tx.pay_method || tx.payMethod || 'efectivo_bs';
-    if (originalMethod === 'usd_efectivo') setSelectedMethod('efectivo');
+    if (originalMethod === 'usd_efectivo' || originalMethod === 'efectivo_usd') setSelectedMethod('efectivo_usd');
     else if (originalMethod === 'zelle') setSelectedMethod('zelle');
     else if (originalMethod === 'pago_movil') setSelectedMethod('pago_movil');
     else setSelectedMethod('efectivo');
@@ -290,17 +291,22 @@ export default function ReturnsModule() {
       const reasonLabel = RETURN_REASONS.find(r => r.id === selectedReason)?.label || 'Sin motivo';
       const returnReceiptNumber = nextReturnNumber;
 
+      const rate = selectedTransaction.exchangeRate || exchangeRate;
+      const totalUsdReturn = totalReturnAmount / rate;
+
       const returnItemsList: CartItem[] = returnItems.filter(i => i.returnQty > 0).map(i => ({
         productId: i.productId,
         name: i.name,
         priceBs: i.priceBs,
-        priceUsd: i.priceBs / (selectedTransaction.exchangeRate || exchangeRate),
+        priceUsd: i.priceBs / rate,
         qty: i.returnQty,
         category: getCategoryById('otros'),
         ivaType: 'sin_iva',
         ivaPercentage: 0,
         isKit: false
       }));
+
+      const finalReturnMethod = selectedMethod === 'efectivo' ? 'efectivo_bs' : selectedMethod;
 
       const returnTransaction = {
         id: Date.now(),
@@ -310,8 +316,8 @@ export default function ReturnsModule() {
         subtotal: totalReturnAmount,
         iva: 0,
         total: totalReturnAmount,
-        totalUsd: totalReturnAmount / (selectedTransaction.exchangeRate || exchangeRate),
-        payMethod: selectedMethod === 'efectivo' ? 'efectivo_bs' : selectedMethod,
+        totalUsd: totalUsdReturn,
+        payMethod: finalReturnMethod,
         paidBs: totalReturnAmount,
         change: 0,
         clientId: selectedTransaction.clientId || null,
@@ -319,12 +325,12 @@ export default function ReturnsModule() {
         originalSaleId: saleId,
         originalReceiptNumber: selectedTransaction.receiptNumber || selectedTransaction.receipt_number,
         receiptNumber: returnReceiptNumber,
-        returnMethod: selectedMethod,
+        returnMethod: finalReturnMethod,
         notes: `Motivo: ${reasonLabel}. Autorizado por supervisor.`,
         authorizedBy: 'Supervisor (PIN)',
         terminalId: currentTerminalName,
         sessionId: selectedTransaction.sessionId || selectedTransaction.session_id,
-        exchangeRate: selectedTransaction.exchangeRate || exchangeRate
+        exchangeRate: rate
       };
 
       // Preparar actualizaciones para la operación atómica
@@ -359,6 +365,8 @@ export default function ReturnsModule() {
         concept: `Devolución Recibo #${formatReceipt(selectedTransaction.receiptNumber || selectedTransaction.receipt_number)}`,
         description: `Cliente: ${selectedTransaction.clientName || 'Final'} - Motivo: ${reasonLabel}`,
         amount: totalReturnAmount,
+        totalUsd: totalUsdReturn,
+        exchangeRate: rate,
         referenceId: returnTransaction.id,
         referenceType: 'return',
         createdAt: new Date().toISOString()

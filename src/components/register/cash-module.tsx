@@ -149,9 +149,18 @@ export default function CashModule({ state }: CashModuleProps) {
     { id: 'zelle', label: 'ZELLE', icon: Plane, isUsd: true },
   ];
 
-  // ✅ Calcular rango de recibos de la jornada
+  // ✅ Calcular rango de recibos de la jornada (INCLUSIVO)
   const receiptRange = useMemo(() => {
-    const saleTxs = todaysTransactions.filter(t => t.type === 'contado' || t.type === 'credito');
+    // Incluir todos los tipos de transacciones que generan recibo
+    const saleTxs = todaysTransactions.filter(t => 
+      t.type === 'contado' || 
+      t.type === 'credito' || 
+      t.type === 'colaboracion' || 
+      t.type === 'consumo_propio' ||
+      t.type === 'devolucion' ||
+      t.type === 'cobro_deuda'
+    );
+    
     if (saleTxs.length === 0) return { first: '—', last: '—' };
     
     const nums = saleTxs.map(t => t.receiptNumber || t.receipt_number).filter(n => typeof n === 'number');
@@ -325,16 +334,19 @@ export default function CashModule({ state }: CashModuleProps) {
     }
     if (Array.isArray(payments) && payments.length > 0) {
       for (const p of payments) {
-        if (p.method === 'usd_efectivo' || p.method === 'zelle') hasUsd = true;
+        if (p.method === 'usd_efectivo' || p.method === 'zelle' || p.method === 'efectivo_usd') hasUsd = true;
         else hasBs = true;
       }
     } else {
       const method = tx.pay_method || tx.payMethod || '';
-      if (method === 'usd_efectivo' || method === 'zelle') hasUsd = true;
+      if (method === 'usd_efectivo' || method === 'zelle' || method === 'efectivo_usd') hasUsd = true;
       else hasBs = true;
     }
     if (hasBs && hasUsd) return 'MIXTO';
-    if (hasUsd) return (tx.pay_method || tx.payMethod) === 'zelle' ? 'ZELLE' : 'EFECTIVO USD';
+    if (hasUsd) {
+      const m = tx.pay_method || tx.payMethod;
+      return m === 'zelle' ? 'ZELLE' : 'EFECTIVO USD';
+    }
     const method = tx.pay_method || tx.payMethod || 'efectivo_bs';
     switch (method) {
       case 'efectivo_bs': return 'EFECTIVO BS';
@@ -355,7 +367,7 @@ export default function CashModule({ state }: CashModuleProps) {
       let totalUsdReceived = 0;
       let hasUsdMethod = false;
       for (const p of payments) {
-        if (p.method === 'usd_efectivo' || p.method === 'zelle') {
+        if (p.method === 'usd_efectivo' || p.method === 'zelle' || p.method === 'efectivo_usd') {
           hasUsdMethod = true;
           totalUsdReceived += p.usdAmount !== undefined ? p.usdAmount : (p.amount / (tx.exchangeRate || state.exchangeRate)) || 0;
         }
@@ -364,7 +376,7 @@ export default function CashModule({ state }: CashModuleProps) {
     }
     
     const method = tx.pay_method || tx.payMethod || '';
-    if (method === 'usd_efectivo' || method === 'zelle') {
+    if (method === 'usd_efectivo' || method === 'zelle' || method === 'efectivo_usd') {
       return tx.total_usd || tx.totalUsd || 0;
     }
     
@@ -378,11 +390,13 @@ export default function CashModule({ state }: CashModuleProps) {
     }
     if (Array.isArray(payments) && payments.length > 0) {
       let totalBs = 0;
-      for (const p of payments) if (p.method !== 'usd_efectivo' && p.method !== 'zelle') totalBs += p.amount || 0;
+      for (const p of payments) {
+        if (p.method !== 'usd_efectivo' && p.method !== 'zelle' && p.method !== 'efectivo_usd') totalBs += p.amount || 0;
+      }
       return totalBs;
     }
     const method = tx.pay_method || tx.payMethod || '';
-    if (method !== 'usd_efectivo' && method !== 'zelle') return tx.total || 0;
+    if (method !== 'usd_efectivo' && method !== 'zelle' && method !== 'efectivo_usd') return tx.total || 0;
     return 0;
   };
 
@@ -425,7 +439,7 @@ export default function CashModule({ state }: CashModuleProps) {
     <div className="h-full w-full overflow-y-auto overflow-x-hidden bg-[#F9F4E1]">
       <div className="min-h-full p-4 pb-8">
         <header className="bg-[#1E3A8A] text-white p-4 rounded-t-xl shadow-md text-center relative border-b-4 border-[#0284C7]">
-          <div className="absolute left-4 top-4 bg-amber-500 text-[10px] font-bold px-2 py-1 rounded text-slate-900">{terminalName}</div>
+          <div className="absolute left-4 top-4 bg-amber-50 text-[10px] font-bold px-2 py-1 rounded text-slate-900">{terminalName}</div>
           <h1 className="text-lg md:text-xl font-black tracking-wider uppercase">MasterPOS - Control de Caja</h1>
           <div className="flex items-center justify-center gap-2 mt-1">
             <p className="text-[10px] text-blue-200 font-mono flex items-center gap-1"><Clock size={10} /> {new Date().toLocaleDateString('es-VE')} • {new Date().toLocaleTimeString('es-VE')}</p>
@@ -467,7 +481,7 @@ export default function CashModule({ state }: CashModuleProps) {
               </div>
             </div>
             <div className="text-[10px] font-bold text-slate-400 italic">
-              * Correlativos aislados por terminal
+              * Rango incluye ventas, créditos, consumos y devoluciones
             </div>
           </div>
         )}
@@ -501,7 +515,7 @@ export default function CashModule({ state }: CashModuleProps) {
                       <tr key={id} className="hover:bg-slate-50"><td className="p-2"><div className="flex items-center gap-2"><Icon size={12} className="text-[#1E3A8A]" /><span className="font-bold">{label}</span></div></td><td className="p-2 text-right font-mono font-bold">{!isUsd ? formatBs(salesBreakdown.totalsBs[id] || 0) : '—'}</td><td className="p-2 text-right font-mono font-bold">{isUsd ? formatUsd(salesBreakdown.totalsUsd[id] || 0) : '—'}</td></tr>
                     ))}
                     <tr className="bg-blue-50/30 font-bold"><td className="p-2">VENTAS A CRÉDITO</td><td className="p-2 text-right font-mono text-blue-700">{formatBs(totalCreditoBs)}</td><td className="p-2 text-right">—</td></tr>
-                    <tr className="bg-red-50 text-red-700 font-bold"><td className="p-2">TOTAL DEVOLUCIONES</td><td className="p-2 text-right font-mono">{totalDevolucionesBs > 0 ? `-${formatBs(totalDevolucionesBs)}` : 'Bs. 0,00'}</td><td className="p-2 text-right">—</td></tr>
+                    <tr className="bg-red-50 text-red-700 font-bold"><td className="p-2">TOTAL DEVOLUCIONES</td><td className="p-2 text-right font-mono">{totalDevolucionesBs > 0 ? `-${formatBs(totalDevolucionesBs)}` : 'Bs. 0,00'}</td><td className="p-2 text-right">{totalDevolucionesUsd > 0 ? `-${formatUsd(totalDevolucionesUsd)}` : '—'}</td></tr>
                   </tbody>
                 </table>
               </div>

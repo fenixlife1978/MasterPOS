@@ -223,6 +223,12 @@ export default function CashModule({ state }: CashModuleProps) {
       .reduce((sum, t) => sum + (t.total || 0), 0)
   , [todaysTransactions]);
 
+  const totalDevolucionesUsd = useMemo(() => 
+    todaysTransactions
+      .filter(t => t.type === 'devolucion')
+      .reduce((sum, t) => sum + (t.totalUsd || 0), 0)
+  , [todaysTransactions]);
+
   const totalContadoBs = useMemo(() => {
     let total = 0;
     for (const m of paymentMethods.filter(p => !p.isUsd)) {
@@ -239,8 +245,9 @@ export default function CashModule({ state }: CashModuleProps) {
     return total;
   }, [salesBreakdown]);
 
-  const totalEnCaja = (reg?.openAmountBs || 0) + totalContadoBs;
-  const totalEnCajaUSD = (reg?.openAmountUsd || 0) + totalContadoUsd;
+  // ✅ CORREGIDO: El total en caja debe restar las devoluciones del periodo
+  const totalEnCaja = (reg?.openAmountBs || 0) + totalContadoBs - totalDevolucionesBs;
+  const totalEnCajaUSD = (reg?.openAmountUsd || 0) + totalContadoUsd - totalDevolucionesUsd;
 
   const handleOpenCash = async () => {
     const bsAmount = parseFloat(openAmountBs) || 0;
@@ -567,7 +574,10 @@ export default function CashModule({ state }: CashModuleProps) {
 
                 {txItems.length > 0 && (
                   <div>
-                    <h4 className="text-xs font-black uppercase text-black/60 flex items-center gap-2 mb-3"><Package size={14} className="text-primary" /> Productos Vendidos</h4>
+                    <h4 className="text-xs font-black uppercase text-black/60 flex items-center gap-2 mb-3">
+                      <Package size={14} className="text-primary" /> 
+                      {selectedTransaction.type === 'devolucion' ? 'Productos Devueltos' : 'Productos Vendidos'}
+                    </h4>
                     <div className="border border-[#9E9E9E] rounded-xl overflow-hidden shadow-sm">
                       <table className="w-full text-sm">
                         <thead className="bg-[#E8E8E8]"><tr className="text-[10px] font-black uppercase"><th className="text-left p-3">Producto</th><th className="text-center p-3">Cant.</th><th className="text-center p-3">U.M.</th><th className="text-right p-3">Total Bs</th></tr></thead>

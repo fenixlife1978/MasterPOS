@@ -444,9 +444,6 @@ export default function ReturnsModule() {
               </select>
             </div>
           )}
-          <Button onClick={() => window.location.reload()} variant="outline" className="h-10 text-[10px] font-black border-[#9E9E9E]">
-            <RefreshCw size={14} className="mr-2" /> REFRESCAR SISTEMA
-          </Button>
         </div>
       </div>
 
@@ -493,6 +490,7 @@ export default function ReturnsModule() {
                   placeholder={activeTab === 'process' ? "Ej: 00000019" : "Ej: 000001"}
                   className="pl-10 h-11 text-base font-mono font-bold border-slate-300 focus:border-red-500 focus:ring-red-500/20"
                   onKeyDown={(e) => e.key === 'Enter' && handleSearchByReceipt()}
+                  autoComplete="off"
                 />
               </div>
               <Button onClick={handleSearchByReceipt} className="h-11 px-6 bg-slate-900 text-white font-black hover:bg-black">
@@ -630,8 +628,8 @@ export default function ReturnsModule() {
                     <p className="font-bold">{new Date(viewingReturnDetail.date).toLocaleString('es-VE')}</p>
                   </div>
                   <div>
-                    <label className="text-[9px] font-black text-black/40 uppercase">Venta Original</label>
-                    <p className="font-bold">Recibo #{formatReceipt(viewingReturnDetail.originalReceiptNumber)}</p>
+                    <label className="text-[9px] font-black text-black/40 uppercase">Concepto</label>
+                    <p className="font-bold">Devolución Recibo #{formatReceipt(viewingReturnDetail.originalReceiptNumber)}</p>
                   </div>
                   <div>
                     <label className="text-[9px] font-black text-black/40 uppercase">Método de Reembolso</label>

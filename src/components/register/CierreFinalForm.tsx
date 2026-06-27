@@ -6,9 +6,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import syncService from '@/services/syncService';
-import { Printer, Share2, X, ShoppingBasket, Hash, TrendingUp } from 'lucide-react';
+import { Printer, Share2, X, ShoppingBasket, Hash, TrendingUp, BarChart3, Loader2 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
-import { formatBs, formatUsd, formatBsNumber } from '@/lib/currency-formatter';
+import { formatBs, formatUsd, formatBsNumber, formatUsdNumber } from '@/lib/currency-formatter';
 
 interface CierreFinalFormProps {
   onClose: () => void;
@@ -104,7 +104,6 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
     return txDay.reduce((sum, t) => sum + t.total, 0);
   }, [reg?.txs]);
 
-  // ✅ Calcular estadísticas de productos y rango de recibos
   const productStats = useMemo(() => {
     if (!reg?.txs) return { items: [], total: 0, best: null };
     const todayVzla = getVenezuelaToday();
@@ -280,6 +279,7 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
   const aperturaBs = reg?.openAmountBs ?? 0;
   const aperturaUsd = reg?.openAmountUsd ?? 0;
   const horaApertura = reg?.openTime ? new Date(reg.openTime).toLocaleTimeString('es-VE', { timeZone: 'America/Caracas', hour: '2-digit', minute: '2-digit' }) : '—';
+  const horaUltimaActualizacion = new Date().toLocaleTimeString('es-VE', { timeZone: 'America/Caracas', hour: '2-digit', minute: '2-digit' });
 
   const totalCashUsd = useMemo(() => {
     let total = aperturaUsd;

@@ -24,8 +24,6 @@ function getVenezuelaISOString(): string {
   return `${partMap.year}-${partMap.month}-${partMap.day}T${partMap.hour}:${partMap.minute}:${partMap.second}.${partMap.fractionalSecond}-04:00`;
 }
 
-const now = new Date();
-
 function getVenezuelaTimestamp(): number {
   return Date.now();
 }
@@ -59,8 +57,6 @@ export function usePOSState() {
   const [adminCode, setAdminCode] = useState<string>('');
   const [currentSession, setCurrentSession] = useState<any | null>(authActiveSession);
 
-  const pendingKardexEntries = useRef<any[]>([]);
-  const pendingAccountingEntries = useRef<any[]>([]);
   const isUpdatingRef = useRef(false);
 
   const saveRegisterToLocalStorage = useCallback((registerData: CashRegister | null) => {
@@ -285,6 +281,35 @@ export function usePOSState() {
       }
     };
   }, [user]);
+
+  // ✅ Sincronización de precios en tiempo real para el carrito
+  useEffect(() => {
+    if (!isHydrated || products.length === 0 || cart.length === 0) return;
+
+    setCart(prevCart => {
+      let hasChanges = false;
+      const updatedCart = prevCart.map(item => {
+        const product = products.find(p => p.id === item.productId);
+        if (product) {
+          const masterPriceUsd = product.priceUsd;
+          const masterPriceBs = product.priceBs;
+          
+          // Solo actualizamos si el precio maestro ha cambiado respecto al que tiene el item en el carrito
+          if (item.priceUsd !== masterPriceUsd || item.priceBs !== masterPriceBs) {
+            hasChanges = true;
+            return {
+              ...item,
+              priceUsd: masterPriceUsd,
+              priceBs: masterPriceBs
+            };
+          }
+        }
+        return item;
+      });
+
+      return hasChanges ? updatedCart : prevCart;
+    });
+  }, [products, isHydrated]); // Se dispara cada vez que el catálogo de productos cambie
 
   useEffect(() => {
     if (products.length > 0 && !isUpdatingRef.current) {
@@ -831,11 +856,9 @@ export function usePOSState() {
     }
   }, [recalcAllPricesWithNewRate]);
 
-  const getPendingKardexEntries = useCallback(() => pendingKardexEntries.current, []);
-  const getPendingAccountingEntries = useCallback(() => pendingAccountingEntries.current, []);
-  const clearPendingEntries = useCallback(() => {
-    pendingKardexEntries.current = [];
-    pendingAccountingEntries.current = [];
+  const refreshProductsList = useCallback(async () => {
+    const newProducts = await syncService.getProducts();
+    setProducts(newProducts);
   }, []);
 
   return {
@@ -848,7 +871,6 @@ export function usePOSState() {
     finalizeSale, applyAbono, registerCashEgress,
     isHydrated, globalIvaPercentage, adminCode, checkProductStock, refreshProducts,
     currentSession, setCurrentSession, reloadSession, createCashSession, closeCashSession,
-    getPendingKardexEntries, getPendingAccountingEntries, clearPendingEntries,
     refreshAllData,
   };
 }

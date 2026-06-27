@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useMemo, useCallback, useEffect } from 'react';
@@ -18,7 +19,7 @@ import { Transaction, CartItem, getCategoryById } from '@/lib/types';
 import syncService from '@/services/syncService';
 import { formatBs, formatUsd } from '@/lib/currency-formatter';
 import { useAuth } from '@/context/AuthContext';
-import { getDatabase, ref, get, update } from 'firebase/database';
+import { getDatabase, ref, update } from 'firebase/database';
 import app from '@/lib/firebase';
 
 interface ReturnItem {
@@ -148,58 +149,41 @@ export default function ReturnsModule() {
     return currentTerminalName;
   }, [isAdmin, selectedTerminal, currentTerminalName]);
 
-  const loadTransactions = useCallback(async () => {
-    setIsLoading(true);
-    setMessage(null);
-    
-    try {
-      const targetTerminalName = getTargetTerminalName();
-      const db = getDatabase(app);
-      const snapshot = await get(ref(db, 'transactions'));
-      
-      let transactions: any[] = [];
-      
-      if (snapshot.exists()) {
-        const data = snapshot.val();
-        transactions = Object.entries(data).map(([id, tx]) => ({ 
-          id: id, 
-          ...(tx as any) 
-        }));
-        
-        transactions = transactions.filter(tx => {
-          const tid = tx.terminalId || tx.terminal_id || extractTerminalIdFromSession(tx.sessionId || tx.session_id);
-          const matchesTerminal = !targetTerminalName || tid === targetTerminalName || tid === user?.terminalId;
-          const txDate = getLocalDateStr(tx.date);
-          const matchesDate = txDate >= startDate && txDate <= endDate;
-          return matchesTerminal && matchesDate;
-        });
-        
-        transactions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-      }
-      
-      setAllTransactions(transactions);
-      
-    } catch (error) {
-      console.error('Error cargando transacciones:', error);
-      setMessage({ type: 'error', text: 'Error cargando transacciones' });
-    } finally {
-      setIsLoading(false);
-    }
-  }, [getTargetTerminalName, startDate, endDate, user?.terminalId]);
-
+  // ✅ Suscripción en tiempo real a las transacciones con filtros aplicados
   useEffect(() => {
-    loadTransactions();
-  }, [loadTransactions]);
+    setIsLoading(true);
+    const targetTerminalName = getTargetTerminalName();
+    
+    const unsubscribe = syncService.subscribeToTransactions((data: any[]) => {
+      const filtered = data.filter(tx => {
+        const tid = tx.terminalId || tx.terminal_id || extractTerminalIdFromSession(tx.sessionId || tx.session_id);
+        const matchesTerminal = !targetTerminalName || tid === targetTerminalName || tid === user?.terminalId;
+        const txDate = getLocalDateStr(tx.date);
+        const matchesDate = txDate >= startDate && txDate <= endDate;
+        
+        // Si hay búsqueda por recibo, aplicar filtro adicional
+        const receiptQuery = searchReceipt.trim();
+        if (receiptQuery) {
+          const num = parseInt(receiptQuery);
+          const txReceipt = tx.receiptNumber || tx.receipt_number;
+          if (txReceipt !== num) return false;
+        }
+
+        return matchesTerminal && matchesDate;
+      });
+      
+      filtered.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      setAllTransactions(filtered);
+      setIsLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, [getTargetTerminalName, startDate, endDate, user?.terminalId, searchReceipt]);
 
   const salesTransactions = useMemo(() => {
     return allTransactions.filter(tx => {
-      // No mostrar devoluciones en la pestaña de procesar
       if (tx.type === 'devolucion') return false;
-      
-      // ✅ REGLA DE ORO: Excluir Deudas Iniciales (registradas vía modulo de cuentas)
-      // Estas deudas no deben aparecer porque no son ventas generadas en el POS actual.
       if ((tx.notes || '').includes('DEUDA INICIAL')) return false;
-      
       return true;
     });
   }, [allTransactions]);
@@ -209,35 +193,13 @@ export default function ReturnsModule() {
   }, [allTransactions]);
 
   const handleSearchByReceipt = useCallback(() => {
-    const receiptQuery = searchReceipt.trim();
-    if (!receiptQuery) {
-      loadTransactions();
-      return;
+    // La búsqueda se maneja automáticamente por el efecto de suscripción
+    // ya que searchReceipt está en sus dependencias.
+    setMessage(null);
+    if (searchReceipt.trim() && allTransactions.length === 0) {
+      setMessage({ type: 'error', text: `No se encontró el registro #${formatReceipt(searchReceipt)} en los filtros actuales.` });
     }
-    
-    const targetTerminalName = getTargetTerminalName();
-    const num = parseInt(receiptQuery);
-    
-    const found = allTransactions.filter(tx => {
-      const txReceipt = tx.receiptNumber || tx.receipt_number;
-      const tid = tx.terminalId || tx.terminal_id || extractTerminalIdFromSession(tx.sessionId || tx.session_id);
-      
-      const matchesReceipt = txReceipt === num;
-      const matchesTerminal = !targetTerminalName || tid === targetTerminalName || tid === user?.terminalId;
-      const matchesType = activeTab === 'process' ? tx.type !== 'devolucion' : tx.type === 'devolucion';
-      
-      // ✅ Excluir Deudas Iniciales al buscar una venta original
-      if (activeTab === 'process' && (tx.notes || '').includes('DEUDA INICIAL')) return false;
-
-      return matchesReceipt && matchesTerminal && matchesType;
-    });
-    
-    if (found.length === 0) {
-      setMessage({ type: 'error', text: `No se encontró el registro #${formatReceipt(num)} en esta terminal.` });
-    } else {
-      setMessage(null);
-    }
-  }, [allTransactions, searchReceipt, loadTransactions, getTargetTerminalName, user?.terminalId, activeTab]);
+  }, [allTransactions.length, searchReceipt]);
 
   const openReturnModal = (tx: any) => {
     if (tx.return_status === 'total') {
@@ -427,8 +389,7 @@ export default function ReturnsModule() {
       }
 
       setMessage({ type: 'success', text: `✅ Devolución DEV-${returnReceiptNumber.toString().padStart(6, '0')} procesada correctamente.` });
-      setSearchReceipt(''); // Limpiar buscador
-      loadTransactions();
+      setSearchReceipt('');
       setTimeout(() => {
         setShowReturnModal(false);
         setSelectedTransaction(null);
@@ -459,7 +420,7 @@ export default function ReturnsModule() {
               <ArrowLeftRight size={24} className="text-red-600" />
             </div>
             <div>
-              <h2 className="text-2xl font-black text-red-900 tracking-tight tracking-tight uppercase">Módulo de Devoluciones</h2>
+              <h2 className="text-2xl font-black text-red-900 tracking-tight uppercase">Módulo de Devoluciones</h2>
               <p className="text-[11px] font-bold text-red-600 uppercase tracking-widest">
                 Terminal: {currentTerminalName} • {activeTab === 'process' ? 'Paso 1: Localizar Venta' : 'Historial de Operaciones'}
               </p>
@@ -483,8 +444,8 @@ export default function ReturnsModule() {
               </select>
             </div>
           )}
-          <Button onClick={loadTransactions} variant="outline" className="h-10 text-[10px] font-black border-[#9E9E9E]">
-            <RefreshCw size={14} className="mr-2" /> RECARGAR
+          <Button onClick={() => window.location.reload()} variant="outline" className="h-10 text-[10px] font-black border-[#9E9E9E]">
+            <RefreshCw size={14} className="mr-2" /> REFRESCAR SISTEMA
           </Button>
         </div>
       </div>
@@ -529,7 +490,7 @@ export default function ReturnsModule() {
                 <Input 
                   value={searchReceipt}
                   onChange={(e) => setSearchReceipt(e.target.value)}
-                  placeholder={activeTab === 'process' ? "Ej: 00000019" : "Ej: DEV-000001"}
+                  placeholder={activeTab === 'process' ? "Ej: 00000019" : "Ej: 000001"}
                   className="pl-10 h-11 text-base font-mono font-bold border-slate-300 focus:border-red-500 focus:ring-red-500/20"
                   onKeyDown={(e) => e.key === 'Enter' && handleSearchByReceipt()}
                 />
@@ -540,12 +501,13 @@ export default function ReturnsModule() {
             </div>
           </div>
           <div>
-            <label className="text-[9px] font-black text-black/40 uppercase block mb-1">Filtrar Fecha</label>
+            <label className="text-[9px] font-black text-black/40 uppercase block mb-1">Desde Fecha</label>
             <Input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="h-11 font-bold" />
           </div>
-          <Button variant="ghost" onClick={() => { setSearchReceipt(''); loadTransactions(); }} className="h-11 text-xs font-bold text-slate-500 hover:text-red-600">
-            Limpiar Filtros
-          </Button>
+          <div>
+            <label className="text-[9px] font-black text-black/40 uppercase block mb-1">Hasta Fecha</label>
+            <Input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="h-11 font-bold" />
+          </div>
         </div>
       </div>
 
@@ -562,7 +524,12 @@ export default function ReturnsModule() {
 
       <div className="flex-1 bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-lg flex flex-col">
         <div className="flex-1 overflow-y-auto scrollbar-thin">
-          {activeTab === 'process' ? (
+          {isLoading ? (
+            <div className="flex flex-col items-center justify-center py-20 gap-4">
+              <Loader2 className="animate-spin text-red-600" size={32} />
+              <p className="text-sm font-bold text-slate-500">Actualizando datos en tiempo real...</p>
+            </div>
+          ) : activeTab === 'process' ? (
             <Table>
               <TableHeader className="bg-slate-50 sticky top-0 z-10">
                 <TableRow>
@@ -641,7 +608,7 @@ export default function ReturnsModule() {
         </div>
       </div>
 
-      {/* Modal Detalle de Devolución Procesada */}
+      {/* Modales de detalle y procesamiento (sin cambios en su lógica interna) */}
       <Dialog open={!!viewingReturnDetail} onOpenChange={() => setViewingReturnDetail(null)}>
         <DialogContent className="max-w-2xl p-0 overflow-hidden rounded-2xl shadow-xl">
           <div className="flex flex-col">
@@ -717,7 +684,6 @@ export default function ReturnsModule() {
         </DialogContent>
       </Dialog>
 
-      {/* Modal Procesar Devolución */}
       <Dialog open={showReturnModal} onOpenChange={setShowReturnModal}>
         <DialogContent className="max-w-4xl p-0 overflow-hidden rounded-3xl border-none shadow-2xl">
           <div className="flex flex-col h-[90vh]">
@@ -793,12 +759,6 @@ export default function ReturnsModule() {
                   <div className="bg-red-600 rounded-2xl p-5 text-white shadow-lg shadow-red-200">
                     <p className="text-[10px] font-black uppercase opacity-70 tracking-widest">Total a Reembolsar</p>
                     <p className="text-4xl font-black mt-1 leading-none">{formatBs(totalReturnAmount)}</p>
-                    <div className="mt-3 pt-3 border-t border-white/20 text-xs">
-                      <div className="flex justify-between opacity-80">
-                        <span>Items seleccionados:</span>
-                        <span className="font-bold">{returnItems.reduce((s, i) => s + i.returnQty, 0)} uds</span>
-                      </div>
-                    </div>
                   </div>
 
                   <div className="bg-white border-2 border-slate-200 rounded-2xl p-4 shadow-sm">
@@ -826,7 +786,6 @@ export default function ReturnsModule() {
                       <h4 className="text-[10px] font-black uppercase text-amber-700">Paso 5: Autorización de Supervisor</h4>
                     </div>
                     <Input type="password" maxLength={6} value={authPin} onChange={e => setAuthPin(e.target.value.replace(/\D/g, ''))} className="h-12 text-center text-2xl font-mono font-black border-amber-300 bg-white tracking-[0.5em] focus:ring-amber-500/20" placeholder="••••••" />
-                    <p className="text-[9px] text-amber-600 mt-2 flex items-center gap-1"><Info size={10} /> Ingrese el PIN para validar auditoría</p>
                   </div>
                 </div>
               </div>

@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useMemo, useCallback, useEffect } from 'react';
@@ -7,7 +6,7 @@ import {
   Search, X, CheckCircle, AlertCircle, Receipt, User, 
   Calendar, Banknote, Minus, Plus, RefreshCw, Smartphone, 
   CreditCard, Monitor, Loader2, Terminal, ShieldCheck, 
-  AlertTriangle, ArrowLeftRight, Info
+  AlertTriangle, ArrowLeftRight, Info, Package
 } from 'lucide-react';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';

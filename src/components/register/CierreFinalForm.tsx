@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import syncService from '@/services/syncService';
-import { Printer, Share2, X } from 'lucide-react';
+import { Printer, Share2, X, ShoppingBasket, Hash, TrendingUp } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { formatBs, formatUsd, formatBsNumber } from '@/lib/currency-formatter';
 
@@ -71,6 +71,7 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
   const state = usePOSState();
   const { user, logout } = useAuth();
   const terminalId = user?.terminalId || 'default';
+  const terminalName = user?.terminalName || 'Principal';
   const [conteoFisico, setConteoFisico] = useState<Record<string, number>>({});
   const [isConciliado, setIsConciliado] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -101,6 +102,58 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
       return txDateStr === todayVzla && t.type === 'credito';
     });
     return txDay.reduce((sum, t) => sum + t.total, 0);
+  }, [reg?.txs]);
+
+  // ✅ Calcular estadísticas de productos y rango de recibos
+  const productStats = useMemo(() => {
+    if (!reg?.txs) return { items: [], total: 0, best: null };
+    const todayVzla = getVenezuelaToday();
+    const txDay = reg.txs.filter((t: any) => {
+      const txDate = new Date(t.date);
+      const formatter = new Intl.DateTimeFormat('fr-CA', { timeZone: 'America/Caracas', year: 'numeric', month: '2-digit', day: '2-digit' });
+      return formatter.format(txDate) === todayVzla && (t.type === 'contado' || t.type === 'credito');
+    });
+
+    const counts: Record<string, number> = {};
+    let totalQty = 0;
+
+    txDay.forEach(tx => {
+      let items = tx.items || [];
+      if (typeof items === 'string') {
+        try { items = JSON.parse(items); } catch(e) { items = []; }
+      }
+      items.forEach((item: any) => {
+        counts[item.name] = (counts[item.name] || 0) + item.qty;
+        totalQty += item.qty;
+      });
+    });
+
+    const items = Object.entries(counts).map(([name, qty]) => ({ name, qty }))
+      .sort((a, b) => b.qty - a.qty);
+
+    return {
+      items,
+      total: totalQty,
+      best: items.length > 0 ? items[0] : null
+    };
+  }, [reg?.txs]);
+
+  const receiptRange = useMemo(() => {
+    if (!reg?.txs) return { first: '—', last: '—' };
+    const todayVzla = getVenezuelaToday();
+    const txDay = reg.txs.filter((t: any) => {
+      const txDate = new Date(t.date);
+      const formatter = new Intl.DateTimeFormat('fr-CA', { timeZone: 'America/Caracas', year: 'numeric', month: '2-digit', day: '2-digit' });
+      return formatter.format(txDate) === todayVzla && (t.type === 'contado' || t.type === 'credito');
+    });
+    
+    const nums = txDay.map(t => t.receiptNumber || t.receipt_number).filter(n => typeof n === 'number');
+    if (nums.length === 0) return { first: '—', last: '—' };
+    
+    return {
+      first: Math.min(...nums).toString().padStart(8, '0'),
+      last: Math.max(...nums).toString().padStart(8, '0')
+    };
   }, [reg?.txs]);
 
   useEffect(() => {
@@ -164,70 +217,18 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
       const isMorning = hour < 12;
 
       if (tx.type === 'devolucion') {
-        let methodDetected = null;
-        let amountBs = 0;
-        let amountUsd = 0;
-
-        // 1) Intentar desde payments
+        let methodDetected = tx.payMethod || 'efectivo_bs';
         if (tx.payments && Array.isArray(tx.payments) && tx.payments.length > 0) {
-          for (const payment of tx.payments) {
-            const method = payment.method;
-            if (method) {
-              methodDetected = method;
-              if (method === 'usd_efectivo' || method === 'zelle') {
-                amountUsd += payment.usdAmount !== undefined ? payment.usdAmount : (payment.amount || 0);
-              } else {
-                amountBs += payment.amount || 0;
-              }
-            }
-          }
-        }
-        
-        // 2) Si no hay payments, usar payMethod
-        if (!methodDetected && tx.payMethod) {
-          methodDetected = tx.payMethod;
-          if (methodDetected === 'usd_efectivo' || methodDetected === 'zelle') {
-            amountUsd = tx.totalUsd || 0;
-          } else {
-            amountBs = tx.total || 0;
-          }
-        }
-        
-        // 3) Si aún no hay método, inferir por moneda
-        if (!methodDetected) {
-          if (tx.totalUsd && tx.totalUsd > 0) {
-            methodDetected = 'usd_efectivo';
-            amountUsd = tx.totalUsd;
-          } else if (tx.total && tx.total > 0) {
-            methodDetected = 'efectivo_bs';
-            amountBs = tx.total;
-          }
+          methodDetected = tx.payments[0].method;
         }
 
-        // 4) Último recurso: efectivo_bs
-        if (!methodDetected) {
-          methodDetected = 'efectivo_bs';
-          amountBs = tx.total || 0;
-        }
+        if (!devolucionesTotales[methodDetected]) devolucionesTotales[methodDetected] = { bs: 0, usd: 0 };
 
-        // ✅ Asegurar que el método existe en devolucionesTotales (crear si no existe)
-        if (!devolucionesTotales[methodDetected]) {
-          devolucionesTotales[methodDetected] = { bs: 0, usd: 0 };
-          // También extender ventasAM y ventasPM para que aparezcan en la tabla
-          if (!ventasAM[methodDetected]) ventasAM[methodDetected] = { bs: 0, usd: 0 };
-          if (!ventasPM[methodDetected]) ventasPM[methodDetected] = { bs: 0, usd: 0 };
-          if (vueltosAM[methodDetected] === undefined) vueltosAM[methodDetected] = 0;
-          if (vueltosPM[methodDetected] === undefined) vueltosPM[methodDetected] = 0;
-        }
-
-        // Sumar al método detectado
         if (methodDetected === 'usd_efectivo' || methodDetected === 'zelle') {
-          devolucionesTotales[methodDetected].usd += amountUsd;
+          devolucionesTotales[methodDetected].usd += tx.totalUsd || 0;
         } else {
-          devolucionesTotales[methodDetected].bs += amountBs;
+          devolucionesTotales[methodDetected].bs += tx.total || 0;
         }
-
-        console.log(`[CIERRE] Devolución detectada: método=${methodDetected}, Bs=${amountBs}, USD=${amountUsd}`);
         continue;
       }
 
@@ -240,18 +241,12 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
           const isUsd = method === 'usd_efectivo' || method === 'zelle';
           if (isUsd) {
             const usdAmount = payment.usdAmount !== undefined ? payment.usdAmount : payment.amount;
-            if (isMorning) {
-              ventasAM[method].usd += usdAmount;
-            } else {
-              ventasPM[method].usd += usdAmount;
-            }
+            if (isMorning) ventasAM[method].usd += usdAmount;
+            else ventasPM[method].usd += usdAmount;
           } else {
             const bsAmount = payment.amount || 0;
-            if (isMorning) {
-              ventasAM[method].bs += bsAmount;
-            } else {
-              ventasPM[method].bs += bsAmount;
-            }
+            if (isMorning) ventasAM[method].bs += bsAmount;
+            else ventasPM[method].bs += bsAmount;
           }
         }
       } else {
@@ -259,28 +254,19 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
         const isUsd = method === 'usd_efectivo' || method === 'zelle';
         if (isUsd) {
           const usdAmount = tx.totalUsd || 0;
-          if (isMorning) {
-            ventasAM[method].usd += usdAmount;
-          } else {
-            ventasPM[method].usd += usdAmount;
-          }
+          if (isMorning) ventasAM[method].usd += usdAmount;
+          else ventasPM[method].usd += usdAmount;
         } else {
           const bsAmount = tx.type === 'cobro_deuda' ? (tx.paidBs || tx.total || 0) : (tx.total || 0);
-          if (isMorning) {
-            ventasAM[method].bs += bsAmount;
-          } else {
-            ventasPM[method].bs += bsAmount;
-          }
+          if (isMorning) ventasAM[method].bs += bsAmount;
+          else ventasPM[method].bs += bsAmount;
         }
       }
 
       const change = tx.change || 0;
       if (change > 0) {
-        if (isMorning) {
-          vueltosAM['efectivo_bs'] += change;
-        } else {
-          vueltosPM['efectivo_bs'] += change;
-        }
+        if (isMorning) vueltosAM['efectivo_bs'] += change;
+        else vueltosPM['efectivo_bs'] += change;
       }
     }
 
@@ -302,14 +288,11 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
       reg.txs.forEach((t: any) => {
         const txDate = new Date(t.date);
         const formatter = new Intl.DateTimeFormat('fr-CA', { timeZone: 'America/Caracas', year: 'numeric', month: '2-digit', day: '2-digit' });
-        const txDateStr = formatter.format(txDate);
-        if (txDateStr !== todayVzla) return;
+        if (formatter.format(txDate) !== todayVzla) return;
         if (t.type !== 'contado') return;
         if (t.payments) {
           t.payments.forEach((p: any) => {
-            if (p.method === 'usd_efectivo') {
-              total += p.usdAmount !== undefined ? p.usdAmount : (p.amount || 0);
-            }
+            if (p.method === 'usd_efectivo') total += p.usdAmount !== undefined ? p.usdAmount : (p.amount || 0);
           });
         } else if (t.payMethod === 'usd_efectivo') {
           total += t.totalUsd || 0;
@@ -319,12 +302,10 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
     return total;
   }, [reg, aperturaUsd]);
 
-  // Generar dinámicamente la lista de métodos a partir de las devoluciones y ventas
   const allMethodsSet = new Set<string>();
   Object.keys(devoluciones).forEach(m => allMethodsSet.add(m));
   Object.keys(ventasManana).forEach(m => allMethodsSet.add(m));
   Object.keys(ventasTarde).forEach(m => allMethodsSet.add(m));
-  // Métodos fijos base
   const baseMethods = ['efectivo_bs', 'usd_efectivo', 'tarjeta', 'biopago', 'pago_movil', 'zelle'];
   baseMethods.forEach(m => allMethodsSet.add(m));
   
@@ -338,11 +319,7 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
     else if (key === 'biopago') { metodo = 'BIOPAGO'; isUsd = false; saldoInicialVal = 0; }
     else if (key === 'pago_movil') { metodo = 'PAGO MÓVIL'; isUsd = false; saldoInicialVal = 0; }
     else if (key === 'zelle') { metodo = 'ZELLE'; isUsd = true; saldoInicialVal = 0; }
-    else { 
-      metodo = key.toUpperCase(); 
-      isUsd = false; 
-      saldoInicialVal = 0; 
-    }
+    else { metodo = key.toUpperCase(); isUsd = false; saldoInicialVal = 0; }
     return { metodo, key, isUsd, saldoInicialVal };
   });
 
@@ -355,71 +332,34 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
     const vueltosTardeVal = vueltosTarde[pm.key] || 0;
     const devolucionesVal = devoluciones[pm.key] || { bs: 0, usd: 0 };
     
-    let totalVentasMoneda: number;
-    if (isUsd) {
-      totalVentasMoneda = (ventasMananaVal.usd || 0) + (ventasTardeVal.usd || 0);
-    } else {
-      totalVentasMoneda = (ventasMananaVal.bs || 0) + (ventasTardeVal.bs || 0);
-    }
+    let totalVentasMoneda = isUsd ? (ventasMananaVal.usd + ventasTardeVal.usd) : (ventasMananaVal.bs + ventasTardeVal.bs);
     const totalVueltos = vueltosMananaVal + vueltosTardeVal;
-    const totalDevolucionesMoneda = isUsd ? (devolucionesVal.usd || 0) : (devolucionesVal.bs || 0);
+    const totalDevolucionesMoneda = isUsd ? devolucionesVal.usd : devolucionesVal.bs;
     
-    let sistemaMoneda: number;
-    if (isUsd) {
-      sistemaMoneda = saldoInicial + totalVentasMoneda - totalDevolucionesMoneda;
-    } else {
-      sistemaMoneda = saldoInicial + totalVentasMoneda - totalVueltos - totalDevolucionesMoneda;
-    }
+    let sistemaMoneda = isUsd ? (saldoInicial + totalVentasMoneda - totalDevolucionesMoneda) : (saldoInicial + totalVentasMoneda - totalVueltos - totalDevolucionesMoneda);
     
-    const fisicoIngresado = conteoFisico[pm.key] ?? 0;
-    const fisico = fisicoIngresado;
+    const fisico = conteoFisico[pm.key] ?? 0;
     const diff = fisico - sistemaMoneda;
     
-    return {
-      ...pm,
-      saldoInicial,
-      totalVentasMoneda,
-      totalVueltos,
-      totalDevolucionesMoneda,
-      sistemaMoneda,
-      fisicoIngresado,
-      fisico,
-      diff,
-    };
+    return { ...pm, saldoInicial, totalVentasMoneda, totalVueltos, totalDevolucionesMoneda, sistemaMoneda, fisico, diff };
   });
 
-  const tasaManana = morningRate || tasaActual;
-  const tasaTarde = eveningRate || tasaActual;
-  const tasaCierre = tasaActual;
-  const horaUltimaActualizacion = eveningFirstTxTime ? getVenezuelaTimeString(eveningFirstTxTime) : horaApertura;
-  
-  const totalSistBs = rows.reduce((sum, r) => {
-    if (r.isUsd) {
-      return sum + (r.sistemaMoneda * tasaCierre);
-    } else {
-      return sum + r.sistemaMoneda;
-    }
-  }, 0);
-  
-  const totalFisBs = rows.reduce((sum, r) => {
-    if (r.isUsd) {
-      return sum + (r.fisico * tasaCierre);
-    } else {
-      return sum + r.fisico;
-    }
-  }, 0);
+  const totalSistBs = rows.reduce((sum, r) => sum + (r.isUsd ? r.sistemaMoneda * tasaActual : r.sistemaMoneda), 0);
+  const totalFisBs = rows.reduce((sum, r) => sum + (r.isUsd ? r.fisico * tasaActual : r.fisico), 0);
   const diffNeta = Math.round((totalFisBs - totalSistBs) * 100) / 100;
 
   const generarReporte = () => {
-    const report = {
+    return {
       fecha: new Date().toISOString(),
       fechaCierre: new Date().toLocaleString('es-VE', { dateStyle: 'full', timeStyle: 'medium' }),
-      tasaCierre,
-      tasa1: tasaManana,
-      tasa2: tasaTarde,
+      tasaCierre: tasaActual,
+      tasa1: morningRate || tasaActual,
+      tasa2: eveningRate || tasaActual,
       horaApertura,
       horaUltimaActualizacion,
       apertura: { bs: aperturaBs, usd: aperturaUsd },
+      recibos: receiptRange,
+      productos: productStats,
       cuadre: rows.map(r => ({
         metodo: r.metodo,
         saldoInicial: r.saldoInicial,
@@ -434,8 +374,8 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
       totales: { sistema: totalSistBs, real: totalFisBs, diferencia: diffNeta, estado: Math.abs(diffNeta) < 0.01 ? "CONCILIADO" : (diffNeta > 0 ? "SOBRANTE" : "FALTANTE") },
       usdEfectivo: totalCashUsd,
       totalCreditoBs,
+      terminal: terminalName
     };
-    return report;
   };
 
   const handleConfirmCierre = () => {
@@ -446,336 +386,286 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
   };
 
   const finalizarCierre = async () => {
-    if (closeReportData) {
-      setIsSubmitting(true);
-      try {
-        const pendingKardex = state.getPendingKardexEntries();
-        if (pendingKardex && pendingKardex.length > 0) {
-          await syncService.saveKardexBatch(pendingKardex);
-        }
-        const pendingAccounting = state.getPendingAccountingEntries();
-        if (pendingAccounting && pendingAccounting.length > 0) {
-          await syncService.saveAccountingBatch(pendingAccounting);
-        }
-        state.clearPendingEntries();
-
-        const timestamp = Date.now();
-        localStorage.setItem(`cierre_final_${timestamp}`, JSON.stringify(closeReportData));
-        await syncService.saveCashClose({ id: `final_${timestamp}`, tipo: 'final', ...closeReportData });
-        
-        if (currentSession) await closeCashSession(totalCashUsd).catch(console.error);
-        
-        for (let i = localStorage.length - 1; i >= 0; i--) {
-          const key = localStorage.key(i);
-          if (key?.startsWith('corte_parcial_')) localStorage.removeItem(key);
-        }
-
-        try {
-          if (terminalId && terminalId !== 'default') {
-            await syncService.updateTerminalBlockStatus(terminalId, true);
-          }
-        } catch (permError) {
-          console.error("No se pudo actualizar el bloqueo de terminal:", permError);
-        }
-
-        state.closeCashRegister();
-        logout();
-
-      } catch (error) {
-        console.error("Error al finalizar cierre:", error);
-      } finally {
-        setIsSubmitting(false);
-      }
+    if (!closeReportData) return;
+    setIsSubmitting(true);
+    try {
+      const timestamp = Date.now();
+      localStorage.setItem(`cierre_final_${timestamp}`, JSON.stringify(closeReportData));
+      await syncService.saveCashClose({ id: `final_${timestamp}`, tipo: 'final', ...closeReportData });
+      if (currentSession) await closeCashSession(totalCashUsd).catch(console.error);
+      if (terminalId && terminalId !== 'default') await syncService.updateTerminalBlockStatus(terminalId, true);
+      state.closeCashRegister();
+      logout();
+    } catch (error) {
+      console.error("Error al finalizar cierre:", error);
+    } finally {
+      setIsSubmitting(false);
     }
-    setShowResumenModal(false);
-    onClose();
   };
 
   const handlePrint = () => {
     if (!closeReportData) return;
-    const printWindow = window.open('', '_blank', 'width=800,height=600');
+    const printWindow = window.open('', '_blank');
     if (!printWindow) return;
-    const html = generarHTMLResumen(closeReportData);
-    printWindow.document.write(html);
+    printWindow.document.write(generarHTMLResumen(closeReportData));
     printWindow.document.close();
     setTimeout(() => printWindow.print(), 300);
   };
 
-  const handleShare = async () => {
-    if (!closeReportData) return;
-    const text = generarTextoResumen(closeReportData);
-    if (navigator.share) {
-      try { await navigator.share({ title: 'Cierre de Caja MasterPOS', text }); } catch (err) { console.error(err); }
-    } else {
-      await navigator.clipboard.writeText(text);
-      alert('Resumen copiado al portapapeles');
-    }
-  };
-
   const generarHTMLResumen = (data: any) => {
     const diff = data.totales.diferencia;
-    const estado = data.totales.estado;
     const estadoColor = diff > 0 ? '#10b981' : (diff < 0 ? '#ef4444' : '#3b82f6');
-    const estadoIcono = estado === 'SOBRANTE' ? '💰' : (estado === 'FALTANTE' ? '⚠️' : '✅');
-    const creditoBs = data.totalCreditoBs || 0;
     return `<!DOCTYPE html>
       <html>
-      <head><title>Cierre de Caja MasterPOS</title>
+      <head><title>Cierre Final - ${data.terminal}</title>
       <style>
-        body { font-family: 'Courier New', monospace; margin: 20px; font-size: 12px; }
+        body { font-family: 'Courier New', monospace; margin: 20px; font-size: 11px; color: #000; }
         .center { text-align: center; }
         .line { border-top: 1px dashed #000; margin: 10px 0; }
-        table { width: 100%; border-collapse: collapse; margin: 10px 0; }
-        th, td { border: 1px solid #999; padding: 6px; text-align: left; }
-        th { background: #f0f0f0; }
+        table { width: 100%; border-collapse: collapse; margin: 8px 0; }
+        th, td { border: 1px solid #000; padding: 4px; text-align: left; }
+        th { background: #eee; font-weight: bold; }
         .right { text-align: right; }
-        .small { font-size: 9px; color: #666; }
+        .best-product { background-color: #ffffd0; font-weight: bold; }
+        h1, h2, h3 { margin: 5px 0; }
       </style>
       </head>
       <body>
       <div class="center">
-        <h1>MASTERPOS - CIERRE DE JORNADA</h1>
-        <p>${data.fechaCierre}</p>
-        <p>Apertura: ${data.horaApertura} | Tasa 1: ${formatBs(data.tasa1)} &nbsp;&nbsp; Última tasa: ${data.horaUltimaActualizacion} | Tasa 2: ${formatBs(data.tasa2)}</p>
+        <h2>MASTERPOS - REPORTE DE CIERRE</h2>
+        <p>TERMINAL: ${data.terminal} | ${data.fechaCierre}</p>
+        <p>RANGO RECIBOS: #${data.recibos.first} AL #${data.recibos.last}</p>
       </div>
       <div class="line"></div>
-      <p><strong>Apertura:</strong> ${formatBs(data.apertura.bs)} + ${formatUsd(data.apertura.usd)} (≈ ${formatBs(data.apertura.usd * data.tasaCierre)})</p>
-      <p><strong>Tasa aplicada al cierre:</strong> ${formatBs(data.tasaCierre)}</p>
-      <p><strong>USD en Caja:</strong> ${formatUsd(data.usdEfectivo)} (≈ ${formatBs(data.usdEfectivo * data.tasaCierre)})</p>
+      <p>Apertura: ${data.horaApertura} | Tasa 1: ${formatBsNumber(data.tasa1)}</p>
+      <p>Cierre: ${data.horaUltimaActualizacion} | Tasa 2: ${formatBsNumber(data.tasa2)}</p>
+      <p>Fondo Inicial: ${formatBs(data.apertura.bs)} + ${formatUsd(data.apertura.usd)}</p>
       <div class="line"></div>
       <div class="center">
-        <div style="font-size: 28px; font-weight: bold; color: ${estadoColor};">${estadoIcono} ${estado}</div>
-        <div style="font-size: 48px; font-weight: black; margin: 10px 0;">${diff > 0 ? '+' : ''}${formatBsNumber(Math.abs(diff))}</div>
+        <h1 style="color: ${estadoColor}; font-size: 24px;">${data.totales.estado}</h1>
+        <h1 style="font-size: 32px;">${diff > 0 ? '+' : ''}${formatBsNumber(Math.abs(diff))}</h1>
       </div>
       <div class="line"></div>
-      <h3>Detalle por método</h3>
+      <h3>DETALLE DE PRODUCTOS VENDIDOS</h3>
+      <p>Total artículos: <strong>${data.productos.total}</strong></p>
       <table>
-        <thead>
-          <tr>
-            <th>Método</th>
-            <th>Fondo Inicial</th>
-            <th>Ventas</th>
-            <th>Vueltos</th>
-            <th>Devoluciones</th>
-            <th>Sistema</th>
-            <th>Real</th>
-            <th>Diferencia</th>
-          </tr>
-        </thead>
+        <thead><tr><th>PRODUCTO</th><th class="right">CANT.</th></tr></thead>
         <tbody>
-          ${data.cuadre.map((r: any) => {
-            const fondoInicial = r.moneda === 'USD' ? formatUsd(r.saldoInicial) + `<br><span class="small">${formatBs(r.saldoInicial * data.tasaCierre)}</span>` : formatBs(r.saldoInicial);
-            const ventas = r.moneda === 'USD' ? formatUsd(r.ventas) + `<br><span class="small">${formatBs(r.ventas * data.tasaCierre)}</span>` : formatBs(r.ventas);
-            const vueltos = formatBs(r.vueltos);
-            const devoluciones = r.moneda === 'USD' ? formatUsd(r.devoluciones) + `<br><span class="small">${formatBs(r.devoluciones * data.tasaCierre)}</span>` : formatBs(r.devoluciones);
-            const sistema = r.moneda === 'USD' ? formatUsd(r.sistema) + `<br><span class="small">${formatBs(r.sistema * data.tasaCierre)}</span>` : formatBs(r.sistema);
-            const real = r.moneda === 'USD' ? formatUsd(r.real) + `<br><span class="small">${formatBs(r.real * data.tasaCierre)}</span>` : formatBs(r.real);
-            let diffDisplay = r.diferencia === 0 ? '✓' : (r.moneda === 'USD' ? formatUsd(r.diferencia) : formatBs(r.diferencia));
-            if (r.moneda === 'USD' && r.diferencia !== 0) {
-              const diffBs = r.diferencia * data.tasaCierre;
-              diffDisplay += `<br><span class="small">${formatBs(diffBs)}</span>`;
-            }
-            return `
-              <tr>
-                <td>${r.metodo}</td>
-                <td class="right">${fondoInicial}</td>
-                <td class="right">${ventas}</td>
-                <td class="right">${vueltos}</td>
-                <td class="right">${devoluciones}</td>
-                <td class="right">${sistema}</td>
-                <td class="right">${real}</td>
-                <td class="right">${diffDisplay}</td>
-              </tr>
-            `;
-          }).join('')}
-          <tr style="background-color: #e6f0ff; font-weight: bold;">
-            <td>VENTAS A CRÉDITO</td>
-            <td class="right">—</td>
-            <td class="right">${formatBs(creditoBs)}</td>
-            <td class="right">—</td>
-            <td class="right">—</td>
-            <td class="right">—</td>
-            <td class="right">—</td>
-            <td class="right">—</td>
-          </tr>
+          ${data.productos.items.map((it: any) => `
+            <tr class="${it.name === data.productos.best?.name ? 'best-product' : ''}">
+              <td>${it.name.toUpperCase()} ${it.name === data.productos.best?.name ? '⭐' : ''}</td>
+              <td class="right">${it.qty}</td>
+            </tr>
+          `).join('')}
         </tbody>
       </table>
       <div class="line"></div>
-      <p class="center">Documento generado por MasterPOS</p>
+      <h3>CUADRE DE CAJA</h3>
+      <table>
+        <thead><tr><th>METODO</th><th class="right">SISTEMA</th><th class="right">REAL</th><th class="right">DIFF</th></tr></thead>
+        <tbody>
+          ${data.cuadre.map((r: any) => `
+            <tr>
+              <td>${r.metodo}</td>
+              <td class="right">${r.moneda === 'USD' ? formatUsdNumber(r.sistema) : formatBsNumber(r.sistema)}</td>
+              <td class="right">${r.moneda === 'USD' ? formatUsdNumber(r.real) : formatBsNumber(r.real)}</td>
+              <td class="right">${r.diferencia === 0 ? '✓' : formatBsNumber(r.diferencia)}</td>
+            </tr>
+          `).join('')}
+          <tr style="background:#f0f0f0;font-weight:bold;"><td>VENTAS CREDITO</td><td class="right">${formatBsNumber(data.totalCreditoBs)}</td><td class="right">—</td><td class="right">—</td></tr>
+        </tbody>
+      </table>
+      <div class="line"></div>
+      <p class="center">Generado por MasterPOS v1.0</p>
       </body>
       </html>`;
   };
 
-  const generarTextoResumen = (data: any) => {
-    const diff = data.totales.diferencia;
-    const estado = data.totales.estado;
-    return `MASTERPOS - Cierre de Jornada\nFecha: ${data.fechaCierre}\nApertura: ${data.horaApertura} Tasa1: ${formatBs(data.tasa1)}\nÚltima tasa: ${data.horaUltimaActualizacion} Tasa2: ${formatBs(data.tasa2)}\nApertura: ${formatBs(data.apertura.bs)} + ${formatUsd(data.apertura.usd)}\nUSD Efectivo: ${formatUsd(data.usdEfectivo)}\nVentas a Crédito: ${formatBs(data.totalCreditoBs)}\nRESULTADO: ${estado} por ${formatBs(Math.abs(diff))}`;
-  };
-
   return (
-    <>
-      <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-2">
-        <div className="bg-[#F9F4E1] w-full max-w-full overflow-x-auto rounded-xl shadow-2xl flex flex-col max-h-[98vh]">
-          <div className="bg-[#1E3A8A] text-white p-3 border-b-4 border-[#0284C7] sticky left-0 flex justify-between items-center">
-            <div className="text-left">
-              <div className="text-[10px] font-bold">Hora apertura: {horaApertura}</div>
-              <div className="text-[10px] font-bold">Tasa 1: {formatBs(tasaManana)}</div>
-            </div>
-            <h1 className="text-center font-black uppercase text-base">CIERRE FINAL CONSOLIDADO</h1>
-            <div className="text-right">
-              <div className="text-[10px] font-bold">Última actualización: {horaUltimaActualizacion}</div>
-              <div className="text-[10px] font-bold">Tasa 2: {formatBs(tasaTarde)}</div>
-            </div>
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-2">
+      <div className="bg-[#F9F4E1] w-full max-w-6xl rounded-xl shadow-2xl flex flex-col max-h-[98vh] overflow-hidden">
+        <div className="bg-[#1E3A8A] text-white p-3 border-b-4 border-[#0284C7] sticky top-0 z-20 flex justify-between items-center">
+          <div className="flex items-center gap-4">
+            <div className="bg-amber-500 text-slate-900 px-3 py-1 rounded font-black text-sm">{terminalName}</div>
+            <h1 className="font-black uppercase text-base tracking-widest">ARQUEO Y CIERRE FINAL JORNADA</h1>
           </div>
+          <div className="text-right">
+            <p className="text-[10px] font-bold">Rango: #{receiptRange.first} al #{receiptRange.last}</p>
+            <p className="text-[10px] font-bold">Tasa Cierre: {formatBs(tasaActual)}</p>
+          </div>
+        </div>
 
-          <div className="overflow-auto flex-1">
-            <table className="w-full text-[10px] min-w-[900px]">
-              <thead className="bg-[#2c3e50] text-white sticky top-0 z-10">
-                <tr>
-                  <th className="p-2 text-left">MÉTODO</th>
-                  <th className="p-2 text-center">FONDO INICIAL</th>
-                  <th className="p-2 text-center">VENTAS</th>
-                  <th className="p-2 text-center">VUELTOS</th>
-                  <th className="p-2 text-center">DEVOLUCIONES</th>
-                  <th className="p-2 text-center">SISTEMA</th>
-                  <th className="p-2 text-center">EFECTIVO USD</th>
-                  <th className="p-2 text-center">FÍSICO</th>
-                  <th className="p-2 text-center">DIF.</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200">
-                {rows.map(r => (
-                  <tr key={r.key} className="hover:bg-slate-50">
-                    <td className="p-2 font-bold">{r.metodo}</td>
-                    <td className="p-2 text-center font-mono">
-                      {renderCurrencyCell(r.saldoInicial, r.isUsd, tasaCierre, true)}
-                    </td>
-                    <td className="p-2 text-center font-mono">
-                      {renderCurrencyCell(r.totalVentasMoneda, r.isUsd, tasaCierre, true)}
-                    </td>
-                    <td className="p-2 text-center font-mono text-red-600">{formatBs(r.totalVueltos)}</td>
-                    <td className="p-2 text-center font-mono text-red-600">
-                      {renderCurrencyCell(r.totalDevolucionesMoneda, r.isUsd, tasaCierre, true)}
-                    </td>
-                    <td className="p-2 text-center font-bold font-mono">
-                      {renderCurrencyCell(r.sistemaMoneda, r.isUsd, tasaCierre, true)}
-                    </td>
-                    <td className="p-2 text-center font-mono text-blue-600">
-                      {r.key === 'usd_efectivo' ? renderCurrencyCell(totalCashUsd, true, tasaCierre, true) : '—'}
-                    </td>
-                    <td className="p-2 text-center">
-                      <div className="flex flex-col items-center gap-1">
-                        <div className="flex items-center justify-center gap-1">
-                          <Input
-                            type="number"
-                            step="0.01"
-                            value={r.fisicoIngresado === 0 ? '' : r.fisicoIngresado}
-                            onChange={e => setConteoFisico({...conteoFisico, [r.key]: parseFloat(e.target.value) || 0})}
-                            className="w-24 h-7 text-xs text-center font-bold"
-                            placeholder="0.00"
-                          />
-                          <span className="text-[9px] font-bold text-slate-500">{r.isUsd ? 'USD' : 'Bs'}</span>
-                        </div>
-                        {r.isUsd && r.fisicoIngresado > 0 && (
-                          <div className="text-[8px] text-slate-400 mt-0.5">≈ {formatBs(r.fisicoIngresado * tasaCierre)}</div>
-                        )}
-                      </div>
-                    </td>
-                    <td className={cn("p-2 text-center font-bold", r.diff < 0 ? "text-red-600" : r.diff > 0 ? "text-emerald-600" : "text-slate-500")}>
-                      {r.diff === 0 ? '✓' : (r.isUsd ? formatUsd(Math.abs(r.diff)) : formatBsNumber(Math.abs(r.diff)))}
-                      {r.isUsd && r.diff !== 0 && (
-                        <div className="text-[8px] text-slate-500 mt-0.5">≈ {formatBs(Math.abs(r.diff) * tasaCierre)}</div>
-                      )}
-                    </td>
+        <div className="flex-1 overflow-auto p-4 flex flex-col md:flex-row gap-4">
+          <div className="flex-1 space-y-4">
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+              <table className="w-full text-[10px]">
+                <thead className="bg-slate-800 text-white">
+                  <tr>
+                    <th className="p-2 text-left">MÉTODO</th>
+                    <th className="p-2 text-center">FONDO INICIAL</th>
+                    <th className="p-2 text-center">VENTAS</th>
+                    <th className="p-2 text-center">DEVOLUCIONES</th>
+                    <th className="p-2 text-center">SISTEMA</th>
+                    <th className="p-2 text-center">FÍSICO</th>
+                    <th className="p-2 text-center">DIF.</th>
                   </tr>
-                ))}
-                <tr className="bg-blue-50/50 font-bold">
-                  <td className="p-2 font-bold text-blue-700">VENTAS A CRÉDITO</td>
-                  <td className="p-2 text-center">—</td>
-                  <td className="p-2 text-center font-mono font-bold text-blue-700">{formatBs(totalCreditoBs)}</td>
-                  <td className="p-2 text-center">—</td>
-                  <td className="p-2 text-center">—</td>
-                  <td className="p-2 text-center">—</td>
-                  <td className="p-2 text-center">—</td>
-                  <td className="p-2 text-center">—</td>
-                  <td className="p-2 text-center">—</td>
-                </tr>
-                <tr className="bg-[#1E3A8A] text-white font-bold">
-                  <td colSpan={5} className="p-2 text-right">TOTAL CONSOLIDADO (Bs):</td>
-                  <td className="p-2 text-center font-bold">{formatBs(totalSistBs)}</td>
-                  <td className="p-2 text-center font-bold">{renderCurrencyCell(totalCashUsd, true, tasaCierre, true)}</td>
-                  <td className="p-2 text-center">{formatBs(totalFisBs)}</td>
-                  <td className="p-2 text-center">{diffNeta === 0 ? '✓' : formatBsNumber(Math.abs(diffNeta))}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
-          <div className="bg-white p-4 border-t flex flex-col gap-3">
-            <div className="flex justify-between items-center pt-3 border-t flex-wrap gap-3">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" checked={isConciliado} onChange={e => setIsConciliado(e.target.checked)} className="rounded text-blue-600 w-4 h-4" />
-                <span className="text-[10px] font-bold uppercase">Confirmo el arqueo físico de la jornada completa</span>
-              </label>
-              <div className="flex gap-2">
-                <Button onClick={onClose} variant="ghost" className="text-red-600 font-bold text-xs h-8">Cancelar</Button>
-                <Button disabled={!isConciliado || isSubmitting} onClick={handleConfirmCierre} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs h-8 px-6">CERRAR JORNADA</Button>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {rows.map(r => (
+                    <tr key={r.key} className="hover:bg-slate-50">
+                      <td className="p-2 font-bold">{r.metodo}</td>
+                      <td className="p-2 text-center font-mono">{renderCurrencyCell(r.saldoInicial, r.isUsd, tasaActual)}</td>
+                      <td className="p-2 text-center font-mono">{renderCurrencyCell(r.totalVentasMoneda, r.isUsd, tasaActual)}</td>
+                      <td className="p-2 text-center font-mono text-red-600">{renderCurrencyCell(r.totalDevolucionesMoneda, r.isUsd, tasaActual)}</td>
+                      <td className="p-2 text-center font-bold font-mono">{renderCurrencyCell(r.sistemaMoneda, r.isUsd, tasaActual)}</td>
+                      <td className="p-2 text-center">
+                        <div className="flex items-center justify-center gap-1">
+                          <Input 
+                            type="number" step="0.01" 
+                            value={conteoFisico[r.key] === 0 ? '' : (conteoFisico[r.key] || '')} 
+                            onChange={e => setConteoFisico({...conteoFisico, [r.key]: parseFloat(e.target.value) || 0})}
+                            className="w-20 h-7 text-xs text-center font-bold bg-white" placeholder="0.00"
+                          />
+                        </div>
+                      </td>
+                      <td className={cn("p-2 text-center font-bold", r.diff < 0 ? "text-red-600" : r.diff > 0 ? "text-emerald-600" : "text-slate-400")}>
+                        {r.diff === 0 ? '✓' : (r.isUsd ? formatUsd(Math.abs(r.diff)) : formatBsNumber(Math.abs(r.diff)))}
+                      </td>
+                    </tr>
+                  ))}
+                  <tr className="bg-blue-50/50 font-bold">
+                    <td className="p-2 text-blue-700">VENTAS A CRÉDITO</td>
+                    <td colSpan={5} className="p-2 text-right">Monto total por cobrar:</td>
+                    <td className="p-2 text-center text-blue-700">{formatBs(totalCreditoBs)}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            
+            <div className="bg-slate-900 text-white p-4 rounded-xl flex justify-between items-center shadow-lg">
+              <div>
+                <p className="text-[10px] font-black text-white/40 uppercase">Efectivo USD en Caja</p>
+                <p className="text-2xl font-black text-amber-400">{formatUsd(totalCashUsd)}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-[10px] font-black text-white/40 uppercase">Resultado Global (Bs)</p>
+                <p className={cn("text-3xl font-black", diffNeta < 0 ? "text-red-400" : "text-emerald-400")}>
+                  {diffNeta > 0 ? '+' : ''}{formatBsNumber(Math.abs(diffNeta))}
+                </p>
               </div>
             </div>
+          </div>
+
+          <div className="w-full md:w-72 flex flex-col gap-4">
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-3 flex-1 flex flex-col overflow-hidden">
+              <h3 className="text-[10px] font-black uppercase text-slate-500 mb-2 flex items-center gap-2 border-b pb-1">
+                <ShoppingBasket size={14} className="text-blue-600" /> Productos del día
+              </h3>
+              <div className="flex-1 overflow-y-auto scrollbar-thin">
+                {productStats.items.map((it, idx) => (
+                  <div key={idx} className={cn(
+                    "flex justify-between items-center py-1.5 px-2 rounded mb-1 border",
+                    idx === 0 ? "bg-amber-50 border-amber-200" : "bg-white border-transparent"
+                  )}>
+                    <div className="min-w-0">
+                      <p className={cn("text-[10px] truncate uppercase", idx === 0 ? "font-black text-amber-900" : "font-bold text-slate-700")}>
+                        {it.name} {idx === 0 && '⭐'}
+                      </p>
+                      {idx === 0 && <p className="text-[8px] text-amber-600 font-bold">¡EL MÁS VENDIDO!</p>}
+                    </div>
+                    <span className={cn("text-xs font-black", idx === 0 ? "text-amber-700" : "text-blue-600")}>{it.qty}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-2 pt-2 border-t text-center bg-slate-50 rounded py-1">
+                <p className="text-[10px] font-bold text-slate-500">TOTAL UNIDADES: <span className="text-slate-900">{productStats.total}</span></p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white p-4 border-t flex justify-between items-center flex-wrap gap-4 shadow-[0_-4px_15px_rgba(0,0,0,0.05)]">
+          <label className="flex items-center gap-3 cursor-pointer group">
+            <div className="relative">
+              <input type="checkbox" checked={isConciliado} onChange={e => setIsConciliado(e.target.checked)} className="peer sr-only" />
+              <div className="w-5 h-5 border-2 border-slate-300 rounded peer-checked:bg-blue-600 peer-checked:border-blue-600 transition-all flex items-center justify-center">
+                <X size={12} className={cn("text-white transition-opacity", isConciliado ? "opacity-100" : "opacity-0")} />
+              </div>
+            </div>
+            <span className="text-[10px] font-black uppercase text-slate-600 group-hover:text-blue-700 transition-colors">Confirmo el arqueo físico y el rango de recibos de hoy</span>
+          </label>
+          <div className="flex gap-3">
+            <Button onClick={onClose} variant="ghost" className="text-red-600 font-bold text-xs h-9 px-6 border border-red-100 hover:bg-red-50">Cancelar</Button>
+            <Button disabled={!isConciliado || isSubmitting} onClick={handleConfirmCierre} className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs h-9 px-8 shadow-md">CONFIRMAR CIERRE FINAL</Button>
           </div>
         </div>
       </div>
 
       {showResumenModal && closeReportData && (
         <div className="fixed inset-0 bg-black/80 z-[200] flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="bg-[#1E3A8A] text-white p-4 sticky top-0 flex justify-between items-center">
-              <h2 className="text-lg font-black">RESUMEN DE CIERRE DE JORNADA</h2>
-              <button onClick={finalizarCierre} className="text-white/60 hover:text-white"><X size={20} /></button>
+          <div className="bg-white rounded-3xl shadow-2xl max-w-lg w-full overflow-hidden flex flex-col animate-in zoom-in-95 duration-300">
+            <div className="bg-[#1E3A8A] text-white p-6 text-center">
+              <div className="w-16 h-16 bg-white/10 rounded-full flex items-center justify-center mx-auto mb-3 border border-white/20">
+                <TrendingUp size={32} className="text-amber-400" />
+              </div>
+              <h2 className="text-2xl font-black tracking-tight">RESUMEN DE JORNADA</h2>
+              <p className="text-blue-200 text-sm mt-1 uppercase font-bold tracking-widest">{closeReportData.terminal}</p>
             </div>
-            <div className="p-6 space-y-4">
-              <div className="text-center">
-                <p className="text-sm text-gray-500">Fecha y hora</p>
-                <p className="font-mono">{closeReportData.fechaCierre}</p>
-                <div className="flex justify-between mt-2 text-xs">
-                  <span>Apertura: {closeReportData.horaApertura} | Tasa1: {formatBs(closeReportData.tasa1)}</span>
-                  <span>Última actualización: {closeReportData.horaUltimaActualizacion} | Tasa2: {formatBs(closeReportData.tasa2)}</span>
+            
+            <div className="p-6 space-y-5">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-slate-50 p-3 rounded-2xl border text-center">
+                  <p className="text-[9px] font-black text-slate-400 uppercase">Artículos Vendidos</p>
+                  <p className="text-2xl font-black text-slate-900">{closeReportData.productos.total}</p>
+                </div>
+                <div className="bg-slate-50 p-3 rounded-2xl border text-center">
+                  <p className="text-[9px] font-black text-slate-400 uppercase">Recibos Emitidos</p>
+                  <p className="text-lg font-black text-slate-900">#{closeReportData.recibos.last}</p>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4 border-b pb-4">
-                <div><p className="text-xs text-gray-500">Apertura</p><p className="font-bold">{formatBs(closeReportData.apertura.bs)}</p><p className="font-bold">{formatUsd(closeReportData.apertura.usd)} <span className="text-xs text-gray-500">({formatBs(closeReportData.apertura.usd * closeReportData.tasaCierre)})</span></p></div>
-                <div><p className="text-xs text-gray-500">USD Efectivo</p><p className="font-bold">{formatUsd(closeReportData.usdEfectivo)} <span className="text-xs text-gray-500">({formatBs(closeReportData.usdEfectivo * closeReportData.tasaCierre)})</span></p></div>
-              </div>
-              <div className="bg-blue-50 rounded-lg p-3 text-center border border-blue-200">
-                <p className="text-[9px] font-black uppercase text-blue-700">Ventas a Crédito del día</p>
-                <p className="text-xl font-black text-blue-700">{formatBs(closeReportData.totalCreditoBs)}</p>
-              </div>
-              <div className="text-center py-4 bg-gray-50 rounded-lg">
-                <p className="text-xs uppercase tracking-wider text-gray-500">RESULTADO DE LA JORNADA</p>
-                <p className={cn("text-5xl font-black mt-2", closeReportData.totales.diferencia > 0 ? "text-emerald-600" : closeReportData.totales.diferencia < 0 ? "text-red-600" : "text-blue-600")}>
-                  {closeReportData.totales.diferencia > 0 ? '+' : ''}{formatBsNumber(Math.abs(closeReportData.totales.diferencia))} Bs
+
+              {closeReportData.productos.best && (
+                <div className="bg-amber-50 border-2 border-amber-200 rounded-2xl p-4 flex items-center gap-4">
+                  <div className="w-12 h-12 bg-amber-200 rounded-xl flex items-center justify-center shrink-0">
+                    <ShoppingBasket size={24} className="text-amber-700" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-[9px] font-black text-amber-600 uppercase">Producto más vendido</p>
+                    <p className="text-base font-black text-amber-900 truncate uppercase">{closeReportData.productos.best.name}</p>
+                    <p className="text-xs font-bold text-amber-700">{closeReportData.productos.best.qty} unidades</p>
+                  </div>
+                </div>
+              )}
+
+              <div className="text-center py-6 bg-slate-900 rounded-3xl text-white shadow-xl relative overflow-hidden">
+                <div className="absolute top-0 right-0 p-4 opacity-10">
+                  <BarChart3 size={100} />
+                </div>
+                <p className="text-xs font-black uppercase tracking-widest text-white/50">Diferencia de Arqueo</p>
+                <p className={cn("text-5xl font-black mt-2", closeReportData.totales.diferencia > 0 ? "text-emerald-400" : closeReportData.totales.diferencia < 0 ? "text-red-400" : "text-blue-400")}>
+                  {closeReportData.totales.diferencia > 0 ? '+' : ''}{formatBsNumber(Math.abs(closeReportData.totales.diferencia))}
                 </p>
-                <p className={cn("text-sm font-bold mt-1", closeReportData.totales.diferencia > 0 ? "text-emerald-600" : closeReportData.totales.diferencia < 0 ? "text-red-600" : "text-blue-600")}>
+                <p className={cn("text-sm font-black mt-2 uppercase tracking-tighter", closeReportData.totales.diferencia > 0 ? "text-emerald-400" : closeReportData.totales.diferencia < 0 ? "text-red-400" : "text-blue-400")}>
                   {closeReportData.totales.estado}
                 </p>
               </div>
-              <div className="flex gap-3 pt-2">
-                <Button onClick={handlePrint} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"><Printer size={16} className="mr-2" /> Imprimir / PDF</Button>
-                <Button onClick={handleShare} variant="outline" className="flex-1 border-slate-300"><Share2 size={16} className="mr-2" /> Compartir</Button>
+
+              <div className="flex gap-3">
+                <Button onClick={handlePrint} className="flex-1 bg-slate-800 hover:bg-black text-white font-black h-11"><Printer size={18} className="mr-2" /> PDF / IMPRIMIR</Button>
+                <Button onClick={generarReporte} variant="outline" className="flex-1 border-slate-300 font-bold h-11"><Share2 size={18} className="mr-2" /> COMPARTIR</Button>
               </div>
-              <div className="text-center pt-4">
-                <Button 
-                  onClick={finalizarCierre} 
-                  disabled={isSubmitting}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white px-8 h-12 text-base font-black shadow-lg"
-                >
-                  {isSubmitting ? 'CERRANDO...' : 'FINALIZAR Y BLOQUEAR ESTACIÓN'}
-                </Button>
-              </div>
+              
+              <Button 
+                onClick={finalizarCierre} 
+                disabled={isSubmitting}
+                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white h-14 text-lg font-black rounded-2xl shadow-lg shadow-emerald-100"
+              >
+                {isSubmitting ? <Loader2 size={24} className="animate-spin" /> : 'FINALIZAR Y BLOQUEAR'}
+              </Button>
             </div>
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 }

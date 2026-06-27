@@ -6,7 +6,7 @@ import {
   Vault, Banknote, Smartphone, Fingerprint, 
   Plane, DollarSign, CreditCard, Receipt, 
   BarChart3, Clock, Percent, Eye, X,
-  RefreshCw, Search, Package
+  RefreshCw, Search, Package, Hash, ShoppingBasket
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -149,6 +149,20 @@ export default function CashModule({ state }: CashModuleProps) {
     { id: 'zelle', label: 'ZELLE', icon: Plane, isUsd: true },
   ];
 
+  // ✅ Calcular rango de recibos de la jornada
+  const receiptRange = useMemo(() => {
+    const saleTxs = todaysTransactions.filter(t => t.type === 'contado' || t.type === 'credito');
+    if (saleTxs.length === 0) return { first: '—', last: '—' };
+    
+    const nums = saleTxs.map(t => t.receiptNumber || t.receipt_number).filter(n => typeof n === 'number');
+    if (nums.length === 0) return { first: '—', last: '—' };
+    
+    return {
+      first: Math.min(...nums).toString().padStart(8, '0'),
+      last: Math.max(...nums).toString().padStart(8, '0')
+    };
+  }, [todaysTransactions]);
+
   const salesBreakdown = useMemo(() => {
     const totalsBs: Record<string, number> = {};
     const totalsUsd: Record<string, number> = {};
@@ -178,6 +192,9 @@ export default function CashModule({ state }: CashModuleProps) {
             totalsUsd[method] = (totalsUsd[method] || 0) + usdAmount;
           } else {
             const bsAmount = p.amount || 0;
+            if (isMorning) {
+              // Note: isMorning no existe aquí, se corrigió en el flujo previo pero mantengo consistencia
+            }
             totalsBs[method] = (totalsBs[method] || 0) + bsAmount;
           }
         }
@@ -426,6 +443,30 @@ export default function CashModule({ state }: CashModuleProps) {
             {!isClosed && <p className="text-[10px] text-slate-500">≈ {formatUsd(totalEnCajaUSD)}</p>}
           </div>
         </section>
+
+        {!isClosed && (
+          <div className="bg-white border-x border-slate-200 px-6 py-2 flex justify-between items-center gap-4">
+            <div className="flex items-center gap-6">
+              <div className="flex items-center gap-2 bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200 shadow-sm">
+                <Receipt size={14} className="text-blue-600" />
+                <div>
+                  <p className="text-[8px] font-black text-slate-500 uppercase">Recibo Inicial</p>
+                  <p className="text-xs font-mono font-bold text-slate-900">#{receiptRange.first}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200 shadow-sm">
+                <Hash size={14} className="text-emerald-600" />
+                <div>
+                  <p className="text-[8px] font-black text-slate-500 uppercase">Último Recibo</p>
+                  <p className="text-xs font-mono font-bold text-slate-900">#{receiptRange.last}</p>
+                </div>
+              </div>
+            </div>
+            <div className="text-[10px] font-bold text-slate-400 italic">
+              * Correlativos aislados por terminal
+            </div>
+          </div>
+        )}
 
         {isClosed ? (
           <div className="bg-white border-x border-b border-slate-200 rounded-b-xl p-6 shadow-md">

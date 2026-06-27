@@ -197,7 +197,7 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
 
       // ✅ PROCESAMIENTO ROBUSTO DE DEVOLUCIONES
       if (tx.type === 'devolucion') {
-        let methodDetected = tx.payMethod || (tx as any).pay_method || tx.returnMethod || 'efectivo_bs';
+        let methodDetected = tx.payMethod || (tx as any).pay_method || (tx as any).returnMethod || 'efectivo_bs';
         
         // Normalización de claves para coincidir con la tabla de arqueo
         if (methodDetected === 'efectivo') methodDetected = 'efectivo_bs';

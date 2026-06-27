@@ -247,7 +247,11 @@ const ProductFormModal = memo(function ProductFormModal({
 
   return (
     <Dialog open={open} onOpenChange={(val) => { if (!val) onClose(); }}>
-      <DialogContent className="bg-white max-w-3xl p-0 rounded-xl max-h-[90vh] flex flex-col">
+      <DialogContent 
+        onPointerDownOutside={(e) => e.preventDefault()}
+        onEscapeKeyDown={(e) => e.preventDefault()}
+        className="bg-white max-w-3xl p-0 rounded-xl max-h-[90vh] flex flex-col"
+      >
         <DialogHeader className="bg-[#1A2C4E] p-3 text-white rounded-t-xl flex-shrink-0">
           <div className="flex justify-between items-center">
             <DialogTitle className="text-sm font-black flex items-center gap-2">

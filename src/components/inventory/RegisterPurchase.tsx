@@ -867,7 +867,7 @@ export default function RegisterPurchase() {
       </div>
 
       {showProductModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowProductModal(false)}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div
             ref={modalRef}
             className="bg-white rounded-xl shadow-2xl w-full max-w-3xl flex flex-col max-h-[90vh]"

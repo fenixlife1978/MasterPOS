@@ -249,10 +249,10 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
           }
         }
       } else {
-        const method = tx.payMethod || 'efectivo_bs';
+        const method = tx.pay_method || tx.payMethod || 'efectivo_bs';
         const isUsd = method === 'usd_efectivo' || method === 'zelle';
         if (isUsd) {
-          const usdAmount = tx.totalUsd || 0;
+          const usdAmount = tx.total_usd || tx.totalUsd || 0;
           if (isMorning) ventasAM[method].usd += usdAmount;
           else ventasPM[method].usd += usdAmount;
         } else {
@@ -279,7 +279,6 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
   const aperturaBs = reg?.openAmountBs ?? 0;
   const aperturaUsd = reg?.openAmountUsd ?? 0;
   const horaApertura = reg?.openTime ? new Date(reg.openTime).toLocaleTimeString('es-VE', { timeZone: 'America/Caracas', hour: '2-digit', minute: '2-digit' }) : '—';
-  const horaUltimaActualizacion = new Date().toLocaleTimeString('es-VE', { timeZone: 'America/Caracas', hour: '2-digit', minute: '2-digit' });
 
   const totalCashUsd = useMemo(() => {
     let total = aperturaUsd;
@@ -349,6 +348,7 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
   const diffNeta = Math.round((totalFisBs - totalSistBs) * 100) / 100;
 
   const generarReporte = () => {
+    const horaUltimaActualizacion = new Date().toLocaleTimeString('es-VE', { timeZone: 'America/Caracas', hour: '2-digit', minute: '2-digit' });
     return {
       fecha: new Date().toISOString(),
       fechaCierre: new Date().toLocaleString('es-VE', { dateStyle: 'full', timeStyle: 'medium' }),
@@ -528,8 +528,8 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
                           />
                         </div>
                       </td>
-                      <td className={cn("p-2 text-center font-bold", r.diff < 0 ? "text-red-600" : r.diff > 0 ? "text-emerald-600" : "text-slate-400")}>
-                        {r.diff === 0 ? '✓' : (r.isUsd ? formatUsd(Math.abs(r.diff)) : formatBsNumber(Math.abs(r.diff)))}
+                      <td className={cn("p-2 text-center font-bold", r.diff < -0.01 ? "text-red-600" : r.diff > 0.01 ? "text-emerald-600" : "text-slate-400")}>
+                        {Math.abs(r.diff) < 0.01 ? '✓' : (r.isUsd ? formatUsd(Math.abs(r.diff)) : formatBsNumber(Math.abs(r.diff)))}
                       </td>
                     </tr>
                   ))}
@@ -549,8 +549,8 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
               </div>
               <div className="text-right">
                 <p className="text-[10px] font-black text-white/40 uppercase">Resultado Global (Bs)</p>
-                <p className={cn("text-3xl font-black", diffNeta < 0 ? "text-red-400" : "text-emerald-400")}>
-                  {diffNeta > 0 ? '+' : ''}{formatBsNumber(Math.abs(diffNeta))}
+                <p className={cn("text-3xl font-black", diffNeta < -0.01 ? "text-red-400" : diffNeta > 0.01 ? "text-emerald-400" : "text-blue-400")}>
+                  {Math.abs(diffNeta) < 0.01 ? '0,00' : (diffNeta > 0 ? '+' : '') + formatBsNumber(Math.abs(diffNeta))}
                 </p>
               </div>
             </div>
@@ -642,10 +642,10 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
                   <BarChart3 size={100} />
                 </div>
                 <p className="text-xs font-black uppercase tracking-widest text-white/50">Diferencia de Arqueo</p>
-                <p className={cn("text-5xl font-black mt-2", closeReportData.totales.diferencia > 0 ? "text-emerald-400" : closeReportData.totales.diferencia < 0 ? "text-red-400" : "text-blue-400")}>
-                  {closeReportData.totales.diferencia > 0 ? '+' : ''}{formatBsNumber(Math.abs(closeReportData.totales.diferencia))}
+                <p className={cn("text-5xl font-black mt-2", closeReportData.totales.diferencia > 0.01 ? "text-emerald-400" : closeReportData.totales.diferencia < -0.01 ? "text-red-400" : "text-blue-400")}>
+                  {Math.abs(closeReportData.totales.diferencia) < 0.01 ? '0,00' : (closeReportData.totales.diferencia > 0 ? '+' : '') + formatBsNumber(Math.abs(closeReportData.totales.diferencia))}
                 </p>
-                <p className={cn("text-sm font-black mt-2 uppercase tracking-tighter", closeReportData.totales.diferencia > 0 ? "text-emerald-400" : closeReportData.totales.diferencia < 0 ? "text-red-400" : "text-blue-400")}>
+                <p className={cn("text-sm font-black mt-2 uppercase tracking-tighter", closeReportData.totales.diferencia > 0.01 ? "text-emerald-400" : closeReportData.totales.diferencia < -0.01 ? "text-red-400" : "text-blue-400")}>
                   {closeReportData.totales.estado}
                 </p>
               </div>

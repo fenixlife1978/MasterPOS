@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useMemo, useCallback, useEffect } from 'react';
@@ -87,7 +86,7 @@ export default function ReturnsModule() {
   const currentTerminalName = user?.terminalName || user?.terminalId || 'Principal';
   const isAdmin = user?.role === 'admin';
 
-  const { products, register, exchangeRate, registerCashEgress } = usePOSState();
+  const { products, register, exchangeRate } = usePOSState();
   const [activeTab, setActiveTab] = useState<'process' | 'history'>('process');
   const [selectedTransaction, setSelectedTransaction] = useState<any>(null);
   const [viewingReturnDetail, setViewingReturnDetail] = useState<any>(null);
@@ -149,7 +148,6 @@ export default function ReturnsModule() {
     return currentTerminalName;
   }, [isAdmin, selectedTerminal, currentTerminalName]);
 
-  // ✅ Suscripción en tiempo real a las transacciones con filtros aplicados
   useEffect(() => {
     setIsLoading(true);
     const targetTerminalName = getTargetTerminalName();
@@ -161,7 +159,6 @@ export default function ReturnsModule() {
         const txDate = getLocalDateStr(tx.date);
         const matchesDate = txDate >= startDate && txDate <= endDate;
         
-        // Si hay búsqueda por recibo, aplicar filtro adicional
         const receiptQuery = searchReceipt.trim();
         if (receiptQuery) {
           const num = parseInt(receiptQuery);
@@ -193,8 +190,6 @@ export default function ReturnsModule() {
   }, [allTransactions]);
 
   const handleSearchByReceipt = useCallback(() => {
-    // La búsqueda se maneja automáticamente por el efecto de suscripción
-    // ya que searchReceipt está en sus dependencias.
     setMessage(null);
     if (searchReceipt.trim() && allTransactions.length === 0) {
       setMessage({ type: 'error', text: `No se encontró el registro #${formatReceipt(searchReceipt)} en los filtros actuales.` });
@@ -292,6 +287,8 @@ export default function ReturnsModule() {
       const saleId = selectedTransaction.id;
       const isTotal = returnItems.every(i => i.returnQty === i.originalQty);
       const returnStatus = isTotal ? 'total' : 'partial';
+      const reasonLabel = RETURN_REASONS.find(r => r.id === selectedReason)?.label || 'Sin motivo';
+      const returnReceiptNumber = nextReturnNumber;
 
       const returnItemsList: CartItem[] = returnItems.filter(i => i.returnQty > 0).map(i => ({
         productId: i.productId,
@@ -304,9 +301,6 @@ export default function ReturnsModule() {
         ivaPercentage: 0,
         isKit: false
       }));
-
-      const reasonLabel = RETURN_REASONS.find(r => r.id === selectedReason)?.label || 'Sin motivo';
-      const returnReceiptNumber = nextReturnNumber;
 
       const returnTransaction = {
         id: Date.now(),
@@ -333,27 +327,18 @@ export default function ReturnsModule() {
         exchangeRate: selectedTransaction.exchangeRate || exchangeRate
       };
 
-      const db = getDatabase(app);
-      await Promise.all([
-        syncService.saveTransaction(returnTransaction),
-        update(ref(db, `transactions/${saleId}`), {
-          return_status: returnStatus,
-          updatedAt: new Date().toISOString()
-        })
-      ]);
-
-      localStorage.setItem(getReturnStorageKey(), returnReceiptNumber.toString());
-      setNextReturnNumber(returnReceiptNumber + 1);
-
+      // Preparar actualizaciones para la operación atómica
+      const stockUpdates = new Map();
+      const kardexEntries: any[] = [];
       for (const ret of returnItems.filter(i => i.returnQty > 0)) {
         const prod = products.find(p => p.id === ret.productId);
         if (prod) {
           const newStock = prod.stock + ret.returnQty;
-          await syncService.saveProduct({ ...prod, stock: newStock });
-          await syncService.saveKardexEntry({
+          stockUpdates.set(prod.id, { newStock });
+          kardexEntries.push({
             id: `${Date.now()}_${ret.productId}`,
             productId: ret.productId,
-            date: new Date().toISOString(),
+            date: returnTransaction.date,
             type: 'devolucion',
             quantity: ret.returnQty,
             previousStock: prod.stock,
@@ -365,28 +350,41 @@ export default function ReturnsModule() {
         }
       }
 
-      if (selectedMethod === 'efectivo' || selectedMethod === 'pago_movil' || selectedMethod === 'zelle') {
-        await registerCashEgress(
-          totalReturnAmount, 
-          `Devolución Recibo #${formatReceipt(selectedTransaction.receiptNumber || selectedTransaction.receipt_number)}`, 
-          returnTransaction.id, 
-          selectedMethod === 'efectivo' ? 'efectivo_bs' : selectedMethod
-        );
-      } else {
-        await syncService.saveAccountingEntry({
-          id: Date.now(),
-          date: new Date().toISOString(),
-          type: 'egreso',
-          category: 'devolucion',
-          subcategory: 'nota_credito',
-          concept: `Nota de crédito - Devolución #${selectedTransaction.id}`,
-          description: `Cliente: ${selectedTransaction.clientName || 'Final'}`,
-          amount: totalReturnAmount,
-          referenceId: returnTransaction.id,
-          referenceType: 'return',
-          createdAt: new Date().toISOString()
-        });
-      }
+      const accountingEntry = {
+        id: Date.now() + 1,
+        date: returnTransaction.date,
+        type: 'egreso',
+        category: 'devolucion',
+        subcategory: selectedMethod === 'nota_credito' ? 'nota_credito' : 'reembolso',
+        concept: `Devolución Recibo #${formatReceipt(selectedTransaction.receiptNumber || selectedTransaction.receipt_number)}`,
+        description: `Cliente: ${selectedTransaction.clientName || 'Final'} - Motivo: ${reasonLabel}`,
+        amount: totalReturnAmount,
+        referenceId: returnTransaction.id,
+        referenceType: 'return',
+        createdAt: new Date().toISOString()
+      };
+
+      // Nuevas transacciones para el registro (balancín de caja)
+      const currentTxs = register?.txs || [];
+      const updatedTxs = [...currentTxs, returnTransaction];
+
+      // Ejecutar todo en un solo bloque atómico
+      await syncService.runAtomicSale(currentTerminalName, returnTransaction, {
+        products: stockUpdates,
+        kardexEntries: kardexEntries,
+        accountingEntry: accountingEntry,
+        registerUpdate: { txs: updatedTxs }
+      });
+
+      // Actualizar el estado de la venta original
+      const db = getDatabase(app);
+      await update(ref(db, `transactions/${saleId}`), {
+        return_status: returnStatus,
+        updatedAt: new Date().toISOString()
+      });
+
+      localStorage.setItem(getReturnStorageKey(), returnReceiptNumber.toString());
+      setNextReturnNumber(returnReceiptNumber + 1);
 
       setMessage({ type: 'success', text: `✅ Devolución DEV-${returnReceiptNumber.toString().padStart(6, '0')} procesada correctamente.` });
       setSearchReceipt('');
@@ -397,7 +395,7 @@ export default function ReturnsModule() {
 
     } catch (err) {
       console.error('Error procesando devolución:', err);
-      alert('Error crítico al procesar la devolución. Verifique la conexión.');
+      alert('Error crítico al procesar la devolución.');
     } finally {
       setIsProcessing(false);
     }
@@ -410,6 +408,8 @@ export default function ReturnsModule() {
     }
     return viewingReturnDetail.items;
   }, [viewingReturnDetail]);
+
+  const salesTransactionsList = useMemo(() => salesTransactions, [salesTransactions]);
 
   return (
     <div className="p-6 h-full overflow-auto bg-background flex flex-col">
@@ -542,10 +542,10 @@ export default function ReturnsModule() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {salesTransactions.length === 0 ? (
+                {salesTransactionsList.length === 0 ? (
                   <TableRow><TableCell colSpan={6} className="text-center py-16 opacity-30 italic">No hay ventas registradas en el período</TableCell></TableRow>
                 ) : (
-                  salesTransactions.map((tx) => {
+                  salesTransactionsList.map((tx) => {
                     const returned = tx.return_status === 'total' || tx.return_status === 'partial';
                     return (
                       <TableRow key={tx.id} className={cn("group hover:bg-slate-50 transition-colors", returned && "bg-red-50/30")}>
@@ -608,7 +608,6 @@ export default function ReturnsModule() {
         </div>
       </div>
 
-      {/* Modales de detalle y procesamiento (sin cambios en su lógica interna) */}
       <Dialog open={!!viewingReturnDetail} onOpenChange={() => setViewingReturnDetail(null)}>
         <DialogContent className="max-w-2xl p-0 overflow-hidden rounded-2xl shadow-xl">
           <div className="flex flex-col">
@@ -713,7 +712,7 @@ export default function ReturnsModule() {
                         <Package size={14} /> Paso 2: Seleccionar Productos
                       </h4>
                       <Button variant="ghost" onClick={selectAllItems} className="text-[10px] font-black text-red-600 hover:bg-red-50 px-2 h-7">
-                        DEVOLVER TODO EL TICKET
+                        SELECCIONAR TODO EL TICKET
                       </Button>
                     </div>
 

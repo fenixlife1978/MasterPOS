@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useMemo, useCallback, useEffect } from 'react';
@@ -84,7 +85,6 @@ export default function ReturnsModule() {
   const [returnItems, setReturnItems] = useState<ReturnItem[]>([]);
   const [showReturnModal, setShowReturnModal] = useState(false);
   
-  // Estados del flujo de devolución
   const [selectedMethod, setSelectedMethod] = useState<ReturnMethod>('efectivo');
   const [selectedReason, setSelectedReason] = useState(RETURN_REASONS[1].id);
   const [authPin, setAuthPin] = useState('');
@@ -105,6 +105,9 @@ export default function ReturnsModule() {
   const [isLoading, setIsLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
+
+  // ✅ Alias para compatibilidad con el JSX de la tabla
+  const salesTransactions = filteredTransactions;
 
   useEffect(() => {
     if (isAdmin) {
@@ -218,7 +221,6 @@ export default function ReturnsModule() {
     
     setSelectedTransaction(tx);
     
-    // Detectar método original para sugerirlo
     const originalMethod = tx.pay_method || tx.payMethod || 'efectivo_bs';
     if (originalMethod === 'usd_efectivo') setSelectedMethod('efectivo');
     else if (originalMethod === 'zelle') setSelectedMethod('zelle');
@@ -251,7 +253,6 @@ export default function ReturnsModule() {
     setReturnItems(prev => {
       const upd = [...prev];
       const item = upd[idx];
-      // BLOQUEO DE CANTIDADES: No permitir más de lo comprado
       const q = Math.min(item.originalQty, Math.max(0, newQty));
       upd[idx] = { ...item, returnQty: q, amount: item.priceBs * q };
       return upd;
@@ -288,7 +289,6 @@ export default function ReturnsModule() {
     setIsProcessing(true);
     
     try {
-      // 1. Verificar PIN
       const adminCodeData = await syncService.getAdminCode();
       if (!adminCodeData || String(adminCodeData.code) !== String(authPin)) {
         alert('PIN de autorización incorrecto');
@@ -300,7 +300,6 @@ export default function ReturnsModule() {
       const isTotal = returnItems.every(i => i.returnQty === i.originalQty);
       const returnStatus = isTotal ? 'total' : 'partial';
 
-      // 2. Crear Transacción de Devolución
       const returnItemsList: CartItem[] = returnItems.filter(i => i.returnQty > 0).map(i => ({
         productId: i.productId,
         name: i.name,
@@ -339,7 +338,6 @@ export default function ReturnsModule() {
         exchangeRate: selectedTransaction.exchangeRate || exchangeRate
       };
 
-      // 3. Guardar en Base de Datos
       const db = getDatabase(app);
       await Promise.all([
         syncService.saveTransaction(returnTransaction),
@@ -349,7 +347,6 @@ export default function ReturnsModule() {
         })
       ]);
 
-      // 4. Actualizar Stock y Kardex
       for (const ret of returnItems.filter(i => i.returnQty > 0)) {
         const prod = products.find(p => p.id === ret.productId);
         if (prod) {
@@ -370,7 +367,6 @@ export default function ReturnsModule() {
         }
       }
 
-      // 5. Registrar egreso de caja si aplica
       if (selectedMethod === 'efectivo' || selectedMethod === 'pago_movil' || selectedMethod === 'zelle') {
         await registerCashEgress(
           totalReturnAmount, 
@@ -379,7 +375,6 @@ export default function ReturnsModule() {
           selectedMethod === 'efectivo' ? 'efectivo_bs' : selectedMethod
         );
       } else {
-        // Nota de crédito
         await syncService.saveAccountingEntry({
           id: Date.now(),
           date: new Date().toISOString(),
@@ -412,7 +407,6 @@ export default function ReturnsModule() {
 
   return (
     <div className="p-6 h-full overflow-auto bg-background">
-      {/* Header Principal */}
       <div className="flex justify-between items-start mb-6 flex-wrap gap-4">
         <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-r-xl shadow-sm flex-1 min-w-[300px]">
           <div className="flex items-center gap-3">
@@ -450,7 +444,6 @@ export default function ReturnsModule() {
         </div>
       </div>
 
-      {/* Buscador de Factura Original */}
       <div className="bg-white border-2 border-slate-200 rounded-2xl p-5 mb-6 shadow-md">
         <div className="flex items-center gap-2 mb-4">
           <Receipt size={18} className="text-slate-400" />
@@ -497,7 +490,6 @@ export default function ReturnsModule() {
         </div>
       )}
 
-      {/* Listado de Ventas Disponibles */}
       <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-lg">
         <Table>
           <TableHeader className="bg-slate-50">
@@ -560,7 +552,6 @@ export default function ReturnsModule() {
         </Table>
       </div>
 
-      {/* Modal Paso 2 y 3: Configuración de la Devolución */}
       <Dialog open={showReturnModal} onOpenChange={setShowReturnModal}>
         <DialogContent className="max-w-4xl p-0 overflow-hidden rounded-3xl border-none shadow-2xl">
           <div className="flex flex-col h-[90vh]">
@@ -583,7 +574,6 @@ export default function ReturnsModule() {
 
             <div className="flex-1 overflow-y-auto p-6 bg-slate-50">
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* Panel Izquierdo: Selección de Ítems */}
                 <div className="lg:col-span-2 space-y-4">
                   <div className="bg-white border-2 border-slate-200 rounded-2xl p-4 shadow-sm">
                     <div className="flex justify-between items-center mb-3">
@@ -649,9 +639,7 @@ export default function ReturnsModule() {
                   </div>
                 </div>
 
-                {/* Panel Derecho: Configuración Final */}
                 <div className="space-y-4">
-                  {/* Resumen Monetario */}
                   <div className="bg-red-600 rounded-2xl p-5 text-white shadow-lg shadow-red-200">
                     <p className="text-[10px] font-black uppercase opacity-70 tracking-widest">Total a Reembolsar</p>
                     <p className="text-4xl font-black mt-1 leading-none">{formatBs(totalReturnAmount)}</p>
@@ -663,7 +651,6 @@ export default function ReturnsModule() {
                     </div>
                   </div>
 
-                  {/* Motivo */}
                   <div className="bg-white border-2 border-slate-200 rounded-2xl p-4 shadow-sm">
                     <h4 className="text-[10px] font-black uppercase text-slate-500 mb-3">Paso 3: Motivo de la Devolución</h4>
                     <select 
@@ -677,7 +664,6 @@ export default function ReturnsModule() {
                     </select>
                   </div>
 
-                  {/* Método de Reembolso */}
                   <div className="bg-white border-2 border-slate-200 rounded-2xl p-4 shadow-sm">
                     <h4 className="text-[10px] font-black uppercase text-slate-500 mb-3">Paso 4: Método de Reembolso</h4>
                     <div className="grid grid-cols-2 gap-2">
@@ -699,7 +685,6 @@ export default function ReturnsModule() {
                     </div>
                   </div>
 
-                  {/* Autorización */}
                   <div className="bg-amber-50 border-2 border-amber-200 rounded-2xl p-4 shadow-sm">
                     <div className="flex items-center gap-2 mb-3">
                       <ShieldCheck size={18} className="text-amber-600" />
@@ -721,7 +706,6 @@ export default function ReturnsModule() {
               </div>
             </div>
 
-            {/* Footer de Acción */}
             <div className="bg-white border-t p-5 flex justify-between items-center shrink-0">
               <div className="flex items-center gap-2 text-slate-400 text-xs">
                 <AlertCircle size={14} />

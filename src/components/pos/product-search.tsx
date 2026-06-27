@@ -35,9 +35,9 @@ export default function ProductSearch({ state, onAdd }: ProductSearchProps) {
     if (product.stock === 0) {
       return "text-red-600 bg-red-50";
     } else if (product.stock <= minStock) {
-      return "text-yellow-600 bg-yellow-50";
+      return "text-black bg-yellow-200"; // Más contraste para stock crítico
     } else {
-      return "text-green-600 bg-green-50";
+      return "text-black bg-green-200"; // Más contraste
     }
   };
 
@@ -132,10 +132,10 @@ export default function ProductSearch({ state, onAdd }: ProductSearchProps) {
     <div className="flex flex-col h-full bg-primary relative">
       <div className="p-3.5 z-50">
         <div className={cn(
-          "flex items-center bg-background border border-black/40 rounded-xl px-3 transition-all duration-200",
-          isFocused && "border-black shadow-sm"
+          "flex items-center bg-background border-2 border-black rounded-xl px-3 transition-all duration-200",
+          isFocused && "border-black shadow-lg"
         )}>
-          <Search size={16} className="text-black/40" />
+          <Search size={18} className="text-black font-black" />
           <input 
             id="pos-search-input"
             type="text" 
@@ -146,13 +146,13 @@ export default function ProductSearch({ state, onAdd }: ProductSearchProps) {
               setSelectedIndex(-1);
             }}
             onBlur={() => setTimeout(() => setIsFocused(false), 200)}
-            placeholder={isClientSearch ? "Buscar cliente por nombre o cédula..." : "Buscar producto o escanear..."}
-            className="flex-1 bg-transparent border-none text-black px-2 py-2.5 text-sm focus:outline-none font-body placeholder:text-black/30"
+            placeholder={isClientSearch ? "BUSCAR CLIENTE..." : "BUSCAR PRODUCTO O ESCANEAR..."}
+            className="flex-1 bg-transparent border-none text-black px-2 py-3 text-base font-black focus:outline-none font-body placeholder:text-black"
           />
           {isClientSearch ? (
-             <X size={18} className="text-black/40 cursor-pointer hover:text-black" onClick={() => { setIsClientSearch(false); setQuery(''); }} />
+             <X size={22} className="text-black cursor-pointer hover:scale-110" onClick={() => { setIsClientSearch(false); setQuery(''); }} />
           ) : (
-             <Barcode size={18} className="text-black/60" />
+             <Barcode size={22} className="text-black font-black" />
           )}
         </div>
 
@@ -164,13 +164,13 @@ export default function ProductSearch({ state, onAdd }: ProductSearchProps) {
             setSelectedIndex(-1);
           }}
           className={cn(
-            "w-full mt-2.5 flex items-center justify-center gap-2 p-2.5 rounded-xl font-bold text-[13px] transition-all border border-black/40",
+            "w-full mt-2.5 flex items-center justify-center gap-2 p-3 rounded-xl font-black text-sm transition-all border-2 border-black",
             isClientSearch || viewingClient 
-              ? "bg-black/10 text-black border-black/60" 
-              : "bg-background/20 text-black/80 hover:bg-black/5 hover:text-black"
+              ? "bg-black text-white" 
+              : "bg-white text-black hover:bg-black hover:text-white"
           )}
         >
-          <UserCircle size={18} />
+          <UserCircle size={20} />
           {viewingClient ? 'CAMBIAR CLIENTE' : isClientSearch ? 'CANCELAR BÚSQUEDA' : 'VER CLIENTE'}
         </button>
       </div>
@@ -180,12 +180,12 @@ export default function ProductSearch({ state, onAdd }: ProductSearchProps) {
           <div className="space-y-4 animate-in fade-in slide-in-from-top-2">
             {Object.entries(groupedProductResults).length === 0 ? (
               <div className="text-center py-8">
-                <p className="text-black/40 text-sm">No se encontraron productos</p>
+                <p className="text-black font-black text-base">No se encontraron productos</p>
               </div>
             ) : (
               Object.entries(groupedProductResults).map(([category, items]) => (
                 <div key={category} className="space-y-1">
-                  <div className="text-[10px] font-bold text-black/40 uppercase tracking-[0.1em] px-2 mb-1">
+                  <div className="text-xs font-black text-black uppercase tracking-widest px-2 mb-1 bg-white/30 rounded py-0.5 inline-block">
                     {category}
                   </div>
                   {items.map((p, idx) => {
@@ -205,27 +205,27 @@ export default function ProductSearch({ state, onAdd }: ProductSearchProps) {
                           setSelectedIndex(-1);
                         }}
                         className={cn(
-                          "w-full flex items-center gap-3 p-2.5 rounded-lg border transition-all text-left",
+                          "w-full flex items-center gap-3 p-3 rounded-lg border-2 transition-all text-left shadow-sm",
                           isSelected 
-                            ? "bg-primary/20 border-primary shadow-md" 
-                            : "bg-background border-black/30 hover:border-black/60 hover:bg-white/10"
+                            ? "bg-black text-white border-black" 
+                            : "bg-white border-black/20 hover:border-black hover:shadow-md"
                         )}
                       >
-                        <div className="w-9 h-9 rounded-lg bg-black/5 flex items-center justify-center text-black/60 border border-black/20">
-                          <Barcode size={18} />
+                        <div className="w-10 h-10 rounded-lg bg-black/5 flex items-center justify-center text-black border border-black/10">
+                          <Barcode size={22} />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="text-[13px] font-medium truncate text-black">{p.name}</div>
-                          <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                            <span className="text-[12px] font-bold text-[#D4A017]">{formatUsd(p.priceUsd)}</span>
+                          <div className={cn("text-base font-black truncate", isSelected ? "text-white" : "text-black")}>{p.name}</div>
+                          <div className="flex items-center gap-2 mt-1 flex-wrap">
+                            <span className={cn("text-base font-black", isSelected ? "text-primary" : "text-black")}>{formatUsd(p.priceUsd)}</span>
                             <span className={cn(
-                              "text-[10px] font-bold px-1.5 py-0.5 rounded-full",
+                              "text-[11px] font-black px-2 py-0.5 rounded-full border border-black/10",
                               stockColor
                             )}>
                               {stockText}
                             </span>
                             {p.department && (
-                              <span className="text-[9px] text-black/40 font-mono">📁 {p.department}</span>
+                              <span className={cn("text-[11px] font-black uppercase", isSelected ? "text-white/70" : "text-black")}>📁 {p.department}</span>
                             )}
                           </div>
                         </div>
@@ -248,12 +248,12 @@ export default function ProductSearch({ state, onAdd }: ProductSearchProps) {
                   setIsClientSearch(false);
                   setQuery('');
                 }}
-                className="w-full flex items-center gap-3 p-3 rounded-lg bg-background border border-black/30 hover:bg-white/10 hover:border-black/60 transition-all text-left group"
+                className="w-full flex items-center gap-3 p-4 rounded-lg bg-white border-2 border-black hover:bg-black hover:text-white transition-all text-left group shadow-sm"
               >
-                <UserCircle size={24} className="text-black/60" />
+                <UserCircle size={28} className="text-black group-hover:text-white" />
                 <div className="flex-1">
-                  <div className="text-[13px] font-medium text-black">{c.name}</div>
-                  <div className="text-[11px] text-black/50">{c.cedula} | {c.phone}</div>
+                  <div className="text-base font-black text-black group-hover:text-white">{c.name}</div>
+                  <div className="text-xs font-black text-black group-hover:text-white/70">{c.cedula} | {c.phone}</div>
                 </div>
               </button>
             ))}

@@ -99,19 +99,19 @@ export default function Topbar({ register, rate, onRateChange }: TopbarProps) {
   };
 
   return (
-    <header className="h-[56px] bg-secondary border-b border-black/10 flex items-center px-6 gap-6 shrink-0 z-40">
-      <div className="flex items-center gap-3">
-        <div className="font-headline font-bold text-[22px] tracking-tight">
+    <header className="h-[70px] bg-secondary border-b-4 border-black flex items-center px-8 gap-8 shrink-0 z-40 shadow-xl">
+      <div className="flex items-center gap-4">
+        <div className="font-headline font-black text-3xl tracking-tighter">
           <span className="text-primary">Master</span>
           <span className="text-white">POS</span>
         </div>
         
-        {/* ✅ Terminal - Diseño discreto (Muestra Nombre en lugar de ID) */}
+        {/* ✅ Terminal - Diseño mucho más legible */}
         {showTerminalBadge && (
-          <div className="flex items-center gap-1.5 bg-white/10 rounded-lg px-2.5 py-1 border border-white/10">
-            <Monitor size={12} className="text-primary/70" />
-            <span className="text-white/60 font-mono text-[10px] font-bold tracking-wider uppercase">
-              {currentTerminalName}
+          <div className="flex items-center gap-2 bg-primary text-black rounded-xl px-4 py-1.5 border-2 border-black shadow-lg">
+            <Monitor size={18} className="text-black font-black" />
+            <span className="font-black text-sm tracking-widest uppercase">
+              TERMINAL: {currentTerminalName}
             </span>
           </div>
         )}
@@ -120,28 +120,28 @@ export default function Topbar({ register, rate, onRateChange }: TopbarProps) {
       {/* Badge de estado de caja (solo para cajeros) */}
       {showRegisterBadge && (
         <div className={cn(
-          "px-4 py-1 rounded-full text-[12px] font-bold tracking-tight transition-all duration-200 shadow-md flex items-center gap-2",
+          "px-6 py-2 rounded-2xl text-sm font-black tracking-widest transition-all duration-200 shadow-2xl flex items-center gap-3 border-2 border-black",
           isOpen 
-            ? "bg-[#2ECC71] text-white border border-[#27AE60]" 
-            : "bg-[#E74C3C] text-white border border-[#C0392B]"
+            ? "bg-[#2ECC71] text-white" 
+            : "bg-[#E74C3C] text-white"
         )}>
           <span className={cn(
-            "w-2 h-2 rounded-full",
-            isOpen ? "bg-white animate-pulse" : "bg-white/50"
+            "w-3 h-3 rounded-full border-2 border-white",
+            isOpen ? "bg-white animate-pulse" : "bg-white/30"
           )} />
           {isOpen ? 'CAJA ABIERTA' : 'CAJA CERRADA'}
         </div>
       )}
 
-      <div className="ml-auto flex items-center gap-6">
-        <div className="flex items-center gap-2">
+      <div className="ml-auto flex items-center gap-8">
+        <div className="flex items-center gap-3">
           {isOnline ? (
-            <Wifi size={14} className="text-green-400" />
+            <Wifi size={24} className="text-green-400 drop-shadow-md" />
           ) : (
-            <WifiOff size={14} className="text-red-400" />
+            <WifiOff size={24} className="text-red-500 drop-shadow-md" />
           )}
           {pendingSync > 0 && (
-            <span className="text-[9px] bg-yellow-500 text-black px-1.5 py-0.5 rounded-full animate-pulse">
+            <span className="text-xs bg-red-600 text-white px-2.5 py-1 rounded-lg animate-bounce font-black border border-white">
               {pendingSync}
             </span>
           )}
@@ -149,11 +149,11 @@ export default function Topbar({ register, rate, onRateChange }: TopbarProps) {
           <button
             onClick={handleSync}
             disabled={isSyncing}
-            className="relative flex items-center justify-center w-6 h-6 rounded-full hover:bg-white/10 transition-colors"
+            className="relative flex items-center justify-center w-10 h-10 rounded-xl bg-white/10 border border-white/20 hover:bg-primary hover:text-black transition-all shadow-md group"
             title="Sincronizar operaciones pendientes"
           >
-            <UploadCloud size={14} className={cn(
-              "text-white/80 hover:text-white transition-colors",
+            <UploadCloud size={20} className={cn(
+              "text-white group-hover:text-black transition-colors",
               isSyncing && "animate-spin"
             )} />
           </button>
@@ -161,21 +161,24 @@ export default function Topbar({ register, rate, onRateChange }: TopbarProps) {
 
         <InvoiceNotifications variant="cashier" />
 
-        <div className="bg-black/30 px-5 py-1.5 rounded-full flex items-center gap-3 border border-white/5 shadow-inner">
-          <RefreshCw size={16} className="text-primary" />
-          <div className="flex items-center gap-2 text-[13px]">
-            <span className="text-white/70 font-bold tracking-widest text-[11px]">TASA BCV:</span>
-            <span className="text-primary font-black text-[15px]">{formatBsNumber(rate)}</span>
-            <span className="text-white/40 text-[10px] font-bold ml-1">BS/USD</span>
+        <div className="bg-black p-1 rounded-2xl border-2 border-primary/30 shadow-2xl flex items-center pr-6">
+          <div className="bg-primary text-black p-2 rounded-xl mr-4 border border-black shadow-lg">
+            <RefreshCw size={24} className="font-black" />
+          </div>
+          <div className="flex flex-col">
+            <span className="text-primary font-black tracking-widest text-xs uppercase leading-none mb-1">Tasa BCV Oficial</span>
+            <div className="flex items-baseline gap-2">
+              <span className="text-white font-black text-2xl tracking-tighter">{formatBsNumber(rate)}</span>
+              <span className="text-primary/60 text-xs font-black">BS/USD</span>
+            </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-3 text-[14px] font-medium text-white">
-          <Clock size={18} className="text-primary" />
-          <div className="flex items-center gap-2">
-            <span className="font-bold">{formatDate(time)}</span>
-            <span className="text-white/20">|</span>
-            <span className="font-bold">{formatTime(time)}</span>
+        <div className="flex items-center gap-4 bg-white/5 px-6 py-2 rounded-2xl border border-white/10 shadow-inner">
+          <Clock size={24} className="text-primary" />
+          <div className="flex flex-col text-right">
+            <span className="text-primary font-black text-sm uppercase tracking-widest leading-none mb-1">{formatDate(time)}</span>
+            <span className="text-white font-black text-xl tracking-tight leading-none">{formatTime(time)}</span>
           </div>
         </div>
       </div>

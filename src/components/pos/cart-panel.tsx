@@ -127,30 +127,29 @@ export default function CartPanel({
   // El número ya viene desde el POSModule con el contador específico de la terminal
   const formattedReceiptNumber = nextReceiptNumber.toString().padStart(8, '0');
   
-  const getRowClassName = (index: number) => index % 2 === 0 ? "bg-white" : "bg-gray-50";
+  const getRowClassName = (index: number) => index % 2 === 0 ? "bg-white" : "bg-gray-100";
 
   return (
     <>
       <div className="flex flex-col h-full bg-white border-l border-r border-black">
         {/* Header con número de recibo y terminal */}
-        <div className="p-4 border-b border-black bg-white flex items-center justify-between shrink-0 flex-wrap gap-2">
+        <div className="p-4 border-b-2 border-black bg-white flex items-center justify-between shrink-0 flex-wrap gap-2">
           <div className="flex items-center gap-2">
-            <ShoppingCart size={20} className="text-primary" />
-            <h2 className="text-lg font-black text-black">Carrito de Ventas</h2>
+            <ShoppingCart size={24} className="text-black" />
+            <h2 className="text-xl font-black text-black uppercase">Carrito de Ventas</h2>
           </div>
           <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1.5 bg-gray-100 px-3 py-1.5 rounded-full">
-              <Receipt size={14} className="text-black font-bold" />
-              <span className="text-[11px] font-black text-black uppercase">Recibo #{formattedReceiptNumber}</span>
+            <div className="flex items-center gap-2 bg-black px-4 py-2 rounded-xl">
+              <Receipt size={18} className="text-primary" />
+              <span className="text-sm font-black text-white uppercase tracking-widest">Recibo #{formattedReceiptNumber}</span>
             </div>
             {terminalId !== 'default' && (
-              <div className="flex items-center gap-1.5 bg-primary/10 px-2 py-1 rounded-full">
-                <span className="text-[9px] font-black text-primary uppercase">Terminal</span>
-                <span className="text-[10px] font-mono font-bold text-black">{terminalId}</span>
+              <div className="flex items-center gap-1.5 bg-primary px-3 py-1.5 rounded-xl border border-black">
+                <span className="text-xs font-black text-black uppercase">Term. {terminalId}</span>
               </div>
             )}
-            <span className="bg-secondary text-white px-2.5 py-1 rounded-full text-xs font-black">
-              {cart.length} items
+            <span className="bg-secondary text-white px-3 py-1.5 rounded-xl text-sm font-black">
+              {cart.length} ITEMS
             </span>
           </div>
         </div>
@@ -158,28 +157,22 @@ export default function CartPanel({
         {/* Tabla */}
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* Cabecera */}
-          <div className="grid grid-cols-12 gap-2 px-4 py-3 bg-gray-100 border-b border-black text-[11px] font-black uppercase tracking-wider text-black shrink-0">
+          <div className="grid grid-cols-12 gap-2 px-4 py-4 bg-black text-xs font-black uppercase tracking-widest text-white shrink-0">
             <div className="col-span-4 text-left">Descripción</div>
             <div className="col-span-1 text-center">Cant</div>
             <div className="col-span-1 text-center">U.M.</div>
-            <div className="col-span-2 text-center">
-              Precio <span className="block text-[9px] font-normal">(USD)</span>
-            </div>
-            <div className="col-span-2 text-center">
-              Precio <span className="block text-[9px] font-normal">(Bs)</span>
-            </div>
-            <div className="col-span-1 text-right">
-              Sub <span className="block text-[9px] font-normal">Total</span>
-            </div>
-            <div className="col-span-1 text-right">Acción</div>
+            <div className="col-span-2 text-center">Precio (USD)</div>
+            <div className="col-span-2 text-center">Precio (Bs)</div>
+            <div className="col-span-1 text-right">Total</div>
+            <div className="col-span-1 text-right">Borrar</div>
           </div>
 
           {/* Cuerpo scrollable */}
           <div className="flex-1 overflow-y-auto scrollbar-thin">
             {cart.length === 0 ? (
-              <div className="h-full flex flex-col items-center justify-center gap-3 opacity-50">
-                <ShoppingCart size={56} strokeWidth={1.5} className="text-black/60" />
-                <p className="text-base font-semibold text-black/70">Carrito vacío</p>
+              <div className="h-full flex flex-col items-center justify-center gap-4">
+                <ShoppingCart size={80} strokeWidth={2} className="text-black/20" />
+                <p className="text-xl font-black text-black/30 uppercase tracking-widest">Carrito vacío</p>
               </div>
             ) : (
               cart.map((item, idx) => {
@@ -196,8 +189,8 @@ export default function CartPanel({
                   <div 
                     key={item.productId} 
                     className={cn(
-                      "grid grid-cols-12 gap-2 px-4 py-3 border-b border-black/10 transition-all hover:bg-gray-100",
-                      kitStockWarning && "bg-red-50 border-l-4 border-l-red-500",
+                      "grid grid-cols-12 gap-2 px-4 py-4 border-b-2 border-black/10 transition-all hover:bg-primary/5",
+                      kitStockWarning && "bg-red-100 border-l-8 border-l-red-600",
                       getRowClassName(idx)
                     )}
                   >
@@ -205,54 +198,38 @@ export default function CartPanel({
                     <div className="col-span-4">
                       <div className="flex items-center justify-between gap-2">
                         <div 
-                          className="relative flex items-center gap-2 font-mono text-sm font-bold text-black truncate flex-1"
+                          className="relative flex items-center gap-2 font-black text-base text-black truncate flex-1"
                           onMouseEnter={() => isKit && setTooltipVisible(item.productId)}
                           onMouseLeave={() => setTooltipVisible(null)}
                         >
                           <span className="truncate">{item.name}</span>
                           {isKit && (
                             <span title="Producto compuesto (kit/combos)">
-                              <PackageOpen size={14} className="text-blue-500 flex-shrink-0" />
+                              <PackageOpen size={18} className="text-blue-600 flex-shrink-0" />
                             </span>
                           )}
                           {kitStockWarning && (
                             <span title="Stock insuficiente de componentes">
-                              <AlertTriangle size={14} className="text-red-500 flex-shrink-0" />
+                              <AlertTriangle size={18} className="text-red-600 flex-shrink-0" />
                             </span>
-                          )}
-                          {isKit && tooltipVisible === item.productId && (
-                            <div className="absolute top-full left-0 z-20 mt-1 bg-gray-800 text-white text-[10px] rounded px-2 py-1 whitespace-nowrap shadow-lg">
-                              {kitComponents.map((comp: any) => {
-                                const child = products.find(p => p.id === comp.productId);
-                                const childStock = child?.stock || 0;
-                                const needed = comp.quantity * item.qty;
-                                const hasEnough = childStock >= needed;
-                                return (
-                                  <div key={comp.productId} className={!hasEnough ? "text-red-300" : ""}>
-                                    {child?.name || 'Producto'} x{comp.quantity} 
-                                    {!hasEnough && ` (Stock: ${childStock} → necesita ${needed})`}
-                                  </div>
-                                );
-                              })}
-                            </div>
                           )}
                         </div>
                         <button 
                           onClick={() => openPriceModal(item.productId)}
-                          className="text-blue-600 hover:text-blue-800 transition-colors flex-shrink-0"
+                          className="text-blue-700 hover:scale-125 transition-all flex-shrink-0 p-1 bg-blue-50 rounded"
                           title="Cambiar tipo de precio"
                         >
-                          <Tag size={14} />
+                          <Tag size={18} className="font-black" />
                         </button>
                       </div>
                       {hasIva && (
-                        <span className="text-[9px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded mt-1 inline-block">
+                        <span className="text-[11px] font-black text-black bg-amber-300 px-2 py-0.5 rounded mt-1 inline-block border border-black/20">
                           IVA INCLUIDO (16%)
                         </span>
                       )}
                       {kitStockWarning && (
-                        <span className="text-[9px] font-bold text-red-700 bg-red-50 px-1.5 py-0.5 rounded mt-1 inline-block">
-                          Stock insuficiente de componentes
+                        <span className="text-[11px] font-black text-white bg-red-600 px-2 py-0.5 rounded mt-1 inline-block">
+                          STOCK INSUFICIENTE
                         </span>
                       )}
                     </div>
@@ -268,7 +245,6 @@ export default function CartPanel({
                           if (!isNaN(val) && val > 0) {
                             handleQuantityChange(item.productId, val);
                           } else if (e.target.value === '') {
-                            // Permitir campo vacío temporalmente
                           } else {
                             handleQuantityChange(item.productId, 0);
                           }
@@ -279,44 +255,42 @@ export default function CartPanel({
                             handleQuantityChange(item.productId, 0);
                           }
                         }}
-                        className="w-14 text-center text-base font-black text-black bg-gray-100 rounded-lg px-2 py-1.5 border border-gray-200 focus:border-primary focus:outline-none"
+                        className="w-16 text-center text-xl font-black text-black bg-white rounded-lg px-2 py-2 border-2 border-black focus:ring-4 focus:ring-primary focus:outline-none shadow-sm"
                       />
                     </div>
 
                     {/* U.M. */}
                     <div className="col-span-1 flex items-center justify-center">
-                      <span className="text-[10px] font-bold text-black/60 uppercase">{item.unitMeasure || 'UNID'}</span>
+                      <span className="text-xs font-black text-black uppercase">{item.unitMeasure || 'UNID'}</span>
                     </div>
                     
                     {/* Precio USD */}
-                    <div className="col-span-2 text-center">
-                      <div className="font-mono text-sm font-bold text-black">
+                    <div className="col-span-2 text-center flex flex-col justify-center">
+                      <div className="font-black text-base text-black">
                         {formatUsd(priceUsd)}
                       </div>
-                      <div className="text-[9px] font-bold text-black">USD</div>
                     </div>
                     
                     {/* Precio Bs */}
-                    <div className="col-span-2 text-center">
-                      <div className="font-mono text-sm font-bold text-black">
+                    <div className="col-span-2 text-center flex flex-col justify-center">
+                      <div className="font-black text-base text-black">
                         {formatBs(item.priceBs)}
                       </div>
-                      <div className="text-[9px] font-bold text-black">Bs</div>
                     </div>
                     
                     {/* Subtotal */}
-                    <div className="col-span-1 text-right font-mono text-sm font-black text-black">
+                    <div className="col-span-1 text-right font-black text-base text-black flex items-center justify-end">
                       {formatBs(itemSubtotal)}
                     </div>
                     
                     {/* Botón eliminar */}
-                    <div className="col-span-1 text-right">
+                    <div className="col-span-1 text-right flex items-center justify-end">
                       <button 
                         onClick={() => onRemove(item.productId)} 
-                        className="text-black/60 hover:text-red-600 transition-colors p-2"
+                        className="text-red-600 hover:text-red-800 hover:scale-125 transition-all p-2 bg-red-50 rounded-lg border border-red-200"
                         title="Eliminar producto"
                       >
-                        <Trash2 size={16} />
+                        <Trash2 size={20} className="font-black" />
                       </button>
                     </div>
                   </div>
@@ -327,46 +301,49 @@ export default function CartPanel({
         </div>
 
         {/* Totales y botón de cobro */}
-        <div className="border-t border-black bg-white shrink-0">
-          <div className="p-5 space-y-2">
-            <div className="flex justify-between font-mono text-base">
-              <span className="text-black font-bold">Subtotal:</span>
-              <span className="font-black text-black">{formatBs(subtotal)}</span>
+        <div className="border-t-4 border-black bg-white shrink-0 shadow-[0_-4px_20px_rgba(0,0,0,0.1)]">
+          <div className="p-6 space-y-4">
+            <div className="flex justify-between items-center">
+              <span className="text-lg font-black text-black uppercase tracking-widest">Subtotal:</span>
+              <span className="text-xl font-black text-black">{formatBs(subtotal)}</span>
             </div>
+            
             {hasAnyIvaProduct && iva > 0 && (
-              <div className="flex justify-between font-mono text-base">
-                <span className="text-black font-bold">IVA (16%):</span>
-                <span className="font-black text-amber-700">{formatBs(iva)}</span>
+              <div className="flex justify-between items-center border-t border-black/10 pt-2">
+                <span className="text-lg font-black text-black uppercase tracking-widest">IVA (16%):</span>
+                <span className="text-xl font-black text-black">{formatBs(iva)}</span>
               </div>
             )}
-            <div className="pt-4 mt-2 border-t-2 border-black flex justify-between items-end">
-              <div>
-                <div className="text-xs text-black font-black uppercase tracking-wider">Equivalente en USD</div>
-                <div className="font-mono text-2xl font-black text-black">
+            
+            <div className="pt-4 mt-2 border-t-4 border-black flex justify-between items-end gap-6">
+              <div className="bg-primary/10 p-4 rounded-2xl border-2 border-black/20 flex-1">
+                <div className="text-sm text-black font-black uppercase tracking-widest mb-1">Equivalente en USD</div>
+                <div className="font-black text-4xl text-black">
                   {formatUsd(totalUsd)}
                 </div>
               </div>
-              <div className="text-right">
-                <div className="text-xs text-black font-black uppercase tracking-wider">TOTAL A PAGAR</div>
-                <div className="font-mono text-4xl font-black text-black">
-                  {formatBs(total)}
+              <div className="text-right flex-1">
+                <div className="text-sm text-black font-black uppercase tracking-widest mb-1">TOTAL A PAGAR (BS)</div>
+                <div className="font-black text-6xl text-black tracking-tighter">
+                  {formatBs(total).replace('Bs. ', '')}
+                  <span className="text-xl ml-2">BS</span>
                 </div>
               </div>
             </div>
           </div>
 
-          <div className="p-5 pt-0">
+          <div className="p-6 pt-0">
             <button 
               disabled={cart.length === 0 || !isRegisterOpen || hasInsufficientKitStock}
               onClick={onCobrar}
-              className="w-full py-4 bg-primary rounded-xl text-black font-black text-lg flex items-center justify-center gap-3 hover:brightness-105 active:scale-[0.98] transition-all shadow-md disabled:opacity-30"
+              className="w-full py-6 bg-black text-primary font-black text-3xl flex items-center justify-center gap-4 hover:scale-[1.02] active:scale-95 transition-all shadow-xl disabled:bg-gray-400 border-4 border-primary rounded-2xl"
             >
-              <Banknote size={22} /> COBRAR
+              <Banknote size={40} /> COBRAR AHORA
             </button>
             {hasInsufficientKitStock && (
-              <p className="text-xs text-red-600 text-center mt-3 font-medium">
-                ⚠️ Hay productos tipo kit/combo sin suficiente stock de sus componentes
-              </p>
+              <div className="bg-red-600 text-white text-center py-3 rounded-xl mt-4 font-black text-sm animate-pulse border-2 border-black">
+                ⚠️ ALERTA: HAY PRODUCTOS SIN STOCK SUFICIENTE EN ALMACÉN
+              </div>
             )}
           </div>
         </div>

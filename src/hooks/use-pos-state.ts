@@ -611,20 +611,22 @@ export function usePOSState() {
         concept: `Salida por ${type}`,
         description: paymentData.notes || 'Sin motivo',
         amount: roundTo2(costoTotalOperacion * exchangeRate),
+        totalUsd: costoTotalOperacion, // ✅ Añadido para precisión en divisas
         exchangeRate: exchangeRate,
         referenceId: tx.id,
         referenceType: type,
         createdAt: getVenezuelaISOString(),
       };
-    } else if (type === 'contado' || type === 'credito' || type === 'cobro_deuda') {
+    } else if (type === 'contado' || type === 'cobro_deuda') { // ✅ CORREGIDO: Se excluye 'credito' de la contabilidad real
       accountingEntry = {
         id: getVenezuelaTimestamp() + 1,
         date: getVenezuelaISOString(),
         type: 'ingreso',
-        category: type === 'credito' ? 'cuenta_por_cobrar' : (type === 'cobro_deuda' ? 'cobro_deuda' : 'ventas'),
-        concept: type === 'cobro_deuda' ? 'Cobro de deuda' : (type === 'credito' ? 'Venta a crédito' : 'Venta'),
+        category: type === 'cobro_deuda' ? 'cobro_deuda' : 'ventas',
+        concept: type === 'cobro_deuda' ? 'Cobro de deuda' : 'Venta',
         description: `Cliente: ${tx.clientName || 'Cliente Final'} - Pago: ${tx.payMethod}`,
         amount: tx.total,
+        totalUsd: tx.totalUsd, // ✅ Añadido para precisión en divisas
         exchangeRate: exchangeRate,
         referenceId: tx.id,
         referenceType: type,
@@ -732,6 +734,7 @@ export function usePOSState() {
       concept: 'Cobro de deuda',
       description: `Abono Cliente: ${client.name} - ${method}`,
       amount: amount,
+      totalUsd: tx.totalUsd, // ✅ Añadido para precisión
       exchangeRate: exchangeRate,
       referenceId: tx.id,
       referenceType: 'cobro_deuda',
@@ -800,6 +803,7 @@ export function usePOSState() {
       concept: 'Devolución de venta',
       description: reason,
       amount: totalBs,
+      totalUsd: tx.totalUsd, // ✅ Añadido para precisión
       exchangeRate: exchangeRate,
       referenceId: tx.id,
       referenceType: 'return',

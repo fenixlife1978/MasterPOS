@@ -401,6 +401,8 @@ export default function RegisterPurchase() {
           concept: `Compra de mercancía - Factura ${invoiceNumber} (Pago contado)`,
           description: `Proveedor: ${supplier?.name || 'N/A'} | Total factura: ${formatUsd(totalInvoiceUsd)} | Pagado: ${formatUsd(totalPaidUsd)}`,
           amount: paidAmountBs,
+          totalUsd: totalPaidUsd, // ✅ Añadido para precisión en divisas
+          exchangeRate: rateNum, // ✅ Añadido para auditoría
           referenceId: invoiceId,
           referenceType: 'purchase' as const,
           createdAt: timestamp,

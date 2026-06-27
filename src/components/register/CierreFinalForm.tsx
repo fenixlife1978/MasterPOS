@@ -83,8 +83,6 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
 
   const [morningRate, setMorningRate] = useState<number | null>(null);
   const [eveningRate, setEveningRate] = useState<number | null>(null);
-  const [morningFirstTxTime, setMorningFirstTxTime] = useState<string>('');
-  const [eveningFirstTxTime, setEveningFirstTxTime] = useState<string>('');
 
   const [ventasManana, setVentasManana] = useState<Record<string, { bs: number; usd: number }>>({});
   const [vueltosManana, setVueltosManana] = useState<Record<string, number>>({});
@@ -147,7 +145,8 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
       return formatter.format(txDate) === todayVzla && types.includes(t.type);
     });
     
-    const nums = txDay.map(t => t.receiptNumber || t.receipt_number).filter(n => typeof n === 'number');
+    // ✅ Corregido para evitar error de TypeScript
+    const nums = txDay.map(t => t.receiptNumber || (t as any).receipt_number).filter(n => typeof n === 'number');
     if (nums.length === 0) return { first: '—', last: '—' };
     
     return {
@@ -209,7 +208,8 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
       const isMorning = hour < 12;
 
       if (tx.type === 'devolucion') {
-        let methodDetected = tx.payMethod || 'efectivo_bs';
+        // ✅ Corregido para evitar error de TypeScript
+        let methodDetected = tx.payMethod || (tx as any).pay_method || 'efectivo_bs';
         if (tx.payments && Array.isArray(tx.payments) && tx.payments.length > 0) {
           methodDetected = tx.payments[0].method;
         }
@@ -217,7 +217,8 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
         if (!devolucionesTotales[methodDetected]) devolucionesTotales[methodDetected] = { bs: 0, usd: 0 };
 
         if (methodDetected === 'usd_efectivo' || methodDetected === 'zelle' || methodDetected === 'efectivo_usd') {
-          devolucionesTotales[methodDetected === 'efectivo_usd' ? 'usd_efectivo' : methodDetected].usd += tx.totalUsd || 0;
+          // ✅ Corregido para evitar error de TypeScript
+          devolucionesTotales[methodDetected === 'efectivo_usd' ? 'usd_efectivo' : methodDetected].usd += tx.totalUsd || (tx as any).total_usd || 0;
         } else {
           devolucionesTotales[methodDetected].bs += tx.total || 0;
         }
@@ -242,10 +243,10 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
           }
         }
       } else {
-        const method = tx.pay_method || tx.payMethod || 'efectivo_bs';
+        const method = (tx as any).pay_method || tx.payMethod || 'efectivo_bs';
         const isUsd = method === 'usd_efectivo' || method === 'zelle';
         if (isUsd) {
-          const usdAmount = tx.total_usd || tx.totalUsd || 0;
+          const usdAmount = (tx as any).total_usd || tx.totalUsd || 0;
           if (isMorning) ventasAM[method].usd += usdAmount;
           else ventasPM[method].usd += usdAmount;
         } else {
@@ -340,7 +341,9 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
   const diffNeta = Math.round((totalFisBs - totalSistBs) * 100) / 100;
 
   const generarReporte = () => {
-    const horaUltimaActualizacion = new Date().toLocaleTimeString('es-VE', { timeZone: 'America/Caracas', hour: '2-digit', minute: '2-digit' });
+    const nowVzla = new Date();
+    const horaUltimaActualizacion = nowVzla.toLocaleTimeString('es-VE', { timeZone: 'America/Caracas', hour: '2-digit', minute: '2-digit' });
+    
     return {
       fecha: new Date().toISOString(),
       fechaCierre: new Date().toLocaleString('es-VE', { dateStyle: 'full', timeStyle: 'medium' }),
@@ -406,7 +409,7 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
 
   const generarHTMLResumen = (data: any) => {
     const diff = data.totales.diferencia;
-    const estadoColor = diff > 0 ? '#10b981' : (diff < 0 ? '#ef4444' : '#3b82f6');
+    const estadoColor = diff > 0.01 ? '#10b981' : (diff < -0.01 ? '#ef4444' : '#3b82f6');
     return `<!DOCTYPE html>
       <html>
       <head><title>Cierre Final - ${data.terminal}</title>
@@ -461,7 +464,7 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
               <td>${r.metodo}</td>
               <td class="right">${r.moneda === 'USD' ? formatUsdNumber(r.sistema) : formatBsNumber(r.sistema)}</td>
               <td class="right">${r.moneda === 'USD' ? formatUsdNumber(r.real) : formatBsNumber(r.real)}</td>
-              <td class="right">${Math.abs(r.diferencia) < 0.01 ? '✓' : formatBsNumber(r.diferencia)}</td>
+              <td class="right">${Math.abs(r.diferencia) < 0.01 ? '✓' : (r.diferencia > 0 ? '+' : '') + formatBsNumber(r.diferencia)}</td>
             </tr>
           `).join('')}
           <tr style="background:#f0f0f0;font-weight:bold;"><td>VENTAS CREDITO</td><td class="right">${formatBsNumber(data.totalCreditoBs)}</td><td class="right">—</td><td class="right">—</td></tr>
@@ -596,12 +599,12 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
       {showResumenModal && closeReportData && (
         <div className="fixed inset-0 bg-black/80 z-[200] flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl shadow-2xl max-w-lg w-full overflow-hidden flex flex-col animate-in zoom-in-95 duration-300">
-            <div className="bg-[#1E3A8A] text-white p-4 text-center">
-              <div className="w-10 h-10 bg-white/10 rounded-full flex items-center justify-center mx-auto mb-1 border border-white/20">
-                <TrendingUp size={20} className="text-amber-400" />
+            <div className="bg-[#1E3A8A] text-white p-3 text-center shrink-0">
+              <div className="w-8 h-8 bg-white/10 rounded-full flex items-center justify-center mx-auto mb-1 border border-white/20">
+                <TrendingUp size={16} className="text-amber-400" />
               </div>
-              <h2 className="text-lg font-black tracking-tight">RESUMEN DE JORNADA</h2>
-              <p className="text-blue-200 text-[10px] uppercase font-bold tracking-widest">{closeReportData.terminal}</p>
+              <h2 className="text-base font-black tracking-tight uppercase">Resumen de Jornada</h2>
+              <p className="text-blue-200 text-[9px] uppercase font-bold tracking-widest">{closeReportData.terminal}</p>
             </div>
             
             <div className="p-4 space-y-3">
@@ -617,39 +620,46 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
               </div>
 
               {closeReportData.productos.best && (
-                <div className="bg-amber-50 border-2 border-amber-100 rounded-xl p-2 flex items-center gap-3">
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-2 flex items-center gap-3">
                   <div className="w-8 h-8 bg-amber-200 rounded-lg flex items-center justify-center shrink-0">
                     <ShoppingBasket size={16} className="text-amber-700" />
                   </div>
                   <div className="min-w-0">
-                    <p className="text-[8px] font-black text-amber-600 uppercase">Producto más vendido</p>
-                    <p className="text-xs font-black text-amber-900 truncate uppercase leading-tight">{closeReportData.productos.best.name}</p>
-                    <p className="text-[9px] font-bold text-amber-700">{closeReportData.productos.best.qty} unidades</p>
+                    <p className="text-[8px] font-black text-amber-600 uppercase leading-none">El más vendido</p>
+                    <p className="text-[11px] font-black text-amber-900 truncate uppercase mt-0.5">{closeReportData.productos.best.name}</p>
+                    <p className="text-[9px] font-bold text-amber-700 leading-none">{closeReportData.productos.best.qty} unidades</p>
                   </div>
                 </div>
               )}
 
-              <div className="text-center py-3 bg-slate-900 rounded-2xl text-white shadow-xl relative overflow-hidden">
+              <div className="text-center py-2 bg-slate-900 rounded-2xl text-white shadow-lg border border-white/10">
                 <p className="text-[8px] font-black uppercase tracking-widest text-white/50">Diferencia de Arqueo</p>
-                <p className={cn("text-3xl font-black mt-1", closeReportData.totales.diferencia > 0.01 ? "text-emerald-400" : closeReportData.totales.diferencia < -0.01 ? "text-red-400" : "text-blue-400")}>
+                <p className={cn("text-2xl font-black mt-0.5", closeReportData.totales.diferencia > 0.01 ? "text-emerald-400" : closeReportData.totales.diferencia < -0.01 ? "text-red-400" : "text-blue-400")}>
                   {Math.abs(closeReportData.totales.diferencia) < 0.01 ? '✓' : (closeReportData.totales.diferencia > 0 ? '+' : '-') + formatBsNumber(Math.abs(closeReportData.totales.diferencia))}
                 </p>
-                <p className={cn("text-[9px] font-black mt-1 uppercase", closeReportData.totales.diferencia > 0.01 ? "text-emerald-400" : closeReportData.totales.diferencia < -0.01 ? "text-red-400" : "text-blue-400")}>
+                <p className={cn("text-[9px] font-black uppercase", closeReportData.totales.diferencia > 0.01 ? "text-emerald-400" : closeReportData.totales.diferencia < -0.01 ? "text-red-400" : "text-blue-400")}>
                   {closeReportData.totales.estado}
                 </p>
               </div>
 
               <div className="flex gap-2">
-                <Button onClick={handlePrint} className="flex-1 bg-slate-800 hover:bg-black text-white font-black h-9 text-[10px]"><Printer size={14} className="mr-2" /> PDF / IMPRIMIR</Button>
-                <Button onClick={generarReporte} variant="outline" className="flex-1 border-slate-300 font-bold h-9 text-[10px]"><Share2 size={14} className="mr-2" /> COMPARTIR</Button>
+                <Button onClick={handlePrint} className="flex-1 bg-slate-800 hover:bg-black text-white font-black h-8 text-[9px]"><Printer size={12} className="mr-2" /> PDF / IMPRIMIR</Button>
+                <Button onClick={() => {
+                  if (navigator.share) {
+                    navigator.share({
+                      title: `Cierre ${closeReportData.terminal}`,
+                      text: `Resumen de cierre: ${closeReportData.totales.estado} (${formatBs(closeReportData.totales.diferencia)})`
+                    });
+                  }
+                }} variant="outline" className="flex-1 border-slate-300 font-bold h-8 text-[9px]"><Share2 size={12} className="mr-2" /> COMPARTIR</Button>
               </div>
               
               <Button 
                 onClick={finalizarCierre} 
                 disabled={isSubmitting}
-                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white h-10 text-sm font-black rounded-xl shadow-lg"
+                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white h-10 text-xs font-black rounded-xl shadow-lg mt-1"
               >
-                {isSubmitting ? <Loader2 size={18} className="animate-spin" /> : 'FINALIZAR Y CERRAR SISTEMA'}
+                {isSubmitting ? <Loader2 size={16} className="animate-spin" /> : 'FINALIZAR Y CERRAR SISTEMA'}
               </Button>
             </div>
           </div>

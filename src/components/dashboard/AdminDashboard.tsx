@@ -305,22 +305,30 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
       }
 
       // ============================================================
-      // 4. LIMPIAR CACHÉ LOCAL
+      // 4. LIMPIAR CACHÉ LOCAL (INCLUYENDO CORRELATIVOS POR TERMINAL)
       // ============================================================
-      console.log('🗑️ Limpiando caché local...');
+      console.log('🗑️ Limpiando caché local y correlativos...');
       try {
         const keys = Object.keys(localStorage);
         for (const key of keys) {
-          if (key.startsWith('pos_cache_')) {
+          // ✅ Eliminar cachés, correlativos de recibos/devoluciones y registros de terminal
+          if (
+            key.startsWith('pos_cache_') || 
+            key.startsWith('last_receipt_number_') || 
+            key.startsWith('last_return_number_') ||
+            key.startsWith('pos_register_') ||
+            key.startsWith('invoice_reminder_')
+          ) {
             localStorage.removeItem(key);
-            console.log(`✅ Caché ${key} eliminado`);
+            console.log(`✅ Llave local ${key} eliminada`);
           }
         }
         localStorage.removeItem('bcv_exchange_rate');
         localStorage.removeItem('last_receipt_number');
         localStorage.removeItem('pos_register_default');
+        console.log('✅ Correlativos de todas las terminales reseteados a 1');
       } catch (error) {
-        console.error('❌ Error limpiando caché:', error);
+        console.error('❌ Error limpiando caché local:', error);
       }
 
       toast({ 
@@ -510,7 +518,7 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
               </div>
               {adminPin && (
                 <p className="text-[8px] text-amber-600 mt-2">
-                  PIN actual: {maskPin(adminPin)}
+                  PIN actual: {maskPin(adminCode)}
                 </p>
               )}
             </div>

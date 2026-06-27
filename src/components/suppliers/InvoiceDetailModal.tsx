@@ -92,17 +92,17 @@ export default function InvoiceDetailModal({
             <div className="bg-[#F5F5F5] rounded-xl p-4 border border-gray-200">
               <p className="text-[9px] font-black text-black/40 uppercase text-center">Monto Total</p>
               <p className="text-xl font-black text-black text-center mt-1">{formatUsd(invoice.total)}</p>
-              <p className="text-[9px] text-black/30 text-center">Tasa: {formatBs(invoice.exchangeRate || exchangeRate)}</p>
+              <p className="text-[10px] font-bold text-black/80 text-center mt-1">Tasa: {formatBs(invoice.exchangeRate || exchangeRate)}</p>
             </div>
             <div className="bg-[#F5F5F5] rounded-xl p-4 border border-gray-200">
               <p className="text-[9px] font-black text-black/40 uppercase text-center">Total Pagado</p>
               <p className="text-xl font-black text-green-600 text-center mt-1">{formatUsd(totalPaid)}</p>
-              <p className="text-[9px] text-green-600/40 text-center">Ref: {formatBs(totalPaid * (invoice.exchangeRate || exchangeRate))}</p>
+              <p className="text-[10px] font-bold text-green-700 text-center mt-1">Ref: {formatBs(totalPaid * (invoice.exchangeRate || exchangeRate))}</p>
             </div>
             <div className="bg-[#F5F5F5] rounded-xl p-4 border border-gray-200">
               <p className="text-[9px] font-black text-black/40 uppercase text-center">Saldo Pendiente</p>
               <p className="text-xl font-black text-red-600 text-center mt-1">{formatUsd(remaining)}</p>
-              <p className="text-[9px] text-red-600/40 text-center">Ref: {formatBs(remaining * (invoice.exchangeRate || exchangeRate))}</p>
+              <p className="text-[10px] font-bold text-red-700 text-center mt-1">Ref: {formatBs(remaining * (invoice.exchangeRate || exchangeRate))}</p>
             </div>
           </div>
 

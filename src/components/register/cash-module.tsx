@@ -192,9 +192,6 @@ export default function CashModule({ state }: CashModuleProps) {
             totalsUsd[method] = (totalsUsd[method] || 0) + usdAmount;
           } else {
             const bsAmount = p.amount || 0;
-            if (isMorning) {
-              // Note: isMorning no existe aquí, se corrigió en el flujo previo pero mantengo consistencia
-            }
             totalsBs[method] = (totalsBs[method] || 0) + bsAmount;
           }
         }

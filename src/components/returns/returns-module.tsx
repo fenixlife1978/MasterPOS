@@ -48,6 +48,22 @@ const returnMethodsList = [
   { id: 'nota_credito' as ReturnMethod, label: 'NOTA CRÉDITO', icon: CreditCard, description: 'Saldo para cliente' },
 ];
 
+function getVenezuelaISOString(): string {
+  const formatter = new Intl.DateTimeFormat('sv-SE', {
+    timeZone: 'America/Caracas',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    fractionalSecondDigits: 3,
+  });
+  const parts = formatter.formatToParts(new Date());
+  const partMap = Object.fromEntries(parts.map(p => [p.type, p.value]));
+  return `${partMap.year}-${partMap.month}-${partMap.day}T${partMap.hour}:${partMap.minute}:${partMap.second}.${partMap.fractionalSecond}-04:00`;
+}
+
 function getLocalDateStr(isoString: string): string {
   const date = new Date(isoString);
   const formatter = new Intl.DateTimeFormat('fr-CA', {
@@ -84,6 +100,7 @@ function formatReturnReceipt(num?: number | string): string {
 
 export default function ReturnsModule() {
   const { user } = useAuth();
+  const technicalTerminalId = user?.terminalId || 'default';
   const currentTerminalName = user?.terminalName || user?.terminalId || 'Principal';
   const isAdmin = user?.role === 'admin';
 
@@ -306,11 +323,14 @@ export default function ReturnsModule() {
         isKit: false
       }));
 
-      const finalReturnMethod = selectedMethod === 'efectivo' ? 'efectivo_bs' : selectedMethod;
+      // Mapeo normalizado de métodos para que coincida con el cierre final
+      const finalReturnMethod = selectedMethod === 'efectivo' ? 'efectivo_bs' : 
+                                selectedMethod === 'efectivo_usd' ? 'usd_efectivo' : 
+                                selectedMethod;
 
       const returnTransaction = {
         id: Date.now(),
-        date: new Date().toISOString(),
+        date: getVenezuelaISOString(),
         type: 'devolucion',
         items: returnItemsList,
         subtotal: totalReturnAmount,
@@ -330,7 +350,13 @@ export default function ReturnsModule() {
         authorizedBy: 'Supervisor (PIN)',
         terminalId: currentTerminalName,
         sessionId: selectedTransaction.sessionId || selectedTransaction.session_id,
-        exchangeRate: rate
+        exchangeRate: rate,
+        payments: [{
+          id: crypto.randomUUID(),
+          method: finalReturnMethod,
+          amount: finalReturnMethod === 'usd_efectivo' ? totalUsdReturn : totalReturnAmount,
+          usdAmount: finalReturnMethod === 'usd_efectivo' ? totalUsdReturn : undefined,
+        }]
       };
 
       // Preparar actualizaciones para la operación atómica
@@ -369,15 +395,15 @@ export default function ReturnsModule() {
         exchangeRate: rate,
         referenceId: returnTransaction.id,
         referenceType: 'return',
-        createdAt: new Date().toISOString()
+        createdAt: getVenezuelaISOString()
       };
 
       // Nuevas transacciones para el registro (balancín de caja)
       const currentTxs = register?.txs || [];
       const updatedTxs = [...currentTxs, returnTransaction];
 
-      // Ejecutar todo en un solo bloque atómico
-      await syncService.runAtomicSale(currentTerminalName, returnTransaction, {
+      // Ejecutar todo en un solo bloque atómico USANDO EL ID TÉCNICO para la ruta
+      await syncService.runAtomicSale(technicalTerminalId, returnTransaction, {
         products: stockUpdates,
         kardexEntries: kardexEntries,
         accountingEntry: accountingEntry,

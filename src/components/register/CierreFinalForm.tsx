@@ -40,15 +40,6 @@ function getVenezuelaHour(dateStr: string): number {
   }
 }
 
-function getVenezuelaTimeString(dateStr: string): string {
-  try {
-    const d = new Date(dateStr);
-    return d.toLocaleTimeString('es-VE', { timeZone: 'America/Caracas', hour: '2-digit', minute: '2-digit' });
-  } catch {
-    return '';
-  }
-}
-
 const renderCurrencyCell = (value: number, isUsd: boolean, rate: number, showBsEquivalent: boolean = true) => {
   if (isUsd) {
     const usdFormatted = formatUsd(value);
@@ -145,7 +136,6 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
       return formatter.format(txDate) === todayVzla && types.includes(t.type);
     });
     
-    // ✅ Corregido para evitar error de TypeScript
     const nums = txDay.map(t => t.receiptNumber || (t as any).receipt_number).filter(n => typeof n === 'number');
     if (nums.length === 0) return { first: '—', last: '—' };
     
@@ -173,8 +163,6 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
       setVentasTarde(empty);
       setVueltosTarde({ efectivo_bs: 0 });
       setDevoluciones(empty);
-      setMorningRate(null);
-      setEveningRate(null);
       return;
     }
 
@@ -207,18 +195,22 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
       const hour = getVenezuelaHour(tx.date);
       const isMorning = hour < 12;
 
+      // ✅ PROCESAMIENTO ROBUSTO DE DEVOLUCIONES
       if (tx.type === 'devolucion') {
-        // ✅ Corregido para evitar error de TypeScript
-        let methodDetected = tx.payMethod || (tx as any).pay_method || 'efectivo_bs';
-        if (tx.payments && Array.isArray(tx.payments) && tx.payments.length > 0) {
-          methodDetected = tx.payments[0].method;
+        let methodDetected = tx.payMethod || (tx as any).pay_method || tx.returnMethod || 'efectivo_bs';
+        
+        // Normalización de claves para coincidir con la tabla de arqueo
+        if (methodDetected === 'efectivo') methodDetected = 'efectivo_bs';
+        if (methodDetected === 'efectivo_usd') methodDetected = 'usd_efectivo';
+
+        if (!devolucionesTotales[methodDetected]) {
+          devolucionesTotales[methodDetected] = { bs: 0, usd: 0 };
         }
 
-        if (!devolucionesTotales[methodDetected]) devolucionesTotales[methodDetected] = { bs: 0, usd: 0 };
-
-        if (methodDetected === 'usd_efectivo' || methodDetected === 'zelle' || methodDetected === 'efectivo_usd') {
-          // ✅ Corregido para evitar error de TypeScript
-          devolucionesTotales[methodDetected === 'efectivo_usd' ? 'usd_efectivo' : methodDetected].usd += tx.totalUsd || (tx as any).total_usd || 0;
+        const isUsdMethod = methodDetected === 'usd_efectivo' || methodDetected === 'zelle';
+        
+        if (isUsdMethod) {
+          devolucionesTotales[methodDetected].usd += tx.totalUsd || (tx as any).total_usd || 0;
         } else {
           devolucionesTotales[methodDetected].bs += tx.total || 0;
         }
@@ -523,7 +515,7 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
                           />
                         </div>
                       </td>
-                      <td className={cn("p-2 text-center font-bold", r.diff < -0.01 ? "text-red-600" : r.diff > 0.01 ? "text-emerald-600" : "text-slate-400")}>
+                      <td className={cn("p-2 text-center font-bold", Math.abs(r.diff) < 0.01 ? "text-slate-400" : r.diff < -0.01 ? "text-red-600" : "text-emerald-600")}>
                         {Math.abs(r.diff) < 0.01 ? '✓' : (r.isUsd ? formatUsd(Math.abs(r.diff)) : formatBsNumber(Math.abs(r.diff)))}
                       </td>
                     </tr>

@@ -74,7 +74,6 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
     loadAdminCode();
   }, []);
 
-  // ✅ Convertir ingresos del mes de Bs a USD
   const calculateMonthlyRevenue = () => {
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -142,7 +141,6 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
     }
   };
 
-  // ==================== RESET COMPLETO (CONSERVANDO USUARIOS Y PIN) ====================
   const handleResetSystem = async () => {
     if (!resetPinInput) {
       toast({ title: "Error", description: "Ingrese el PIN de autorización", variant: "destructive" });
@@ -157,37 +155,18 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
     setIsResetting(true);
     
     try {
-      // ✅ Obtener usuarios para conservarlos (Firestore)
       let usersToKeep: any[] = [];
       try {
         const usersSnapshot = await getDocs(collection(db, 'users'));
         usersSnapshot.forEach(doc => {
           usersToKeep.push({ id: doc.id, ...doc.data() });
         });
-        console.log(`👥 ${usersToKeep.length} usuarios a conservar`);
       } catch (e) {
         console.warn('No se pudieron obtener usuarios:', e);
       }
 
-      // ✅ Obtener código de administrador (RTDB)
-      let adminCode = '123456';
-      try {
-        const settingsRef = ref(rtdb, 'global_settings');
-        const settingsSnapshot = await get(settingsRef);
-        if (settingsSnapshot.exists()) {
-          const data = settingsSnapshot.val();
-          if (data.admin_code) {
-            adminCode = data.admin_code;
-          }
-        }
-      } catch (e) {
-        console.warn('No se pudo obtener el código de administrador, usando default');
-      }
-      console.log(`🔑 Código de administrador conservado: ${adminCode}`);
+      let currentAdminCode = adminPin || '123456';
 
-      // ============================================================
-      // 1. BORRAR FIRESTORE (TODAS LAS COLECCIONES)
-      // ============================================================
       const firestoreCollections = [
         'transactions',
         'accounts',
@@ -207,7 +186,6 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
         'register',
       ];
 
-      console.log('🗑️ Borrando colecciones de Firestore...');
       for (const collectionName of firestoreCollections) {
         try {
           const colRef = collection(db, collectionName);
@@ -218,18 +196,12 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
               batch.delete(doc.ref);
             });
             await batch.commit();
-            console.log(`✅ Colección ${collectionName} borrada (${snapshot.size} documentos)`);
-          } else {
-            console.log(`⚠️ Colección ${collectionName} ya estaba vacía`);
           }
         } catch (error) {
           console.error(`❌ Error borrando ${collectionName}:`, error);
         }
       }
 
-      // ============================================================
-      // 2. BORRAR RTDB (TODOS LOS NODOS)
-      // ============================================================
       const rtdbNodes = [
         'transactions',
         'accounts',
@@ -249,35 +221,18 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
         'terminal_transactions',
       ];
 
-      console.log('🗑️ Borrando nodos de RTDB...');
       for (const nodeName of rtdbNodes) {
         try {
           const nodeRef = ref(rtdb, nodeName);
           await set(nodeRef, null);
-          console.log(`✅ Nodo ${nodeName} borrado`);
         } catch (error) {
           console.error(`❌ Error borrando ${nodeName}:`, error);
         }
       }
 
-      // ============================================================
-      // 3. RESTAURAR DATOS A CONSERVAR
-      // ============================================================
-      console.log('♻️ Restaurando datos a conservar...');
-
-      // ✅ Restaurar usuarios en Firestore
       for (const user of usersToKeep) {
         try {
           await setDoc(doc(db, 'users', user.id), user);
-          console.log(`✅ Usuario ${user.name || user.id} restaurado en Firestore`);
-        } catch (error) {
-          console.error(`❌ Error restaurando usuario ${user.id}:`, error);
-        }
-      }
-
-      // ✅ Restaurar usuarios en RTDB
-      for (const user of usersToKeep) {
-        try {
           const rtdbUserData = {
             uid: user.uid || user.id,
             name: user.name || '',
@@ -290,50 +245,42 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
             updatedAt: new Date().toISOString()
           };
           await set(ref(rtdb, `users/${user.id}`), rtdbUserData);
-          console.log(`✅ Usuario ${user.name || user.id} restaurado en RTDB`);
         } catch (error) {
-          console.error(`❌ Error restaurando usuario ${user.id} en RTDB:`, error);
+          console.error(`❌ Error restaurando usuario ${user.id}:`, error);
         }
       }
 
-      // ✅ Restaurar código de administrador
       try {
-        await set(ref(rtdb, 'global_settings/admin_code'), adminCode);
-        console.log(`✅ Código de administrador restaurado: ${adminCode}`);
+        await set(ref(rtdb, 'global_settings/admin_code'), currentAdminCode);
       } catch (error) {
         console.error('❌ Error restaurando código de administrador:', error);
       }
 
-      // ============================================================
-      // 4. LIMPIAR CACHÉ LOCAL (INCLUYENDO CORRELATIVOS POR TERMINAL)
-      // ============================================================
-      console.log('🗑️ Limpiando caché local y correlativos...');
       try {
         const keys = Object.keys(localStorage);
         for (const key of keys) {
-          // ✅ Eliminar cachés, correlativos de recibos/devoluciones y registros de terminal
           if (
             key.startsWith('pos_cache_') || 
             key.startsWith('last_receipt_number_') || 
             key.startsWith('last_return_number_') ||
             key.startsWith('pos_register_') ||
-            key.startsWith('invoice_reminder_')
+            key.startsWith('invoice_reminder_') ||
+            key.startsWith('cierre_final_') ||
+            key.startsWith('corte_parcial_')
           ) {
             localStorage.removeItem(key);
-            console.log(`✅ Llave local ${key} eliminada`);
           }
         }
         localStorage.removeItem('bcv_exchange_rate');
         localStorage.removeItem('last_receipt_number');
         localStorage.removeItem('pos_register_default');
-        console.log('✅ Correlativos de todas las terminales reseteados a 1');
       } catch (error) {
         console.error('❌ Error limpiando caché local:', error);
       }
 
       toast({ 
         title: "✅ Sistema reseteado", 
-        description: `Todos los datos eliminados. ${usersToKeep.length} usuarios conservados. PIN: ${adminCode}. Recargando página...`,
+        description: `Todos los datos eliminados. ${usersToKeep.length} usuarios conservados. Recargando página...`,
         variant: "default"
       });
 
@@ -356,7 +303,6 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
   const totalClients = state.clients.length;
   const totalSales = state.transactions.filter(t => t.type === 'contado').length;
   const totalRevenue = state.transactions.filter(t => t.type === 'contado').reduce((sum, t) => sum + t.total, 0);
-  // ✅ CORREGIDO: Calcular el total de deudas desde las cuentas (state.accounts) en lugar de los clientes
   const totalCreditBs = state.accounts.reduce((sum, acc) => sum + (acc.amountBs - (acc.paidAmount || 0)), 0);
   const totalCreditUsd = totalCreditBs / state.exchangeRate;
   const totalPayable = invoices.reduce((sum, inv) => sum + (inv.total - inv.paidAmount), 0);
@@ -371,7 +317,6 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
     { id: 'supervision' as AdminTab, label: 'Supervisión', icon: Eye },
   ];
 
-  // ✅ Función para enmascarar el PIN (maneja string o number)
   const maskPin = (pin: any): string => {
     const pinStr = String(pin || '');
     return pinStr.split('').map(() => '•').join('');
@@ -518,7 +463,7 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
               </div>
               {adminPin && (
                 <p className="text-[8px] text-amber-600 mt-2">
-                  PIN actual: {maskPin(adminCode)}
+                  PIN actual: {maskPin(adminPin)}
                 </p>
               )}
             </div>
@@ -597,7 +542,6 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
         {activeTab === 'supervision' && <CashSupervision />}
       </div>
       
-      {/* Modal de confirmación para RESET */}
       <Dialog open={showResetModal} onOpenChange={setShowResetModal}>
         <DialogContent className="bg-white max-w-md p-0 rounded-xl">
           <DialogHeader className="bg-red-600 p-4 text-white rounded-t-xl">
@@ -619,15 +563,12 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
               </p>
               <ul className="text-red-700 text-xs mt-2 space-y-1 list-disc list-inside">
                 <li>Productos, clientes, transacciones, cuentas por cobrar</li>
-                <li>Facturas de compra (purchase_invoices), proveedores, pagos a proveedores</li>
-                <li>Kardex, entradas contables</li>
-                <li>Cajas y registros (registers, register/current)</li>
-                <li>Cierres de caja (cash_closes), sesiones de caja (cash_sessions)</li>
-                <li>Terminales</li>
-                <li>Contador de recibos y otros datos locales</li>
+                <li>Facturas de compra, proveedores, pagos a proveedores</li>
+                <li>Kardex, entradas contables, historial de cierres</li>
+                <li>Cajas, registros y sesiones de terminal</li>
               </ul>
               <p className="text-red-800 font-bold text-sm mt-3">
-                ✅ Los USUARIOS se conservarán. El PIN de autorización se restablece a 123456.
+                ✅ Los USUARIOS y el PIN actual se conservarán.
               </p>
               <p className="text-red-800 font-bold text-sm mt-2">
                 Esta operación es IRREVERSIBLE.

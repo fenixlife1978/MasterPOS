@@ -443,7 +443,7 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
       <div class="line"></div>
       <div class="center">
         <h1 style="color: ${estadoColor}; font-size: 24px;">${data.totales.estado}</h1>
-        <h1 style="font-size: 32px;">${diff > 0 ? '+' : ''}${formatBsNumber(Math.abs(diff))}</h1>
+        <h1 style="font-size: 32px;">${Math.abs(diff) < 0.01 ? '✓' : (diff > 0 ? '+' : '-') + formatBsNumber(Math.abs(diff))}</h1>
       </div>
       <div class="line"></div>
       <h3>DETALLE DE PRODUCTOS VENDIDOS</h3>
@@ -469,7 +469,7 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
               <td>${r.metodo}</td>
               <td class="right">${r.moneda === 'USD' ? formatUsdNumber(r.sistema) : formatBsNumber(r.sistema)}</td>
               <td class="right">${r.moneda === 'USD' ? formatUsdNumber(r.real) : formatBsNumber(r.real)}</td>
-              <td class="right">${r.diferencia === 0 ? '✓' : formatBsNumber(r.diferencia)}</td>
+              <td class="right">${Math.abs(r.diferencia) < 0.01 ? '✓' : formatBsNumber(r.diferencia)}</td>
             </tr>
           `).join('')}
           <tr style="background:#f0f0f0;font-weight:bold;"><td>VENTAS CREDITO</td><td class="right">${formatBsNumber(data.totalCreditoBs)}</td><td class="right">—</td><td class="right">—</td></tr>
@@ -604,63 +604,63 @@ export default function CierreFinalForm({ onClose, tasaActual }: CierreFinalForm
       {showResumenModal && closeReportData && (
         <div className="fixed inset-0 bg-black/80 z-[200] flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl shadow-2xl max-w-lg w-full overflow-hidden flex flex-col animate-in zoom-in-95 duration-300">
-            <div className="bg-[#1E3A8A] text-white p-6 text-center">
-              <div className="w-16 h-16 bg-white/10 rounded-full flex items-center justify-center mx-auto mb-3 border border-white/20">
-                <TrendingUp size={32} className="text-amber-400" />
+            <div className="bg-[#1E3A8A] text-white p-4 text-center">
+              <div className="w-12 h-12 bg-white/10 rounded-full flex items-center justify-center mx-auto mb-2 border border-white/20">
+                <TrendingUp size={24} className="text-amber-400" />
               </div>
-              <h2 className="text-2xl font-black tracking-tight">RESUMEN DE JORNADA</h2>
-              <p className="text-blue-200 text-sm mt-1 uppercase font-bold tracking-widest">{closeReportData.terminal}</p>
+              <h2 className="text-xl font-black tracking-tight">RESUMEN DE JORNADA</h2>
+              <p className="text-blue-200 text-xs mt-0.5 uppercase font-bold tracking-widest">{closeReportData.terminal}</p>
             </div>
             
-            <div className="p-6 space-y-5">
+            <div className="p-4 space-y-4">
               <div className="grid grid-cols-2 gap-3">
-                <div className="bg-slate-50 p-3 rounded-2xl border text-center">
-                  <p className="text-[9px] font-black text-slate-400 uppercase">Artículos Vendidos</p>
-                  <p className="text-2xl font-black text-slate-900">{closeReportData.productos.total}</p>
+                <div className="bg-slate-50 p-2.5 rounded-2xl border text-center">
+                  <p className="text-[8px] font-black text-slate-400 uppercase">Artículos Vendidos</p>
+                  <p className="text-xl font-black text-slate-900">{closeReportData.productos.total}</p>
                 </div>
-                <div className="bg-slate-50 p-3 rounded-2xl border text-center">
-                  <p className="text-[9px] font-black text-slate-400 uppercase">Recibos Emitidos</p>
-                  <p className="text-lg font-black text-slate-900">#{closeReportData.recibos.last}</p>
+                <div className="bg-slate-50 p-2.5 rounded-2xl border text-center">
+                  <p className="text-[8px] font-black text-slate-400 uppercase">Recibos Emitidos</p>
+                  <p className="text-base font-black text-slate-900">#{closeReportData.recibos.last}</p>
                 </div>
               </div>
 
               {closeReportData.productos.best && (
-                <div className="bg-amber-50 border-2 border-amber-200 rounded-2xl p-4 flex items-center gap-4">
-                  <div className="w-12 h-12 bg-amber-200 rounded-xl flex items-center justify-center shrink-0">
-                    <ShoppingBasket size={24} className="text-amber-700" />
+                <div className="bg-amber-50 border-2 border-amber-100 rounded-2xl p-3 flex items-center gap-3">
+                  <div className="w-10 h-10 bg-amber-200 rounded-xl flex items-center justify-center shrink-0">
+                    <ShoppingBasket size={20} className="text-amber-700" />
                   </div>
                   <div className="min-w-0">
-                    <p className="text-[9px] font-black text-amber-600 uppercase">Producto más vendido</p>
-                    <p className="text-base font-black text-amber-900 truncate uppercase">{closeReportData.productos.best.name}</p>
-                    <p className="text-xs font-bold text-amber-700">{closeReportData.productos.best.qty} unidades</p>
+                    <p className="text-[8px] font-black text-amber-600 uppercase">Producto más vendido</p>
+                    <p className="text-sm font-black text-amber-900 truncate uppercase leading-tight">{closeReportData.productos.best.name}</p>
+                    <p className="text-[10px] font-bold text-amber-700">{closeReportData.productos.best.qty} unidades</p>
                   </div>
                 </div>
               )}
 
-              <div className="text-center py-6 bg-slate-900 rounded-3xl text-white shadow-xl relative overflow-hidden">
-                <div className="absolute top-0 right-0 p-4 opacity-10">
-                  <BarChart3 size={100} />
+              <div className="text-center py-4 bg-slate-900 rounded-3xl text-white shadow-xl relative overflow-hidden">
+                <div className="absolute top-0 right-0 p-3 opacity-10">
+                  <BarChart3 size={70} />
                 </div>
-                <p className="text-xs font-black uppercase tracking-widest text-white/50">Diferencia de Arqueo</p>
-                <p className={cn("text-5xl font-black mt-2", closeReportData.totales.diferencia > 0.01 ? "text-emerald-400" : closeReportData.totales.diferencia < -0.01 ? "text-red-400" : "text-blue-400")}>
-                  {Math.abs(closeReportData.totales.diferencia) < 0.01 ? '0,00' : (closeReportData.totales.diferencia > 0 ? '+' : '') + formatBsNumber(Math.abs(closeReportData.totales.diferencia))}
+                <p className="text-[9px] font-black uppercase tracking-widest text-white/50">Diferencia de Arqueo</p>
+                <p className={cn("text-4xl font-black mt-1", closeReportData.totales.diferencia > 0.01 ? "text-emerald-400" : closeReportData.totales.diferencia < -0.01 ? "text-red-400" : "text-blue-400")}>
+                  {Math.abs(closeReportData.totales.diferencia) < 0.01 ? '0,00' : (closeReportData.totales.diferencia > 0 ? '+' : '-') + formatBsNumber(Math.abs(closeReportData.totales.diferencia))}
                 </p>
-                <p className={cn("text-sm font-black mt-2 uppercase tracking-tighter", closeReportData.totales.diferencia > 0.01 ? "text-emerald-400" : closeReportData.totales.diferencia < -0.01 ? "text-red-400" : "text-blue-400")}>
+                <p className={cn("text-[10px] font-black mt-1 uppercase tracking-tighter", closeReportData.totales.diferencia > 0.01 ? "text-emerald-400" : closeReportData.totales.diferencia < -0.01 ? "text-red-400" : "text-blue-400")}>
                   {closeReportData.totales.estado}
                 </p>
               </div>
 
-              <div className="flex gap-3">
-                <Button onClick={handlePrint} className="flex-1 bg-slate-800 hover:bg-black text-white font-black h-11"><Printer size={18} className="mr-2" /> PDF / IMPRIMIR</Button>
-                <Button onClick={generarReporte} variant="outline" className="flex-1 border-slate-300 font-bold h-11"><Share2 size={18} className="mr-2" /> COMPARTIR</Button>
+              <div className="flex gap-2">
+                <Button onClick={handlePrint} className="flex-1 bg-slate-800 hover:bg-black text-white font-black h-10 text-xs"><Printer size={16} className="mr-2" /> PDF / IMPRIMIR</Button>
+                <Button onClick={generarReporte} variant="outline" className="flex-1 border-slate-300 font-bold h-10 text-xs"><Share2 size={16} className="mr-2" /> COMPARTIR</Button>
               </div>
               
               <Button 
                 onClick={finalizarCierre} 
                 disabled={isSubmitting}
-                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white h-14 text-lg font-black rounded-2xl shadow-lg shadow-emerald-100"
+                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white h-12 text-base font-black rounded-2xl shadow-lg shadow-emerald-100"
               >
-                {isSubmitting ? <Loader2 size={24} className="animate-spin" /> : 'FINALIZAR Y BLOQUEAR'}
+                {isSubmitting ? <Loader2 size={20} className="animate-spin" /> : 'FINALIZAR Y BLOQUEAR'}
               </Button>
             </div>
           </div>

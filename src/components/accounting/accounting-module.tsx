@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useAccounting } from '@/hooks/use-accounting';
-import { Plus, Search, X, TrendingUp, TrendingDown, DollarSign, Filter, Eye } from 'lucide-react';
+import { Plus, Search, X, TrendingUp, TrendingDown, DollarSign, Filter, Eye, BarChart3 } from 'lucide-react';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -130,51 +130,51 @@ export default function AccountingModule() {
       <div className="flex justify-between items-center mb-6">
         <div>
           <h2 className="text-2xl font-headline font-black text-black uppercase">Libro Diario - Contabilidad</h2>
-          <p className="text-base font-black text-black mt-1 uppercase tracking-widest">Registro de Ingresos y Egresos en Tiempo Real</p>
+          <p className="text-sm text-black/60 mt-1 uppercase tracking-widest">Registro de Ingresos y Egresos en Tiempo Real</p>
         </div>
-        <Button onClick={() => setShowExpenseModal(true)} className="bg-red-600 hover:bg-red-700 text-white font-black border-4 border-black shadow-xl h-14 px-8 text-base">
-          <Plus size={24} className="mr-2" /> REGISTRAR EGRESO
+        <Button onClick={() => setShowExpenseModal(true)} className="bg-red-600 hover:bg-red-700 text-white font-black border-2 border-black shadow-lg h-10 px-6 text-sm">
+          <Plus size={18} className="mr-2" /> REGISTRAR EGRESO
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        <div className="bg-white rounded-2xl border-4 border-black p-5 shadow-lg">
-          <div className="flex items-center gap-2 mb-3">
-            <TrendingUp size={24} className="text-green-700" />
-            <p className="text-xs font-black text-black uppercase tracking-widest">Total Ingresos</p>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        <div className="bg-white rounded-xl border border-[#9E9E9E] p-4 shadow-sm">
+          <div className="flex items-center gap-2 mb-2">
+            <TrendingUp size={18} className="text-green-600" />
+            <p className="text-[10px] font-bold text-black/60 uppercase tracking-widest">Total Ingresos</p>
           </div>
-          <p className="text-3xl font-black text-green-700">{formatUsd(totalIngresosUsd)}</p>
-          <p className="text-sm text-black font-black font-mono mt-1">{formatBs(totalIngresosBs)}</p>
+          <p className="text-2xl font-black text-green-700">{formatUsd(totalIngresosUsd)}</p>
+          <p className="text-xs text-black/40 font-mono mt-0.5">{formatBs(totalIngresosBs)}</p>
         </div>
         
-        <div className="bg-white rounded-2xl border-4 border-black p-5 shadow-lg">
-          <div className="flex items-center gap-2 mb-3">
-            <TrendingDown size={24} className="text-red-700" />
-            <p className="text-xs font-black text-black uppercase tracking-widest">Total Egresos</p>
+        <div className="bg-white rounded-xl border border-[#9E9E9E] p-4 shadow-sm">
+          <div className="flex items-center gap-2 mb-2">
+            <TrendingDown size={18} className="text-red-600" />
+            <p className="text-[10px] font-bold text-black/60 uppercase tracking-widest">Total Egresos</p>
           </div>
-          <p className="text-3xl font-black text-red-700">{formatUsd(totalEgresosUsd)}</p>
-          <p className="text-sm text-black font-black font-mono mt-1">{formatBs(totalEgresosBs)}</p>
+          <p className="text-2xl font-black text-red-700">{formatUsd(totalEgresosUsd)}</p>
+          <p className="text-xs text-black/40 font-mono mt-0.5">{formatBs(totalEgresosBs)}</p>
         </div>
         
-        <div className={cn("bg-white rounded-2xl border-4 p-5 shadow-2xl", balanceUsd >= 0 ? "border-green-600" : "border-red-600")}>
-          <div className="flex items-center gap-2 mb-3">
-            <DollarSign size={24} className={balanceUsd >= 0 ? "text-green-700" : "text-red-700"} />
-            <p className="text-xs font-black text-black uppercase tracking-widest">Balance de Caja</p>
+        <div className={cn("bg-white rounded-xl border-2 p-4 shadow-md", balanceUsd >= 0 ? "border-green-500" : "border-red-500")}>
+          <div className="flex items-center gap-2 mb-2">
+            <DollarSign size={18} className={balanceUsd >= 0 ? "text-green-600" : "text-red-600"} />
+            <p className="text-[10px] font-bold text-black/60 uppercase tracking-widest">Balance de Caja</p>
           </div>
-          <p className={cn("text-4xl font-black", balanceUsd >= 0 ? "text-green-700" : "text-red-700")}>
+          <p className={cn("text-3xl font-black", balanceUsd >= 0 ? "text-green-700" : "text-red-700")}>
             {formatUsd(balanceUsd)}
           </p>
-          <p className={cn("text-base font-black font-mono mt-2", balanceUsd >= 0 ? "text-green-800" : "text-red-800")}>
+          <p className={cn("text-xs font-bold font-mono mt-1", balanceUsd >= 0 ? "text-green-600" : "text-red-600")}>
             {formatBs(balanceBs)}
           </p>
         </div>
       </div>
 
-      <div className="bg-white border-4 border-black rounded-2xl p-6 mb-8 shadow-md">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+      <div className="bg-white border border-[#9E9E9E] rounded-xl p-4 mb-6 shadow-sm">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div>
-            <label className="text-[11px] font-black uppercase text-black tracking-widest mb-1 block">Tipo de Movimiento</label>
-            <select value={filterType} onChange={(e) => { setFilterType(e.target.value as any); setFilterCategory('todas'); }} className="w-full h-11 bg-white border-2 border-black rounded-xl px-4 text-sm font-black focus:ring-4 focus:ring-primary/20">
+            <label className="text-[10px] font-bold uppercase text-black/60 tracking-widest mb-1 block">Tipo de Movimiento</label>
+            <select value={filterType} onChange={(e) => { setFilterType(e.target.value as any); setFilterCategory('todas'); }} className="w-full h-9 bg-white border border-[#9E9E9E] rounded-lg px-3 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-primary/50">
               <option value="todos">Todos los Tipos</option>
               <option value="ingreso">Solo Ingresos</option>
               <option value="egreso">Solo Egresos</option>
@@ -182,8 +182,8 @@ export default function AccountingModule() {
           </div>
 
           <div>
-            <label className="text-[11px] font-black uppercase text-black tracking-widest mb-1 block">Categoría</label>
-            <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)} className="w-full h-11 bg-white border-2 border-black rounded-xl px-4 text-sm font-black focus:ring-4 focus:ring-primary/20">
+            <label className="text-[10px] font-bold uppercase text-black/60 tracking-widest mb-1 block">Categoría</label>
+            <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)} className="w-full h-9 bg-white border border-[#9E9E9E] rounded-lg px-3 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-primary/50">
               <option value="todas">Todas las Categorías</option>
               {categoriesList.map(cat => (
                 <option key={cat.id} value={cat.id}>{cat.label.toUpperCase()}</option>
@@ -192,56 +192,56 @@ export default function AccountingModule() {
           </div>
 
           <div>
-            <label className="text-[11px] font-black uppercase text-black tracking-widest mb-1 block">Desde Fecha</label>
-            <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="h-11 border-2 border-black font-black rounded-xl" />
+            <label className="text-[10px] font-bold uppercase text-black/60 tracking-widest mb-1 block">Desde Fecha</label>
+            <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="h-9 border-[#9E9E9E] text-xs" />
           </div>
           <div>
-            <label className="text-[11px] font-black uppercase text-black tracking-widest mb-1 block">Hasta Fecha</label>
-            <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="h-11 border-2 border-black font-black rounded-xl" />
+            <label className="text-[10px] font-bold uppercase text-black/60 tracking-widest mb-1 block">Hasta Fecha</label>
+            <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="h-9 border-[#9E9E9E] text-xs" />
           </div>
         </div>
       </div>
 
-      <div className="bg-white border-4 border-black rounded-2xl overflow-hidden shadow-2xl flex-1">
+      <div className="bg-white border border-[#9E9E9E] rounded-xl overflow-hidden shadow-md flex-1">
         <Table>
-          <TableHeader className="bg-[#1A2C4E] border-b-2 border-black">
-            <TableRow>
-              <TableHead className="text-xs font-black text-white uppercase tracking-widest p-4">Fecha</TableHead>
-              <TableHead className="text-xs font-black text-white uppercase tracking-widest p-4">Tipo</TableHead>
-              <TableHead className="text-xs font-black text-white uppercase tracking-widest p-4">Concepto / Descripción</TableHead>
-              <TableHead className="text-xs font-black text-white uppercase tracking-widest p-4 text-right">Monto USD</TableHead>
-              <TableHead className="text-xs font-black text-white uppercase tracking-widest p-4 text-right">Monto Bs</TableHead>
-              <TableHead className="text-xs font-black text-white uppercase tracking-widest p-4 text-center">Acciones</TableHead>
+          <TableHeader className="bg-[#E8E8E8]">
+            <TableRow className="border-b border-[#9E9E9E]">
+              <TableHead className="text-[10px] font-black text-black uppercase tracking-widest p-3">Fecha</TableHead>
+              <TableHead className="text-[10px] font-black text-black uppercase tracking-widest p-3">Tipo</TableHead>
+              <TableHead className="text-[10px] font-black text-black uppercase tracking-widest p-3">Concepto / Descripción</TableHead>
+              <TableHead className="text-[10px] font-black text-black uppercase tracking-widest p-3 text-right">Monto USD</TableHead>
+              <TableHead className="text-[10px] font-black text-black uppercase tracking-widest p-3 text-right">Monto Bs</TableHead>
+              <TableHead className="text-[10px] font-black text-black uppercase tracking-widest p-3 text-center">Acciones</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {filteredEntries.length === 0 ? (
-              <TableRow><TableCell colSpan={6} className="text-center py-24 text-black/20 font-black uppercase text-2xl italic tracking-tighter">No hay registros contables</TableCell></TableRow>
+              <TableRow><TableCell colSpan={6} className="text-center py-10 text-black/40 italic text-sm">No hay registros contables</TableCell></TableRow>
             ) : (
               filteredEntries.map((entry, idx) => (
                 <TableRow 
                   key={`${entry.id}_${idx}`} 
-                  className="border-b-2 border-black/5 hover:bg-primary/5 cursor-pointer transition-colors" 
+                  className="border-b border-[#9E9E9E]/40 hover:bg-primary/5 cursor-pointer transition-colors" 
                   onClick={() => { setSelectedEntry(entry); setShowEntryDetail(true); }}
                 >
-                  <TableCell className="text-sm font-black text-black p-4">{formatDateFriendly(entry.date)}</TableCell>
-                  <TableCell className="p-4">
-                    <span className={cn("px-4 py-1 rounded-full text-[10px] font-black border-2", entry.type === 'ingreso' ? "bg-green-50 text-green-700 border-green-600" : "bg-red-50 text-red-700 border-red-600")}>
+                  <TableCell className="text-xs font-medium text-black p-3">{formatDateFriendly(entry.date)}</TableCell>
+                  <TableCell className="p-3">
+                    <span className={cn("px-2 py-0.5 rounded-full text-[9px] font-bold border", entry.type === 'ingreso' ? "bg-green-50 text-green-700 border-green-200" : "bg-red-50 text-red-700 border-red-200")}>
                       {entry.type.toUpperCase()}
                     </span>
                   </TableCell>
-                  <TableCell className="p-4">
-                    <p className="text-sm font-black text-black uppercase">{entry.concept}</p>
-                    <p className="text-[11px] font-black text-black/60 truncate max-w-md">{entry.description || entry.concept}</p>
+                  <TableCell className="p-3">
+                    <p className="text-xs font-bold text-black uppercase">{entry.concept}</p>
+                    <p className="text-[10px] font-medium text-black/40 truncate max-w-xs">{entry.description || entry.concept}</p>
                   </TableCell>
-                  <TableCell className={cn("text-right font-black text-base p-4", entry.type === 'ingreso' ? "text-green-700" : "text-red-700")}>
+                  <TableCell className={cn("text-right font-black text-sm p-3", entry.type === 'ingreso' ? "text-green-700" : "text-red-700")}>
                     {entry.type === 'ingreso' ? '+' : '-'} {formatUsd(entry.totalUsd || (entry.amount / (entry.exchangeRate || globalExchangeRate)))}
                   </TableCell>
-                  <TableCell className="text-right text-sm font-black text-black font-mono p-4">
+                  <TableCell className="text-right text-xs font-bold text-black/60 font-mono p-3">
                     {formatBs(entry.amount)}
                   </TableCell>
-                  <TableCell className="text-center p-4">
-                    <button className="text-blue-700 hover:scale-110 p-2 rounded-lg transition-transform"><Eye size={22} className="font-black" /></button>
+                  <TableCell className="text-center p-3">
+                    <button className="text-blue-600 hover:scale-110 p-1 rounded-lg transition-transform"><Eye size={16} /></button>
                   </TableCell>
                 </TableRow>
               ))
@@ -258,46 +258,46 @@ export default function AccountingModule() {
       />
 
       <Dialog open={showEntryDetail} onOpenChange={setShowEntryDetail}>
-        <DialogContent className="bg-white border-4 border-black text-black max-w-lg p-0 rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95">
+        <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-lg p-0 rounded-2xl shadow-xl overflow-hidden animate-in zoom-in-95">
           <DialogHeader className="sr-only"><DialogTitle>Detalle del Movimiento</DialogTitle></DialogHeader>
           {selectedEntry && (
             <div className="flex flex-col">
-              <div className="bg-[#1A2C4E] p-5 text-white border-b-2 border-black flex justify-between items-center">
-                <div className="flex items-center gap-3">
-                  <BarChart3 size={24} className="text-primary" />
-                  <h3 className="text-xl font-black uppercase tracking-widest">Detalle Contable</h3>
+              <div className="bg-[#1A2C4E] p-4 text-white flex justify-between items-center">
+                <div className="flex items-center gap-2">
+                  <BarChart3 size={20} className="text-primary" />
+                  <h3 className="text-lg font-black uppercase tracking-widest">Detalle Contable</h3>
                 </div>
-                <button onClick={() => setShowEntryDetail(false)} className="hover:text-primary transition-all"><X size={28} className="font-black" /></button>
+                <button onClick={() => setShowEntryDetail(false)} className="hover:text-primary transition-all"><X size={20} /></button>
               </div>
-              <div className="p-8 space-y-6">
-                <div className="grid grid-cols-2 gap-4 pb-4 border-b-2 border-black/10">
-                  <p className="text-[12px] font-black text-black/40 uppercase tracking-widest">Fecha y Hora</p>
-                  <p className="text-sm font-black text-black text-right">{formatDateFriendly(selectedEntry.date)}</p>
+              <div className="p-6 space-y-5">
+                <div className="grid grid-cols-2 gap-4 pb-3 border-b border-black/5">
+                  <p className="text-[10px] font-bold text-black/40 uppercase tracking-widest">Fecha y Hora</p>
+                  <p className="text-sm font-bold text-black text-right">{formatDateFriendly(selectedEntry.date)}</p>
                 </div>
-                <div className="grid grid-cols-2 gap-4 pb-4 border-b-2 border-black/10">
-                  <p className="text-[12px] font-black text-black/40 uppercase tracking-widest">Monto Divisas</p>
-                  <p className={cn("text-2xl font-black text-right", selectedEntry.type === 'ingreso' ? "text-green-700" : "text-red-700")}>
+                <div className="grid grid-cols-2 gap-4 pb-3 border-b border-black/5">
+                  <p className="text-[10px] font-bold text-black/40 uppercase tracking-widest">Monto Divisas</p>
+                  <p className={cn("text-xl font-black text-right", selectedEntry.type === 'ingreso' ? "text-green-600" : "text-red-600")}>
                     {formatUsd(selectedEntry.totalUsd || (selectedEntry.amount / (selectedEntry.exchangeRate || globalExchangeRate)))}
                   </p>
                 </div>
-                <div className="grid grid-cols-2 gap-4 pb-4 border-b-2 border-black/10">
-                  <p className="text-[12px] font-black text-black/40 uppercase tracking-widest">Equivalente Bs</p>
-                  <p className="text-lg font-black font-mono text-black text-right">{formatBs(selectedEntry.amount)}</p>
+                <div className="grid grid-cols-2 gap-4 pb-3 border-b border-black/5">
+                  <p className="text-[10px] font-bold text-black/40 uppercase tracking-widest">Equivalente Bs</p>
+                  <p className="text-base font-bold font-mono text-black text-right">{formatBs(selectedEntry.amount)}</p>
                 </div>
                 <div>
-                  <p className="text-[12px] font-black text-black/40 uppercase tracking-widest mb-2">Descripción del Movimiento</p>
-                  <div className="bg-slate-100 p-5 rounded-2xl border-2 border-black/10 text-base font-black text-black leading-tight uppercase">
+                  <p className="text-[10px] font-bold text-black/40 uppercase tracking-widest mb-1.5">Descripción del Movimiento</p>
+                  <div className="bg-slate-50 p-4 rounded-xl border border-black/5 text-sm font-medium text-black leading-tight uppercase">
                     {selectedEntry.description || selectedEntry.concept}
                   </div>
                 </div>
-                <div className="pt-4 text-center">
-                  <div className="inline-block bg-primary/20 px-4 py-1.5 rounded-full border-2 border-primary/40">
-                    <p className="text-[11px] font-black text-black uppercase tracking-widest">Tasa BCV Aplicada: {formatBsNumber(selectedEntry.exchangeRate || globalExchangeRate)}</p>
+                <div className="pt-2 text-center">
+                  <div className="inline-block bg-primary/10 px-3 py-1 rounded-full">
+                    <p className="text-[10px] font-bold text-black/60 uppercase tracking-widest">Tasa BCV Aplicada: {formatBsNumber(selectedEntry.exchangeRate || globalExchangeRate)}</p>
                   </div>
                 </div>
               </div>
-              <div className="bg-[#F5F5F5] p-5 border-t-2 border-black flex justify-center">
-                <Button onClick={() => setShowEntryDetail(false)} className="bg-black text-white font-black border-2 border-black px-12 h-12 text-sm uppercase tracking-widest hover:bg-primary hover:text-black transition-all">CERRAR DETALLE</Button>
+              <div className="bg-[#F5F5F5] p-4 border-t border-black/5 flex justify-center">
+                <Button onClick={() => setShowEntryDetail(false)} className="bg-black text-white font-bold px-8 h-10 text-xs uppercase tracking-widest hover:bg-primary hover:text-black transition-all">CERRAR DETALLE</Button>
               </div>
             </div>
           )}

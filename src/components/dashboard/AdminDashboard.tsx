@@ -331,7 +331,7 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
           <div className="flex justify-between items-center flex-wrap gap-4">
             <div>
               <h2 className="text-2xl font-headline font-black text-black">Panel de Administración</h2>
-              <p className="text-sm text-black/50 mt-1">Gestiona tu negocio desde un solo lugar</p>
+              <p className="text-sm font-black text-black mt-1">Gestiona tu negocio desde un solo lugar</p>
             </div>
             
             <div className="flex items-center gap-3">
@@ -340,21 +340,21 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
                   <DollarSign size={18} className="text-primary" />
                 </div>
                 <div>
-                  <p className="text-[8px] font-black uppercase text-white/50">TASA BCV</p>
+                  <p className="text-[10px] font-black uppercase text-white">TASA BCV</p>
                   <div className="flex items-center gap-2">
                     <Input 
                       type="text"
                       inputMode="decimal"
                       value={exchangeRateInput}
                       onChange={(e) => setExchangeRateInput(e.target.value)}
-                      className="h-7 w-24 text-xs font-mono font-bold bg-white/10 border-white/20 text-white focus:border-primary"
+                      className="h-7 w-24 text-xs font-mono font-black bg-white/10 border-white/20 text-white focus:border-primary"
                       placeholder="0.00"
                     />
                     <Button
                       onClick={handleUpdateExchangeRate}
                       disabled={isUpdatingRate}
                       size="sm"
-                      className="h-7 px-2 bg-primary text-black font-bold text-[10px]"
+                      className="h-7 px-2 bg-primary text-black font-black text-[10px]"
                     >
                       <RefreshCw size={10} className={cn("mr-1", isUpdatingRate && "animate-spin")} />
                       Actualizar
@@ -366,7 +366,7 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
               <Button
                 onClick={() => setShowHistoryModal(true)}
                 variant="outline"
-                className="h-10 px-4 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs border-blue-500"
+                className="h-10 px-4 bg-blue-600 hover:bg-blue-700 text-white font-black text-xs border-blue-500"
               >
                 <Archive size={14} className="mr-2" />
                 HISTORIAL CIERRES
@@ -375,7 +375,7 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
               <Button
                 onClick={() => setShowResetModal(true)}
                 variant="outline"
-                className="h-10 px-4 bg-red-600 hover:bg-red-700 text-white font-bold text-xs border-red-500"
+                className="h-10 px-4 bg-red-600 hover:bg-red-700 text-white font-black text-xs border-red-500"
               >
                 <Trash2 size={14} className="mr-2" />
                 RESET SISTEMA
@@ -392,10 +392,10 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
                   className={cn(
-                    "flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm transition-all",
+                    "flex items-center gap-2 px-4 py-2 rounded-lg font-black text-sm transition-all",
                     isActive
                       ? "bg-primary text-black"
-                      : "text-black/60 hover:bg-primary/20"
+                      : "text-black hover:bg-primary/20"
                   )}
                 >
                   <Icon size={16} />
@@ -407,10 +407,10 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
             <button
               onClick={() => setShowPinSection(!showPinSection)}
               className={cn(
-                "flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm transition-all ml-auto",
+                "flex items-center gap-2 px-4 py-2 rounded-lg font-black text-sm transition-all ml-auto",
                 showPinSection
                   ? "bg-amber-500 text-black"
-                  : "text-black/60 hover:bg-amber-100"
+                  : "text-black hover:bg-amber-100"
               )}
             >
               <KeyRound size={16} />
@@ -424,12 +424,12 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
                 <Lock size={16} className="text-amber-600" />
                 <h3 className="text-sm font-black text-amber-800 uppercase">Código de Autorización</h3>
               </div>
-              <p className="text-[10px] text-amber-700 mb-3">
+              <p className="text-xs font-black text-amber-900 mb-3">
                 Este PIN de 6 dígitos será requerido para autorizar ajustes de inventario y transacciones de colaboración/consumo propio.
               </p>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
                 <div>
-                  <label className="text-[9px] font-bold uppercase text-amber-700 block mb-1">Nuevo PIN (6 dígitos)</label>
+                  <label className="text-[11px] font-black uppercase text-amber-900 block mb-1">Nuevo PIN (6 dígitos)</label>
                   <Input 
                     type="password"
                     maxLength={6}
@@ -440,7 +440,7 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
                   />
                 </div>
                 <div>
-                  <label className="text-[9px] font-bold uppercase text-amber-700 block mb-1">Confirmar PIN</label>
+                  <label className="text-[11px] font-black uppercase text-amber-900 block mb-1">Confirmar PIN</label>
                   <Input 
                     type="password"
                     maxLength={6}
@@ -454,7 +454,7 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
                   <Button
                     onClick={handleUpdateAdminPin}
                     disabled={isUpdatingPin}
-                    className="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold h-8 text-xs"
+                    className="w-full bg-amber-600 hover:bg-amber-700 text-white font-black h-8 text-xs"
                   >
                     <Save size={12} className="mr-1" />
                     Guardar PIN
@@ -462,7 +462,7 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
                 </div>
               </div>
               {adminPin && (
-                <p className="text-[8px] text-amber-600 mt-2">
+                <p className="text-[10px] font-black text-amber-800 mt-2">
                   PIN actual: {maskPin(adminPin)}
                 </p>
               )}
@@ -474,26 +474,26 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
           <>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 mb-6">
               <div className="bg-white rounded-xl border border-[#9E9E9E] p-4">
-                <p className="text-[10px] font-black text-black/60 uppercase">Productos</p>
+                <p className="text-xs font-black text-black uppercase">Productos</p>
                 <p className="text-2xl font-black text-black">{totalProducts}</p>
               </div>
               <div className="bg-white rounded-xl border border-[#9E9E9E] p-4">
-                <p className="text-[10px] font-black text-black/60 uppercase">Clientes</p>
+                <p className="text-xs font-black text-black uppercase">Clientes</p>
                 <p className="text-2xl font-black text-black">{totalClients}</p>
               </div>
               <div className="bg-white rounded-xl border border-[#9E9E9E] p-4">
-                <p className="text-[10px] font-black text-black/60 uppercase">Ventas</p>
+                <p className="text-xs font-black text-black uppercase">Ventas</p>
                 <p className="text-2xl font-black text-black">{totalSales}</p>
               </div>
               <div className="bg-white rounded-xl border border-[#9E9E9E] p-4">
-                <p className="text-[10px] font-black text-black/60 uppercase">Ingresos del Mes</p>
+                <p className="text-xs font-black text-black uppercase">Ingresos del Mes</p>
                 <p className="text-2xl font-black text-green-600">{formatUsd(monthlyRevenue)}</p>
-                <p className="text-[8px] text-black/50">Reinicia cada 1ro del mes</p>
+                <p className="text-[10px] font-black text-black">Reinicia cada 1ro del mes</p>
               </div>
               <div className="bg-white rounded-xl border border-[#9E9E9E] p-4">
-                <p className="text-[10px] font-black text-black/60 uppercase">Gastos del Mes</p>
+                <p className="text-xs font-black text-black uppercase">Gastos del Mes</p>
                 <p className="text-2xl font-black text-red-600">{formatUsd(monthlyExpenses)}</p>
-                <p className="text-[8px] text-black/50">Compras pagadas en el mes</p>
+                <p className="text-[10px] font-black text-black">Compras pagadas en el mes</p>
               </div>
             </div>
 
@@ -504,7 +504,7 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
                   <p className="text-sm font-black text-black uppercase">Cuentas por Cobrar</p>
                 </div>
                 <p className="text-2xl font-black text-red-600">{formatUsd(totalCreditUsd)}</p>
-                <p className="text-[10px] text-black/50">Total de créditos pendientes de clientes</p>
+                <p className="text-[10px] font-black text-black">Total de créditos pendientes de clientes</p>
               </div>
               <div className="bg-white rounded-xl border border-[#9E9E9E] p-4">
                 <div className="flex items-center gap-2 mb-2">
@@ -512,7 +512,7 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
                   <p className="text-sm font-black text-black uppercase">Cuentas por Pagar</p>
                 </div>
                 <p className="text-2xl font-black text-red-600">{formatUsd(totalPayable)}</p>
-                <p className="text-[10px] text-black/50">Total de facturas pendientes a proveedores</p>
+                <p className="text-[10px] font-black text-black">Total de facturas pendientes a proveedores</p>
               </div>
             </div>
 
@@ -522,12 +522,12 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {outOfStock > 0 && (
                     <div className="bg-red-50 border border-red-200 rounded-xl p-4">
-                      <p className="text-xs font-bold text-red-700">Productos Agotados: {outOfStock}</p>
+                      <p className="text-xs font-black text-red-900">Productos Agotados: {outOfStock}</p>
                     </div>
                   )}
                   {lowStock > 0 && (
                     <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4">
-                      <p className="text-xs font-bold text-yellow-700">Stock Mínimo: {lowStock}</p>
+                      <p className="text-xs font-black text-yellow-900">Stock Mínimo: {lowStock}</p>
                     </div>
                   )}
                 </div>
@@ -549,7 +549,7 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
               <DialogTitle className="text-base font-black flex items-center gap-2">
                 <AlertTriangle size={18} /> RESET TOTAL DEL SISTEMA
               </DialogTitle>
-              <button onClick={() => setShowResetModal(false)} className="text-white/60 hover:text-white">
+              <button onClick={() => setShowResetModal(false)} className="text-white hover:text-white">
                 <XCircle size={20} />
               </button>
             </div>
@@ -557,26 +557,26 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
           
           <div className="p-5">
             <div className="bg-red-50 border-2 border-red-300 rounded-lg p-4 mb-5">
-              <p className="text-red-800 font-bold text-sm mb-2">⚠️ ¡ADVERTENCIA!</p>
-              <p className="text-red-700 text-xs">
+              <p className="text-red-900 font-black text-sm mb-2">⚠️ ¡ADVERTENCIA!</p>
+              <p className="text-red-800 font-black text-xs">
                 Esta acción ELIMINARÁ PERMANENTEMENTE los siguientes datos:
               </p>
-              <ul className="text-red-700 text-xs mt-2 space-y-1 list-disc list-inside">
+              <ul className="text-red-800 font-black text-xs mt-2 space-y-1 list-disc list-inside">
                 <li>Productos, clientes, transacciones, cuentas por cobrar</li>
                 <li>Facturas de compra, proveedores, pagos a proveedores</li>
                 <li>Kardex, entradas contables, historial de cierres</li>
                 <li>Cajas, registros y sesiones de terminal</li>
               </ul>
-              <p className="text-red-800 font-bold text-sm mt-3">
+              <p className="text-red-900 font-black text-sm mt-3">
                 ✅ Los USUARIOS y el PIN actual se conservarán.
               </p>
-              <p className="text-red-800 font-bold text-sm mt-2">
+              <p className="text-red-900 font-black text-sm mt-2">
                 Esta operación es IRREVERSIBLE.
               </p>
             </div>
             
             <div className="mb-4">
-              <label className="text-[10px] font-bold uppercase text-black/60 block mb-2">
+              <label className="text-[11px] font-black uppercase text-black block mb-2">
                 Ingrese el PIN de autorización para continuar
               </label>
               <Input 
@@ -584,7 +584,7 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
                 maxLength={6}
                 value={resetPinInput}
                 onChange={(e) => setResetPinInput(e.target.value.replace(/\D/g, ''))}
-                className="h-10 text-lg font-mono text-center bg-gray-50 border-gray-300"
+                className="h-10 text-lg font-mono text-center bg-gray-50 border-gray-400 font-black"
                 placeholder="••••••"
                 autoFocus
                 onKeyPress={(e) => {
@@ -599,14 +599,14 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
               <Button
                 onClick={() => setShowResetModal(false)}
                 variant="outline"
-                className="flex-1 h-10 border-gray-300 text-black font-bold"
+                className="flex-1 h-10 border-gray-400 text-black font-black"
               >
                 Cancelar
               </Button>
               <Button
                 onClick={handleResetSystem}
                 disabled={isResetting || resetPinInput.length !== 6}
-                className="flex-1 h-10 bg-red-600 hover:bg-red-700 text-white font-bold"
+                className="flex-1 h-10 bg-red-600 hover:bg-red-700 text-white font-black"
               >
                 {isResetting ? (
                   <>

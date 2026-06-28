@@ -333,91 +333,91 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
         <div>
           <h2 className="text-2xl font-headline font-black text-black">Cuentas por Cobrar</h2>
           <div className="flex items-center gap-4 mt-2">
-            <div className="bg-[#1A2C4E] rounded-xl px-4 py-2">
-              <span className="text-[10px] text-white/60 uppercase tracking-widest">Total General</span>
+            <div className="bg-[#1A2C4E] rounded-xl px-4 py-2 border-2 border-black shadow-lg">
+              <span className="text-[10px] font-black text-white uppercase tracking-widest">Total General</span>
               <div className="text-2xl font-black text-white">{formatUsd(totalGeneralDebtUsd)}</div>
-              <div className="text-[8px] text-white/40">≈ {formatBs(totalGeneralDebtBs)}</div>
+              <div className="text-[10px] font-black text-primary">≈ {formatBs(totalGeneralDebtBs)}</div>
             </div>
-            <div className="bg-[#D4A017]/10 rounded-xl px-4 py-2 border border-[#D4A017]/30">
-              <span className="text-[10px] text-black/60 uppercase tracking-widest">Clientes con Deuda</span>
+            <div className="bg-[#D4A017] rounded-xl px-4 py-2 border-2 border-black shadow-lg">
+              <span className="text-[10px] font-black text-black uppercase tracking-widest">Clientes con Deuda</span>
               <div className="text-2xl font-black text-black">{clientsList.filter(c => c.totalDebtUsd > 0.001).length}</div>
             </div>
           </div>
         </div>
         <div className="flex gap-2">
-          <Button onClick={() => setShowInitialDebtModal(true)} className="bg-green-600 hover:bg-green-700 text-white font-black h-9 px-4">
-            <PlusCircle size={16} className="mr-2" /> REGISTRAR DEUDA INICIAL
+          <Button onClick={() => setShowInitialDebtModal(true)} className="bg-green-600 hover:bg-green-700 text-white font-black h-10 px-4 border-2 border-black shadow-md">
+            <PlusCircle size={16} className="mr-2" /> REGISTRAR DEUDA
           </Button>
-          <Button onClick={handleExport} className="bg-[#E8E8E8] hover:bg-[#D4A017] text-black border border-black/20 font-black h-9 px-4">
+          <Button onClick={handleExport} className="bg-white hover:bg-primary text-black border-2 border-black font-black h-10 px-4 shadow-md">
             <Download size={16} className="mr-2" /> EXPORTAR CSV
           </Button>
         </div>
       </div>
 
-      <div className="bg-white border border-[#9E9E9E] rounded-xl overflow-hidden shadow-md">
+      <div className="bg-white border-2 border-black rounded-xl overflow-hidden shadow-xl">
         <Table>
-          <TableHeader className="bg-[#E8E8E8]">
-            <TableRow className="border-b border-[#9E9E9E]">
-              <TableHead className="text-[10px] font-black uppercase w-8"></TableHead>
-              <TableHead className="text-[10px] font-black uppercase">Cliente</TableHead>
-              <TableHead className="text-[10px] font-black uppercase">Cédula</TableHead>
-              <TableHead className="text-[10px] font-black uppercase text-right">Total Original</TableHead>
-              <TableHead className="text-[10px] font-black uppercase text-right">Pagado</TableHead>
-              <TableHead className="text-[10px] font-black uppercase text-right">Saldo Pendiente</TableHead>
-              <TableHead className="text-[10px] font-black uppercase text-center">Acciones</TableHead>
+          <TableHeader className="bg-[#E8E8E8] border-b-2 border-black">
+            <TableRow>
+              <TableHead className="w-8"></TableHead>
+              <TableHead className="text-xs font-black text-black uppercase tracking-widest">Cliente</TableHead>
+              <TableHead className="text-xs font-black text-black uppercase tracking-widest">Cédula</TableHead>
+              <TableHead className="text-xs font-black text-black uppercase tracking-widest text-right">Total Original</TableHead>
+              <TableHead className="text-xs font-black text-black uppercase tracking-widest text-right">Pagado</TableHead>
+              <TableHead className="text-xs font-black text-black uppercase tracking-widest text-right">Saldo Pendiente</TableHead>
+              <TableHead className="text-xs font-black text-black uppercase tracking-widest text-center">Acciones</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {clientsList.length === 0 ? (
-              <TableRow><TableCell colSpan={7} className="text-center py-10 text-black/50 italic">No hay cuentas registradas</TableCell></TableRow>
+              <TableRow><TableCell colSpan={7} className="text-center py-10 text-black font-black italic text-base">No hay cuentas registradas</TableCell></TableRow>
             ) : (
               clientsList.map((client) => {
                 const isExpanded = expandedClient === client.clientId;
                 const hasDebt = client.totalDebtUsd > 0.001;
                 return (
                   <React.Fragment key={client.clientId}>
-                    <TableRow className="border-b border-[#9E9E9E] hover:bg-[#F5F5F5] cursor-pointer" onClick={() => setExpandedClient(isExpanded ? null : client.clientId)}>
-                      <TableCell className="py-3">{isExpanded ? <ChevronDown size={16} className="text-black/60" /> : <ChevronRight size={16} className="text-black/60" />}</TableCell>
-                      <TableCell className="font-bold text-black">{client.clientName}</TableCell>
-                      <TableCell className="text-black font-bold text-sm">{client.clientCedula}</TableCell>
+                    <TableRow className="border-b border-black/10 hover:bg-primary/5 cursor-pointer" onClick={() => setExpandedClient(isExpanded ? null : client.clientId)}>
+                      <TableCell className="py-3">{isExpanded ? <ChevronDown size={18} className="text-black font-black" /> : <ChevronRight size={18} className="text-black font-black" />}</TableCell>
+                      <TableCell className="font-black text-sm text-black">{client.clientName}</TableCell>
+                      <TableCell className="text-black font-black text-sm">{client.clientCedula}</TableCell>
                       <TableCell className="text-right">
-                        <div className="font-bold text-black">{formatUsd(client.totalOriginalUsd)}</div>
-                        <div className="text-[8px] text-black/40">≈ {formatBs(client.totalOriginalUsd * state.exchangeRate)}</div>
+                        <div className="font-black text-sm text-black">{formatUsd(client.totalOriginalUsd)}</div>
+                        <div className="text-[10px] font-black text-black/60">≈ {formatBs(client.totalOriginalUsd * state.exchangeRate)}</div>
                       </TableCell>
                       <TableCell className="text-right">
-                        <div className="font-bold text-[#2ECC71]">{formatUsd(client.totalPaidUsd)}</div>
-                        <div className="text-[8px] text-black/40">≈ {formatBs(client.totalPaidUsd * state.exchangeRate)}</div>
+                        <div className="font-black text-sm text-green-700">{formatUsd(client.totalPaidUsd)}</div>
+                        <div className="text-[10px] font-black text-black/60">≈ {formatBs(client.totalPaidUsd * state.exchangeRate)}</div>
                       </TableCell>
                       <TableCell className="text-right">
-                        <span className={cn("font-black", hasDebt ? "text-[#E74C3C]" : "text-[#2ECC71]")}>
+                        <span className={cn("font-black text-sm", hasDebt ? "text-red-700" : "text-green-700")}>
                           {formatUsd(client.totalDebtUsd)}
                         </span>
-                        <div className="text-[8px] text-black/40">≈ {formatBs(client.totalDebtUsd * state.exchangeRate)}</div>
+                        <div className="text-[10px] font-black text-black/60">≈ {formatBs(client.totalDebtUsd * state.exchangeRate)}</div>
                       </TableCell>
                       <TableCell className="text-center">
                         <button
                           onClick={(e) => { e.stopPropagation(); handleDeleteClient(client.clientId, client.clientName); }}
-                          className="px-3 py-1.5 bg-red-600 text-white text-[10px] font-bold rounded-lg hover:bg-red-700 transition-all flex items-center gap-1"
+                          className="px-3 py-1.5 bg-red-600 text-white text-[10px] font-black rounded-lg border-2 border-black hover:bg-red-700 transition-all flex items-center gap-1 shadow-sm"
                         >
                           <Trash2 size={12} /> ELIMINAR
                         </button>
                       </TableCell>
                     </TableRow>
                     {isExpanded && (
-                      <TableRow className="bg-[#FAFAFA]">
-                        <TableCell colSpan={7} className="p-0">
-                          <div className="p-4 border-t border-[#9E9E9E]">
-                            <div className="text-[11px] font-black text-black/60 uppercase tracking-widest mb-3">Historial de Créditos</div>
-                            <Table>
+                      <TableRow className="bg-slate-50">
+                        <TableCell colSpan={7} className="p-0 border-b border-black/20">
+                          <div className="p-4 border-t-2 border-black/10">
+                            <div className="text-[11px] font-black text-black uppercase tracking-widest mb-3">Historial de Créditos</div>
+                            <Table className="border-2 border-black/10 rounded-lg overflow-hidden">
                               <TableHeader>
-                                <TableRow className="border-b border-[#9E9E9E] bg-[#F0F0F0]">
-                                  <TableHead className="text-[9px] font-bold text-black">Fecha</TableHead>
-                                  <TableHead className="text-[9px] font-bold text-black">Detalle</TableHead>
-                                  <TableHead className="text-[9px] font-bold text-black text-right">Monto USD</TableHead>
-                                  <TableHead className="text-[9px] font-bold text-black text-right">Saldo Bs Actual</TableHead>
-                                  <TableHead className="text-[9px] font-bold text-black text-center">Estado</TableHead>
-                                  <TableHead className="text-[9px] font-bold text-black text-center">Abonos</TableHead>
-                                  <TableHead className="text-[9px] font-bold text-black text-center">Ver</TableHead>
+                                <TableRow className="bg-[#F0F0F0] border-b-2 border-black/10">
+                                  <TableHead className="text-[10px] font-black text-black">Fecha</TableHead>
+                                  <TableHead className="text-[10px] font-black text-black">Detalle</TableHead>
+                                  <TableHead className="text-[10px] font-black text-black text-right">Monto USD</TableHead>
+                                  <TableHead className="text-[10px] font-black text-black text-right">Saldo Bs Actual</TableHead>
+                                  <TableHead className="text-[10px] font-black text-black text-center">Estado</TableHead>
+                                  <TableHead className="text-[10px] font-black text-black text-center">Abonos</TableHead>
+                                  <TableHead className="text-[10px] font-black text-black text-center">Ver</TableHead>
                                 </TableRow>
                               </TableHeader>
                               <TableBody>
@@ -427,32 +427,30 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
                                   const remainingUsd = Math.max(0, originalUsd - paidUsd);
                                   const remainingBsAtCurrentRate = remainingUsd * state.exchangeRate;
                                   const totalAbonos = getTotalAbonosForAccount(account);
-                                  
-                                  // ✅ Obtener el estado con valor predeterminado
                                   const status = account.status || 'pendiente';
                                   
                                   return (
-                                    <TableRow key={account.id} className="border-b border-[#9E9E9E]/50 hover:bg-[#F5F5F5]">
-                                      <TableCell className="text-[11px] text-black font-bold">{new Date(account.date).toLocaleDateString('es-VE')}</TableCell>
-                                      <TableCell className="text-[11px] text-black font-bold max-w-[250px] truncate">{account.products}</TableCell>
-                                      <TableCell className="text-right font-bold">{formatUsd(originalUsd)}</TableCell>
-                                      <TableCell className="text-right font-bold text-[#E74C3C]">{formatBs(remainingBsAtCurrentRate)}</TableCell>
+                                    <TableRow key={account.id} className="border-b border-black/5 hover:bg-white">
+                                      <TableCell className="text-[11px] text-black font-black">{new Date(account.date).toLocaleDateString('es-VE')}</TableCell>
+                                      <TableCell className="text-[11px] text-black font-black max-w-[250px] truncate">{account.products}</TableCell>
+                                      <TableCell className="text-right font-black text-black">{formatUsd(originalUsd)}</TableCell>
+                                      <TableCell className="text-right font-black text-red-700">{formatBs(remainingBsAtCurrentRate)}</TableCell>
                                       <TableCell className="text-center">
-                                        <span className={cn("px-2 py-0.5 rounded-full text-[9px] font-bold", 
-                                          status === 'pagada' ? "bg-green-100 text-green-700" : 
-                                          status === 'parcial' ? "bg-yellow-100 text-yellow-700" : 
-                                          "bg-red-100 text-red-700")}>
+                                        <span className={cn("px-2 py-0.5 rounded-full text-[9px] font-black border", 
+                                          status === 'pagada' ? "bg-green-100 text-green-700 border-green-300" : 
+                                          status === 'parcial' ? "bg-yellow-100 text-yellow-700 border-yellow-300" : 
+                                          "bg-red-100 text-red-700 border-red-300")}>
                                           {status.toUpperCase()}
                                         </span>
                                       </TableCell>
                                       <TableCell className="text-center">
-                                        <span className="text-[10px] font-bold text-blue-600">
+                                        <span className="text-[10px] font-black text-blue-700">
                                           {totalAbonos > 0 ? formatBs(totalAbonos) : '—'}
                                         </span>
                                       </TableCell>
                                       <TableCell className="text-center">
-                                        <button onClick={() => handleTransactionClick(account)} className="p-1.5 rounded-lg hover:bg-gray-200">
-                                          <Eye size={14} className="text-black" />
+                                        <button onClick={() => handleTransactionClick(account)} className="p-1.5 rounded-lg hover:bg-primary/20 text-black">
+                                          <Eye size={16} className="font-black" />
                                         </button>
                                       </TableCell>
                                     </TableRow>
@@ -472,64 +470,64 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
         </Table>
       </div>
 
-      {/* Modal Detalle - Ahora con abonos específicos de la cuenta */}
+      {/* Modal Detalle */}
       <Dialog open={showDetailModal} onOpenChange={setShowDetailModal}>
-        <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-2xl p-0 overflow-hidden rounded-2xl shadow-xl max-h-[85vh] overflow-y-auto">
+        <DialogContent className="bg-white border-2 border-black text-black max-w-2xl p-0 overflow-hidden rounded-2xl shadow-2xl max-h-[85vh] overflow-y-auto">
           <DialogHeader className="sr-only"><DialogTitle>Detalle del Crédito</DialogTitle></DialogHeader>
           {selectedTransaction?.accountInfo && (
             <div className="flex flex-col h-full">
-              <div className="bg-[#1A2C4E] p-5 text-white sticky top-0 z-10">
-                <button onClick={() => setShowDetailModal(false)} className="absolute top-4 right-4 hover:opacity-70"><X size={20} /></button>
+              <div className="bg-[#1A2C4E] p-5 text-white sticky top-0 z-10 border-b-2 border-black">
+                <button onClick={() => setShowDetailModal(false)} className="absolute top-4 right-4 hover:text-primary transition-all"><X size={24} className="font-black" /></button>
                 <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 bg-primary/20 rounded-xl flex items-center justify-center"><HandCoins size={24} className="text-primary" /></div>
+                  <div className="w-12 h-12 bg-primary/20 rounded-xl flex items-center justify-center border border-primary/30"><HandCoins size={24} className="text-primary" /></div>
                   <div>
                     <h3 className="text-xl font-black">Detalle del Crédito</h3>
-                    <p className="text-white/60 text-sm">#{selectedTransaction.accountInfo.txId} • {selectedTransaction.accountInfo.clientName}</p>
+                    <p className="text-primary font-black text-sm">#{selectedTransaction.accountInfo.txId} • {selectedTransaction.accountInfo.clientName}</p>
                   </div>
                 </div>
               </div>
               <div className="p-6 space-y-6">
-                <div className="grid grid-cols-2 gap-4 pb-4 border-b border-[#9E9E9E]">
-                  <div><label className="text-[10px] font-black text-black/60 uppercase">Fecha</label><p className="text-sm font-bold text-black">{formatDate(selectedTransaction.accountInfo.date)}</p></div>
+                <div className="grid grid-cols-2 gap-4 pb-4 border-b-2 border-black/10">
+                  <div><label className="text-[10px] font-black text-black uppercase tracking-widest">Fecha</label><p className="text-sm font-black text-black">{formatDate(selectedTransaction.accountInfo.date)}</p></div>
                   <div>
-                    <label className="text-[10px] font-black text-black/60 uppercase">Monto Original (USD)</label>
-                    <p className="text-lg font-black text-black">{formatUsd(selectedTransaction.accountInfo.amountUsd)}</p>
+                    <label className="text-[10px] font-black text-black uppercase tracking-widest">Monto Original (USD)</label>
+                    <p className="text-xl font-black text-black">{formatUsd(selectedTransaction.accountInfo.amountUsd)}</p>
                   </div>
                 </div>
 
-                <div className="bg-amber-50 rounded-lg p-4 border border-amber-200">
+                <div className="bg-amber-100 rounded-xl p-4 border-2 border-black shadow-sm">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <DollarSign size={16} className="text-amber-700" />
-                      <label className="text-[10px] font-black text-amber-800 uppercase tracking-widest">Tasa BCV del Crédito</label>
+                      <DollarSign size={18} className="text-black font-black" />
+                      <label className="text-[11px] font-black text-black uppercase tracking-widest">Tasa BCV Registrada</label>
                     </div>
                     <div className="text-right">
                       {historicalRate ? (
-                        <p className="text-lg font-black text-amber-800">1 USD = {formatBsNumber(historicalRate)}</p>
+                        <p className="text-lg font-black text-black">1 USD = {formatBsNumber(historicalRate)}</p>
                       ) : (
-                        <p className="text-sm font-bold text-red-600">No registrada</p>
+                        <p className="text-sm font-black text-red-700">No registrada</p>
                       )}
                     </div>
                   </div>
                 </div>
 
                 <div>
-                  <label className="text-[10px] font-black text-black/60 uppercase flex items-center gap-2 mb-3">📦 PRODUCTOS</label>
-                  <div className="border border-[#9E9E9E] rounded-lg overflow-hidden">
+                  <label className="text-[11px] font-black text-black uppercase flex items-center gap-2 mb-3 tracking-widest">📦 PRODUCTOS</label>
+                  <div className="border-2 border-black rounded-xl overflow-hidden shadow-sm">
                     <table className="w-full text-sm">
-                      <thead className="bg-[#E8E8E8]">
+                      <thead className="bg-[#E8E8E8] border-b-2 border-black">
                         <tr>
-                          <th className="text-left p-3 text-[10px] font-black uppercase">CANT</th>
-                          <th className="text-left p-3 text-[10px] font-black uppercase">PRODUCTO</th>
-                          <th className="text-right p-3 text-[10px] font-black uppercase">SUBTOTAL</th>
+                          <th className="text-left p-3 text-[10px] font-black text-black uppercase">CANT</th>
+                          <th className="text-left p-3 text-[10px] font-black text-black uppercase">PRODUCTO</th>
+                          <th className="text-right p-3 text-[10px] font-black text-black uppercase">SUBTOTAL</th>
                         </tr>
                       </thead>
                       <tbody>
                         {getTransactionItems().map((item, idx) => (
-                          <tr key={idx} className="border-b border-[#9E9E9E]/50">
-                            <td className="p-3 text-xs text-black font-bold">{item.qty}</td>
-                            <td className="p-3 text-xs text-black font-bold">{item.name}</td>
-                            <td className="p-3 text-right text-xs font-bold">
+                          <tr key={idx} className="border-b border-black/10 hover:bg-slate-50">
+                            <td className="p-3 text-xs text-black font-black">{item.qty}</td>
+                            <td className="p-3 text-xs text-black font-black">{item.name}</td>
+                            <td className="p-3 text-right text-xs font-black text-black">
                               {item.priceUsd > 0 ? formatUsd(item.priceUsd * item.qty) : '—'}
                             </td>
                           </tr>
@@ -539,48 +537,47 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
                   </div>
                 </div>
 
-                <div className="bg-[#F5F5F5] rounded-lg p-4 space-y-2">
+                <div className="bg-slate-900 rounded-xl p-4 space-y-2 border-2 border-black shadow-lg">
                   <div className="flex justify-between text-sm">
-                    <span className="text-black/60">Pagado en Bs:</span>
-                    <span className="font-bold text-green-600">{formatBs(selectedTransaction.accountInfo.paidAmount || 0)}</span>
+                    <span className="text-white font-black">Pagado en Bs:</span>
+                    <span className="font-black text-green-400">{formatBs(selectedTransaction.accountInfo.paidAmount || 0)}</span>
                   </div>
-                  <div className="flex justify-between text-sm pt-1 border-t border-dashed border-[#9E9E9E]">
-                    <span className="text-black font-bold">Saldo Pendiente (USD Fijo):</span>
-                    <span className="font-black text-red-600">
+                  <div className="flex justify-between text-sm pt-2 border-t border-dashed border-white/20">
+                    <span className="text-white font-black">Saldo Pendiente (USD):</span>
+                    <span className="font-black text-red-400">
                       {formatUsd(selectedTransaction.accountInfo.amountUsd - ((selectedTransaction.accountInfo.paidAmount || 0) / (selectedTransaction.accountInfo.exchangeRate || state.exchangeRate)))}
                     </span>
                   </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-black font-bold">Equivalente Hoy (Bs Dinámico):</span>
-                    <span className="font-black text-amber-700">
+                  <div className="flex justify-between text-base">
+                    <span className="text-primary font-black">Equivalente Hoy (Bs):</span>
+                    <span className="font-black text-primary">
                       {formatBs((selectedTransaction.accountInfo.amountUsd - ((selectedTransaction.accountInfo.paidAmount || 0) / (selectedTransaction.accountInfo.exchangeRate || state.exchangeRate))) * state.exchangeRate)}
                     </span>
                   </div>
                 </div>
 
-                {/* ✅ HISTORIAL DE ABONOS CORREGIDO */}
                 {(() => {
                   const abonos = getAbonosForCurrentAccount();
                   return abonos.length > 0 ? (
                     <div>
-                      <label className="text-[10px] font-black text-black/60 uppercase flex items-center gap-2 mb-3">
-                        <History size={12} /> HISTORIAL DE ABONOS - Cuenta #{selectedTransaction.accountInfo.txId}
+                      <label className="text-[11px] font-black text-black uppercase flex items-center gap-2 mb-3 tracking-widest">
+                        <History size={14} className="text-blue-700" /> HISTORIAL DE ABONOS
                       </label>
-                      <div className="border border-[#9E9E9E] rounded-lg overflow-hidden">
+                      <div className="border-2 border-black rounded-xl overflow-hidden shadow-sm">
                         <table className="w-full text-sm">
-                          <thead className="bg-[#E8E8E8]">
+                          <thead className="bg-[#E8E8E8] border-b-2 border-black">
                             <tr>
-                              <th className="text-left p-3 text-[10px] font-black uppercase">FECHA</th>
-                              <th className="text-right p-3 text-[10px] font-black uppercase">MONTO</th>
-                              <th className="text-left p-3 text-[10px] font-black uppercase">MÉTODO</th>
+                              <th className="text-left p-3 text-[10px] font-black text-black uppercase">FECHA</th>
+                              <th className="text-right p-3 text-[10px] font-black text-black uppercase">MONTO</th>
+                              <th className="text-left p-3 text-[10px] font-black text-black uppercase">MÉTODO</th>
                             </tr>
                           </thead>
                           <tbody>
                             {abonos.map((abono, idx) => (
-                              <tr key={idx} className="border-b border-[#9E9E9E]/50">
-                                <td className="p-3 text-xs text-black font-bold">{formatDateShort(abono.date)}</td>
-                                <td className="p-3 text-right text-xs font-bold text-green-600">{formatBs(abono.total)}</td>
-                                <td className="p-3 text-xs text-black">{abono.payMethod || 'Efectivo BS'}</td>
+                              <tr key={idx} className="border-b border-black/10 hover:bg-slate-50">
+                                <td className="p-3 text-xs text-black font-black">{formatDateShort(abono.date)}</td>
+                                <td className="p-3 text-right text-xs font-black text-green-700">{formatBs(abono.total)}</td>
+                                <td className="p-3 text-xs text-black font-black uppercase">{abono.payMethod?.replace('_', ' ') || 'Efectivo BS'}</td>
                               </tr>
                             ))}
                           </tbody>
@@ -590,8 +587,8 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
                   ) : null;
                 })()}
               </div>
-              <div className="bg-[#F5F5F5] p-4 border-t flex justify-end">
-                <Button onClick={() => setShowDetailModal(false)}>CERRAR</Button>
+              <div className="bg-[#F5F5F5] p-4 border-t-2 border-black flex justify-end">
+                <Button onClick={() => setShowDetailModal(false)} className="bg-primary text-black font-black border-2 border-black px-10 h-10 shadow-md">CERRAR</Button>
               </div>
             </div>
           )}
@@ -600,17 +597,17 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
 
       {/* Modal Deuda Inicial */}
       <Dialog open={showInitialDebtModal} onOpenChange={setShowInitialDebtModal}>
-        <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-md p-0 overflow-hidden rounded-2xl shadow-xl">
-          <DialogHeader className="p-4 bg-[#1A2C4E] text-white">
-            <DialogTitle className="text-lg font-black">Registrar Deuda Inicial</DialogTitle>
+        <DialogContent className="bg-white border-2 border-black text-black max-w-md p-0 overflow-hidden rounded-2xl shadow-2xl">
+          <DialogHeader className="p-4 bg-[#1A2C4E] text-white border-b-2 border-black">
+            <DialogTitle className="text-lg font-black uppercase tracking-widest">Registrar Deuda</DialogTitle>
           </DialogHeader>
           <div className="p-5 space-y-4">
             <div>
-              <label className="text-[10px] font-bold text-black/60 uppercase block mb-1">Cliente</label>
+              <label className="text-[11px] font-black text-black uppercase block mb-1">Cliente</label>
               <select 
                 value={initialDebtForm.clientId} 
                 onChange={(e) => handleInitialDebtChange('clientId', e.target.value)}
-                className="w-full h-9 border border-[#9E9E9E] rounded-lg px-3 text-sm bg-white"
+                className="w-full h-10 border-2 border-black rounded-lg px-3 text-sm bg-white font-black"
               >
                 <option value="">Seleccionar cliente...</option>
                 <option value="new">➕ Nuevo cliente</option>
@@ -621,26 +618,26 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
             </div>
             {initialDebtForm.clientId === 'new' && (
               <div className="space-y-3 animate-in fade-in slide-in-from-top-2">
-                <Input value={initialDebtForm.clientName} onChange={(e) => handleInitialDebtChange('clientName', e.target.value)} placeholder="Nombre completo *" />
-                <Input value={initialDebtForm.clientCedula} onChange={(e) => handleInitialDebtChange('clientCedula', e.target.value)} placeholder="Cédula / RIF *" />
+                <Input value={initialDebtForm.clientName} onChange={(e) => handleInitialDebtChange('clientName', e.target.value)} placeholder="Nombre completo *" className="border-2 border-black font-black" />
+                <Input value={initialDebtForm.clientCedula} onChange={(e) => handleInitialDebtChange('clientCedula', e.target.value)} placeholder="Cédula / RIF *" className="border-2 border-black font-black" />
               </div>
             )}
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-[10px] font-bold text-black/60 uppercase block mb-1">Monto USD *</label>
-                <Input type="number" step="0.01" value={initialDebtForm.amountUsd} onChange={(e) => handleInitialDebtChange('amountUsd', e.target.value)} placeholder="0.00" />
+                <label className="text-[11px] font-black text-black uppercase block mb-1">Monto USD *</label>
+                <Input type="number" step="0.01" value={initialDebtForm.amountUsd} onChange={(e) => handleInitialDebtChange('amountUsd', e.target.value)} placeholder="0.00" className="border-2 border-black font-black" />
               </div>
               <div>
-                <label className="text-[10px] font-bold text-black/60 uppercase block mb-1">Total Bs (Hoy)</label>
-                <Input value={initialDebtForm.amountBs} disabled className="bg-gray-100 font-bold" />
+                <label className="text-[11px] font-black text-black uppercase block mb-1">Total Bs (Hoy)</label>
+                <Input value={initialDebtForm.amountBs} disabled className="bg-slate-100 font-black border-2 border-black text-black" />
               </div>
             </div>
-            <Input value={initialDebtForm.reason} onChange={(e) => handleInitialDebtChange('reason', e.target.value)} placeholder="Motivo (ej: Saldo anterior)" />
+            <Input value={initialDebtForm.reason} onChange={(e) => handleInitialDebtChange('reason', e.target.value)} placeholder="Motivo (ej: Saldo anterior)" className="border-2 border-black font-black" />
           </div>
-          <div className="bg-[#F5F5F5] p-4 border-t flex justify-end gap-3">
-            <Button variant="ghost" onClick={() => setShowInitialDebtModal(false)}>CANCELAR</Button>
-            <Button onClick={handleSubmitInitialDebt} disabled={isSubmittingInitial} className="bg-primary text-black font-black">
-              {isSubmittingInitial ? 'GUARDANDO...' : 'REGISTRAR DEUDA'}
+          <div className="bg-[#F5F5F5] p-4 border-t-2 border-black flex justify-end gap-3">
+            <Button variant="ghost" onClick={() => setShowInitialDebtModal(false)} className="font-black text-black">CANCELAR</Button>
+            <Button onClick={handleSubmitInitialDebt} disabled={isSubmittingInitial} className="bg-primary text-black font-black border-2 border-black shadow-md px-8 h-10">
+              {isSubmittingInitial ? 'GUARDANDO...' : 'REGISTRAR'}
             </Button>
           </div>
         </DialogContent>

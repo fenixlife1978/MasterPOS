@@ -334,12 +334,12 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
           <h2 className="text-2xl font-headline font-black text-black">Cuentas por Cobrar</h2>
           <div className="flex items-center gap-4 mt-2">
             <div className="bg-[#1A2C4E] rounded-xl px-4 py-2">
-              <span className="text-[10px] text-white/60 uppercase tracking-widest">Total General</span>
+              <span className="text-[10px] text-white font-black uppercase tracking-widest">Total General</span>
               <div className="text-2xl font-black text-white">{formatUsd(totalGeneralDebtUsd)}</div>
-              <div className="text-[8px] text-white/40">≈ {formatBs(totalGeneralDebtBs)}</div>
+              <div className="text-[11px] text-white font-black">≈ {formatBs(totalGeneralDebtBs)}</div>
             </div>
             <div className="bg-[#D4A017]/10 rounded-xl px-4 py-2 border border-[#D4A017]/30">
-              <span className="text-[10px] text-black/60 uppercase tracking-widest">Clientes con Deuda</span>
+              <span className="text-[10px] text-black font-black uppercase tracking-widest">Clientes con Deuda</span>
               <div className="text-2xl font-black text-black">{clientsList.filter(c => c.totalDebtUsd > 0.001).length}</div>
             </div>
           </div>
@@ -359,17 +359,17 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
           <TableHeader className="bg-[#E8E8E8]">
             <TableRow className="border-b border-[#9E9E9E]">
               <TableHead className="text-[10px] font-black uppercase w-8"></TableHead>
-              <TableHead className="text-[10px] font-black uppercase">Cliente</TableHead>
-              <TableHead className="text-[10px] font-black uppercase">Cédula</TableHead>
-              <TableHead className="text-[10px] font-black uppercase text-right">Total Original</TableHead>
-              <TableHead className="text-[10px] font-black uppercase text-right">Pagado</TableHead>
-              <TableHead className="text-[10px] font-black uppercase text-right">Saldo Pendiente</TableHead>
-              <TableHead className="text-[10px] font-black uppercase text-center">Acciones</TableHead>
+              <TableHead className="text-[10px] font-black text-black uppercase">Cliente</TableHead>
+              <TableHead className="text-[10px] font-black text-black uppercase">Cédula</TableHead>
+              <TableHead className="text-[10px] font-black text-black uppercase text-right">Total Original</TableHead>
+              <TableHead className="text-[10px] font-black text-black uppercase text-right">Pagado</TableHead>
+              <TableHead className="text-[10px] font-black text-black uppercase text-right">Saldo Pendiente</TableHead>
+              <TableHead className="text-[10px] font-black text-black uppercase text-center">Acciones</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {clientsList.length === 0 ? (
-              <TableRow><TableCell colSpan={7} className="text-center py-10 text-black/50 italic">No hay cuentas registradas</TableCell></TableRow>
+              <TableRow><TableCell colSpan={7} className="text-center py-10 text-black font-black italic">No hay cuentas registradas</TableCell></TableRow>
             ) : (
               clientsList.map((client) => {
                 const isExpanded = expandedClient === client.clientId;
@@ -377,27 +377,27 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
                 return (
                   <React.Fragment key={client.clientId}>
                     <TableRow className="border-b border-[#9E9E9E] hover:bg-[#F5F5F5] cursor-pointer" onClick={() => setExpandedClient(isExpanded ? null : client.clientId)}>
-                      <TableCell className="py-3">{isExpanded ? <ChevronDown size={16} className="text-black/60" /> : <ChevronRight size={16} className="text-black/60" />}</TableCell>
-                      <TableCell className="font-bold text-black">{client.clientName}</TableCell>
-                      <TableCell className="text-black font-bold text-sm">{client.clientCedula}</TableCell>
+                      <TableCell className="py-3">{isExpanded ? <ChevronDown size={16} className="text-black font-black" /> : <ChevronRight size={16} className="text-black font-black" />}</TableCell>
+                      <TableCell className="font-black text-black">{client.clientName}</TableCell>
+                      <TableCell className="text-black font-black text-sm">{client.clientCedula}</TableCell>
                       <TableCell className="text-right">
-                        <div className="font-bold text-black">{formatUsd(client.totalOriginalUsd)}</div>
-                        <div className="text-[8px] text-black/40">≈ {formatBs(client.totalOriginalUsd * state.exchangeRate)}</div>
+                        <div className="font-black text-black">{formatUsd(client.totalOriginalUsd)}</div>
+                        <div className="text-[11px] text-black font-black">≈ {formatBs(client.totalOriginalUsd * state.exchangeRate)}</div>
                       </TableCell>
                       <TableCell className="text-right">
-                        <div className="font-bold text-[#2ECC71]">{formatUsd(client.totalPaidUsd)}</div>
-                        <div className="text-[8px] text-black/40">≈ {formatBs(client.totalPaidUsd * state.exchangeRate)}</div>
+                        <div className="font-black text-[#2ECC71]">{formatUsd(client.totalPaidUsd)}</div>
+                        <div className="text-[11px] text-black font-black">≈ {formatBs(client.totalPaidUsd * state.exchangeRate)}</div>
                       </TableCell>
                       <TableCell className="text-right">
                         <span className={cn("font-black", hasDebt ? "text-[#E74C3C]" : "text-[#2ECC71]")}>
                           {formatUsd(client.totalDebtUsd)}
                         </span>
-                        <div className="text-[8px] text-black/40">≈ {formatBs(client.totalDebtUsd * state.exchangeRate)}</div>
+                        <div className="text-[11px] text-black font-black">≈ {formatBs(client.totalDebtUsd * state.exchangeRate)}</div>
                       </TableCell>
                       <TableCell className="text-center">
                         <button
                           onClick={(e) => { e.stopPropagation(); handleDeleteClient(client.clientId, client.clientName); }}
-                          className="px-3 py-1.5 bg-red-600 text-white text-[10px] font-bold rounded-lg hover:bg-red-700 transition-all flex items-center gap-1"
+                          className="px-3 py-1.5 bg-red-600 text-white text-[10px] font-black rounded-lg hover:bg-red-700 transition-all flex items-center gap-1"
                         >
                           <Trash2 size={12} /> ELIMINAR
                         </button>
@@ -407,17 +407,17 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
                       <TableRow className="bg-[#FAFAFA]">
                         <TableCell colSpan={7} className="p-0">
                           <div className="p-4 border-t border-[#9E9E9E]">
-                            <div className="text-[11px] font-black text-black/60 uppercase tracking-widest mb-3">Historial de Créditos</div>
+                            <div className="text-[11px] font-black text-black uppercase tracking-widest mb-3">Historial de Créditos</div>
                             <Table>
                               <TableHeader>
                                 <TableRow className="border-b border-[#9E9E9E] bg-[#F0F0F0]">
-                                  <TableHead className="text-[9px] font-bold text-black">Fecha</TableHead>
-                                  <TableHead className="text-[9px] font-bold text-black">Detalle</TableHead>
-                                  <TableHead className="text-[9px] font-bold text-black text-right">Monto USD</TableHead>
-                                  <TableHead className="text-[9px] font-bold text-black text-right">Saldo Bs Actual</TableHead>
-                                  <TableHead className="text-[9px] font-bold text-black text-center">Estado</TableHead>
-                                  <TableHead className="text-[9px] font-bold text-black text-center">Abonos</TableHead>
-                                  <TableHead className="text-[9px] font-bold text-black text-center">Ver</TableHead>
+                                  <TableHead className="text-[9px] font-black text-black">Fecha</TableHead>
+                                  <TableHead className="text-[9px] font-black text-black">Detalle</TableHead>
+                                  <TableHead className="text-[9px] font-black text-black text-right">Monto USD</TableHead>
+                                  <TableHead className="text-[9px] font-black text-black text-right">Saldo Bs Actual</TableHead>
+                                  <TableHead className="text-[9px] font-black text-black text-center">Estado</TableHead>
+                                  <TableHead className="text-[9px] font-black text-black text-center">Abonos</TableHead>
+                                  <TableHead className="text-[9px] font-black text-black text-center">Ver</TableHead>
                                 </TableRow>
                               </TableHeader>
                               <TableBody>
@@ -433,12 +433,12 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
                                   
                                   return (
                                     <TableRow key={account.id} className="border-b border-[#9E9E9E]/50 hover:bg-[#F5F5F5]">
-                                      <TableCell className="text-[11px] text-black font-bold">{new Date(account.date).toLocaleDateString('es-VE')}</TableCell>
-                                      <TableCell className="text-[11px] text-black font-bold max-w-[250px] truncate">{account.products}</TableCell>
-                                      <TableCell className="text-right font-bold">{formatUsd(originalUsd)}</TableCell>
-                                      <TableCell className="text-right font-bold text-[#E74C3C]">{formatBs(remainingBsAtCurrentRate)}</TableCell>
+                                      <TableCell className="text-[11px] text-black font-black">{new Date(account.date).toLocaleDateString('es-VE')}</TableCell>
+                                      <TableCell className="text-[11px] text-black font-black max-w-[250px] truncate">{account.products}</TableCell>
+                                      <TableCell className="text-right font-black">{formatUsd(originalUsd)}</TableCell>
+                                      <TableCell className="text-right font-black text-[#E74C3C]">{formatBs(remainingBsAtCurrentRate)}</TableCell>
                                       <TableCell className="text-center">
-                                        <span className={cn("px-2 py-0.5 rounded-full text-[9px] font-bold", 
+                                        <span className={cn("px-2 py-0.5 rounded-full text-[9px] font-black", 
                                           status === 'pagada' ? "bg-green-100 text-green-700" : 
                                           status === 'parcial' ? "bg-yellow-100 text-yellow-700" : 
                                           "bg-red-100 text-red-700")}>
@@ -446,13 +446,13 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
                                         </span>
                                       </TableCell>
                                       <TableCell className="text-center">
-                                        <span className="text-[10px] font-bold text-blue-600">
+                                        <span className="text-[10px] font-black text-blue-600">
                                           {totalAbonos > 0 ? formatBs(totalAbonos) : '—'}
                                         </span>
                                       </TableCell>
                                       <TableCell className="text-center">
                                         <button onClick={() => handleTransactionClick(account)} className="p-1.5 rounded-lg hover:bg-gray-200">
-                                          <Eye size={14} className="text-black" />
+                                          <Eye size={14} className="text-black font-black" />
                                         </button>
                                       </TableCell>
                                     </TableRow>
@@ -484,15 +484,15 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
                   <div className="w-12 h-12 bg-primary/20 rounded-xl flex items-center justify-center"><HandCoins size={24} className="text-primary" /></div>
                   <div>
                     <h3 className="text-xl font-black">Detalle del Crédito</h3>
-                    <p className="text-white/60 text-sm">#{selectedTransaction.accountInfo.txId} • {selectedTransaction.accountInfo.clientName}</p>
+                    <p className="text-white font-black text-sm">#{selectedTransaction.accountInfo.txId} • {selectedTransaction.accountInfo.clientName}</p>
                   </div>
                 </div>
               </div>
               <div className="p-6 space-y-6">
                 <div className="grid grid-cols-2 gap-4 pb-4 border-b border-[#9E9E9E]">
-                  <div><label className="text-[10px] font-black text-black/60 uppercase">Fecha</label><p className="text-sm font-bold text-black">{formatDate(selectedTransaction.accountInfo.date)}</p></div>
+                  <div><label className="text-[10px] font-black text-black uppercase">Fecha</label><p className="text-sm font-black text-black">{formatDate(selectedTransaction.accountInfo.date)}</p></div>
                   <div>
-                    <label className="text-[10px] font-black text-black/60 uppercase">Monto Original (USD)</label>
+                    <label className="text-[10px] font-black text-black uppercase">Monto Original (USD)</label>
                     <p className="text-lg font-black text-black">{formatUsd(selectedTransaction.accountInfo.amountUsd)}</p>
                   </div>
                 </div>
@@ -507,14 +507,14 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
                       {historicalRate ? (
                         <p className="text-lg font-black text-amber-800">1 USD = {formatBsNumber(historicalRate)}</p>
                       ) : (
-                        <p className="text-sm font-bold text-red-600">No registrada</p>
+                        <p className="text-sm font-black text-red-600">No registrada</p>
                       )}
                     </div>
                   </div>
                 </div>
 
                 <div>
-                  <label className="text-[10px] font-black text-black/60 uppercase flex items-center gap-2 mb-3">📦 PRODUCTOS</label>
+                  <label className="text-[10px] font-black text-black uppercase flex items-center gap-2 mb-3">📦 PRODUCTOS</label>
                   <div className="border border-[#9E9E9E] rounded-lg overflow-hidden">
                     <table className="w-full text-sm">
                       <thead className="bg-[#E8E8E8]">
@@ -527,9 +527,9 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
                       <tbody>
                         {getTransactionItems().map((item, idx) => (
                           <tr key={idx} className="border-b border-[#9E9E9E]/50">
-                            <td className="p-3 text-xs text-black font-bold">{item.qty}</td>
-                            <td className="p-3 text-xs text-black font-bold">{item.name}</td>
-                            <td className="p-3 text-right text-xs font-bold">
+                            <td className="p-3 text-xs text-black font-black">{item.qty}</td>
+                            <td className="p-3 text-xs text-black font-black">{item.name}</td>
+                            <td className="p-3 text-right text-xs font-black">
                               {item.priceUsd > 0 ? formatUsd(item.priceUsd * item.qty) : '—'}
                             </td>
                           </tr>
@@ -541,17 +541,17 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
 
                 <div className="bg-[#F5F5F5] rounded-lg p-4 space-y-2">
                   <div className="flex justify-between text-sm">
-                    <span className="text-black/60">Pagado en Bs:</span>
-                    <span className="font-bold text-green-600">{formatBs(selectedTransaction.accountInfo.paidAmount || 0)}</span>
+                    <span className="text-black font-black">Pagado en Bs:</span>
+                    <span className="font-black text-green-600">{formatBs(selectedTransaction.accountInfo.paidAmount || 0)}</span>
                   </div>
                   <div className="flex justify-between text-sm pt-1 border-t border-dashed border-[#9E9E9E]">
-                    <span className="text-black font-bold">Saldo Pendiente (USD Fijo):</span>
+                    <span className="text-black font-black">Saldo Pendiente (USD Fijo):</span>
                     <span className="font-black text-red-600">
                       {formatUsd(selectedTransaction.accountInfo.amountUsd - ((selectedTransaction.accountInfo.paidAmount || 0) / (selectedTransaction.accountInfo.exchangeRate || state.exchangeRate)))}
                     </span>
                   </div>
                   <div className="flex justify-between text-sm">
-                    <span className="text-black font-bold">Equivalente Hoy (Bs Dinámico):</span>
+                    <span className="text-black font-black">Equivalente Hoy (Bs Dinámico):</span>
                     <span className="font-black text-amber-700">
                       {formatBs((selectedTransaction.accountInfo.amountUsd - ((selectedTransaction.accountInfo.paidAmount || 0) / (selectedTransaction.accountInfo.exchangeRate || state.exchangeRate))) * state.exchangeRate)}
                     </span>
@@ -563,7 +563,7 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
                   const abonos = getAbonosForCurrentAccount();
                   return abonos.length > 0 ? (
                     <div>
-                      <label className="text-[10px] font-black text-black/60 uppercase flex items-center gap-2 mb-3">
+                      <label className="text-[10px] font-black text-black uppercase flex items-center gap-2 mb-3">
                         <History size={12} /> HISTORIAL DE ABONOS - Cuenta #{selectedTransaction.accountInfo.txId}
                       </label>
                       <div className="border border-[#9E9E9E] rounded-lg overflow-hidden">
@@ -578,9 +578,9 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
                           <tbody>
                             {abonos.map((abono, idx) => (
                               <tr key={idx} className="border-b border-[#9E9E9E]/50">
-                                <td className="p-3 text-xs text-black font-bold">{formatDateShort(abono.date)}</td>
-                                <td className="p-3 text-right text-xs font-bold text-green-600">{formatBs(abono.total)}</td>
-                                <td className="p-3 text-xs text-black">{abono.payMethod || 'Efectivo BS'}</td>
+                                <td className="p-3 text-xs text-black font-black">{formatDateShort(abono.date)}</td>
+                                <td className="p-3 text-right text-xs font-black text-green-600">{formatBs(abono.total)}</td>
+                                <td className="p-3 text-xs text-black font-black">{abono.payMethod || 'Efectivo BS'}</td>
                               </tr>
                             ))}
                           </tbody>
@@ -591,7 +591,7 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
                 })()}
               </div>
               <div className="bg-[#F5F5F5] p-4 border-t flex justify-end">
-                <Button onClick={() => setShowDetailModal(false)}>CERRAR</Button>
+                <Button onClick={() => setShowDetailModal(false)} className="font-black">CERRAR</Button>
               </div>
             </div>
           )}
@@ -606,11 +606,11 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
           </DialogHeader>
           <div className="p-5 space-y-4">
             <div>
-              <label className="text-[10px] font-bold text-black/60 uppercase block mb-1">Cliente</label>
+              <label className="text-[10px] font-black text-black uppercase block mb-1">Cliente</label>
               <select 
                 value={initialDebtForm.clientId} 
                 onChange={(e) => handleInitialDebtChange('clientId', e.target.value)}
-                className="w-full h-9 border border-[#9E9E9E] rounded-lg px-3 text-sm bg-white"
+                className="w-full h-9 border border-[#9E9E9E] rounded-lg px-3 text-sm bg-white font-black"
               >
                 <option value="">Seleccionar cliente...</option>
                 <option value="new">➕ Nuevo cliente</option>
@@ -621,24 +621,24 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
             </div>
             {initialDebtForm.clientId === 'new' && (
               <div className="space-y-3 animate-in fade-in slide-in-from-top-2">
-                <Input value={initialDebtForm.clientName} onChange={(e) => handleInitialDebtChange('clientName', e.target.value)} placeholder="Nombre completo *" />
-                <Input value={initialDebtForm.clientCedula} onChange={(e) => handleInitialDebtChange('clientCedula', e.target.value)} placeholder="Cédula / RIF *" />
+                <Input value={initialDebtForm.clientName} onChange={(e) => handleInitialDebtChange('clientName', e.target.value)} placeholder="Nombre completo *" className="font-black" />
+                <Input value={initialDebtForm.clientCedula} onChange={(e) => handleInitialDebtChange('clientCedula', e.target.value)} placeholder="Cédula / RIF *" className="font-black" />
               </div>
             )}
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-[10px] font-bold text-black/60 uppercase block mb-1">Monto USD *</label>
-                <Input type="number" step="0.01" value={initialDebtForm.amountUsd} onChange={(e) => handleInitialDebtChange('amountUsd', e.target.value)} placeholder="0.00" />
+                <label className="text-[10px] font-black text-black uppercase block mb-1">Monto USD *</label>
+                <Input type="number" step="0.01" value={initialDebtForm.amountUsd} onChange={(e) => handleInitialDebtChange('amountUsd', e.target.value)} placeholder="0.00" className="font-black" />
               </div>
               <div>
-                <label className="text-[10px] font-bold text-black/60 uppercase block mb-1">Total Bs (Hoy)</label>
-                <Input value={initialDebtForm.amountBs} disabled className="bg-gray-100 font-bold" />
+                <label className="text-[10px] font-black text-black uppercase block mb-1">Total Bs (Hoy)</label>
+                <Input value={initialDebtForm.amountBs} disabled className="bg-gray-100 font-black" />
               </div>
             </div>
-            <Input value={initialDebtForm.reason} onChange={(e) => handleInitialDebtChange('reason', e.target.value)} placeholder="Motivo (ej: Saldo anterior)" />
+            <Input value={initialDebtForm.reason} onChange={(e) => handleInitialDebtChange('reason', e.target.value)} placeholder="Motivo (ej: Saldo anterior)" className="font-black" />
           </div>
           <div className="bg-[#F5F5F5] p-4 border-t flex justify-end gap-3">
-            <Button variant="ghost" onClick={() => setShowInitialDebtModal(false)}>CANCELAR</Button>
+            <Button variant="ghost" onClick={() => setShowInitialDebtModal(false)} className="font-black">CANCELAR</Button>
             <Button onClick={handleSubmitInitialDebt} disabled={isSubmittingInitial} className="bg-primary text-black font-black">
               {isSubmittingInitial ? 'GUARDANDO...' : 'REGISTRAR DEUDA'}
             </Button>

@@ -1,10 +1,9 @@
-
 "use client";
 
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { usePOSState } from '@/hooks/use-pos-state';
 import { useAccounting } from '@/hooks/use-accounting';
-import { Calendar, FileText, FileSpreadsheet, Search, TrendingUp, TrendingDown, BarChart3, DollarSign, Printer, Share2, Download, Monitor } from 'lucide-react';
+import { Calendar, FileText, FileSpreadsheet, Search, TrendingUp, TrendingDown, BarChart3, DollarSign, Printer, Share2, Download, Monitor, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
@@ -471,14 +470,14 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
     <div className="bg-white border border-[#9E9E9E] rounded-xl p-5 shadow-md">
       <div className="flex justify-between items-center flex-wrap gap-2 mb-4">
         <div className="flex gap-2 flex-wrap">
-          <button onClick={() => setActiveReport('transactions')} className={cn("px-4 py-2 rounded-lg font-bold text-sm transition-all", activeReport === 'transactions' ? "bg-primary text-black" : "text-black/60 hover:bg-black/5")}>Transacciones por Fecha</button>
-          <button onClick={() => setActiveReport('summary')} className={cn("px-4 py-2 rounded-lg font-bold text-sm transition-all", activeReport === 'summary' ? "bg-primary text-black" : "text-black/60 hover:bg-black/5")}>Resumen de Ventas</button>
-          <button onClick={() => setActiveReport('consolidated')} className={cn("px-4 py-2 rounded-lg font-bold text-sm transition-all", activeReport === 'consolidated' ? "bg-primary text-black" : "text-black/60 hover:bg-black/5")}>Consolidado Ingresos/Egresos</button>
+          <button onClick={() => setActiveReport('transactions')} className={cn("px-4 py-2 rounded-lg font-black text-sm transition-all", activeReport === 'transactions' ? "bg-primary text-black" : "text-black font-black hover:bg-black/5")}>Transacciones por Fecha</button>
+          <button onClick={() => setActiveReport('summary')} className={cn("px-4 py-2 rounded-lg font-black text-sm transition-all", activeReport === 'summary' ? "bg-primary text-black" : "text-black font-black hover:bg-black/5")}>Resumen de Ventas</button>
+          <button onClick={() => setActiveReport('consolidated')} className={cn("px-4 py-2 rounded-lg font-black text-sm transition-all", activeReport === 'consolidated' ? "bg-primary text-black" : "text-black font-black hover:bg-black/5")}>Consolidado Ingresos/Egresos</button>
         </div>
         <div className="flex gap-2">
-          <Button onClick={handlePrintPDF} variant="outline" className="h-8 text-[10px] font-black border-[#9E9E9E]"><Printer size={12} className="mr-1" /> Imprimir / PDF</Button>
-          <Button onClick={handleSharePDF} variant="outline" className="h-8 text-[10px] font-black border-[#9E9E9E]"><Share2 size={12} className="mr-1" /> Compartir PDF</Button>
-          <Button onClick={exportToExcel} variant="outline" className="h-8 text-[10px] font-black border-[#9E9E9E]"><Download size={12} className="mr-1" /> Exportar Excel</Button>
+          <Button onClick={handlePrintPDF} variant="outline" className="h-8 text-[10px] font-black border-[#9E9E9E] text-black"><Printer size={12} className="mr-1" /> Imprimir / PDF</Button>
+          <Button onClick={handleSharePDF} variant="outline" className="h-8 text-[10px] font-black border-[#9E9E9E] text-black"><Share2 size={12} className="mr-1" /> Compartir PDF</Button>
+          <Button onClick={exportToExcel} variant="outline" className="h-8 text-[10px] font-black border-[#9E9E9E] text-black"><Download size={12} className="mr-1" /> Exportar Excel</Button>
         </div>
       </div>
 
@@ -486,35 +485,35 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
         {activeReport === 'transactions' && (
           <>
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-              <div><label className="text-[10px] font-black text-black/60 block mb-1">Fecha Desde</label><Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} /></div>
-              <div><label className="text-[10px] font-black text-black/60 block mb-1">Fecha Hasta</label><Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} /></div>
+              <div><label className="text-[10px] font-black text-black uppercase tracking-widest block mb-1">Fecha Desde</label><Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="font-black text-black" /></div>
+              <div><label className="text-[10px] font-black text-black uppercase tracking-widest block mb-1">Fecha Hasta</label><Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="font-black text-black" /></div>
               <div>
-                <label className="text-[10px] font-black text-black/60 block mb-1 flex items-center gap-1"><Monitor size={12} /> Terminal</label>
+                <label className="text-[10px] font-black text-black uppercase tracking-widest block mb-1 flex items-center gap-1"><Monitor size={12} /> Terminal</label>
                 <select 
                   value={selectedTerminalId} 
                   onChange={(e) => setSelectedTerminalId(e.target.value)}
-                  className="w-full h-10 bg-white border border-[#9E9E9E] rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  className="w-full h-10 bg-white border border-[#9E9E9E] rounded-lg px-3 text-sm font-black text-black focus:outline-none focus:ring-2 focus:ring-primary/50"
                 >
-                  <option value="all">📡 Todas las terminales</option>
+                  <option value="all">📡 TODAS LAS TERMINALES</option>
                   {terminals.map(term => (
-                    <option key={term.id} value={term.id}>{term.name}</option>
+                    <option key={term.id} value={term.id}>{term.name.toUpperCase()}</option>
                   ))}
                 </select>
-                {isLoadingTerminals && <p className="text-[8px] text-black/40 mt-1">Cargando terminales...</p>}
-                {loadError && <p className="text-[8px] text-red-500 mt-1">{loadError}</p>}
+                {isLoadingTerminals && <p className="text-[8px] text-black font-black uppercase mt-1">Cargando terminales...</p>}
+                {loadError && <p className="text-[8px] text-red-500 font-black uppercase mt-1">{loadError}</p>}
               </div>
-              <div className="flex gap-2 items-end"><Button onClick={handleSearch} className="bg-primary text-black font-black flex-1"><Search size={14} className="mr-2" /> BUSCAR</Button></div>
+              <div className="flex gap-2 items-end"><Button onClick={handleSearch} className="bg-primary text-black font-black flex-1 h-10 shadow-md"><Search size={14} className="mr-2" /> BUSCAR</Button></div>
             </div>
             {hasSearched && (
-              <div className="overflow-x-auto border border-[#9E9E9E] rounded-lg">
+              <div className="overflow-x-auto border border-[#9E9E9E] rounded-xl overflow-hidden shadow-sm">
                 <table className="w-full text-sm">
                   <thead className="bg-[#E8E8E8]">
-                    <tr className="border-b">
-                      <th className="p-2 text-left">Fecha</th>
-                      <th className="p-2 text-left">Tipo</th>
-                      <th className="p-2 text-left">Cliente</th>
-                      <th className="p-2 text-left">Terminal</th>
-                      <th className="p-2 text-right">Total</th>
+                    <tr className="border-b border-[#9E9E9E]">
+                      <th className="p-3 text-left text-[10px] font-black uppercase tracking-widest text-black">Fecha</th>
+                      <th className="p-3 text-left text-[10px] font-black uppercase tracking-widest text-black">Tipo</th>
+                      <th className="p-3 text-left text-[10px] font-black uppercase tracking-widest text-black">Cliente</th>
+                      <th className="p-3 text-left text-[10px] font-black uppercase tracking-widest text-black">Terminal</th>
+                      <th className="p-3 text-right text-[10px] font-black uppercase tracking-widest text-black">Total Bs</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -522,12 +521,12 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
                       // ✅ El campo terminalId ahora guarda el nombre legible
                       let terminalDisplay = t.terminalId || (t.sessionId ? t.sessionId.split('_').shift() : '—');
                       return (
-                        <tr key={t.id} className="border-b hover:bg-[#F5F5F5]">
-                          <td className="p-2 text-xs">{formatLocalDate(t.date)}</td>
-                          <td className="p-2"><span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-gray-100">{t.type.toUpperCase()}</span></td>
-                          <td className="p-2 text-xs">{t.clientName || '—'}</td>
-                          <td className="p-2 text-xs font-mono">{terminalDisplay}</td>
-                          <td className="p-2 text-right font-bold">{formatBs(t.total)}</td>
+                        <tr key={t.id} className="border-b border-[#9E9E9E]/40 hover:bg-[#F5F5F5] transition-colors">
+                          <td className="p-3 text-xs font-black text-black">{formatLocalDate(t.date)}</td>
+                          <td className="p-3"><span className="text-[9px] font-black px-2 py-0.5 rounded-full bg-gray-100 border border-gray-200 uppercase">{t.type.toUpperCase()}</span></td>
+                          <td className="p-3 text-xs font-black text-black uppercase">{t.clientName || '—'}</td>
+                          <td className="p-3 text-xs font-black text-black uppercase font-mono">{terminalDisplay}</td>
+                          <td className="p-3 text-right font-black text-black">{formatBs(t.total)}</td>
                         </tr>
                       );
                     })}
@@ -541,42 +540,42 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
         {activeReport === 'summary' && (
           <div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-              <div><label className="text-[10px] font-black text-black/60 block mb-1">Fecha Desde</label><Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} /></div>
-              <div><label className="text-[10px] font-black text-black/60 block mb-1">Fecha Hasta</label><Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} /></div>
-              <div className="flex gap-2 items-end"><Button onClick={handleSearch} className="bg-primary text-black font-black flex-1"><Search size={14} className="mr-2" /> BUSCAR</Button></div>
+              <div><label className="text-[10px] font-black text-black uppercase tracking-widest block mb-1">Fecha Desde</label><Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="font-black text-black" /></div>
+              <div><label className="text-[10px] font-black text-black uppercase tracking-widest block mb-1">Fecha Hasta</label><Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="font-black text-black" /></div>
+              <div className="flex gap-2 items-end"><Button onClick={handleSearch} className="bg-primary text-black font-black flex-1 h-10 shadow-md"><Search size={14} className="mr-2" /> BUSCAR</Button></div>
             </div>
             {hasSearched && (
-              <div className="bg-gray-50 rounded-xl p-5 border border-gray-200 space-y-3">
+              <div className="bg-gray-50 rounded-2xl p-5 border border-slate-200 space-y-3 shadow-inner">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="bg-white p-4 rounded-xl shadow-sm border-l-4 border-primary">
-                    <p className="text-[10px] font-black text-black/40">Total General</p>
-                    <p className="text-2xl font-black text-primary">{formatUsd(totalGeneral / state.exchangeRate)}</p>
-                    <p className="text-[11px] font-black text-black/60">{formatBs(totalGeneral)}</p>
+                    <p className="text-[10px] font-black text-black uppercase tracking-widest">Total General</p>
+                    <p className="text-2xl font-black text-primary mt-1">{formatUsd(totalGeneral / state.exchangeRate)}</p>
+                    <p className="text-[11px] font-black text-black mt-0.5">{formatBs(totalGeneral)}</p>
                   </div>
                   <div className="bg-white p-4 rounded-xl shadow-sm border-l-4 border-green-500">
-                    <p className="text-[10px] font-black text-black/40">Ventas Contado</p>
-                    <p className="text-2xl font-black text-green-600">{formatUsd(contadoTotal / state.exchangeRate)}</p>
-                    <p className="text-[11px] font-black text-black/60">{formatBs(contadoTotal)}</p>
+                    <p className="text-[10px] font-black text-black uppercase tracking-widest">Ventas Contado</p>
+                    <p className="text-2xl font-black text-green-600 mt-1">{formatUsd(contadoTotal / state.exchangeRate)}</p>
+                    <p className="text-[11px] font-black text-black mt-0.5">{formatBs(contadoTotal)}</p>
                   </div>
                   <div className="bg-white p-4 rounded-xl shadow-sm border-l-4 border-orange-500">
-                    <p className="text-[10px] font-black text-black/40">Ventas Crédito</p>
-                    <p className="text-2xl font-black text-orange-600">{formatUsd(creditoTotal / state.exchangeRate)}</p>
-                    <p className="text-[11px] font-black text-black/60">{formatBs(creditoTotal)}</p>
+                    <p className="text-[10px] font-black text-black uppercase tracking-widest">Ventas Crédito</p>
+                    <p className="text-2xl font-black text-orange-600 mt-1">{formatUsd(creditoTotal / state.exchangeRate)}</p>
+                    <p className="text-[11px] font-black text-black mt-0.5">{formatBs(creditoTotal)}</p>
                   </div>
                   <div className="bg-white p-4 rounded-xl shadow-sm border-l-4 border-purple-500">
-                    <p className="text-[10px] font-black text-black/40">Cobros de Deuda</p>
-                    <p className="text-2xl font-black text-purple-600">{formatUsd(cobroTotal / state.exchangeRate)}</p>
-                    <p className="text-[11px] font-black text-black/60">{formatBs(cobroTotal)}</p>
+                    <p className="text-[10px] font-black text-black uppercase tracking-widest">Cobros de Deuda</p>
+                    <p className="text-2xl font-black text-purple-600 mt-1">{formatUsd(cobroTotal / state.exchangeRate)}</p>
+                    <p className="text-[11px] font-black text-black mt-0.5">{formatBs(cobroTotal)}</p>
                   </div>
                   <div className="bg-white p-4 rounded-xl shadow-sm border-l-4 border-red-500">
-                    <p className="text-[10px] font-black text-black/40">Colaboraciones/Consumo (Costo)</p>
-                    <p className="text-2xl font-black text-red-600">{formatUsd(colaboracionTotal / state.exchangeRate)}</p>
-                    <p className="text-[11px] font-black text-black/60">{formatBs(colaboracionTotal)}</p>
+                    <p className="text-[10px] font-black text-black uppercase tracking-widest">Colaboraciones/Consumo (Costo)</p>
+                    <p className="text-2xl font-black text-red-600 mt-1">{formatUsd(colaboracionTotal / state.exchangeRate)}</p>
+                    <p className="text-[11px] font-black text-black mt-0.5">{formatBs(colaboracionTotal)}</p>
                   </div>
                   <div className="bg-white p-4 rounded-xl shadow-sm border-l-4 border-gray-500">
-                    <p className="text-[10px] font-black text-black/40">Costo Total de Operación</p>
-                    <p className="text-2xl font-black">{formatUsd(costoTotalOperacion / state.exchangeRate)}</p>
-                    <p className="text-[11px] font-black text-black/60">{formatBs(costoTotalOperacion)}</p>
+                    <p className="text-[10px] font-black text-black uppercase tracking-widest">Costo Total de Operación</p>
+                    <p className="text-2xl font-black text-black mt-1">{formatUsd(costoTotalOperacion / state.exchangeRate)}</p>
+                    <p className="text-[11px] font-black text-black mt-0.5">{formatBs(costoTotalOperacion)}</p>
                   </div>
                 </div>
               </div>
@@ -586,46 +585,46 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
 
         {activeReport === 'consolidated' && (
           <div className="space-y-6">
-            <div className="flex items-center gap-2 mb-4"><BarChart3 size={20} className="text-primary" /><h3 className="text-lg font-black text-black">Consolidado Mensual de Caja</h3></div>
-            <div className="bg-white border border-[#9E9E9E] rounded-xl overflow-hidden">
+            <div className="flex items-center gap-2 mb-4"><BarChart3 size={20} className="text-primary" /><h3 className="text-lg font-black text-black uppercase">Consolidado Mensual de Caja</h3></div>
+            <div className="bg-white border border-[#9E9E9E] rounded-xl overflow-hidden shadow-md">
               <table className="w-full text-sm">
-                <thead className="bg-[#E8E8E8]"><tr className="border-b border-[#9E9E9E]"><th className="p-3 text-left">Mes</th><th className="p-3 text-right">Ingresos (+)</th><th className="p-3 text-right">Egresos (-)</th><th className="p-3 text-right">Balance</th></tr></thead>
-                <tbody className="divide-y divide-[#9E9E9E]">
+                <thead className="bg-[#E8E8E8]"><tr className="border-b border-[#9E9E9E]"><th className="p-3 text-left text-[10px] font-black uppercase tracking-widest text-black">Mes</th><th className="p-3 text-right text-[10px] font-black uppercase tracking-widest text-black">Ingresos (+)</th><th className="p-3 text-right text-[10px] font-black uppercase tracking-widest text-black">Egresos (-)</th><th className="p-3 text-right text-[10px] font-black uppercase tracking-widest text-black">Balance</th></tr></thead>
+                <tbody className="divide-y divide-[#9E9E9E]/40">
                   {monthlyConsolidated.map((row, idx) => {
                     const balance = row.income - row.expense;
                     return (
-                      <tr key={idx} className="hover:bg-[#F5F5F5]">
-                        <td className="p-3"><p className="font-black">{row.label}</p><p className="text-[10px] text-black/50">{row.year}</p></td>
+                      <tr key={idx} className="hover:bg-[#F5F5F5] transition-colors">
+                        <td className="p-3"><p className="font-black text-black uppercase">{row.label}</p><p className="text-[10px] text-black font-black">{row.year}</p></td>
                         <td className="p-3 text-right">
-                          <p className="text-green-600 font-bold">{formatUsd(row.income / state.exchangeRate)}</p>
-                          <p className="text-[10px] font-black text-black/60">{formatBs(row.income)}</p>
+                          <p className="text-green-600 font-black">{formatUsd(row.income / state.exchangeRate)}</p>
+                          <p className="text-[10px] font-black text-black">{formatBs(row.income)}</p>
                         </td>
                         <td className="p-3 text-right">
-                          <p className="text-red-600 font-bold">{formatUsd(row.expense / state.exchangeRate)}</p>
-                          <p className="text-[10px] font-black text-black/60">{formatBs(row.expense)}</p>
+                          <p className="text-red-600 font-black">{formatUsd(row.expense / state.exchangeRate)}</p>
+                          <p className="text-[10px] font-black text-black">{formatBs(row.expense)}</p>
                         </td>
                         <td className="p-3 text-right">
                           <p className={cn("font-black", balance >= 0 ? "text-green-700" : "text-red-700")}>{formatUsd(balance / state.exchangeRate)}</p>
-                          <p className="text-[10px] font-black text-black/60">{formatBs(balance)}</p>
+                          <p className="text-[10px] font-black text-black">{formatBs(balance)}</p>
                         </td>
                       </tr>
                     );
                   })}
                 </tbody>
-                <tfoot className="bg-[#F0F0F0]">
-                  <tr className="font-black">
-                    <td className="p-4">TOTAL HISTÓRICO</td>
+                <tfoot className="bg-[#F0F0F0] border-t-2 border-[#9E9E9E]">
+                  <tr className="font-black text-black">
+                    <td className="p-4 uppercase tracking-widest">TOTAL HISTÓRICO</td>
                     <td className="p-4 text-right">
-                      <p className="text-green-700">{formatUsd(monthlyConsolidated.reduce((s, r) => s + r.income, 0) / state.exchangeRate)}</p>
-                      <p className="text-[10px] font-black text-black/60">{formatBs(monthlyConsolidated.reduce((s, r) => s + r.income, 0))}</p>
+                      <p className="text-green-700 font-black">{formatUsd(monthlyConsolidated.reduce((s, r) => s + r.income, 0) / state.exchangeRate)}</p>
+                      <p className="text-[10px] font-black text-black">{formatBs(monthlyConsolidated.reduce((s, r) => s + r.income, 0))}</p>
                     </td>
                     <td className="p-4 text-right">
-                      <p className="text-red-700">{formatUsd(monthlyConsolidated.reduce((s, r) => s + r.expense, 0) / state.exchangeRate)}</p>
-                      <p className="text-[10px] font-black text-black/60">{formatBs(monthlyConsolidated.reduce((s, r) => s + r.expense, 0))}</p>
+                      <p className="text-red-700 font-black">{formatUsd(monthlyConsolidated.reduce((s, r) => s + r.expense, 0) / state.exchangeRate)}</p>
+                      <p className="text-[10px] font-black text-black">{formatBs(monthlyConsolidated.reduce((s, r) => s + r.expense, 0))}</p>
                     </td>
                     <td className="p-4 text-right">
-                      <p>{formatUsd((monthlyConsolidated.reduce((s, r) => s + r.income, 0) - monthlyConsolidated.reduce((s, r) => s + r.expense, 0)) / state.exchangeRate)}</p>
-                      <p className="text-[10px] font-black text-black/60">{formatBs(monthlyConsolidated.reduce((s, r) => s + r.income, 0) - monthlyConsolidated.reduce((s, r) => s + r.expense, 0))}</p>
+                      <p className="font-black">{formatUsd((monthlyConsolidated.reduce((s, r) => s + r.income, 0) - monthlyConsolidated.reduce((s, r) => s + r.expense, 0)) / state.exchangeRate)}</p>
+                      <p className="text-[10px] font-black text-black">{formatBs(monthlyConsolidated.reduce((s, r) => s + r.income, 0) - monthlyConsolidated.reduce((s, r) => s + r.expense, 0))}</p>
                     </td>
                   </tr>
                 </tfoot>

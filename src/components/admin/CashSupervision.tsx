@@ -7,7 +7,7 @@ import { getLocalDateString, formatLocalDate } from '@/lib/date-utils';
 import { 
   Computer, DollarSign, CreditCard, Smartphone, Fingerprint, 
   Plane, Receipt, TrendingUp, TrendingDown, Eye, Loader2,
-  Banknote, Clock, AlertCircle, CloudUpload
+  Banknote, Clock, AlertCircle, CloudUpload, X
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -188,9 +188,9 @@ export default function CashSupervision() {
   const getRegisterStatus = (terminalId: string) => {
     const reg = registers[terminalId];
     if (!reg || !reg.isOpen) {
-      return { status: 'Cerrada', color: 'text-red-600 bg-red-100' };
+      return { status: 'Cerrada', color: 'text-red-600 bg-red-100 border-red-200' };
     }
-    return { status: 'Abierta', color: 'text-green-600 bg-green-100' };
+    return { status: 'Abierta', color: 'text-green-600 bg-green-100 border-green-200' };
   };
 
   const getOpenTime = (terminalId: string) => {
@@ -235,10 +235,10 @@ export default function CashSupervision() {
 
   if (terminals.length === 0) {
     return (
-      <div className="bg-white border border-[#9E9E9E] rounded-xl p-8 text-center">
-        <Computer size={48} className="mx-auto text-gray-400 mb-3" />
-        <p className="text-black/60">No hay terminales registradas en el sistema.</p>
-        <p className="text-xs text-black/40 mt-1">Cree una terminal desde la pestaña "Terminales" para comenzar.</p>
+      <div className="bg-white border border-[#9E9E9E] rounded-xl p-8 text-center shadow-md">
+        <Computer size={48} className="mx-auto text-black font-black mb-3" />
+        <p className="text-black font-black uppercase">No hay terminales registradas en el sistema.</p>
+        <p className="text-[10px] text-black font-black mt-2 uppercase tracking-widest">Cree una terminal desde la pestaña "Terminales" para comenzar.</p>
       </div>
     );
   }
@@ -248,7 +248,7 @@ export default function CashSupervision() {
     return (
       <div className="flex items-center justify-center h-64">
         <Loader2 size={32} className="animate-spin text-primary" />
-        <span className="ml-2 text-sm text-black/60">Cargando estado de cajas...</span>
+        <span className="ml-2 text-sm text-black font-black uppercase">Cargando estado de cajas...</span>
       </div>
     );
   }
@@ -259,12 +259,12 @@ export default function CashSupervision() {
         <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
           <div className="flex items-center gap-2">
             <Computer size={20} className="text-primary" />
-            <h3 className="text-lg font-black text-black">Supervisión de Cajas en Tiempo Real</h3>
+            <h3 className="text-lg font-black text-black uppercase">Supervisión de Cajas en Tiempo Real</h3>
           </div>
           <Button
             onClick={handleSyncAllTerminals}
             disabled={isSyncingAll}
-            className="bg-[#1A2C4E] hover:bg-[#2c3e66] text-white font-black h-9 px-4 text-xs"
+            className="bg-[#1A2C4E] hover:bg-[#2c3e66] text-white font-black h-9 px-4 text-xs shadow-md"
           >
             {isSyncingAll ? (
               <>
@@ -280,19 +280,19 @@ export default function CashSupervision() {
           </Button>
         </div>
         
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto border border-[#9E9E9E] rounded-xl">
           <table className="w-full text-sm">
             <thead className="bg-[#E8E8E8]">
               <tr className="border-b border-[#9E9E9E]">
-                <th className="p-3 text-left text-[10px] font-black uppercase">Terminal</th>
-                <th className="p-3 text-left text-[10px] font-black uppercase">Ubicación</th>
-                <th className="p-3 text-center text-[10px] font-black uppercase">Estado</th>
-                <th className="p-3 text-center text-[10px] font-black uppercase">Hora Apertura</th>
-                <th className="p-3 text-center text-[10px] font-black uppercase">Fondo Apertura</th>
-                <th className="p-3 text-center text-[10px] font-black uppercase">Acciones</th>
+                <th className="p-3 text-left text-[10px] font-black uppercase tracking-widest text-black">Terminal</th>
+                <th className="p-3 text-left text-[10px] font-black uppercase tracking-widest text-black">Ubicación</th>
+                <th className="p-3 text-center text-[10px] font-black uppercase tracking-widest text-black">Estado</th>
+                <th className="p-3 text-center text-[10px] font-black uppercase tracking-widest text-black">Hora Apertura</th>
+                <th className="p-3 text-center text-[10px] font-black uppercase tracking-widest text-black">Fondo Apertura</th>
+                <th className="p-3 text-center text-[10px] font-black uppercase tracking-widest text-black">Acciones</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="divide-y divide-slate-200">
               {terminals.map((terminal) => {
                 const { status, color } = getRegisterStatus(terminal.id.toString());
                 const openAmount = getOpenAmount(terminal.id.toString());
@@ -300,23 +300,23 @@ export default function CashSupervision() {
                 
                 return (
                   <tr key={terminal.id} className="hover:bg-gray-50 transition-colors">
-                    <td className="p-3 font-bold">{terminal.name}</td>
-                    <td className="p-3 text-gray-600 text-xs">{terminal.location || '—'}</td>
+                    <td className="p-3 font-black text-black uppercase">{terminal.name}</td>
+                    <td className="p-3 text-black font-black text-xs uppercase">{terminal.location || '—'}</td>
                     <td className="p-3 text-center">
-                      <span className={cn("inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold", color)}>
+                      <span className={cn("inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black border uppercase shadow-sm", color)}>
                         <span className={cn("w-1.5 h-1.5 rounded-full", isOpen ? "bg-green-600" : "bg-red-600")} />
                         {status}
                       </span>
                     </td>
-                    <td className="p-3 text-center text-xs font-mono">{getOpenTime(terminal.id.toString())}</td>
+                    <td className="p-3 text-center text-xs font-mono font-black text-black">{getOpenTime(terminal.id.toString())}</td>
                     <td className="p-3 text-center text-xs">
                       {openAmount ? (
                         <div className="flex flex-col items-center">
-                          <span className="font-bold">{formatBs(openAmount.bs)}</span>
-                          <span className="text-gray-500">+ {formatUsd(openAmount.usd)}</span>
+                          <span className="font-black text-black">{formatBs(openAmount.bs)}</span>
+                          <span className="text-black font-black opacity-80">+ {formatUsd(openAmount.usd)}</span>
                         </div>
                       ) : (
-                        <span className="text-gray-400">—</span>
+                        <span className="text-black font-black opacity-40">—</span>
                       )}
                     </td>
                     <td className="p-3 text-center">
@@ -326,8 +326,8 @@ export default function CashSupervision() {
                         variant="outline"
                         size="sm"
                         className={cn(
-                          "h-7 text-[10px] font-bold",
-                          isOpen ? "border-primary text-primary hover:bg-primary/10" : "border-gray-300 text-gray-400 cursor-not-allowed"
+                          "h-7 text-[10px] font-black uppercase tracking-wider",
+                          isOpen ? "border-primary text-black bg-primary/5 hover:bg-primary/20" : "border-gray-300 text-gray-400 cursor-not-allowed"
                         )}
                       >
                         <Eye size={12} className="mr-1" />
@@ -344,111 +344,111 @@ export default function CashSupervision() {
 
       {/* Modal de detalle */}
       <Dialog open={showDetailModal} onOpenChange={setShowDetailModal}>
-        <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-3xl p-0 overflow-hidden rounded-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader className="p-4 bg-[#1A2C4E] text-white sticky top-0">
-            <DialogTitle className="text-lg font-black">
-              Detalle de Caja - {selectedTerminal?.name}
+        <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-3xl p-0 overflow-hidden rounded-2xl shadow-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader className="p-4 bg-[#1A2C4E] text-white sticky top-0 z-10 flex flex-row items-center justify-between">
+            <DialogTitle className="text-lg font-black uppercase tracking-wider">
+              Detalle de Caja - {selectedTerminal?.name.toUpperCase()}
             </DialogTitle>
+            <button onClick={() => setShowDetailModal(false)} className="hover:rotate-90 transition-all"><X size={20} /></button>
           </DialogHeader>
           
-          <div className="p-5 space-y-5">
-            <div className="grid grid-cols-2 gap-4 pb-3 border-b">
+          <div className="p-5 space-y-6">
+            <div className="grid grid-cols-2 gap-4 pb-4 border-b border-[#9E9E9E]/40">
               <div>
-                <p className="text-[9px] font-black uppercase text-gray-500">Hora de Apertura</p>
-                <p className="text-sm font-bold">{selectedRegister?.openTime ? formatLocalDate(selectedRegister.openTime) : '—'}</p>
+                <p className="text-[9px] font-black uppercase text-black tracking-widest">Hora de Apertura</p>
+                <p className="text-sm font-black text-black mt-0.5">{selectedRegister?.openTime ? formatLocalDate(selectedRegister.openTime) : '—'}</p>
               </div>
-              <div>
-                <p className="text-[9px] font-black uppercase text-gray-500">Fondo de Apertura</p>
-                <p className="text-sm font-bold">{formatBs(selectedRegister?.openAmountBs || 0)} + {formatUsd(selectedRegister?.openAmountUsd || 0)}</p>
+              <div className="text-right">
+                <p className="text-[9px] font-black uppercase text-black tracking-widest">Fondo de Apertura</p>
+                <p className="text-sm font-black text-black mt-0.5">{formatBs(selectedRegister?.openAmountBs || 0)} + {formatUsd(selectedRegister?.openAmountUsd || 0)}</p>
               </div>
             </div>
 
             {totals && (
               <>
-                <div className="bg-primary/5 rounded-xl p-4 border border-primary/20">
-                  <h4 className="text-xs font-black uppercase mb-3 flex items-center gap-2">
-                    <TrendingUp size={14} className="text-primary" /> 
+                <div className="bg-primary/5 rounded-2xl p-5 border-2 border-primary/20 shadow-inner">
+                  <h4 className="text-xs font-black uppercase mb-4 flex items-center gap-2 text-black tracking-widest">
+                    <TrendingUp size={16} className="text-primary" /> 
                     Totales de Ventas del Día (Caja Actual)
                   </h4>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                    <div className="bg-white rounded-lg p-2 border">
-                      <div className="flex items-center gap-2 mb-1">
-                        <Banknote size={12} className="text-green-600" />
-                        <span className="text-[8px] font-bold uppercase text-gray-500">Efectivo BS</span>
+                    <div className="bg-white rounded-xl p-3 border-2 border-black/5 shadow-sm">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Banknote size={14} className="text-green-600" />
+                        <span className="text-[9px] font-black uppercase text-black">Efectivo BS</span>
                       </div>
                       <p className="text-lg font-black text-black">{formatBs(totals.efectivo_bs)}</p>
-                      <p className="text-[10px] text-black/40 font-mono">≈ {formatUsd(totals.efectivo_bs / (selectedRegister?.exchangeRate || 1))}</p>
+                      <p className="text-[10px] text-black font-black opacity-60 font-mono mt-0.5">≈ {formatUsd(totals.efectivo_bs / (selectedRegister?.exchangeRate || 1))}</p>
                     </div>
-                    <div className="bg-white rounded-lg p-2 border">
-                      <div className="flex items-center gap-2 mb-1">
-                        <DollarSign size={12} className="text-emerald-600" />
-                        <span className="text-[8px] font-bold uppercase text-gray-500">Efectivo USD</span>
+                    <div className="bg-white rounded-xl p-3 border-2 border-black/5 shadow-sm">
+                      <div className="flex items-center gap-2 mb-2">
+                        <DollarSign size={14} className="text-emerald-600" />
+                        <span className="text-[9px] font-black uppercase text-black">Efectivo USD</span>
                       </div>
                       <p className="text-lg font-black text-black">{formatBs(totals.usd_efectivo)}</p>
-                      <p className="text-[10px] text-black/40 font-mono">≈ {formatUsd(totals.usd_efectivo / (selectedRegister?.exchangeRate || 1))}</p>
+                      <p className="text-[10px] text-black font-black opacity-60 font-mono mt-0.5">≈ {formatUsd(totals.usd_efectivo / (selectedRegister?.exchangeRate || 1))}</p>
                     </div>
-                    <div className="bg-white rounded-lg p-2 border">
-                      <div className="flex items-center gap-2 mb-1">
-                        <CreditCard size={12} className="text-blue-600" />
-                        <span className="text-[8px] font-bold uppercase text-gray-500">Tarjeta</span>
+                    <div className="bg-white rounded-xl p-3 border-2 border-black/5 shadow-sm">
+                      <div className="flex items-center gap-2 mb-2">
+                        <CreditCard size={14} className="text-blue-600" />
+                        <span className="text-[9px] font-black uppercase text-black">Tarjeta</span>
                       </div>
                       <p className="text-lg font-black text-black">{formatBs(totals.tarjeta)}</p>
-                      <p className="text-[10px] text-black/40 font-mono">≈ {formatUsd(totals.tarjeta / (selectedRegister?.exchangeRate || 1))}</p>
+                      <p className="text-[10px] text-black font-black opacity-60 font-mono mt-0.5">≈ {formatUsd(totals.tarjeta / (selectedRegister?.exchangeRate || 1))}</p>
                     </div>
-                    <div className="bg-white rounded-lg p-2 border">
-                      <div className="flex items-center gap-2 mb-1">
-                        <Fingerprint size={12} className="text-purple-600" />
-                        <span className="text-[8px] font-bold uppercase text-gray-500">Biopago</span>
+                    <div className="bg-white rounded-xl p-3 border-2 border-black/5 shadow-sm">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Fingerprint size={14} className="text-purple-600" />
+                        <span className="text-[9px] font-black uppercase text-black">Biopago</span>
                       </div>
                       <p className="text-lg font-black text-black">{formatBs(totals.biopago)}</p>
-                      <p className="text-[10px] text-black/40 font-mono">≈ {formatUsd(totals.biopago / (selectedRegister?.exchangeRate || 1))}</p>
+                      <p className="text-[10px] text-black font-black opacity-60 font-mono mt-0.5">≈ {formatUsd(totals.biopago / (selectedRegister?.exchangeRate || 1))}</p>
                     </div>
-                    <div className="bg-white rounded-lg p-2 border">
-                      <div className="flex items-center gap-2 mb-1">
-                        <Smartphone size={12} className="text-orange-600" />
-                        <span className="text-[8px] font-bold uppercase text-gray-500">Pago Móvil</span>
+                    <div className="bg-white rounded-xl p-3 border-2 border-black/5 shadow-sm">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Smartphone size={14} className="text-orange-600" />
+                        <span className="text-[9px] font-black uppercase text-black">Pago Móvil</span>
                       </div>
                       <p className="text-lg font-black text-black">{formatBs(totals.pago_movil)}</p>
-                      <p className="text-[10px] text-black/40 font-mono">≈ {formatUsd(totals.pago_movil / (selectedRegister?.exchangeRate || 1))}</p>
+                      <p className="text-[10px] text-black font-black opacity-60 font-mono mt-0.5">≈ {formatUsd(totals.pago_movil / (selectedRegister?.exchangeRate || 1))}</p>
                     </div>
-                    <div className="bg-white rounded-lg p-2 border">
-                      <div className="flex items-center gap-2 mb-1">
-                        <Plane size={12} className="text-red-600" />
-                        <span className="text-[8px] font-bold uppercase text-gray-500">Zelle</span>
+                    <div className="bg-white rounded-xl p-3 border-2 border-black/5 shadow-sm">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Plane size={14} className="text-red-600" />
+                        <span className="text-[9px] font-black uppercase text-black">Zelle</span>
                       </div>
                       <p className="text-lg font-black text-black">{formatBs(totals.zelle)}</p>
-                      <p className="text-[10px] text-black/40 font-mono">≈ {formatUsd(totals.zelle / (selectedRegister?.exchangeRate || 1))}</p>
+                      <p className="text-[10px] text-black font-black opacity-60 font-mono mt-0.5">≈ {formatUsd(totals.zelle / (selectedRegister?.exchangeRate || 1))}</p>
                     </div>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="bg-amber-50 rounded-xl p-3 border border-amber-200">
-                    <div className="flex items-center gap-2 mb-1">
-                      <Receipt size={12} className="text-amber-600" />
-                      <span className="text-[8px] font-bold uppercase text-amber-700">Ventas a Crédito</span>
+                  <div className="bg-amber-50 rounded-2xl p-4 border-2 border-amber-200 shadow-sm">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Receipt size={14} className="text-amber-600" />
+                      <span className="text-[9px] font-black uppercase text-amber-900 tracking-wider">Ventas a Crédito</span>
                     </div>
-                    <p className="text-xl font-black text-amber-700">{formatBs(totals.credito)}</p>
-                    <p className="text-[10px] text-amber-600/60 font-mono">≈ {formatUsd(totals.credito / (selectedRegister?.exchangeRate || 1))}</p>
-                    <p className="text-[8px] text-amber-500 mt-1">Cuentas por cobrar</p>
+                    <p className="text-2xl font-black text-amber-700">{formatBs(totals.credito)}</p>
+                    <p className="text-[10px] text-amber-900 font-black opacity-80 font-mono mt-1">≈ {formatUsd(totals.credito / (selectedRegister?.exchangeRate || 1))}</p>
+                    <p className="text-[9px] text-amber-600 font-black mt-2 uppercase tracking-widest">Cuentas por cobrar</p>
                   </div>
-                  <div className="bg-red-50 rounded-xl p-3 border border-red-200">
-                    <div className="flex items-center gap-2 mb-1">
-                      <TrendingDown size={12} className="text-red-600" />
-                      <span className="text-[8px] font-bold uppercase text-red-700">Colaboraciones / Consumo</span>
+                  <div className="bg-red-50 rounded-2xl p-4 border-2 border-red-200 shadow-sm">
+                    <div className="flex items-center gap-2 mb-2">
+                      <TrendingDown size={14} className="text-red-600" />
+                      <span className="text-[9px] font-black uppercase text-red-900 tracking-wider">Colaboraciones / Consumo</span>
                     </div>
-                    {/* ✅ CORREGIDO: USD como principal y Bs como secundario */}
-                    <p className="text-xl font-black text-red-700">{formatUsd(totals.colaboracion)}</p>
-                    <p className="text-[10px] text-red-600/60 font-mono">≈ {formatBs(totals.colaboracion * (selectedRegister?.exchangeRate || 1))}</p>
-                    <p className="text-[8px] text-red-500 mt-1">Costo de salidas</p>
+                    <p className="text-2xl font-black text-red-700">{formatUsd(totals.colaboracion)}</p>
+                    <p className="text-[10px] text-red-900 font-black opacity-80 font-mono mt-1">≈ {formatBs(totals.colaboracion * (selectedRegister?.exchangeRate || 1))}</p>
+                    <p className="text-[9px] text-red-600 font-black mt-2 uppercase tracking-widest">Costo de salidas</p>
                   </div>
                 </div>
               </>
             )}
 
             <div className="flex justify-end pt-2">
-              <Button onClick={() => setShowDetailModal(false)} className="bg-primary text-black font-black">
-                Cerrar
+              <Button onClick={() => setShowDetailModal(false)} className="bg-primary text-black font-black px-8 h-11 rounded-xl shadow-md uppercase tracking-widest hover:brightness-110">
+                Cerrar detalle
               </Button>
             </div>
           </div>

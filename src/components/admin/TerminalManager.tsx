@@ -386,16 +386,16 @@ export default function TerminalManager() {
       <div className="flex justify-between items-center mb-4 flex-wrap gap-3">
         <div className="flex items-center gap-2">
           <Computer size={20} className="text-primary" />
-          <h3 className="text-lg font-black text-black">Gestión de Terminales / Cajas</h3>
+          <h3 className="text-lg font-black text-black uppercase">Gestión de Terminales / Cajas</h3>
         </div>
         <div className="flex gap-2">
           <div className="relative">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-black/40" />
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-black font-black" />
             <Input 
               placeholder="Buscar terminal..." 
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="pl-8 h-8 text-sm w-48"
+              className="pl-8 h-8 text-sm w-48 font-black text-black"
             />
           </div>
           <Button 
@@ -411,34 +411,34 @@ export default function TerminalManager() {
         <Table>
           <TableHeader className="bg-[#E8E8E8]">
             <TableRow className="border-b border-[#9E9E9E]">
-              <TableHead className="text-[10px] font-black text-black uppercase">Nombre</TableHead>
-              <TableHead className="text-[10px] font-black text-black uppercase">Descripción</TableHead>
-              <TableHead className="text-[10px] font-black text-black uppercase">Ubicación</TableHead>
-              <TableHead className="text-[10px] font-black text-black uppercase">Asignado a</TableHead>
-              <TableHead className="text-[10px] font-black text-black uppercase">Estado</TableHead>
-              <TableHead className="text-[10px] font-black text-black uppercase">Bloqueo</TableHead>
-              <TableHead className="text-[10px] font-black text-black uppercase text-right">Acciones</TableHead>
+              <TableHead className="text-[10px] font-black text-black uppercase tracking-widest">Nombre</TableHead>
+              <TableHead className="text-[10px] font-black text-black uppercase tracking-widest">Descripción</TableHead>
+              <TableHead className="text-[10px] font-black text-black uppercase tracking-widest">Ubicación</TableHead>
+              <TableHead className="text-[10px] font-black text-black uppercase tracking-widest">Asignado a</TableHead>
+              <TableHead className="text-[10px] font-black text-black uppercase tracking-widest">Estado</TableHead>
+              <TableHead className="text-[10px] font-black text-black uppercase tracking-widest">Bloqueo</TableHead>
+              <TableHead className="text-[10px] font-black text-black uppercase tracking-widest text-right">Acciones</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {filteredTerminals.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center py-8 text-black/50 text-sm">
+                <TableCell colSpan={7} className="text-center py-8 text-black font-black text-sm uppercase">
                   No hay terminales registradas
                 </TableCell>
               </TableRow>
             ) : (
               filteredTerminals.map((terminal) => (
                 <TableRow key={terminal.id} className="border-b border-[#9E9E9E] hover:bg-[#F5F5F5]">
-                  <TableCell className="font-bold text-black text-sm">{terminal.name}</TableCell>
-                  <TableCell className="text-black/60 text-xs">{terminal.description || '—'}</TableCell>
-                  <TableCell className="text-black/60 text-xs">
+                  <TableCell className="font-black text-black text-sm uppercase">{terminal.name}</TableCell>
+                  <TableCell className="text-black font-black text-xs uppercase">{terminal.description || '—'}</TableCell>
+                  <TableCell className="text-black font-black text-xs uppercase">
                     <div className="flex items-center gap-1">
                       <MapPin size={10} className="flex-shrink-0" />
                       {terminal.location || '—'}
                     </div>
                   </TableCell>
-                  <TableCell className="text-black/60 text-xs">
+                  <TableCell className="text-black font-black text-xs uppercase">
                     <div className="flex items-center gap-1">
                       <Users size={10} className="flex-shrink-0" />
                       {isLoadingUsers ? '...' : getAssignedUserName(terminal)}
@@ -446,8 +446,8 @@ export default function TerminalManager() {
                   </TableCell>
                   <TableCell>
                     <span className={cn(
-                      "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold",
-                      terminal.status === 'active' ? "text-green-600 bg-green-100" : "text-red-600 bg-red-100"
+                      "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black border",
+                      terminal.status === 'active' ? "text-green-600 bg-green-100 border-green-200" : "text-red-600 bg-red-100 border-red-200"
                     )}>
                       <span className={cn(
                         "w-1.5 h-1.5 rounded-full",
@@ -461,10 +461,10 @@ export default function TerminalManager() {
                       onClick={() => handleToggleBlock(terminal)}
                       disabled={isUpdating}
                       className={cn(
-                        "inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold transition-all",
+                        "inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-black border transition-all",
                         terminal.isBlocked 
-                          ? "bg-red-100 text-red-700 hover:bg-red-200" 
-                          : "bg-green-100 text-green-700 hover:bg-green-200"
+                          ? "bg-red-100 text-red-700 border-red-200 hover:bg-red-200" 
+                          : "bg-green-100 text-green-700 border-green-200 hover:bg-green-200"
                       )}
                     >
                       {terminal.isBlocked ? <Lock size={10} /> : <Unlock size={10} />}
@@ -499,13 +499,15 @@ export default function TerminalManager() {
           setShowModal(true);
         }
       }}>
-        <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-md p-0 overflow-hidden rounded-2xl">
+        <DialogContent className="bg-white border border-[#9E9E9E] text-black max-w-md p-0 overflow-hidden rounded-2xl shadow-xl">
           <DialogHeader className="p-4 bg-[#1A2C4E] text-white">
-            <DialogTitle className="text-lg font-black">{editingTerminal ? 'Editar Terminal' : 'Nueva Terminal'}</DialogTitle>
+            <DialogTitle className="text-lg font-black uppercase">
+              {editingTerminal ? 'Editar Terminal' : 'Nueva Terminal'}
+            </DialogTitle>
           </DialogHeader>
           <div className="p-5 space-y-4">
             <div>
-              <label className="text-[10px] font-bold text-black/60 uppercase block mb-1">Nombre de la Terminal *</label>
+              <label className="text-[10px] font-black text-black uppercase tracking-widest block mb-1">Nombre de la Terminal *</label>
               <Input 
                 value={formData.name} 
                 onChange={(e) => {
@@ -514,45 +516,47 @@ export default function TerminalManager() {
                 }}
                 placeholder="Ej: 0001"
                 disabled={!!editingTerminal}
-                className={editingTerminal ? "bg-gray-100" : ""}
+                className={cn("h-10 font-black text-black", editingTerminal ? "bg-gray-100" : "")}
               />
               {nameError && (
-                <p className="text-red-500 text-[10px] mt-1 flex items-center gap-1">
+                <p className="text-red-500 text-[10px] mt-1 flex items-center gap-1 font-black uppercase">
                   <AlertTriangle size={10} /> {nameError}
                 </p>
               )}
             </div>
             <div>
-              <label className="text-[10px] font-bold text-black/60 uppercase block mb-1">Descripción</label>
+              <label className="text-[10px] font-black text-black uppercase tracking-widest block mb-1">Descripción</label>
               <Input 
                 value={formData.description} 
                 onChange={(e) => setFormData({ ...formData, description: e.target.value })} 
                 placeholder="Ej: Terminal principal" 
+                className="h-10 font-black text-black"
               />
             </div>
             <div>
-              <label className="text-[10px] font-bold text-black/60 uppercase block mb-1">Ubicación</label>
+              <label className="text-[10px] font-black text-black uppercase tracking-widest block mb-1">Ubicación</label>
               <Input 
                 value={formData.location} 
                 onChange={(e) => setFormData({ ...formData, location: e.target.value })} 
                 placeholder="Ej: Pasillo Central" 
+                className="h-10 font-black text-black"
               />
             </div>
             <div>
-              <label className="text-[10px] font-bold text-black/60 uppercase block mb-1">Asignar a Usuario</label>
+              <label className="text-[10px] font-black text-black uppercase tracking-widest block mb-1">Asignar a Usuario</label>
               <select 
                 value={formData.assignedTo} 
                 onChange={(e) => setFormData({ ...formData, assignedTo: e.target.value })} 
-                className="w-full h-10 border border-[#9E9E9E] rounded-lg px-3 text-sm"
+                className="w-full h-10 border border-[#9E9E9E] rounded-lg px-3 text-sm font-black text-black bg-white"
               >
-                <option value="">Sin asignar</option>
+                <option value="">SIN ASIGNAR</option>
                 {availableUsers.map(c => (
                   <option key={c.id} value={c.id || c.uid}>
-                    {c.name} {c.role ? `(${c.role})` : ''}
+                    {c.name.toUpperCase()} {c.role ? `(${c.role.toUpperCase()})` : ''}
                   </option>
                 ))}
               </select>
-              <p className="text-[8px] text-black/40 mt-1">
+              <p className="text-[8px] text-black font-black uppercase mt-2">
                 {formData.assignedTo 
                   ? `Usuario asignado: ${availableUsers.find(u => u.id === formData.assignedTo || u.uid === formData.assignedTo)?.name || 'Usuario'}` 
                   : 'Ningún usuario asignado a esta terminal'}
@@ -566,15 +570,16 @@ export default function TerminalManager() {
                 resetForm();
                 setShowModal(false);
               }}
+              className="font-black text-black"
             >
               CANCELAR
             </Button>
             <Button 
               onClick={handleSubmit} 
-              className="bg-primary text-black font-black"
+              className="bg-primary text-black font-black shadow-md hover:brightness-110"
               disabled={isSaving}
             >
-              {isSaving ? 'GUARDANDO...' : 'GUARDAR'}
+              {isSaving ? 'GUARDANDO...' : 'GUARDAR TERMINAL'}
             </Button>
           </div>
         </DialogContent>

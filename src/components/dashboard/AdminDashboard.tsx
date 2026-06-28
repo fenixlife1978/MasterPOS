@@ -330,8 +330,8 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
           <InvoiceNotifications variant="dashboard" />
           <div className="flex justify-between items-center flex-wrap gap-4">
             <div>
-              <h2 className="text-2xl font-headline font-black text-black">Panel de Administración</h2>
-              <p className="text-sm font-black text-black mt-1">Gestiona tu negocio desde un solo lugar</p>
+              <h2 className="text-2xl font-headline font-black text-black uppercase">Panel de Administración</h2>
+              <p className="text-sm font-black text-black mt-1 uppercase tracking-widest">Gestiona tu negocio desde un solo lugar</p>
             </div>
             
             <div className="flex items-center gap-3">
@@ -410,7 +410,7 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
                 "flex items-center gap-2 px-4 py-2 rounded-lg font-black text-sm transition-all ml-auto",
                 showPinSection
                   ? "bg-amber-500 text-black"
-                  : "text-black hover:bg-amber-100"
+                  : "text-black font-black hover:bg-amber-100"
               )}
             >
               <KeyRound size={16} />
@@ -424,7 +424,7 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
                 <Lock size={16} className="text-amber-600" />
                 <h3 className="text-sm font-black text-amber-800 uppercase">Código de Autorización</h3>
               </div>
-              <p className="text-xs font-black text-amber-900 mb-3">
+              <p className="text-xs font-black text-amber-900 mb-3 uppercase">
                 Este PIN de 6 dígitos será requerido para autorizar ajustes de inventario y transacciones de colaboración/consumo propio.
               </p>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
@@ -435,7 +435,7 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
                     maxLength={6}
                     value={newAdminPin}
                     onChange={(e) => setNewAdminPin(e.target.value.replace(/\D/g, ''))}
-                    className="h-8 text-sm font-mono text-center bg-white"
+                    className="h-8 text-sm font-mono text-center bg-white font-black"
                     placeholder="••••••"
                   />
                 </div>
@@ -446,7 +446,7 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
                     maxLength={6}
                     value={confirmAdminPin}
                     onChange={(e) => setConfirmAdminPin(e.target.value.replace(/\D/g, ''))}
-                    className="h-8 text-sm font-mono text-center bg-white"
+                    className="h-8 text-sm font-mono text-center bg-white font-black"
                     placeholder="••••••"
                   />
                 </div>
@@ -473,46 +473,46 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
         {activeTab === 'dashboard' && (
           <>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 mb-6">
-              <div className="bg-white rounded-xl border border-[#9E9E9E] p-4">
-                <p className="text-xs font-black text-black uppercase">Productos</p>
-                <p className="text-2xl font-black text-black">{totalProducts}</p>
+              <div className="bg-white rounded-xl border border-[#9E9E9E] p-4 shadow-sm">
+                <p className="text-xs font-black text-black uppercase tracking-widest">Productos</p>
+                <p className="text-2xl font-black text-black mt-1">{totalProducts}</p>
               </div>
-              <div className="bg-white rounded-xl border border-[#9E9E9E] p-4">
-                <p className="text-xs font-black text-black uppercase">Clientes</p>
-                <p className="text-2xl font-black text-black">{totalClients}</p>
+              <div className="bg-white rounded-xl border border-[#9E9E9E] p-4 shadow-sm">
+                <p className="text-xs font-black text-black uppercase tracking-widest">Clientes</p>
+                <p className="text-2xl font-black text-black mt-1">{totalClients}</p>
               </div>
-              <div className="bg-white rounded-xl border border-[#9E9E9E] p-4">
-                <p className="text-xs font-black text-black uppercase">Ventas</p>
-                <p className="text-2xl font-black text-black">{totalSales}</p>
+              <div className="bg-white rounded-xl border border-[#9E9E9E] p-4 shadow-sm">
+                <p className="text-xs font-black text-black uppercase tracking-widest">Ventas</p>
+                <p className="text-2xl font-black text-black mt-1">{totalSales}</p>
               </div>
-              <div className="bg-white rounded-xl border border-[#9E9E9E] p-4">
-                <p className="text-xs font-black text-black uppercase">Ingresos del Mes</p>
-                <p className="text-2xl font-black text-green-600">{formatUsd(monthlyRevenue)}</p>
-                <p className="text-[10px] font-black text-black">Reinicia cada 1ro del mes</p>
+              <div className="bg-white rounded-xl border border-[#9E9E9E] p-4 shadow-sm">
+                <p className="text-xs font-black text-black uppercase tracking-widest">Ingresos del Mes</p>
+                <p className="text-2xl font-black text-green-600 mt-1">{formatUsd(monthlyRevenue)}</p>
+                <p className="text-[10px] font-black text-black uppercase mt-1">Reinicia cada 1ro del mes</p>
               </div>
-              <div className="bg-white rounded-xl border border-[#9E9E9E] p-4">
-                <p className="text-xs font-black text-black uppercase">Gastos del Mes</p>
-                <p className="text-2xl font-black text-red-600">{formatUsd(monthlyExpenses)}</p>
-                <p className="text-[10px] font-black text-black">Compras pagadas en el mes</p>
+              <div className="bg-white rounded-xl border border-[#9E9E9E] p-4 shadow-sm">
+                <p className="text-xs font-black text-black uppercase tracking-widest">Gastos del Mes</p>
+                <p className="text-2xl font-black text-red-600 mt-1">{formatUsd(monthlyExpenses)}</p>
+                <p className="text-[10px] font-black text-black uppercase mt-1">Compras pagadas en el mes</p>
               </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-              <div className="bg-white rounded-xl border border-[#9E9E9E] p-4">
+              <div className="bg-white rounded-xl border border-[#9E9E9E] p-4 shadow-sm">
                 <div className="flex items-center gap-2 mb-2">
                   <CreditCard size={18} className="text-orange-500" />
-                  <p className="text-sm font-black text-black uppercase">Cuentas por Cobrar</p>
+                  <p className="text-sm font-black text-black uppercase tracking-widest">Cuentas por Cobrar</p>
                 </div>
                 <p className="text-2xl font-black text-red-600">{formatUsd(totalCreditUsd)}</p>
-                <p className="text-[10px] font-black text-black">Total de créditos pendientes de clientes</p>
+                <p className="text-[10px] font-black text-black uppercase mt-1">Total de créditos pendientes de clientes</p>
               </div>
-              <div className="bg-white rounded-xl border border-[#9E9E9E] p-4">
+              <div className="bg-white rounded-xl border border-[#9E9E9E] p-4 shadow-sm">
                 <div className="flex items-center gap-2 mb-2">
                   <Truck size={18} className="text-blue-500" />
-                  <p className="text-sm font-black text-black uppercase">Cuentas por Pagar</p>
+                  <p className="text-sm font-black text-black uppercase tracking-widest">Cuentas por Pagar</p>
                 </div>
                 <p className="text-2xl font-black text-red-600">{formatUsd(totalPayable)}</p>
-                <p className="text-[10px] font-black text-black">Total de facturas pendientes a proveedores</p>
+                <p className="text-[10px] font-black text-black uppercase mt-1">Total de facturas pendientes a proveedores</p>
               </div>
             </div>
 
@@ -522,12 +522,12 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {outOfStock > 0 && (
                     <div className="bg-red-50 border border-red-200 rounded-xl p-4">
-                      <p className="text-xs font-black text-red-900">Productos Agotados: {outOfStock}</p>
+                      <p className="text-xs font-black text-red-900 uppercase">Productos Agotados: {outOfStock}</p>
                     </div>
                   )}
                   {lowStock > 0 && (
                     <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4">
-                      <p className="text-xs font-black text-yellow-900">Stock Mínimo: {lowStock}</p>
+                      <p className="text-xs font-black text-yellow-900 uppercase">Stock Mínimo: {lowStock}</p>
                     </div>
                   )}
                 </div>

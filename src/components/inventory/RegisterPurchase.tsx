@@ -565,27 +565,27 @@ export default function RegisterPurchase() {
       <div className="h-full flex flex-col overflow-hidden">
         <div className="flex justify-between items-center flex-shrink-0">
           <div>
-            <h2 className="text-xl font-headline font-black text-black flex items-center gap-2">
-              <Truck size={24} className="text-primary" /> Registrar Entrada por Compra
+            <h2 className="text-2xl font-headline font-black text-black flex items-center gap-2">
+              <Truck size={32} className="text-primary" /> Registrar Entrada por Compra
             </h2>
-            <p className="text-sm font-black text-black">Módulo de gestión de ingresos masivos</p>
+            <p className="text-base font-black text-black mt-1 uppercase">Módulo de gestión de ingresos masivos</p>
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto scrollbar-thin mt-3">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            <div className="lg:col-span-1 space-y-4">
-              <div className="bg-white border border-black rounded-xl p-4 shadow-sm">
-                <h3 className="text-[11px] font-black uppercase text-black mb-3 flex items-center gap-2">
-                  <Receipt size={13} /> Datos de la Factura
+        <div className="flex-1 overflow-y-auto scrollbar-thin mt-4">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-1 space-y-6">
+              <div className="bg-white border-2 border-black rounded-2xl p-5 shadow-lg">
+                <h3 className="text-sm font-black uppercase text-black mb-4 flex items-center gap-2">
+                  <Receipt size={18} /> Datos de la Factura
                 </h3>
-                <div className="space-y-3">
+                <div className="space-y-4">
                   <div>
-                    <label className="text-[11px] font-black uppercase text-black">Proveedor</label>
+                    <label className="text-[12px] font-black uppercase text-black tracking-widest mb-1 block">Proveedor</label>
                     <select 
                       value={selectedSupplierId}
                       onChange={(e) => setSelectedSupplierId(Number(e.target.value))}
-                      className="w-full h-9 border border-black rounded-lg px-2 text-sm font-black bg-white"
+                      className="w-full h-11 border-2 border-black rounded-xl px-3 text-sm font-black bg-white"
                     >
                       <option value="0">Seleccionar Proveedor...</option>
                       {suppliers.map(s => (
@@ -594,38 +594,38 @@ export default function RegisterPurchase() {
                     </select>
                   </div>
                   <div>
-                    <label className="text-[11px] font-black uppercase text-black">N° Factura</label>
+                    <label className="text-[12px] font-black uppercase text-black tracking-widest mb-1 block">N° Factura</label>
                     <Input 
                       value={invoiceNumber}
                       onChange={(e) => setInvoiceNumber(e.target.value)}
                       placeholder="Ej: 000123"
-                      className="h-9 text-sm font-black border-black"
+                      className="h-11 text-base font-black border-2 border-black"
                     />
                   </div>
                   <div>
-                    <label className="text-[11px] font-black uppercase text-black">Tasa BCV Aplicada (Bs/$)</label>
+                    <label className="text-[12px] font-black uppercase text-black tracking-widest mb-1 block">Tasa BCV Aplicada (Bs/$)</label>
                     <div className="relative">
-                      <DollarSign size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-black font-black" />
+                      <DollarSign size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-black font-black" />
                       <Input 
                         type="number"
                         step="0.01"
                         value={exchangeRate}
                         onChange={(e) => setExchangeRate(e.target.value)}
-                        className="pl-7 h-9 text-sm font-mono font-black border-black"
+                        className="pl-9 h-11 text-base font-mono font-black border-2 border-black"
                       />
                     </div>
-                    <p className="text-[10px] font-black text-black mt-1">
+                    <p className="text-[11px] font-black text-black mt-1.5 uppercase">
                       Tasa actual del sistema: {formatBs(state.exchangeRate)}
                     </p>
                   </div>
                 </div>
               </div>
 
-              <div className="bg-white border border-black rounded-xl p-4 shadow-sm">
-                <h3 className="text-[11px] font-black uppercase text-black mb-3 flex items-center gap-2">
-                  <HandCoins size={13} /> Condiciones de Pago
+              <div className="bg-white border-2 border-black rounded-2xl p-5 shadow-lg">
+                <h3 className="text-sm font-black uppercase text-black mb-4 flex items-center gap-2">
+                  <HandCoins size={18} /> Condiciones de Pago
                 </h3>
-                <div className="space-y-3">
+                <div className="space-y-4">
                   <div className="flex gap-2">
                     <button
                       type="button"
@@ -635,7 +635,7 @@ export default function RegisterPurchase() {
                         setPaidBs(roundTo2(totalInvoiceUsd * rateNum));
                       }}
                       className={cn(
-                        "flex-1 py-1.5 text-[11px] font-black rounded border-2 transition-all",
+                        "flex-1 py-3 text-xs font-black rounded-xl border-2 transition-all",
                         paymentType === 'contado' ? "bg-primary text-black border-black" : "bg-white text-black border-black/20 hover:border-black"
                       )}
                     >
@@ -649,7 +649,7 @@ export default function RegisterPurchase() {
                         setPaidBs(0);
                       }}
                       className={cn(
-                        "flex-1 py-1.5 text-[11px] font-black rounded border-2 transition-all",
+                        "flex-1 py-3 text-xs font-black rounded-xl border-2 transition-all",
                         paymentType === 'credito' ? "bg-primary text-black border-black" : "bg-white text-black border-black/20 hover:border-black"
                       )}
                     >
@@ -663,7 +663,7 @@ export default function RegisterPurchase() {
                         setPaidBs(0);
                       }}
                       className={cn(
-                        "flex-1 py-1.5 text-[11px] font-black rounded border-2 transition-all",
+                        "flex-1 py-3 text-xs font-black rounded-xl border-2 transition-all",
                         paymentType === 'mixto' ? "bg-primary text-black border-black" : "bg-white text-black border-black/20 hover:border-black"
                       )}
                     >
@@ -672,93 +672,93 @@ export default function RegisterPurchase() {
                   </div>
 
                   {paymentType === 'credito' && (
-                    <div className="flex items-center gap-2">
-                      <CalendarDays size={12} className="text-black font-black" />
+                    <div className="flex items-center gap-3 bg-slate-50 p-3 rounded-xl border-2 border-black/10">
+                      <CalendarDays size={20} className="text-black font-black" />
                       <Input
                         type="number"
                         value={creditTermDays}
                         onChange={(e) => setCreditTermDays(Number(e.target.value))}
-                        className="h-8 text-xs w-20 text-center font-black border-black"
+                        className="h-10 text-sm w-24 text-center font-black border-2 border-black"
                       />
-                      <span className="text-[11px] font-black text-black">días de plazo</span>
+                      <span className="text-xs font-black text-black uppercase tracking-widest">días de plazo</span>
                     </div>
                   )}
 
                   {paymentType === 'mixto' && (
-                    <div className="grid grid-cols-2 gap-2 mt-2">
+                    <div className="grid grid-cols-2 gap-3 mt-2">
                       <div>
-                        <label className="text-[10px] font-black uppercase text-black">Pago en USD</label>
+                        <label className="text-[10px] font-black uppercase text-black tracking-widest mb-1 block">Pago en USD</label>
                         <Input
                           type="number"
                           step="0.01"
                           value={paidUsd}
                           onChange={(e) => handlePaidUsdChange(Number(e.target.value))}
-                          className="h-8 text-xs font-black border-black"
+                          className="h-10 text-sm font-black border-2 border-black"
                           placeholder="0.00"
                         />
                       </div>
                       <div>
-                        <label className="text-[10px] font-black uppercase text-black">Pago en Bs</label>
+                        <label className="text-[10px] font-black uppercase text-black tracking-widest mb-1 block">Pago en Bs</label>
                         <Input
                           type="number"
                           step="0.01"
                           value={paidBs}
                           onChange={(e) => handlePaidBsChange(Number(e.target.value))}
-                          className="h-8 text-xs font-black border-black"
+                          className="h-10 text-sm font-black border-2 border-black"
                           placeholder="0.00"
                         />
                       </div>
                     </div>
                   )}
 
-                  <div className="bg-gray-100 p-2 rounded-md mt-2 border border-black/10">
-                    <div className="flex justify-between text-[10px] font-black text-black">
+                  <div className="bg-slate-900 p-4 rounded-xl mt-2 border-2 border-black shadow-inner">
+                    <div className="flex justify-between text-xs font-black text-white/70 uppercase">
                       <span>Total factura USD:</span>
-                      <span>{formatUsd(totalInvoiceUsd, 4)}</span>
+                      <span className="text-white">{formatUsd(totalInvoiceUsd, 4)}</span>
                     </div>
-                    <div className="flex justify-between text-[10px] font-black text-green-700">
+                    <div className="flex justify-between text-xs font-black text-green-400 uppercase mt-1">
                       <span>Total pagado USD:</span>
                       <span>{formatUsd(totalPaidUsd)}</span>
                     </div>
-                    <div className="flex justify-between text-[10px] font-black">
-                      <span>Saldo pendiente USD:</span>
-                      <span className={remainingUsd > 0 ? "text-red-700" : "text-green-700"}>{formatUsd(remainingUsd, 4)}</span>
+                    <div className="flex justify-between text-sm font-black uppercase mt-2 pt-2 border-t border-white/10">
+                      <span className="text-white">Saldo pendiente:</span>
+                      <span className={remainingUsd > 0 ? "text-red-400" : "text-green-400"}>{formatUsd(remainingUsd, 4)}</span>
                     </div>
                   </div>
                 </div>
               </div>
 
-              <div className="bg-white border border-black rounded-xl p-4 shadow-sm">
-                <h3 className="text-[11px] font-black uppercase text-black mb-3 flex items-center gap-2">
-                  <Package size={13} /> Añadir Productos
+              <div className="bg-white border-2 border-black rounded-2xl p-5 shadow-lg">
+                <h3 className="text-sm font-black uppercase text-black mb-4 flex items-center gap-2">
+                  <Package size={18} /> Añadir Productos
                 </h3>
-                <div className="space-y-3">
+                <div className="space-y-4">
                   <div className="relative" ref={searchRef}>
-                    <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-black font-black" />
+                    <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-black font-black" />
                     <Input 
-                      placeholder="Buscar producto..."
+                      placeholder="Buscar producto por nombre o código..."
                       value={productQuery}
                       onChange={(e) => setProductQuery(e.target.value)}
-                      className="pl-7 h-9 text-sm font-black border-black"
+                      className="pl-10 h-11 text-sm font-black border-2 border-black"
                     />
                     <Button
                       type="button"
                       onClick={() => { resetProductForm(); setShowProductModal(true); }}
-                      className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 p-0 bg-transparent hover:bg-primary/20 text-black font-black"
+                      className="absolute right-1 top-1/2 -translate-y-1/2 h-9 w-9 p-0 bg-transparent hover:bg-primary/20 text-black font-black"
                       title="Crear nuevo producto"
                     >
-                      <PlusCircle size={16} />
+                      <PlusCircle size={24} />
                     </Button>
                     {productResults.length > 0 && !selectedProduct && (
-                      <div className="absolute top-full left-0 right-0 bg-white border border-black rounded-lg shadow-lg z-20 mt-1 overflow-hidden">
+                      <div className="absolute top-full left-0 right-0 bg-white border-2 border-black rounded-xl shadow-2xl z-20 mt-2 overflow-hidden">
                         {productResults.map(p => (
                           <button
                             key={p.id}
                             onClick={() => handleSelectProduct(p)}
-                            className="w-full text-left p-2 hover:bg-primary/10 transition-colors border-b border-black/10 last:border-0 text-xs font-black"
+                            className="w-full text-left p-3 hover:bg-primary/10 transition-colors border-b-2 border-black/5 last:border-0 text-xs font-black"
                           >
-                            <p className="font-black text-black">{p.name}</p>
-                            <p className="text-[10px] text-black">Stock: {p.stock} | Costo: {formatUsd(p.costUsd || 0, 4)}</p>
+                            <p className="font-black text-black uppercase text-sm">{p.name}</p>
+                            <p className="text-[11px] text-black/70 mt-0.5">STOCK: {p.stock} | COSTO: {formatUsd(p.costUsd || 0, 4)}</p>
                           </button>
                         ))}
                       </div>
@@ -766,27 +766,27 @@ export default function RegisterPurchase() {
                   </div>
 
                   {selectedProduct && (
-                    <div className="bg-primary/10 border-2 border-black rounded-lg p-3 relative">
+                    <div className="bg-primary/10 border-2 border-black rounded-xl p-4 relative animate-in fade-in zoom-in-95">
                       <button
                         onClick={handleClearSelection}
-                        className="absolute top-2 right-2 text-black hover:text-red-700"
+                        className="absolute top-3 right-3 text-black hover:text-red-700 transition-colors"
                         title="Limpiar selección"
                       >
-                        <X size={14} className="font-black" />
+                        <X size={20} className="font-black" />
                       </button>
-                      <p className="text-[10px] font-black text-black uppercase mb-1">Producto: {selectedProduct.name}</p>
-                      <div className="grid grid-cols-2 gap-2">
+                      <p className="text-xs font-black text-black uppercase mb-3 pr-8">Producto: {selectedProduct.name}</p>
+                      <div className="grid grid-cols-2 gap-3">
                         <div>
-                          <label className="text-[10px] font-black text-black uppercase">Cant. Entrante</label>
-                          <Input type="number" value={itemQty} onChange={(e) => setItemQty(e.target.value)} className="h-8 text-sm font-black border-black" />
+                          <label className="text-[10px] font-black text-black uppercase tracking-widest mb-1 block">Cant. Entrante</label>
+                          <Input type="number" value={itemQty} onChange={(e) => setItemQty(e.target.value)} className="h-10 text-base font-black border-2 border-black" />
                         </div>
                         <div>
-                          <label className="text-[10px] font-black text-black uppercase">Costo USD</label>
-                          <Input type="number" step="0.0001" value={itemCostUsd} onChange={(e) => setItemCostUsd(e.target.value)} className="h-8 text-sm font-mono font-black border-black" placeholder="0.0000" />
+                          <label className="text-[10px] font-black text-black uppercase tracking-widest mb-1 block">Costo USD</label>
+                          <Input type="number" step="0.0001" value={itemCostUsd} onChange={(e) => setItemCostUsd(e.target.value)} className="h-10 text-base font-mono font-black border-2 border-black" placeholder="0.0000" />
                         </div>
                       </div>
-                      <Button onClick={handleAddTempItem} className="w-full mt-2 bg-black text-primary font-black h-8 text-xs border-2 border-black">
-                        <Plus size={12} className="mr-1" /> AGREGAR A LISTA
+                      <Button onClick={handleAddTempItem} className="w-full mt-4 bg-black text-primary font-black h-11 text-xs border-2 border-black shadow-lg hover:scale-[1.02] transition-transform">
+                        <Plus size={16} className="mr-2" /> AGREGAR A LA LISTA
                       </Button>
                     </div>
                   )}
@@ -795,37 +795,46 @@ export default function RegisterPurchase() {
             </div>
 
             <div className="lg:col-span-2 flex flex-col">
-              <div className="bg-white border-2 border-black rounded-xl shadow-sm overflow-hidden flex flex-col">
-                <div className="bg-[#1A2C4E] p-3 text-white flex justify-between items-center">
-                  <h3 className="text-xs font-black uppercase tracking-wider">Detalle del Ingreso ({tempItems.length} items)</h3>
+              <div className="bg-white border-2 border-black rounded-2xl shadow-xl overflow-hidden flex flex-col flex-1">
+                <div className="bg-[#1A2C4E] p-4 text-white flex justify-between items-center border-b-2 border-black">
+                  <h3 className="text-sm font-black uppercase tracking-widest">Detalle del Ingreso ({tempItems.length} items)</h3>
                   <div className="text-right">
-                    <p className="text-[10px] font-black text-white uppercase">Total Factura USD</p>
-                    <p className="text-xl font-black text-primary">{formatUsd(totalInvoiceUsd, 4)}</p>
+                    <p className="text-[10px] font-black text-white/60 uppercase tracking-widest">Total Factura USD</p>
+                    <p className="text-2xl font-black text-primary">{formatUsd(totalInvoiceUsd, 4)}</p>
                   </div>
                 </div>
                 
-                <div className="max-h-[350px] overflow-y-auto">
+                <div className="flex-1 overflow-y-auto scrollbar-thin">
                   <Table>
-                    <TableHeader className="bg-white sticky top-0 z-10 border-b-2 border-black">
+                    <TableHeader className="bg-slate-50 sticky top-0 z-10 border-b-2 border-black">
                       <TableRow>
-                        <TableHead className="text-[10px] font-black uppercase text-black">Producto</TableHead>
-                        <TableHead className="text-[10px] font-black uppercase text-black text-center w-16">Cant.</TableHead>
-                        <TableHead className="text-[10px] font-black uppercase text-black text-right w-20">Costo $</TableHead>
-                        <TableHead className="text-[10px] font-black uppercase text-black text-right w-24">Subtotal $</TableHead>
-                        <TableHead className="text-center w-8"></TableHead>
+                        <TableHead className="text-xs font-black uppercase text-black tracking-widest p-4">Producto</TableHead>
+                        <TableHead className="text-xs font-black uppercase text-black text-center w-24">Cant.</TableHead>
+                        <TableHead className="text-xs font-black uppercase text-black text-right w-32">Costo $</TableHead>
+                        <TableHead className="text-xs font-black uppercase text-black text-right w-40">Subtotal $</TableHead>
+                        <TableHead className="text-center w-12"></TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {tempItems.length === 0 ? (
-                        <TableRow><TableCell colSpan={5} className="text-center py-12 text-black font-black italic text-sm">Añada productos para comenzar</TableCell></TableRow>
+                        <TableRow>
+                          <TableCell colSpan={5} className="text-center py-32">
+                            <Package size={64} className="mx-auto text-black/10 mb-4" />
+                            <p className="text-xl font-black text-black/20 uppercase tracking-widest italic">Añada productos para comenzar</p>
+                          </TableCell>
+                        </TableRow>
                       ) : (
                         tempItems.map((item, idx) => (
-                          <TableRow key={idx} className="border-b border-black/10">
-                            <TableCell className="font-black text-xs text-black">{item.name}</TableCell>
-                            <TableCell className="text-center text-xs font-black text-black">{item.qty}</TableCell>
-                            <TableCell className="text-right font-mono text-xs font-black text-black">{formatUsd(item.costUsd, 4)}</TableCell>
-                            <TableCell className="text-right font-black text-xs text-black">{formatUsd(item.qty * item.costUsd, 4)}</TableCell>
-                            <TableCell><button onClick={() => handleRemoveTempItem(idx)} className="text-red-700 hover:text-red-900"><Trash2 size={16} className="font-black" /></button></TableCell>
+                          <TableRow key={idx} className="border-b border-black/10 hover:bg-slate-50 transition-colors">
+                            <TableCell className="font-black text-sm text-black uppercase p-4">{item.name}</TableCell>
+                            <TableCell className="text-center text-sm font-black text-black">{item.qty}</TableCell>
+                            <TableCell className="text-right font-mono text-sm font-black text-black">{formatUsd(item.costUsd, 4)}</TableCell>
+                            <TableCell className="text-right font-black text-sm text-black">{formatUsd(item.qty * item.costUsd, 4)}</TableCell>
+                            <TableCell>
+                              <button onClick={() => handleRemoveTempItem(idx)} className="text-red-600 hover:text-red-800 p-2 hover:bg-red-50 rounded-lg transition-all">
+                                <Trash2 size={20} className="font-black" />
+                              </button>
+                            </TableCell>
                           </TableRow>
                         ))
                       )}
@@ -833,23 +842,23 @@ export default function RegisterPurchase() {
                   </Table>
                 </div>
 
-                <div className="bg-[#F5F5F5] p-3 border-t-2 border-black flex justify-between items-center">
-                  <div className="flex gap-3 flex-wrap">
-                    <div className="bg-white border-2 border-black rounded px-2 py-1 shadow-sm">
-                      <span className="text-[9px] block text-black uppercase font-black">Total Bs</span>
-                      <span className="text-sm font-black text-secondary">{formatBs(totalInvoiceBs)}</span>
+                <div className="bg-[#F5F5F5] p-5 border-t-2 border-black flex justify-between items-center flex-wrap gap-4 shadow-inner">
+                  <div className="flex gap-4 flex-wrap">
+                    <div className="bg-white border-2 border-black rounded-xl px-4 py-2 shadow-sm">
+                      <span className="text-[10px] block text-black/60 uppercase font-black tracking-widest">Total Bs</span>
+                      <span className="text-lg font-black text-secondary">{formatBs(totalInvoiceBs)}</span>
                     </div>
-                    <div className="bg-white border-2 border-black rounded px-2 py-1 shadow-sm">
-                      <span className="text-[9px] block text-black uppercase font-black">Total USD</span>
-                      <span className="text-sm font-black text-black">{formatUsd(totalInvoiceUsd, 4)}</span>
+                    <div className="bg-white border-2 border-black rounded-xl px-4 py-2 shadow-sm">
+                      <span className="text-[10px] block text-black/60 uppercase font-black tracking-widest">Total USD</span>
+                      <span className="text-lg font-black text-black">{formatUsd(totalInvoiceUsd, 4)}</span>
                     </div>
-                    <div className="bg-white border-2 border-black rounded px-2 py-1 shadow-sm">
-                      <span className="text-[9px] block text-green-700 uppercase font-black">Pagado USD</span>
-                      <span className="text-sm font-black text-green-700">{formatUsd(totalPaidUsd, 4)}</span>
+                    <div className="bg-green-50 border-2 border-green-600 rounded-xl px-4 py-2 shadow-sm">
+                      <span className="text-[10px] block text-green-800 uppercase font-black tracking-widest">Pagado USD</span>
+                      <span className="text-lg font-black text-green-700">{formatUsd(totalPaidUsd, 4)}</span>
                     </div>
-                    <div className="bg-white border-2 border-black rounded px-2 py-1 shadow-sm">
-                      <span className="text-[9px] block text-red-700 uppercase font-black">Saldo USD</span>
-                      <span className={cn("text-sm font-black", remainingUsd > 0 ? "text-red-700" : "text-green-700")}>
+                    <div className="bg-white border-2 border-black rounded-xl px-4 py-2 shadow-sm">
+                      <span className="text-[10px] block text-red-800 uppercase font-black tracking-widest">Saldo USD</span>
+                      <span className={cn("text-lg font-black", remainingUsd > 0 ? "text-red-700" : "text-green-700")}>
                         {formatUsd(remainingUsd, 4)}
                       </span>
                     </div>
@@ -857,9 +866,9 @@ export default function RegisterPurchase() {
                   <Button 
                     disabled={isProcessing || tempItems.length === 0}
                     onClick={handleProcessPurchase}
-                    className="bg-primary hover:brightness-110 text-black font-black px-6 h-10 text-sm border-2 border-black shadow-lg"
+                    className="bg-primary hover:brightness-110 text-black font-black px-12 h-14 text-base border-2 border-black shadow-2xl hover:scale-105 transition-all"
                   >
-                    {isProcessing ? <Loader2 size={18} className="animate-spin" /> : <><Save size={18} className="mr-2" /> PROCESAR</>}
+                    {isProcessing ? <Loader2 size={24} className="animate-spin" /> : <><Save size={24} className="mr-3" /> PROCESAR INGRESO</>}
                   </Button>
                 </div>
               </div>
@@ -869,178 +878,241 @@ export default function RegisterPurchase() {
       </div>
 
       {showProductModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
           <div
             ref={modalRef}
-            className="bg-white rounded-xl shadow-2xl w-full max-w-3xl flex flex-col max-h-[90vh] border-2 border-black"
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl flex flex-col max-h-[95vh] border-2 border-black overflow-hidden animate-in zoom-in-95"
             style={{ position: 'absolute', left: modalPosition.x || 'auto', top: modalPosition.y || 'auto' }}
             onClick={(e) => e.stopPropagation()}
           >
             <div
               ref={dragHandleRef}
               onMouseDown={handleMouseDown}
-              className="bg-[#1A2C4E] p-3 text-white rounded-t-lg cursor-move flex justify-between items-center flex-shrink-0"
+              className="bg-[#1A2C4E] p-4 text-white cursor-move flex justify-between items-center flex-shrink-0"
             >
-              <div className="flex items-center gap-2">
-                <Package size={18} className="text-primary" />
-                <h3 className="text-base font-black">Nuevo Producto</h3>
+              <div className="flex items-center gap-3">
+                <Package size={24} className="text-primary" />
+                <h3 className="text-xl font-black uppercase tracking-tight">Nuevo Producto</h3>
               </div>
-              <button onClick={() => setShowProductModal(false)} className="text-white hover:text-white">
-                <X size={20} className="font-black" />
+              <button onClick={() => setShowProductModal(false)} className="text-white/60 hover:text-white transition-all">
+                <X size={28} className="font-black" />
               </button>
             </div>
 
-            <form onSubmit={handleSaveProduct} className="flex-1 overflow-y-auto p-4">
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-2">
-                  <div>
-                    <label className="text-[11px] font-black uppercase text-black">Código de Barras</label>
-                    <Input value={productForm.barcode} onChange={e => setProductForm({...productForm, barcode: e.target.value})} className="h-8 text-xs font-black border-black" />
-                  </div>
-                  <div>
-                    <label className="text-[11px] font-black uppercase text-black">Nombre del Producto</label>
-                    <Input value={productForm.name} onChange={e => setProductForm({...productForm, name: e.target.value})} className="h-8 text-xs font-black border-black" required />
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
+            <form onSubmit={handleSaveProduct} className="flex-1 flex flex-col overflow-hidden">
+              <div className="flex-1 overflow-y-auto p-6 scrollbar-thin">
+                <div className="grid grid-cols-2 gap-8">
+                  {/* Columna Izquierda: Datos Básicos */}
+                  <div className="space-y-4">
                     <div>
-                      <label className="text-[11px] font-black uppercase text-black">Departamento</label>
-                      <select value={productForm.department} onChange={e => setProductForm({...productForm, department: e.target.value})} className="w-full h-8 border-2 border-black rounded px-2 text-xs bg-white font-black">
-                        {departments.map((d, i) => <option key={`${d}-${i}`} value={d}>{d}</option>)}
-                      </select>
+                      <label className="text-[11px] font-black uppercase text-black tracking-widest mb-1.5 block">Código de Barras</label>
+                      <Input value={productForm.barcode} onChange={e => setProductForm({...productForm, barcode: e.target.value})} className="h-11 text-base font-black border-2 border-black bg-slate-100/50" />
                     </div>
                     <div>
-                      <label className="text-[11px] font-black uppercase text-black">Categoría</label>
-                      <select value={productForm.category as any} onChange={e => setProductForm({...productForm, category: e.target.value as any})} className="w-full h-8 border-2 border-black rounded px-2 text-xs bg-white font-black">
-                        {categories.map((c, i) => <option key={`${c.id}-${i}`} value={c.id}>{c.name}</option>)}
-                      </select>
+                      <label className="text-[11px] font-black uppercase text-black tracking-widest mb-1.5 block">Nombre del Producto</label>
+                      <Input value={productForm.name} onChange={e => setProductForm({...productForm, name: e.target.value})} className="h-11 text-base font-black border-2 border-black bg-slate-100/50" required />
                     </div>
-                  </div>
-                  <div>
-                    <label className="text-[11px] font-black uppercase text-black">Unidad de Medida</label>
-                    <Input value={productForm.unitMeasure} onChange={e => setProductForm({...productForm, unitMeasure: e.target.value})} className="h-8 text-xs font-black border-black" placeholder="UNID, KG, LTS..." />
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-[11px] font-black uppercase text-black tracking-widest mb-1.5 block">Departamento</label>
+                        <select value={productForm.department} onChange={e => setProductForm({...productForm, department: e.target.value})} className="w-full h-11 border-2 border-black rounded-xl px-3 text-base font-black bg-white">
+                          {departments.map((d, i) => <option key={`${d}-${i}`} value={d}>{d.toUpperCase()}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-[11px] font-black uppercase text-black tracking-widest mb-1.5 block">Categoría</label>
+                        <select value={productForm.category as any} onChange={e => setProductForm({...productForm, category: e.target.value as any})} className="w-full h-11 border-2 border-black rounded-xl px-3 text-base font-black bg-white">
+                          {categories.map((c, i) => <option key={`${c.id}-${i}`} value={c.id}>{c.name.toUpperCase()}</option>)}
+                        </select>
+                      </div>
+                    </div>
                     <div>
-                      <label className="text-[11px] font-black uppercase text-black">Stock Inicial</label>
-                      <Input type="text" inputMode="numeric" value={stockInput} onChange={(e) => setStockInput(e.target.value)} className="h-8 text-xs font-black border-black" placeholder="0" />
+                      <label className="text-[11px] font-black uppercase text-black tracking-widest mb-1.5 block">Unidad de Medida</label>
+                      <Input value={productForm.unitMeasure} onChange={e => setProductForm({...productForm, unitMeasure: e.target.value})} className="h-11 text-base font-black border-2 border-black bg-slate-100/50" placeholder="UNID, KG, LTS..." />
                     </div>
-                    <div>
-                      <label className="text-[11px] font-black uppercase text-black">Stock Mínimo</label>
-                      <Input type="text" inputMode="numeric" value={minStockInput} onChange={(e) => setMinStockInput(e.target.value)} className="h-8 text-xs font-black border-black" placeholder="5" />
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-[11px] font-black uppercase text-black tracking-widest mb-1.5 block">Stock Inicial</label>
+                        <Input type="text" inputMode="numeric" value={stockInput} onChange={(e) => setStockInput(e.target.value)} className="h-11 text-base font-black border-2 border-black bg-slate-100/50" placeholder="0" />
+                      </div>
+                      <div>
+                        <label className="text-[11px] font-black uppercase text-black tracking-widest mb-1.5 block">Stock Mínimo</label>
+                        <Input type="text" inputMode="numeric" value={minStockInput} onChange={(e) => setMinStockInput(e.target.value)} className="h-11 text-base font-black border-2 border-black bg-slate-100/50" placeholder="5" />
+                      </div>
                     </div>
-                  </div>
-                </div>
-                
-                <div className="bg-[#F5F5F5] rounded-lg p-3 space-y-3 border-2 border-black">
-                  <div>
-                    <label className="text-[11px] font-black uppercase text-black">Costo Unitario USD</label>
-                    <Input 
-                      type="text" 
-                      inputMode="decimal" 
-                      value={costUsdInput}
-                      placeholder="0.0000"
-                      onChange={(e) => {
-                        setCostUsdInput(e.target.value);
-                        const costVal = parseFloat(e.target.value) || 0;
-                        const profitVal = profitPercentInput !== '' ? parseFloat(profitPercentInput) : 0;
-                        if (costVal > 0 && profitVal > 0) {
-                          const newPriceUsd = calculatePriceUsdFromCostAndProfit(costVal, profitVal);
-                          setLocalPriceUsd(newPriceUsd.toFixed(2));
-                          setPriceRetailBs(roundTo2(newPriceUsd * state.exchangeRate).toFixed(2));
-                        } else if (costVal === 0) {
-                          setLocalPriceUsd('');
-                          setPriceRetailBs('');
-                        }
-                      }} 
-                      className="bg-white h-9 text-sm font-mono font-black border-black" 
-                    />
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-[11px] font-black uppercase text-black tracking-widest mb-1.5 block">Precio Mayor (USD)</label>
+                        <Input type="text" inputMode="decimal" value={priceWholesaleInput} onChange={(e) => setPriceWholesaleInput(e.target.value)} className="h-11 text-base font-black border-2 border-black bg-slate-100/50" placeholder="0.00" />
+                      </div>
+                      <div>
+                        <label className="text-[11px] font-black uppercase text-black tracking-widest mb-1.5 block">Precio Costo (USD)</label>
+                        <Input type="text" inputMode="decimal" value={priceCostInput} onChange={(e) => setPriceCostInput(e.target.value)} className="h-11 text-base font-black border-2 border-black bg-slate-100/50" placeholder="0.00" />
+                      </div>
+                    </div>
+                    <div className="pt-2">
+                       <label className="flex items-center gap-3 cursor-pointer group">
+                         <div className="relative">
+                           <input type="checkbox" checked={isKit} onChange={e => setIsKit(e.target.checked)} className="peer sr-only" />
+                           <div className="w-6 h-6 border-2 border-black rounded-lg peer-checked:bg-primary transition-all flex items-center justify-center">
+                             <Plus size={16} className={cn("text-black font-black transition-opacity", isKit ? "opacity-100" : "opacity-0")} />
+                           </div>
+                         </div>
+                         <span className="text-xs font-black text-black uppercase tracking-widest group-hover:text-primary transition-colors">Es kit / compuesto</span>
+                       </label>
+                       <p className="text-[10px] font-black text-black/40 mt-1 uppercase">Al vender este producto, se descontarán las cantidades de sus componentes.</p>
+                    </div>
                   </div>
                   
-                  <div>
-                    <label className="text-[11px] font-black uppercase text-black">% de Ganancia</label>
-                    <div className="flex items-center gap-2">
+                  {/* Columna Derecha: Calculadora de Precios */}
+                  <div className="bg-[#F5F5F5] rounded-2xl p-6 space-y-5 border-2 border-black shadow-inner">
+                    <div>
+                      <label className="text-[11px] font-black uppercase text-black tracking-widest mb-1.5 block">Costo Unitario USD</label>
                       <Input 
                         type="text" 
                         inputMode="decimal" 
-                        value={profitPercentInput}
-                        placeholder="0"
+                        value={costUsdInput}
+                        placeholder="0.0000"
                         onChange={(e) => {
-                          let raw = e.target.value;
-                          let numValue = parseFloat(raw);
-                          if (!isNaN(numValue) && numValue > 99.99) return;
-                          setProfitPercentInput(raw);
-                          const newProfit = isNaN(numValue) ? 0 : numValue;
-                          const costVal = parseFloat(costUsdInput) || 0;
-                          if (costVal > 0 && newProfit > 0 && newProfit < 100) {
-                            const newPriceUsd = calculatePriceUsdFromCostAndProfit(costVal, newProfit);
+                          setCostUsdInput(e.target.value);
+                          const costVal = parseFloat(e.target.value) || 0;
+                          const profitVal = profitPercentInput !== '' ? parseFloat(profitPercentInput) : 0;
+                          if (costVal > 0 && profitVal > 0) {
+                            const newPriceUsd = calculatePriceUsdFromCostAndProfit(costVal, profitVal);
                             setLocalPriceUsd(newPriceUsd.toFixed(2));
                             setPriceRetailBs(roundTo2(newPriceUsd * state.exchangeRate).toFixed(2));
-                          } 
-                          else if (costVal === 0) {
-                            setLocalPriceUsd('');
-                            setPriceRetailBs('');
-                          }
-                        }}
-                        className="bg-white h-9 text-sm font-mono font-black border-black w-24 text-right"
-                      />
-                      <span className="text-sm font-black text-black">%</span>
-                    </div>
-                  </div>
-                  
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="text-[11px] font-black uppercase text-black">Precio USD</label>
-                      <Input 
-                        type="text" 
-                        inputMode="decimal" 
-                        value={localPriceUsd}
-                        placeholder="0.00"
-                        onChange={(e) => {
-                          const raw = e.target.value;
-                          const usdVal = parseFloat(raw);
-                          const costVal = parseFloat(costUsdInput) || 0;
-                          if (!isNaN(usdVal) && usdVal > 0 && costVal > 0) {
-                            let newProfit = calculateProfitFromCostAndPriceUsd(costVal, usdVal);
-                            setLocalPriceUsd(raw);
-                            setProfitPercentInput(newProfit.toString());
-                            setPriceRetailBs(roundTo2(usdVal * state.exchangeRate).toFixed(2));
-                          } else {
-                            setLocalPriceUsd(raw);
-                          }
-                        }}
-                        className="bg-white h-9 text-sm font-mono font-black border-black"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[11px] font-black uppercase text-black">Precio Bs</label>
-                      <Input 
-                        type="text" 
-                        inputMode="decimal" 
-                        value={priceRetailBs}
-                        placeholder="0.00"
-                        onChange={(e) => { 
-                          const newValue = e.target.value;
-                          const bs = parseFloat(newValue);
-                          if (!isNaN(bs) && bs > 0) {
-                            const usd = bs / state.exchangeRate;
-                            const costVal = parseFloat(costUsdInput) || 0;
-                            setPriceRetailBs(newValue);
-                            setLocalPriceUsd(usd.toFixed(2));
-                            if (costVal > 0) setProfitPercentInput(calculateProfitFromCostAndPriceUsd(costVal, usd).toString());
-                          } else {
-                            setPriceRetailBs(newValue);
                           }
                         }} 
-                        className="bg-white h-9 text-sm font-mono font-black border-black w-full" 
+                        className="bg-white h-12 text-lg font-mono font-black border-2 border-black" 
                       />
+                    </div>
+                    
+                    <div>
+                      <label className="text-[11px] font-black uppercase text-black tracking-widest mb-1.5 block">% de Ganancia sobre venta</label>
+                      <div className="flex items-center gap-3">
+                        <Input 
+                          type="text" 
+                          inputMode="decimal" 
+                          value={profitPercentInput}
+                          placeholder="0"
+                          onChange={(e) => {
+                            let raw = e.target.value;
+                            let numValue = parseFloat(raw);
+                            if (!isNaN(numValue) && numValue > 99.99) return;
+                            setProfitPercentInput(raw);
+                            const newProfit = isNaN(numValue) ? 0 : numValue;
+                            const costVal = parseFloat(costUsdInput) || 0;
+                            if (costVal > 0 && newProfit > 0 && newProfit < 100) {
+                              const newPriceUsd = calculatePriceUsdFromCostAndProfit(costVal, newProfit);
+                              setLocalPriceUsd(newPriceUsd.toFixed(2));
+                              setPriceRetailBs(roundTo2(newPriceUsd * state.exchangeRate).toFixed(2));
+                            }
+                          }}
+                          className="bg-white h-12 text-lg font-mono font-black border-2 border-black w-32 text-center"
+                        />
+                        <span className="text-lg font-black text-black">%</span>
+                      </div>
+                    </div>
+
+                    <div className="bg-white/80 border-2 border-dashed border-green-400 rounded-xl p-3 flex justify-between items-center">
+                      <span className="text-[11px] font-black text-green-700 uppercase tracking-widest">Ganancia por unidad (USD)</span>
+                      <span className="text-2xl font-black text-green-700">
+                        {(() => {
+                          const cost = parseFloat(costUsdInput) || 0;
+                          const priceUsd = parseFloat(localPriceUsd) || 0;
+                          return formatUsd(Math.max(0, priceUsd - cost));
+                        })()}
+                      </span>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-[11px] font-black uppercase text-black tracking-widest mb-1.5 block">Precio Detal USD</label>
+                        <Input 
+                          type="text" 
+                          inputMode="decimal" 
+                          value={localPriceUsd}
+                          placeholder="0.00"
+                          onChange={(e) => {
+                            const raw = e.target.value;
+                            setLocalPriceUsd(raw);
+                            const usdVal = parseFloat(raw);
+                            const costVal = parseFloat(costUsdInput) || 0;
+                            if (!isNaN(usdVal) && usdVal > 0 && costVal > 0) {
+                              let newProfit = calculateProfitFromCostAndPriceUsd(costVal, usdVal);
+                              setProfitPercentInput(newProfit.toString());
+                              setPriceRetailBs(roundTo2(usdVal * state.exchangeRate).toFixed(2));
+                            }
+                          }}
+                          className="bg-white h-12 text-lg font-mono font-black border-2 border-black"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[11px] font-black uppercase text-black tracking-widest mb-1.5 block">Precio Detal Bs (Final)</label>
+                        <Input 
+                          type="text" 
+                          inputMode="decimal" 
+                          value={priceRetailBs}
+                          placeholder="0.00"
+                          onChange={(e) => { 
+                            const newValue = e.target.value;
+                            setPriceRetailBs(newValue);
+                            const bs = parseFloat(newValue);
+                            if (!isNaN(bs) && bs > 0) {
+                              const usd = bs / state.exchangeRate;
+                              const costVal = parseFloat(costUsdInput) || 0;
+                              setLocalPriceUsd(usd.toFixed(2));
+                              if (costVal > 0) setProfitPercentInput(calculateProfitFromCostAndPriceUsd(costVal, usd).toString());
+                            }
+                          }} 
+                          className="bg-white h-12 text-lg font-mono font-black border-2 border-black" 
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      <label className="text-[11px] font-black uppercase text-black tracking-widest block">Configuración de IVA</label>
+                      <div className="flex gap-2">
+                        <button type="button" onClick={() => setIvaType('con_iva')} className={cn("flex-1 py-3 text-xs font-black rounded-xl border-2 transition-all shadow-md", ivaType === 'con_iva' ? "bg-primary text-black border-black" : "bg-white text-black border-black/10")}>CON I.V.A.</button>
+                        <button type="button" onClick={() => setIvaType('sin_iva')} className={cn("flex-1 py-3 text-xs font-black rounded-xl border-2 transition-all shadow-md", ivaType === 'sin_iva' ? "bg-primary text-black border-black" : "bg-white text-black border-black/10")}>SIN I.V.A.</button>
+                      </div>
+                      {ivaType === 'con_iva' && (
+                        <div className="flex items-center gap-3 bg-white p-2 rounded-xl border-2 border-black/10">
+                          <Percent size={18} className="text-black font-black" />
+                          <Input type="number" value={ivaPercentage} onChange={e => setIvaPercentage(Number(e.target.value))} className="w-20 h-9 font-black border-2 border-black text-center" />
+                          <span className="text-[11px] font-black uppercase text-black/60">% de I.V.A.</span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="bg-white rounded-xl p-4 border-2 border-black space-y-1 shadow-md">
+                       <div className="flex justify-between items-center text-xs">
+                         <span className="font-black text-black/60 uppercase">Precio Base USD (sin IVA):</span>
+                         <span className="font-black text-black">USD {formatUsdNumber(parseFloat(localPriceUsd) / (ivaType === 'con_iva' ? (1 + ivaPercentage/100) : 1))}</span>
+                       </div>
+                       {ivaType === 'con_iva' && (
+                         <div className="flex justify-between items-center text-xs">
+                           <span className="font-black text-black/60 uppercase">+ IVA ({ivaPercentage}%):</span>
+                           <span className="font-black text-black">USD {formatUsdNumber(parseFloat(localPriceUsd) - (parseFloat(localPriceUsd) / (1 + ivaPercentage/100)))}</span>
+                         </div>
+                       )}
+                       <div className="pt-2 mt-2 border-t-2 border-black/10 flex justify-between items-center text-sm">
+                         <span className="font-black text-black/60 uppercase">Precio Mayor USD:</span>
+                         <span className="font-black text-black">USD {formatUsdNumber(parseFloat(priceWholesaleInput) || 0)}</span>
+                       </div>
+                       <div className="flex justify-between items-center text-sm">
+                         <span className="font-black text-black/60 uppercase">Precio Costo USD:</span>
+                         <span className="font-black text-black">USD {formatUsdNumber(parseFloat(priceCostInput) || 0)}</span>
+                       </div>
                     </div>
                   </div>
                 </div>
               </div>
               
-              <div className="bg-[#F5F5F5] p-3 border-t-2 border-black flex justify-end gap-2 flex-shrink-0">
-                <Button type="submit" disabled={isSubmittingProduct} className="bg-primary text-black font-black px-10 h-10 text-sm border-2 border-black shadow-lg">
-                  {isSubmittingProduct ? <Loader2 size={18} className="animate-spin" /> : 'GUARDAR PRODUCTO'}
+              <div className="bg-[#F5F5F5] p-5 border-t-2 border-black flex justify-end gap-3 flex-shrink-0">
+                <Button onClick={() => setShowProductModal(false)} variant="ghost" className="px-10 h-12 font-black text-black uppercase border-2 border-black hover:bg-slate-200">Cancelar</Button>
+                <Button type="submit" disabled={isSubmittingProduct} className="bg-primary text-black font-black px-16 h-12 text-base border-2 border-black shadow-xl hover:scale-105 transition-all uppercase tracking-widest">
+                  {isSubmittingProduct ? <Loader2 size={24} className="animate-spin" /> : 'GUARDAR PRODUCTO'}
                 </Button>
               </div>
             </form>

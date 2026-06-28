@@ -1352,7 +1352,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                             <button onClick={() => setViewingKardex(p)} className="h-6 w-6 rounded hover:bg-blue-100 text-blue-600" title="Ver Kardex"><History size={11} /></button>
                             <button onClick={() => requestStockAdjust(p)} className="h-6 w-6 rounded hover:bg-amber-100 text-amber-600" title="Ajustar Stock"><RefreshCw size={11} /></button>
                             <button onClick={() => handleEdit(p)} className="h-6 w-6 rounded hover:bg-gray-100 text-blue-600"><Pencil size={11} /></button>
-                            <button onClick={() => { if(confirm('¿Eliminar este producto?')) syncService.deleteProduct(p.id) }} className="h-6 w-6 rounded hover:bg-red-100 text-red-600"><Trash2 size={11} /></button>
+                            <button onClick={() => { if(confirm('¿Eliminar este producto?')) state.deleteProduct(p.id) }} className="h-6 w-6 rounded hover:bg-red-100 text-red-600"><Trash2 size={11} /></button>
                           </div>
                         </TableCell>
                       </TableRow>

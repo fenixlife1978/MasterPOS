@@ -636,7 +636,9 @@ export function subscribeToSupplierPayments(callback: (data: any[]) => void) {
 export function subscribeToProducts(callback: (data: any[]) => void) {
   return onValue(ref(rtdb, 'products'), (snapshot) => {
     if (snapshot.exists()) {
-      const products = Object.entries(snapshot.val()).map(([id, p]: [string, any]) => parseProductData(id, p));
+      const products = Object.entries(snapshot.val())
+        .map(([id, p]: [string, any]) => parseProductData(id, p))
+        .filter(p => p.activo !== false);
       callback(products);
     } else callback([]);
   });

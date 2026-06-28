@@ -1338,7 +1338,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                         <TableCell className="font-mono text-[10px] text-black font-black">{p.barcode || ""}</TableCell>
                         <TableCell>
                           <p className="font-bold text-xs text-black">{p.name}</p>
-                          <p className="text-[8px] font-bold text-primary uppercase">{getCategoryName(p.category)} | {p.department || 'Sin Dept.'}</p>
+                          <p className="text-[8px] font-black text-black uppercase">{getCategoryName(p.category)} | {p.department || 'Sin Dept.'}</p>
                         </TableCell>
                         <TableCell className="text-center">
                           <span className={cn("px-2 py-0.5 rounded-full text-[8px] font-black border", p.stock <= getProductMinStock(p) ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700")}>
@@ -1411,7 +1411,10 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                     .map((p, index) => (
                       <TableRow key={`${p.id}-${index}`} className="border-b border-[#9E9E9E]/30 hover:bg-[#F5F5F5] py-1">
                         <TableCell className="font-mono text-[9px] text-black font-black py-1.5">{p.barcode || ""}</TableCell>
-                        <TableCell className="py-1.5"><p className="font-bold text-xs text-black">{p.name}</p><p className="text-[7px] font-bold text-primary/70 uppercase">{getCategoryName(p.category)} | {p.department || 'Sin Dept.'}</p></TableCell>
+                        <TableCell className="py-1.5">
+                          <p className="font-bold text-xs text-black">{p.name}</p>
+                          <p className="text-[7px] font-black text-black uppercase">{getCategoryName(p.category)} | {p.department || 'Sin Dept.'}</p>
+                        </TableCell>
                         <TableCell className="text-right font-mono text-[10px] font-bold text-black py-1.5">{formatUsd(p.costUsd || 0, 4)}</TableCell>
                         <TableCell className="text-center py-1.5"><span className={cn("px-2 py-0.5 rounded-full text-[8px] font-black", p.stock <= getProductMinStock(p) ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700")}>{p.stock} UDS</span></TableCell>
                         <TableCell className="text-right font-mono text-[10px] font-black text-black py-1.5">{formatUsd((p.costUsd || 0) * p.stock)}</TableCell>
@@ -1701,7 +1704,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
       </Dialog>
       
       <Dialog open={showAuthCodeModal} onOpenChange={setShowAuthCodeModal}>
-        <DialogContent className="bg-white max-w-md p-0 rounded-xl">
+        <DialogContent className="bg-white max-md p-0 rounded-xl">
           <DialogHeader className="bg-red-600 p-3 text-white rounded-t-xl"><DialogTitle className="text-sm font-black flex items-center gap-2"><AlertTriangle size={14} /> Autorización requerida</DialogTitle></DialogHeader>
           <div className="p-4 space-y-3"><p className="text-xs text-black font-black">Ingrese el código de autorización para realizar este ajuste de inventario:</p><Input type="password" placeholder="Código de seguridad" value={authCodeInput} onChange={(e) => setAuthCodeInput(e.target.value)} className="font-mono text-center text-base font-black text-black" autoFocus /><div className="flex justify-end gap-2"><Button variant="ghost" onClick={() => setShowAuthCodeModal(false)} className="font-black text-black">Cancelar</Button><Button onClick={verifyAuthCode} className="bg-red-600 text-white font-black">Verificar y Ajustar</Button></div></div>
         </DialogContent>

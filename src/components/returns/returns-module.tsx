@@ -455,7 +455,7 @@ export default function ReturnsModule() {
             </div>
             <div>
               <h2 className="text-2xl font-black text-red-900 tracking-tight uppercase">Módulo de Devoluciones</h2>
-              <p className="text-[11px] font-bold text-red-600 uppercase tracking-widest">
+              <p className="text-[11px] font-black text-red-600 uppercase tracking-widest">
                 Terminal: {currentTerminalName} • {activeTab === 'process' ? 'Paso 1: Localizar Venta' : 'Historial de Operaciones'}
               </p>
             </div>
@@ -465,7 +465,7 @@ export default function ReturnsModule() {
         <div className="flex gap-2">
           {isAdmin && (
             <div className="flex items-center gap-2 bg-white border border-[#9E9E9E] rounded-lg px-3 py-1 shadow-sm">
-              <Terminal size={14} className="text-black/50" />
+              <Terminal size={14} className="text-black" />
               <select
                 value={selectedTerminal}
                 onChange={(e) => setSelectedTerminal(e.target.value)}
@@ -486,7 +486,7 @@ export default function ReturnsModule() {
           onClick={() => { setActiveTab('process'); setMessage(null); }}
           className={cn(
             "px-6 py-2.5 font-black text-sm transition-all rounded-t-xl",
-            activeTab === 'process' ? "bg-white border-t border-l border-r border-[#9E9E9E] text-red-600" : "text-black/50 hover:bg-white/50"
+            activeTab === 'process' ? "bg-white border-t border-l border-r border-[#9E9E9E] text-red-600" : "text-black font-black hover:bg-white/50"
           )}
         >
           Procesar Devolución
@@ -495,7 +495,7 @@ export default function ReturnsModule() {
           onClick={() => { setActiveTab('history'); setMessage(null); }}
           className={cn(
             "px-6 py-2.5 font-black text-sm transition-all rounded-t-xl",
-            activeTab === 'history' ? "bg-white border-t border-l border-r border-[#9E9E9E] text-red-600" : "text-black/50 hover:bg-white/50"
+            activeTab === 'history' ? "bg-white border-t border-l border-r border-[#9E9E9E] text-red-600" : "text-black font-black hover:bg-white/50"
           )}
         >
           Devoluciones Procesadas
@@ -504,25 +504,25 @@ export default function ReturnsModule() {
 
       <div className="bg-white border border-[#9E9E9E] rounded-2xl p-5 mb-6 shadow-md flex-shrink-0">
         <div className="flex items-center gap-2 mb-4">
-          <Search size={18} className="text-slate-400" />
-          <h3 className="text-xs font-black uppercase text-slate-600 tracking-wider">
+          <Search size={18} className="text-black" />
+          <h3 className="text-xs font-black uppercase text-black tracking-wider">
             {activeTab === 'process' ? 'Paso 1: Localizar Venta Original' : 'Filtrar Devoluciones Procesadas'}
           </h3>
         </div>
         
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
           <div className="md:col-span-2">
-            <label className="text-[9px] font-black text-black/40 uppercase block mb-1">
+            <label className="text-[9px] font-black text-black uppercase block mb-1">
               Buscar por {activeTab === 'process' ? 'Número de Recibo' : 'Folio DEV-'}
             </label>
             <div className="flex gap-2">
               <div className="relative flex-1">
-                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                <Input 
+                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-black" />
+                <input 
                   value={searchReceipt}
                   onChange={(e) => setSearchReceipt(e.target.value)}
                   placeholder={activeTab === 'process' ? "Ej: 00000019" : "Ej: 000001"}
-                  className="pl-10 h-11 text-base font-mono font-bold border-slate-300 focus:border-red-500 focus:ring-red-500/20"
+                  className="w-full flex h-11 border border-slate-300 bg-white rounded-md px-10 py-2 text-base font-mono font-black text-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/20"
                   onKeyDown={(e) => e.key === 'Enter' && handleSearchByReceipt()}
                   autoComplete="off"
                 />
@@ -533,12 +533,12 @@ export default function ReturnsModule() {
             </div>
           </div>
           <div>
-            <label className="text-[9px] font-black text-black/40 uppercase block mb-1">Desde Fecha</label>
-            <Input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="h-11 font-bold" />
+            <label className="text-[9px] font-black text-black uppercase block mb-1">Desde Fecha</label>
+            <Input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="h-11 font-black text-black" />
           </div>
           <div>
-            <label className="text-[9px] font-black text-black/40 uppercase block mb-1">Hasta Fecha</label>
-            <Input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="h-11 font-bold" />
+            <label className="text-[9px] font-black text-black uppercase block mb-1">Hasta Fecha</label>
+            <Input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="h-11 font-black text-black" />
           </div>
         </div>
       </div>
@@ -549,43 +549,43 @@ export default function ReturnsModule() {
           message.type === 'success' ? "bg-green-50 border-green-200 text-green-700" : "bg-red-50 border-red-200 text-red-700"
         )}>
           {message.type === 'success' ? <CheckCircle size={24} /> : <AlertCircle size={24} />}
-          <span className="flex-1 font-bold">{message.text}</span>
+          <span className="flex-1 font-black">{message.text}</span>
           <button onClick={() => setMessage(null)} className="hover:opacity-70"><X size={18} /></button>
         </div>
       )}
 
-      <div className="flex-1 bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-lg flex flex-col">
+      <div className="flex-1 bg-white border border-[#9E9E9E] rounded-2xl overflow-hidden shadow-lg flex flex-col">
         <div className="flex-1 overflow-y-auto scrollbar-thin">
           {isLoading ? (
             <div className="flex flex-col items-center justify-center py-20 gap-4">
               <Loader2 className="animate-spin text-red-600" size={32} />
-              <p className="text-sm font-bold text-slate-500">Actualizando datos en tiempo real...</p>
+              <p className="text-sm font-black text-black">Actualizando datos en tiempo real...</p>
             </div>
           ) : activeTab === 'process' ? (
             <Table>
               <TableHeader className="bg-slate-50 sticky top-0 z-10">
                 <TableRow>
-                  <TableHead className="text-[10px] font-black uppercase tracking-widest">Recibo</TableHead>
-                  <TableHead className="text-[10px] font-black uppercase tracking-widest">Terminal</TableHead>
-                  <TableHead className="text-[10px] font-black uppercase tracking-widest">Cliente</TableHead>
-                  <TableHead className="text-[10px] font-black uppercase tracking-widest">Fecha y Hora</TableHead>
-                  <TableHead className="text-[10px] font-black uppercase tracking-widest text-right">Total Bs</TableHead>
-                  <TableHead className="text-[10px] font-black uppercase tracking-widest text-center">Acción</TableHead>
+                  <TableHead className="text-[10px] font-black uppercase tracking-widest text-black">Recibo</TableHead>
+                  <TableHead className="text-[10px] font-black uppercase tracking-widest text-black">Terminal</TableHead>
+                  <TableHead className="text-[10px] font-black uppercase tracking-widest text-black">Cliente</TableHead>
+                  <TableHead className="text-[10px] font-black uppercase tracking-widest text-black">Fecha y Hora</TableHead>
+                  <TableHead className="text-[10px] font-black uppercase tracking-widest text-right text-black">Total Bs</TableHead>
+                  <TableHead className="text-[10px] font-black uppercase tracking-widest text-center text-black">Acción</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {salesTransactionsList.length === 0 ? (
-                  <TableRow><TableCell colSpan={6} className="text-center py-16 opacity-30 italic">No hay ventas registradas en el período</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={6} className="text-center py-16 text-black font-black italic">No hay ventas registradas en el período</TableCell></TableRow>
                 ) : (
                   salesTransactionsList.map((tx) => {
                     const returned = tx.return_status === 'total' || tx.return_status === 'partial';
                     return (
                       <TableRow key={tx.id} className={cn("group hover:bg-slate-50 transition-colors", returned && "bg-red-50/30")}>
-                        <TableCell className="font-mono font-black text-slate-700">#{formatReceipt(tx.receiptNumber || tx.receipt_number)}</TableCell>
-                        <TableCell><span className="text-[10px] font-bold bg-slate-100 px-2 py-0.5 rounded-full text-slate-600">{tx.terminalId}</span></TableCell>
-                        <TableCell className="font-bold">{tx.clientName || 'CONSUMIDOR FINAL'}</TableCell>
-                        <TableCell className="text-xs text-slate-500">{new Date(tx.date).toLocaleString('es-VE')}</TableCell>
-                        <TableCell className="text-right font-black">{formatBs(tx.total)}</TableCell>
+                        <TableCell className="font-mono font-black text-black">#{formatReceipt(tx.receiptNumber || tx.receipt_number)}</TableCell>
+                        <TableCell><span className="text-[10px] font-black bg-slate-100 px-2 py-0.5 rounded-full text-black">{tx.terminalId}</span></TableCell>
+                        <TableCell className="font-black text-black">{tx.clientName || 'CONSUMIDOR FINAL'}</TableCell>
+                        <TableCell className="text-xs font-black text-black">{new Date(tx.date).toLocaleString('es-VE')}</TableCell>
+                        <TableCell className="text-right font-black text-black">{formatBs(tx.total)}</TableCell>
                         <TableCell className="text-center">
                           {returned ? (
                             <span className="inline-flex items-center gap-1.5 text-[10px] font-black text-red-600 bg-red-100 px-3 py-1 rounded-full uppercase">
@@ -605,29 +605,29 @@ export default function ReturnsModule() {
             <Table>
               <TableHeader className="bg-slate-50 sticky top-0 z-10">
                 <TableRow>
-                  <TableHead className="text-[10px] font-black uppercase tracking-widest">Folio</TableHead>
-                  <TableHead className="text-[10px] font-black uppercase tracking-widest">Origen (Recibo)</TableHead>
-                  <TableHead className="text-[10px] font-black uppercase tracking-widest">Terminal</TableHead>
-                  <TableHead className="text-[10px] font-black uppercase tracking-widest">Cliente</TableHead>
-                  <TableHead className="text-[10px] font-black uppercase tracking-widest">Fecha</TableHead>
-                  <TableHead className="text-[10px] font-black uppercase tracking-widest text-right">Reembolso Bs</TableHead>
-                  <TableHead className="text-[10px] font-black uppercase tracking-widest text-center">Acción</TableHead>
+                  <TableHead className="text-[10px] font-black uppercase tracking-widest text-black">Folio</TableHead>
+                  <TableHead className="text-[10px] font-black uppercase tracking-widest text-black">Origen (Recibo)</TableHead>
+                  <TableHead className="text-[10px] font-black uppercase tracking-widest text-black">Terminal</TableHead>
+                  <TableHead className="text-[10px] font-black uppercase tracking-widest text-black">Cliente</TableHead>
+                  <TableHead className="text-[10px] font-black uppercase tracking-widest text-black">Fecha</TableHead>
+                  <TableHead className="text-[10px] font-black uppercase tracking-widest text-right text-black">Reembolso Bs</TableHead>
+                  <TableHead className="text-[10px] font-black uppercase tracking-widest text-center text-black">Acción</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {processedReturns.length === 0 ? (
-                  <TableRow><TableCell colSpan={7} className="text-center py-16 opacity-30 italic">No hay devoluciones registradas en el período</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={7} className="text-center py-16 text-black font-black italic">No hay devoluciones registradas en el período</TableCell></TableRow>
                 ) : (
                   processedReturns.map((tx) => (
                     <TableRow key={tx.id} className="hover:bg-slate-50 transition-colors">
                       <TableCell className="font-mono font-black text-red-600">{formatReturnReceipt(tx.receiptNumber)}</TableCell>
-                      <TableCell className="font-mono text-slate-500">#{formatReceipt(tx.originalReceiptNumber)}</TableCell>
-                      <TableCell><span className="text-[10px] font-bold bg-slate-100 px-2 py-0.5 rounded-full text-slate-600">{tx.terminalId}</span></TableCell>
-                      <TableCell className="font-bold">{tx.clientName || 'CONSUMIDOR FINAL'}</TableCell>
-                      <TableCell className="text-xs text-slate-500">{new Date(tx.date).toLocaleString('es-VE')}</TableCell>
+                      <TableCell className="font-mono font-black text-black">#{formatReceipt(tx.originalReceiptNumber)}</TableCell>
+                      <TableCell><span className="text-[10px] font-black bg-slate-100 px-2 py-0.5 rounded-full text-black">{tx.terminalId}</span></TableCell>
+                      <TableCell className="font-black text-black">{tx.clientName || 'CONSUMIDOR FINAL'}</TableCell>
+                      <TableCell className="text-xs font-black text-black">{new Date(tx.date).toLocaleString('es-VE')}</TableCell>
                       <TableCell className="text-right font-black text-red-600">-{formatBs(tx.total)}</TableCell>
                       <TableCell className="text-center">
-                        <Button variant="ghost" size="sm" onClick={() => setViewingReturnDetail(tx)} className="text-primary hover:bg-primary/10">
+                        <Button variant="ghost" size="sm" onClick={() => setViewingReturnDetail(tx)} className="text-primary hover:bg-primary/10 font-black">
                           <Eye size={16} className="mr-1" /> VER DETALLE
                         </Button>
                       </TableCell>
@@ -648,7 +648,7 @@ export default function ReturnsModule() {
                 <History size={20} className="text-red-400" />
                 <div>
                   <DialogTitle className="text-base font-black">Detalle de Devolución</DialogTitle>
-                  <p className="text-[10px] opacity-60 font-mono">{viewingReturnDetail ? formatReturnReceipt(viewingReturnDetail.receiptNumber) : ''}</p>
+                  <p className="text-[10px] font-black opacity-90 font-mono">{viewingReturnDetail ? formatReturnReceipt(viewingReturnDetail.receiptNumber) : ''}</p>
                 </div>
               </div>
               <button onClick={() => setViewingReturnDetail(null)}><X size={20} /></button>
@@ -658,40 +658,40 @@ export default function ReturnsModule() {
               <div className="p-6 space-y-6">
                 <div className="grid grid-cols-2 gap-4 text-sm pb-4 border-b border-gray-100">
                   <div>
-                    <label className="text-[9px] font-black text-black/40 uppercase">Fecha y Hora</label>
-                    <p className="font-bold">{new Date(viewingReturnDetail.date).toLocaleString('es-VE')}</p>
+                    <label className="text-[9px] font-black text-black uppercase">Fecha y Hora</label>
+                    <p className="font-black text-black">{new Date(viewingReturnDetail.date).toLocaleString('es-VE')}</p>
                   </div>
                   <div>
-                    <label className="text-[9px] font-black text-black/40 uppercase">Concepto</label>
-                    <p className="font-bold">Devolución Recibo #{formatReceipt(viewingReturnDetail.originalReceiptNumber)}</p>
+                    <label className="text-[9px] font-black text-black uppercase">Concepto</label>
+                    <p className="font-black text-black">Devolución Recibo #{formatReceipt(viewingReturnDetail.originalReceiptNumber)}</p>
                   </div>
                   <div>
-                    <label className="text-[9px] font-black text-black/40 uppercase">Método de Reembolso</label>
-                    <p className="font-bold uppercase text-red-600">{viewingReturnDetail.returnMethod || viewingReturnDetail.payMethod || 'EFECTIVO'}</p>
+                    <label className="text-[9px] font-black text-black uppercase">Método de Reembolso</label>
+                    <p className="font-black uppercase text-red-600">{viewingReturnDetail.returnMethod || viewingReturnDetail.payMethod || 'EFECTIVO'}</p>
                   </div>
                   <div>
-                    <label className="text-[9px] font-black text-black/40 uppercase">Cliente</label>
-                    <p className="font-bold">{viewingReturnDetail.clientName || 'Cliente Final'}</p>
+                    <label className="text-[9px] font-black text-black uppercase">Cliente</label>
+                    <p className="font-black text-black">{viewingReturnDetail.clientName || 'Cliente Final'}</p>
                   </div>
                 </div>
 
                 <div>
-                  <h4 className="text-[10px] font-black uppercase text-slate-500 mb-3 flex items-center gap-2"><Package size={14} /> Productos Devueltos</h4>
-                  <div className="border rounded-xl overflow-hidden">
+                  <h4 className="text-[10px] font-black uppercase text-black mb-3 flex items-center gap-2"><Package size={14} /> Productos Devueltos</h4>
+                  <div className="border border-[#9E9E9E] rounded-xl overflow-hidden">
                     <table className="w-full text-xs">
                       <thead className="bg-slate-50 border-b">
                         <tr>
-                          <th className="p-2 text-left">Producto</th>
-                          <th className="p-2 text-center">Cant.</th>
-                          <th className="p-2 text-right">Monto (Bs)</th>
+                          <th className="p-2 text-left text-black font-black uppercase">Producto</th>
+                          <th className="p-2 text-center text-black font-black uppercase">Cant.</th>
+                          <th className="p-2 text-right text-black font-black uppercase">Monto (Bs)</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
                         {txDetailItems.map((item: any, idx: number) => (
                           <tr key={idx}>
-                            <td className="p-2 font-bold">{item.name}</td>
-                            <td className="p-2 text-center font-black">{item.qty}</td>
-                            <td className="p-2 text-right font-bold">{formatBs(item.priceBs * item.qty)}</td>
+                            <td className="p-2 font-black text-black">{item.name}</td>
+                            <td className="p-2 text-center font-black text-black">{item.qty}</td>
+                            <td className="p-2 text-right font-black text-black">{formatBs(item.priceBs * item.qty)}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -704,12 +704,12 @@ export default function ReturnsModule() {
                     <span className="text-[10px] font-black text-red-600 uppercase">Total Reembolsado</span>
                     <span className="text-xl font-black text-red-600">{formatBs(viewingReturnDetail.total)}</span>
                   </div>
-                  <p className="text-[10px] text-red-500 italic mt-2">"{viewingReturnDetail.notes || 'Sin observaciones adicionales'}"</p>
+                  <p className="text-[10px] text-red-600 font-black italic mt-2">"{viewingReturnDetail.notes || 'Sin observaciones adicionales'}"</p>
                 </div>
               </div>
             )}
             <div className="bg-gray-50 p-4 border-t flex justify-end">
-              <Button onClick={() => setViewingReturnDetail(null)} className="bg-slate-800 text-white font-bold h-9">CERRAR DETALLE</Button>
+              <Button onClick={() => setViewingReturnDetail(null)} className="bg-slate-800 text-white font-black h-9">CERRAR DETALLE</Button>
             </div>
           </div>
         </DialogContent>
@@ -725,12 +725,12 @@ export default function ReturnsModule() {
                 </div>
                 <div>
                   <DialogTitle className="text-xl font-black uppercase">Nueva Devolución</DialogTitle>
-                  <p className="text-xs text-white/60 font-bold uppercase tracking-widest">
+                  <p className="text-xs text-white font-black uppercase tracking-widest">
                     Asociada al Recibo: #{selectedTransaction ? formatReceipt(selectedTransaction.receiptNumber || selectedTransaction.receipt_number) : ''}
                   </p>
                 </div>
               </div>
-              <button onClick={() => setShowReturnModal(false)} className="hover:rotate-90 transition-all duration-300 text-white/50 hover:text-white">
+              <button onClick={() => setShowReturnModal(false)} className="hover:rotate-90 transition-all duration-300 text-white hover:text-white">
                 <X size={24} />
               </button>
             </div>
@@ -738,9 +738,9 @@ export default function ReturnsModule() {
             <div className="flex-1 overflow-y-auto p-6 bg-slate-50">
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="lg:col-span-2 space-y-4">
-                  <div className="bg-white border-2 border-slate-200 rounded-2xl p-4 shadow-sm">
+                  <div className="bg-white border-2 border-[#9E9E9E] rounded-2xl p-4 shadow-sm">
                     <div className="flex justify-between items-center mb-3">
-                      <h4 className="text-[10px] font-black uppercase text-slate-500 flex items-center gap-2">
+                      <h4 className="text-[10px] font-black uppercase text-black flex items-center gap-2">
                         <Package size={14} /> Paso 2: Seleccionar Productos
                       </h4>
                       <Button variant="ghost" onClick={selectAllItems} className="text-[10px] font-black text-red-600 hover:bg-red-50 px-2 h-7">
@@ -748,36 +748,36 @@ export default function ReturnsModule() {
                       </Button>
                     </div>
 
-                    <div className="border rounded-xl overflow-hidden">
+                    <div className="border border-[#9E9E9E] rounded-xl overflow-hidden">
                       <table className="w-full text-xs">
                         <thead className="bg-slate-50 border-b">
                           <tr>
-                            <th className="p-3 text-left">Producto</th>
-                            <th className="p-3 text-center">Precio</th>
-                            <th className="p-3 text-center">Vendido</th>
-                            <th className="p-3 text-center">Devolver</th>
-                            <th className="p-3 text-right">Subtotal</th>
+                            <th className="p-3 text-left text-black font-black">Producto</th>
+                            <th className="p-3 text-center text-black font-black">Precio</th>
+                            <th className="p-3 text-center text-black font-black">Vendido</th>
+                            <th className="p-3 text-center text-black font-black">Devolver</th>
+                            <th className="p-3 text-right text-black font-black">Subtotal</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                           {returnItems.map((item, idx) => (
                             <tr key={idx} className={cn("hover:bg-slate-50 transition-colors", item.returnQty > 0 && "bg-red-50/50")}>
                               <td className="p-3">
-                                <p className="font-bold text-slate-800">{item.name}</p>
-                                <p className="text-[9px] text-slate-400 font-mono">ID: {item.productId}</p>
+                                <p className="font-black text-black">{item.name}</p>
+                                <p className="text-[9px] text-black font-black font-mono">ID: {item.productId}</p>
                               </td>
-                              <td className="p-3 text-center font-mono">{formatBs(item.priceBs)}</td>
+                              <td className="p-3 text-center font-mono font-black text-black">{formatBs(item.priceBs)}</td>
                               <td className="p-3 text-center">
-                                <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-black">{item.originalQty}</span>
+                                <span className="bg-slate-100 text-black px-2 py-0.5 rounded font-black">{item.originalQty}</span>
                               </td>
                               <td className="p-3 text-center">
                                 <div className="flex justify-center items-center gap-2">
-                                  <button onClick={() => updateReturnQty(idx, item.returnQty - 1)} className="w-8 h-8 rounded-full border border-slate-300 flex items-center justify-center hover:bg-white active:scale-90 transition-all text-slate-500" disabled={item.returnQty <= 0}><Minus size={14} /></button>
-                                  <span className={cn("w-10 text-center text-base font-black", item.returnQty > 0 ? "text-red-600" : "text-slate-400")}>{item.returnQty}</span>
-                                  <button onClick={() => updateReturnQty(idx, item.returnQty + 1)} className="w-8 h-8 rounded-full border border-slate-300 flex items-center justify-center hover:bg-white active:scale-90 transition-all text-slate-500" disabled={item.returnQty >= item.originalQty}><Plus size={14} /></button>
+                                  <button onClick={() => updateReturnQty(idx, item.returnQty - 1)} className="w-8 h-8 rounded-full border border-slate-300 flex items-center justify-center hover:bg-white active:scale-90 transition-all text-black" disabled={item.returnQty <= 0}><Minus size={14} /></button>
+                                  <span className={cn("w-10 text-center text-base font-black", item.returnQty > 0 ? "text-red-600" : "text-black")}>{item.returnQty}</span>
+                                  <button onClick={() => updateReturnQty(idx, item.returnQty + 1)} className="w-8 h-8 rounded-full border border-slate-300 flex items-center justify-center hover:bg-white active:scale-90 transition-all text-black" disabled={item.returnQty >= item.originalQty}><Plus size={14} /></button>
                                 </div>
                               </td>
-                              <td className="p-3 text-right font-black text-slate-900">{formatBs(item.amount)}</td>
+                              <td className="p-3 text-right font-black text-black">{formatBs(item.amount)}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -788,24 +788,24 @@ export default function ReturnsModule() {
 
                 <div className="space-y-4">
                   <div className="bg-red-600 rounded-2xl p-5 text-white shadow-lg shadow-red-200">
-                    <p className="text-[10px] font-black uppercase opacity-70 tracking-widest">Total a Reembolsar</p>
+                    <p className="text-[10px] font-black uppercase opacity-90 tracking-widest">Total a Reembolsar</p>
                     <p className="text-4xl font-black mt-1 leading-none">{formatBs(totalReturnAmount)}</p>
                   </div>
 
-                  <div className="bg-white border-2 border-slate-200 rounded-2xl p-4 shadow-sm">
-                    <h4 className="text-[10px] font-black uppercase text-slate-500 mb-3">Paso 3: Motivo de la Devolución</h4>
-                    <select value={selectedReason} onChange={e => setSelectedReason(e.target.value)} className="w-full h-10 bg-slate-50 border border-slate-200 rounded-xl px-3 text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-red-500/20">
+                  <div className="bg-white border-2 border-[#9E9E9E] rounded-2xl p-4 shadow-sm">
+                    <h4 className="text-[10px] font-black uppercase text-black mb-3">Paso 3: Motivo de la Devolución</h4>
+                    <select value={selectedReason} onChange={e => setSelectedReason(e.target.value)} className="w-full h-10 bg-slate-50 border border-slate-200 rounded-xl px-3 text-sm font-black text-black outline-none focus:ring-2 focus:ring-red-500/20">
                       {RETURN_REASONS.map(r => (<option key={r.id} value={r.id}>{r.label}</option>))}
                     </select>
                   </div>
 
-                  <div className="bg-white border-2 border-slate-200 rounded-2xl p-4 shadow-sm">
-                    <h4 className="text-[10px] font-black uppercase text-slate-500 mb-3">Paso 4: Método de Reembolso</h4>
+                  <div className="bg-white border-2 border-[#9E9E9E] rounded-2xl p-4 shadow-sm">
+                    <h4 className="text-[10px] font-black uppercase text-black mb-3">Paso 4: Método de Reembolso</h4>
                     <div className="grid grid-cols-2 gap-2">
                       {returnMethodsList.map(m => (
                         <button key={m.id} onClick={() => setSelectedMethod(m.id)} className={cn("flex flex-col items-center gap-1.5 p-3 rounded-xl border-2 transition-all group", selectedMethod === m.id ? "bg-red-50 border-red-500" : "bg-slate-50 border-transparent hover:border-slate-300")}>
-                          <m.icon size={20} className={cn("transition-colors", selectedMethod === m.id ? "text-red-600" : "text-slate-400")} />
-                          <span className={cn("text-[9px] font-black tracking-tight", selectedMethod === m.id ? "text-red-700" : "text-slate-500")}>{m.label}</span>
+                          <m.icon size={20} className={cn("transition-colors", selectedMethod === m.id ? "text-red-600" : "text-black")} />
+                          <span className={cn("text-[9px] font-black tracking-tight", selectedMethod === m.id ? "text-red-700" : "text-black")}>{m.label}</span>
                         </button>
                       ))}
                     </div>
@@ -816,19 +816,19 @@ export default function ReturnsModule() {
                       <ShieldCheck size={18} className="text-amber-600" />
                       <h4 className="text-[10px] font-black uppercase text-amber-700">Paso 5: Autorización de Supervisor</h4>
                     </div>
-                    <Input type="password" maxLength={6} value={authPin} onChange={e => setAuthPin(e.target.value.replace(/\D/g, ''))} className="h-12 text-center text-2xl font-mono font-black border-amber-300 bg-white tracking-[0.5em] focus:ring-amber-500/20" placeholder="••••••" />
+                    <Input type="password" maxLength={6} value={authPin} onChange={e => setAuthPin(e.target.value.replace(/\D/g, ''))} className="h-12 text-center text-2xl font-mono font-black border-amber-300 bg-white tracking-[0.5em] text-black focus:ring-amber-500/20" placeholder="••••••" />
                   </div>
                 </div>
               </div>
             </div>
 
             <div className="bg-white border-t p-5 flex justify-between items-center shrink-0">
-              <div className="flex items-center gap-2 text-slate-400 text-xs">
+              <div className="flex items-center gap-2 text-black font-black text-xs">
                 <AlertCircle size={14} />
                 <span>Esta acción es irreversible y afecta inventario/caja</span>
               </div>
               <div className="flex gap-3">
-                <Button variant="ghost" onClick={() => setShowReturnModal(false)} className="px-6 font-bold text-slate-500">CANCELAR</Button>
+                <Button variant="ghost" onClick={() => setShowReturnModal(false)} className="px-6 font-black text-black">CANCELAR</Button>
                 <Button onClick={processReturn} disabled={!hasItemsToReturn || !authPin || isProcessing} className="bg-red-600 text-white font-black px-10 h-12 rounded-xl hover:bg-red-700 shadow-lg disabled:opacity-50">
                   {isProcessing ? <Loader2 size={20} className="animate-spin" /> : 'CONFIRMAR Y FINALIZAR'}
                 </Button>

@@ -302,47 +302,47 @@ export default function CartPanel({
 
         {/* Totales y botón de cobro */}
         <div className="border-t-4 border-black bg-white shrink-0 shadow-[0_-4px_20px_rgba(0,0,0,0.1)]">
-          <div className="p-6 space-y-4">
+          <div className="p-4 space-y-3">
             <div className="flex justify-between items-center">
-              <span className="text-lg font-black text-black uppercase tracking-widest">Subtotal:</span>
-              <span className="text-xl font-black text-black">{formatBs(subtotal)}</span>
+              <span className="text-base font-black text-black uppercase tracking-widest">Subtotal:</span>
+              <span className="text-lg font-black text-black">{formatBs(subtotal)}</span>
             </div>
             
             {hasAnyIvaProduct && iva > 0 && (
-              <div className="flex justify-between items-center border-t border-black/10 pt-2">
-                <span className="text-lg font-black text-black uppercase tracking-widest">IVA (16%):</span>
-                <span className="text-xl font-black text-black">{formatBs(iva)}</span>
+              <div className="flex justify-between items-center border-t border-black/10 pt-1">
+                <span className="text-base font-black text-black uppercase tracking-widest">IVA (16%):</span>
+                <span className="text-lg font-black text-black">{formatBs(iva)}</span>
               </div>
             )}
             
-            <div className="pt-4 mt-2 border-t-4 border-black flex justify-between items-end gap-6">
-              <div className="bg-primary/10 p-4 rounded-2xl border-2 border-black/20 flex-1">
-                <div className="text-sm text-black font-black uppercase tracking-widest mb-1">Equivalente en USD</div>
-                <div className="font-black text-4xl text-black">
+            <div className="pt-2 mt-1 border-t-2 border-black flex justify-between items-center gap-4">
+              <div className="bg-primary/10 p-3 rounded-xl border-2 border-black/20 flex-1">
+                <div className="text-[10px] text-black font-black uppercase tracking-widest mb-0.5">Equivalente en USD</div>
+                <div className="font-black text-2xl text-black">
                   {formatUsd(totalUsd)}
                 </div>
               </div>
               <div className="text-right flex-1">
-                <div className="text-sm text-black font-black uppercase tracking-widest mb-1">TOTAL A PAGAR (BS)</div>
-                <div className="font-black text-6xl text-black tracking-tighter">
+                <div className="text-[10px] text-black font-black uppercase tracking-widest mb-0.5">TOTAL A PAGAR (BS)</div>
+                <div className="font-black text-4xl text-black tracking-tighter">
                   {formatBs(total).replace('Bs. ', '')}
-                  <span className="text-xl ml-2">BS</span>
+                  <span className="text-lg ml-1">BS</span>
                 </div>
               </div>
             </div>
           </div>
 
-          <div className="p-6 pt-0">
+          <div className="p-4 pt-0">
             <button 
               disabled={cart.length === 0 || !isRegisterOpen || hasInsufficientKitStock}
               onClick={onCobrar}
-              className="w-full py-6 bg-black text-primary font-black text-3xl flex items-center justify-center gap-4 hover:scale-[1.02] active:scale-95 transition-all shadow-xl disabled:bg-gray-400 border-4 border-primary rounded-2xl"
+              className="w-full py-4 bg-primary text-black font-black text-xl flex items-center justify-center gap-3 hover:scale-[1.01] active:scale-95 transition-all shadow-lg disabled:bg-gray-400 border-4 border-black rounded-2xl"
             >
-              <Banknote size={40} /> COBRAR AHORA
+              <Banknote size={28} /> COBRAR AHORA
             </button>
             {hasInsufficientKitStock && (
-              <div className="bg-red-600 text-white text-center py-3 rounded-xl mt-4 font-black text-sm animate-pulse border-2 border-black">
-                ⚠️ ALERTA: HAY PRODUCTOS SIN STOCK SUFICIENTE EN ALMACÉN
+              <div className="bg-red-600 text-white text-center py-2 rounded-xl mt-2 font-black text-xs animate-pulse border-2 border-black">
+                ⚠️ ALERTA: HAY PRODUCTOS SIN STOCK SUFICIENTE
               </div>
             )}
           </div>

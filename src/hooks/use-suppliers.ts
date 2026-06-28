@@ -8,6 +8,7 @@ export function useSuppliers() {
   const { user } = useAuth();
   const [suppliers, setSuppliers] = useState<any[]>([]);
   const [invoices, setInvoices] = useState<any[]>([]);
+  const [purchaseItems, setPurchaseItems] = useState<any[]>([]);
   const [payments, setPayments] = useState<any[]>([]);
   const [isHydrated, setIsHydrated] = useState(false);
 
@@ -17,12 +18,14 @@ export function useSuppliers() {
     // ✅ CORREGIDO: Usar subscribeToSuppliersRealtime (está en syncService)
     const unsubSuppliers = syncService.subscribeToSuppliersRealtime(setSuppliers);
     const unsubInvoices = syncService.subscribeToPurchaseInvoices(setInvoices);
+    const unsubPurchaseItems = syncService.subscribeToPurchaseItems(setPurchaseItems);
     const unsubPayments = syncService.subscribeToSupplierPayments(setPayments as any);
     setIsHydrated(true);
 
     return () => {
       if (typeof unsubSuppliers === 'function') unsubSuppliers();
       if (typeof unsubInvoices === 'function') unsubInvoices();
+      if (typeof unsubPurchaseItems === 'function') unsubPurchaseItems();
       if (typeof unsubPayments === 'function') unsubPayments();
     };
   }, [user]);
@@ -75,6 +78,7 @@ export function useSuppliers() {
   return { 
     suppliers, 
     invoices, 
+    purchaseItems,
     payments, 
     addSupplier, 
     updateSupplier, 

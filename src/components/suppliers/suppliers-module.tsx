@@ -24,7 +24,7 @@ export default function SuppliersModule() {
   const { toast } = useToast();
   const { exchangeRate } = usePOSState();
   const { 
-    suppliers, invoices, payments,
+    suppliers, invoices, payments, purchaseItems,
     addSupplier, updateSupplier, deleteSupplier,
     addPayment
   } = useSuppliers();
@@ -314,7 +314,10 @@ export default function SuppliersModule() {
       </Dialog>
 
       <InvoiceDetailModal 
-        invoice={selectedInvoice} 
+        invoice={selectedInvoice ? {
+          ...selectedInvoice,
+          items: purchaseItems.filter((it: any) => String(it.invoiceId) === String(selectedInvoice.id))
+        } : null} 
         isOpen={showInvoiceDetail} 
         onClose={() => setShowInvoiceDetail(false)} 
         exchangeRate={exchangeRate}

@@ -1220,14 +1220,14 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
       <div className="flex justify-between items-center pt-3 px-6 flex-shrink-0">
         <div>
           <h2 className="text-xl font-headline font-black text-black">Catálogo de Inventario</h2>
-          <p className="text-xs text-black/50">Consulta de existencias y gestión de catálogo</p>
+          <p className="text-xs text-black font-black">Consulta de existencias y gestión de catálogo</p>
         </div>
         <div className="flex items-center gap-3">
           <Button 
             variant="outline" 
             size="sm" 
             onClick={() => setShowGlobalIvaModal(true)} 
-            className="h-8 text-[10px] font-black border-[#9E9E9E]"
+            className="h-8 text-[10px] font-black border-[#9E9E9E] text-black"
           >
             <Percent size={12} className="mr-1" /> Ajuste IVA Global
           </Button>
@@ -1242,10 +1242,10 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
         <button
           onClick={() => setActiveTab('catalogo')}
           className={cn(
-            "flex items-center gap-2 px-4 py-2 rounded-t-lg font-bold text-sm transition-all",
+            "flex items-center gap-2 px-4 py-2 rounded-t-lg font-black text-sm transition-all",
             activeTab === 'catalogo'
               ? "bg-white text-black border border-b-0 border-[#9E9E9E]"
-              : "text-black/60 hover:bg-white/50"
+              : "text-black hover:bg-white/50"
           )}
         >
           <Package size={14} />
@@ -1254,10 +1254,10 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
         <button
           onClick={() => setActiveTab('reporte')}
           className={cn(
-            "flex items-center gap-2 px-4 py-2 rounded-t-lg font-bold text-sm transition-all",
+            "flex items-center gap-2 px-4 py-2 rounded-t-lg font-black text-sm transition-all",
             activeTab === 'reporte'
               ? "bg-white text-black border border-b-0 border-[#9E9E9E]"
-              : "text-black/60 hover:bg-white/50"
+              : "text-black hover:bg-white/50"
           )}
         >
           <FileSpreadsheet size={14} />
@@ -1266,10 +1266,10 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
         <button
           onClick={() => setActiveTab('ajustes')}
           className={cn(
-            "flex items-center gap-2 px-4 py-2 rounded-t-lg font-bold text-sm transition-all",
+            "flex items-center gap-2 px-4 py-2 rounded-t-lg font-black text-sm transition-all",
             activeTab === 'ajustes'
               ? "bg-white text-black border border-b-0 border-[#9E9E9E]"
-              : "text-black/60 hover:bg-white/50"
+              : "text-black hover:bg-white/50"
           )}
         >
           <History size={14} />
@@ -1281,18 +1281,18 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
         <div className="flex-1 flex flex-col overflow-hidden px-6 mt-4">
           <div className="flex justify-between items-center mb-3 gap-2 flex-wrap flex-shrink-0">
             <div className="relative flex-1 max-w-sm">
-              <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-black/40" />
-              <Input placeholder="Buscar producto..." className="pl-9 h-8 border-[#9E9E9E] text-xs" value={search} onChange={(e) => setSearch(e.target.value)} />
+              <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-black" />
+              <Input placeholder="Buscar producto..." className="pl-9 h-8 border-[#9E9E9E] text-xs text-black font-black" value={search} onChange={(e) => setSearch(e.target.value)} />
             </div>
             <div className="flex items-center gap-1">
-              <select value={filterDepartment} onChange={(e) => setFilterDepartment(e.target.value)} className="h-8 border rounded-lg px-2 text-xs font-bold bg-white">
+              <select value={filterDepartment} onChange={(e) => setFilterDepartment(e.target.value)} className="h-8 border rounded-lg px-2 text-xs font-black bg-white text-black">
                 <option value="all">📁 Todos los Deptos.</option>
                 {Array.isArray(departments) && departments.map((d, i) => <option key={`${d}-${i}`} value={d}>{d}</option>)}
               </select>
               <button onClick={() => setShowDepartmentModal(true)} className="h-8 w-8 border rounded-lg flex items-center justify-center hover:bg-gray-100"><Settings size={13} /></button>
             </div>
             <div className="flex items-center gap-1">
-              <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)} className="h-8 border rounded-lg px-2 text-xs font-bold bg-white">
+              <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)} className="h-8 border rounded-lg px-2 text-xs font-black bg-white text-black">
                 <option value="all">🏷️ Todas las Cats.</option>
                 {Array.isArray(categories) && categories.map((c: any, i) => {
                   const id = typeof c === 'string' ? c : c.id;
@@ -1322,12 +1322,12 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
               <Table>
                 <TableHeader className="bg-[#E8E8E8] sticky top-0 z-10">
                   <TableRow>
-                    <TableHead className="text-[9px] font-black uppercase">Código</TableHead>
-                    <TableHead className="text-[9px] font-black uppercase">Producto</TableHead>
-                    <TableHead className="text-[9px] font-black uppercase text-center">Stock</TableHead>
-                    <TableHead className="text-[9px] font-black uppercase text-right">Precio $</TableHead>
-                    <TableHead className="text-[9px] font-black uppercase text-right">Precio Bs</TableHead>
-                    <TableHead className="text-[9px] font-black uppercase text-center">Acciones</TableHead>
+                    <TableHead className="text-[9px] font-black uppercase text-black">Código</TableHead>
+                    <TableHead className="text-[9px] font-black uppercase text-black">Producto</TableHead>
+                    <TableHead className="text-[9px] font-black uppercase text-center text-black">Stock</TableHead>
+                    <TableHead className="text-[9px] font-black uppercase text-right text-black">Precio $</TableHead>
+                    <TableHead className="text-[9px] font-black uppercase text-right text-black">Precio Bs</TableHead>
+                    <TableHead className="text-[9px] font-black uppercase text-center text-black">Acciones</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -1335,7 +1335,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                     .filter((p) => p && p.id && p.name)
                     .map((p, index) => (
                       <TableRow key={`${p.id}-${index}`} className="border-b border-[#9E9E9E]/40 hover:bg-[#F5F5F5]">
-                        <TableCell className="font-mono text-[10px] text-black/60">{p.barcode || ""}</TableCell>
+                        <TableCell className="font-mono text-[10px] text-black font-black">{p.barcode || ""}</TableCell>
                         <TableCell>
                           <p className="font-bold text-xs text-black">{p.name}</p>
                           <p className="text-[8px] font-bold text-primary uppercase">{getCategoryName(p.category)} | {p.department || 'Sin Dept.'}</p>
@@ -1359,7 +1359,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                     ))}
                   {filteredProducts.filter((p) => p && p.id && p.name).length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={6} className="text-center py-10 text-black/40 italic">No se encontraron productos</TableCell>
+                      <TableCell colSpan={6} className="text-center py-10 text-black font-black italic">No se encontraron productos</TableCell>
                     </TableRow>
                   )}
                 </TableBody>
@@ -1371,14 +1371,14 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
         <div className="flex-1 flex flex-col overflow-hidden px-6 mt-4">
           <div className="flex justify-between items-center mb-3 gap-2 flex-wrap flex-shrink-0">
             <div className="relative flex-1 max-w-sm">
-              <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-black/40" />
-              <Input placeholder="Buscar producto en el reporte..." className="pl-9 h-8 border-[#9E9E9E] text-xs" value={search} onChange={(e) => setSearch(e.target.value)} />
+              <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-black" />
+              <Input placeholder="Buscar producto en el reporte..." className="pl-9 h-8 border-[#9E9E9E] text-xs text-black font-black" value={search} onChange={(e) => setSearch(e.target.value)} />
             </div>
             <div className="flex items-center gap-1">
-              <select value={filterDepartment} onChange={(e) => setFilterDepartment(e.target.value)} className="h-8 border rounded-lg px-2 text-xs font-bold bg-white"><option value="all">📁 Todos los Deptos.</option>{Array.isArray(departments) && departments.map((d, i) => <option key={`${d}-${i}`} value={d}>{d}</option>)}</select>
+              <select value={filterDepartment} onChange={(e) => setFilterDepartment(e.target.value)} className="h-8 border rounded-lg px-2 text-xs font-black bg-white text-black"><option value="all">📁 Todos los Deptos.</option>{Array.isArray(departments) && departments.map((d, i) => <option key={`${d}-${i}`} value={d}>{d}</option>)}</select>
             </div>
             <div className="flex items-center gap-1">
-              <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)} className="h-8 border rounded-lg px-2 text-xs font-bold bg-white">
+              <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)} className="h-8 border rounded-lg px-2 text-xs font-black bg-white text-black">
                 <option value="all">🏷️ Todas las Cats.</option>
                 {Array.isArray(categories) && categories.map((c: any, i) => {
                   const id = typeof c === 'string' ? c : c.id;
@@ -1410,11 +1410,11 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                     .filter(p => !search || p.name.toLowerCase().includes(search.toLowerCase()) || (p.barcode || "").includes(search))
                     .map((p, index) => (
                       <TableRow key={`${p.id}-${index}`} className="border-b border-[#9E9E9E]/30 hover:bg-[#F5F5F5] py-1">
-                        <TableCell className="font-mono text-[9px] text-black/60 py-1.5">{p.barcode || ""}</TableCell>
+                        <TableCell className="font-mono text-[9px] text-black font-black py-1.5">{p.barcode || ""}</TableCell>
                         <TableCell className="py-1.5"><p className="font-bold text-xs text-black">{p.name}</p><p className="text-[7px] font-bold text-primary/70 uppercase">{getCategoryName(p.category)} | {p.department || 'Sin Dept.'}</p></TableCell>
-                        <TableCell className="text-right font-mono text-[10px] font-bold text-black/80 py-1.5">{formatUsd(p.costUsd || 0, 4)}</TableCell>
+                        <TableCell className="text-right font-mono text-[10px] font-bold text-black py-1.5">{formatUsd(p.costUsd || 0, 4)}</TableCell>
                         <TableCell className="text-center py-1.5"><span className={cn("px-2 py-0.5 rounded-full text-[8px] font-black", p.stock <= getProductMinStock(p) ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700")}>{p.stock} UDS</span></TableCell>
-                        <TableCell className="text-right font-mono text-[10px] font-black text-black/80 py-1.5">{formatUsd((p.costUsd || 0) * p.stock)}</TableCell>
+                        <TableCell className="text-right font-mono text-[10px] font-black text-black py-1.5">{formatUsd((p.costUsd || 0) * p.stock)}</TableCell>
                         <TableCell className="text-center py-1.5">
                           <div className="flex justify-center gap-1.5">
                             <button onClick={() => setViewingCostDetail(p)} className="h-7 w-7 rounded hover:bg-blue-100 text-blue-600 flex items-center justify-center" title="Ver detalle de costo"><Calculator size={14} /></button>
@@ -1427,7 +1427,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                     ))}
                   {reportProducts.filter(p => p && p.id && p.name).length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={6} className="text-center py-10 text-black/40 italic">No hay productos para mostrar con los filtros seleccionados</TableCell>
+                      <TableCell colSpan={6} className="text-center py-10 text-black font-black italic">No hay productos para mostrar con los filtros seleccionados</TableCell>
                     </TableRow>
                   )}
                 </TableBody>
@@ -1441,31 +1441,31 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
             </div>
           </div>
           <div className="mt-3 bg-gray-100 rounded-lg p-2 flex justify-between items-center flex-shrink-0">
-            <div className="text-[9px] text-black/60"><span className="font-bold">{reportProducts.filter(p => !search || p.name.toLowerCase().includes(search.toLowerCase()) || (p.barcode || "").includes(search)).length}</span> productos mostrados</div>
-            <div className="text-[9px] text-black/60">Valor total inventario: <span className="font-bold text-black">{formatUsd(reportProducts.reduce((sum, p) => sum + ((p.costUsd || 0) * p.stock), 0))}</span></div>
+            <div className="text-[9px] text-black font-black"><span className="font-bold">{reportProducts.filter(p => !search || p.name.toLowerCase().includes(search.toLowerCase()) || (p.barcode || "").includes(search)).length}</span> productos mostrados</div>
+            <div className="text-[9px] text-black font-black">Valor total inventario: <span className="font-bold text-black">{formatUsd(reportProducts.reduce((sum, p) => sum + ((p.costUsd || 0) * p.stock), 0))}</span></div>
           </div>
         </div>
       ) : (
         <div className="flex-1 flex flex-col overflow-hidden px-6 mt-4">
           <div className="flex justify-between items-center mb-3 gap-2 flex-wrap flex-shrink-0">
             <div className="flex items-center gap-2">
-              <span className="text-[10px] font-bold uppercase text-black/60">Filtrar por:</span>
+              <span className="text-[10px] font-black uppercase text-black">Filtrar por:</span>
               <div className="flex gap-1">
-                <button onClick={() => setDateRangePreset('day')} className={cn("px-2 py-1 text-[10px] font-bold rounded border", dateRangePreset === 'day' ? "bg-primary text-black" : "bg-white")}>Hoy</button>
-                <button onClick={() => setDateRangePreset('month')} className={cn("px-2 py-1 text-[10px] font-bold rounded border", dateRangePreset === 'month' ? "bg-primary text-black" : "bg-white")}>Este Mes</button>
-                <button onClick={() => setDateRangePreset('year')} className={cn("px-2 py-1 text-[10px] font-bold rounded border", dateRangePreset === 'year' ? "bg-primary text-black" : "bg-white")}>Este Año</button>
-                <button onClick={() => setDateRangePreset('custom')} className={cn("px-2 py-1 text-[10px] font-bold rounded border", dateRangePreset === 'custom' ? "bg-primary text-black" : "bg-white")}>Personalizado</button>
+                <button onClick={() => setDateRangePreset('day')} className={cn("px-2 py-1 text-[10px] font-black rounded border", dateRangePreset === 'day' ? "bg-primary text-black" : "bg-white text-black")}>Hoy</button>
+                <button onClick={() => setDateRangePreset('month')} className={cn("px-2 py-1 text-[10px] font-black rounded border", dateRangePreset === 'month' ? "bg-primary text-black" : "bg-white text-black")}>Este Mes</button>
+                <button onClick={() => setDateRangePreset('year')} className={cn("px-2 py-1 text-[10px] font-black rounded border", dateRangePreset === 'year' ? "bg-primary text-black" : "bg-white text-black")}>Este Año</button>
+                <button onClick={() => setDateRangePreset('custom')} className={cn("px-2 py-1 text-[10px] font-black rounded border", dateRangePreset === 'custom' ? "bg-primary text-black" : "bg-white text-black")}>Personalizado</button>
               </div>
             </div>
             {dateRangePreset === 'custom' && (
               <div className="flex items-center gap-2">
-                <Input type="date" value={adjustmentStartDate} onChange={e => setAdjustmentStartDate(e.target.value)} className="h-7 text-xs w-36" />
-                <span className="text-xs">-</span>
-                <Input type="date" value={adjustmentEndDate} onChange={e => setAdjustmentEndDate(e.target.value)} className="h-7 text-xs w-36" />
+                <Input type="date" value={adjustmentStartDate} onChange={e => setAdjustmentStartDate(e.target.value)} className="h-7 text-xs w-36 font-black" />
+                <span className="text-xs font-black">-</span>
+                <Input type="date" value={adjustmentEndDate} onChange={e => setAdjustmentEndDate(e.target.value)} className="h-7 text-xs w-36 font-black" />
               </div>
             )}
-            <div className="ml-auto text-xs bg-gray-100 px-3 py-1 rounded-full">
-              Total ajustes: <span className="font-bold">{formatUsd(totalAdjustmentUsd)}</span>
+            <div className="ml-auto text-xs bg-gray-100 px-3 py-1 rounded-full font-black text-black">
+              Total ajustes: <span className="font-black">{formatUsd(totalAdjustmentUsd)}</span>
             </div>
           </div>
           
@@ -1474,41 +1474,41 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
               <table className="w-full text-xs">
                 <thead className="bg-gray-100 sticky top-0">
                   <tr>
-                    <th className="p-2 text-left">Fecha</th>
-                    <th className="p-2 text-left">Producto</th>
-                    <th className="p-2 text-center">Tipo</th>
-                    <th className="p-2 text-right">Cantidad</th>
-                    <th className="p-2 text-right">Costo USD</th>
-                    <th className="p-2 text-right">Valor Ajuste (Bs)</th>
-                    <th className="p-2 text-left">Motivo</th>
+                    <th className="p-2 text-left font-black text-black">Fecha</th>
+                    <th className="p-2 text-left font-black text-black">Producto</th>
+                    <th className="p-2 text-center font-black text-black">Tipo</th>
+                    <th className="p-2 text-right font-black text-black">Cantidad</th>
+                    <th className="p-2 text-right font-black text-black">Costo USD</th>
+                    <th className="p-2 text-right font-black text-black">Valor Ajuste (Bs)</th>
+                    <th className="p-2 text-left font-black text-black">Motivo</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredAdjustments.map((adj, idx) => (
                     <tr key={`${adj.id}_${idx}`} className="border-b border-gray-100 hover:bg-gray-50">
-                      <td className="p-2 whitespace-nowrap text-[11px] font-mono">{formatVenezuelaDateTime(adj.date)}</td>
+                      <td className="p-2 whitespace-nowrap text-[11px] font-mono font-black text-black">{formatVenezuelaDateTime(adj.date)}</td>
                       <td className="p-2">
-                        <div className="font-bold">{adj.productName}</div>
-                        <div className="text-[9px] text-black/50">{adj.productBarcode}</div>
+                        <div className="font-black text-black">{adj.productName}</div>
+                        <div className="text-[9px] text-black font-black">{adj.productBarcode}</div>
                       </td>
                       <td className="p-2 text-center">
-                        <span className={cn("px-2 py-0.5 rounded-full text-[9px] font-bold", adj.quantity > 0 ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700")}>
+                        <span className={cn("px-2 py-0.5 rounded-full text-[9px] font-black", adj.quantity > 0 ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700")}>
                           {adj.quantity > 0 ? "INGRESO" : "EGRESO"}
                         </span>
                       </td>
-                      <td className="p-2 text-right font-mono">{Math.abs(adj.quantity)} uds</td>
-                      <td className="p-2 text-right font-mono">{formatUsd(adj.costUsd || 0, 4)}</td>
-                      <td className="p-2 text-right font-mono font-bold">{formatBs(Math.abs(adj.quantity) * (adj.costUsd || 0) * state.exchangeRate)}</td>
-                      <td className="p-2 text-left max-w-[200px] truncate" title={adj.note || adj.reference}>{adj.note || adj.reference}</td>
+                      <td className="p-2 text-right font-mono font-black text-black">{Math.abs(adj.quantity)} uds</td>
+                      <td className="p-2 text-right font-mono font-black text-black">{formatUsd(adj.costUsd || 0, 4)}</td>
+                      <td className="p-2 text-right font-mono font-black text-black">{formatBs(Math.abs(adj.quantity) * (adj.costUsd || 0) * state.exchangeRate)}</td>
+                      <td className="p-2 text-left max-w-[200px] truncate font-black text-black" title={adj.note || adj.reference}>{adj.note || adj.reference}</td>
                     </tr>
                   ))}
                   {filteredAdjustments.length === 0 && (
-                    <tr><td colSpan={7} className="p-4 text-center text-black/40 italic">No hay ajustes manuales en el período seleccionado</td></tr>
+                    <tr><td colSpan={7} className="p-4 text-center text-black font-black italic">No hay ajustes manuales en el período seleccionado</td></tr>
                   )}
                 </tbody>
               </table>
             </div>
-            <div className="bg-gray-50 p-2 border-t text-[10px] text-black/40 flex justify-between">
+            <div className="bg-gray-50 p-2 border-t text-[10px] text-black font-black flex justify-between">
               <span>{filteredAdjustments.length} registros</span>
               <span>Los ajustes generan automáticamente asientos contables (ingresos/egresos)</span>
             </div>
@@ -1526,35 +1526,35 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
               </div>
             </DialogHeader>
             <div className="flex-1 overflow-y-auto p-4">
-              <div className="text-center mb-4"><p className="font-bold text-base">{viewingCostDetail.name}</p><p className="text-[9px] text-black/50">{viewingCostDetail.barcode}</p></div>
+              <div className="text-center mb-4"><p className="font-black text-base text-black">{viewingCostDetail.name}</p><p className="text-[9px] text-black font-black">{viewingCostDetail.barcode}</p></div>
               <div className="space-y-3">
-                <div className="bg-gray-50 rounded-lg p-3"><div className="flex justify-between items-center"><span className="text-[10px] font-bold uppercase text-black/60">Costo Actual (Ponderado)</span><span className="font-mono text-lg font-black text-blue-600">{formatUsd(viewingCostDetail.costUsd || 0, 4)}</span></div></div>
+                <div className="bg-gray-50 rounded-lg p-3"><div className="flex justify-between items-center"><span className="text-[10px] font-black uppercase text-black">Costo Actual (Ponderado)</span><span className="font-mono text-lg font-black text-blue-600">{formatUsd(viewingCostDetail.costUsd || 0, 4)}</span></div></div>
                 <div className="border-t border-gray-200 pt-3">
-                  <p className="text-[9px] font-bold uppercase text-black/60 mb-2">Historial de Costos (últimas compras)</p>
+                  <p className="text-[9px] font-black uppercase text-black mb-2">Historial de Costos (últimas compras)</p>
                   <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
                     {(() => {
                       const entries = kardexEntries[Number(viewingCostDetail.id)] || [];
                       const purchaseEntries = entries.filter(e => e.type === 'entrada_compra' || e.type === 'compra').sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-                      if (purchaseEntries.length === 0) return <p className="text-[9px] text-black/40 italic text-center">No hay registros de compras previas</p>;
+                      if (purchaseEntries.length === 0) return <p className="text-[9px] text-black font-black italic text-center">No hay registros de compras previas</p>;
                       return purchaseEntries.map((entry, idx) => {
                         const previousEntry = purchaseEntries[idx + 1];
                         const previousCost = previousEntry?.costUsd;
                         const newCost = entry.costUsd;
                         return (
                           <div key={idx} className="border border-gray-200 rounded-lg p-2 bg-white">
-                            <div className="flex justify-between items-center text-[10px]"><span className="text-black/60">{new Date(entry.date).toLocaleDateString('es-VE')}</span><span className="font-mono font-bold text-blue-600">{formatUsd(newCost || 0, 4)}</span><span className="text-[8px] text-black/40">x{entry.quantity} uds</span></div>
-                            {previousCost !== undefined && (<div className="flex justify-between items-center text-[9px] mt-1 pt-1 border-t border-gray-100"><span className="text-black/40">Costo anterior:</span><span className="font-mono text-black/60">{formatUsd(previousCost, 4)}</span><span className="text-black/40">→</span><span className="font-mono font-bold text-green-600">{formatUsd(newCost || 0, 4)}</span></div>)}
-                            {idx === 0 && purchaseEntries.length > 1 && (<div className="flex justify-between items-center text-[9px] mt-1 pt-1 border-t border-blue-100"><span className="text-blue-600">📊 Variación:</span>{(() => { const prev = purchaseEntries[1]?.costUsd; if (prev && newCost) { const variation = ((newCost - prev) / prev) * 100; return <span className={cn("font-mono font-bold", variation >= 0 ? "text-red-600" : "text-green-600")}>{variation >= 0 ? `+${variation.toFixed(2)}%` : `${variation.toFixed(2)}%`}</span> } return null; })()}</div>)}
+                            <div className="flex justify-between items-center text-[10px]"><span className="text-black font-black">{new Date(entry.date).toLocaleDateString('es-VE')}</span><span className="font-mono font-black text-blue-600">{formatUsd(newCost || 0, 4)}</span><span className="text-[8px] text-black font-black">x{entry.quantity} uds</span></div>
+                            {previousCost !== undefined && (<div className="flex justify-between items-center text-[9px] mt-1 pt-1 border-t border-gray-100"><span className="text-black font-black">Costo anterior:</span><span className="font-mono text-black font-black">{formatUsd(previousCost, 4)}</span><span className="text-black font-black">→</span><span className="font-mono font-bold text-green-600">{formatUsd(newCost || 0, 4)}</span></div>)}
+                            {idx === 0 && purchaseEntries.length > 1 && (<div className="flex justify-between items-center text-[9px] mt-1 pt-1 border-t border-blue-100"><span className="text-blue-600 font-black">📊 Variación:</span>{(() => { const prev = purchaseEntries[1]?.costUsd; if (prev && newCost) { const variation = ((newCost - prev) / prev) * 100; return <span className={cn("font-mono font-black", variation >= 0 ? "text-red-600" : "text-green-600")}>{variation >= 0 ? `+${variation.toFixed(2)}%` : `${variation.toFixed(2)}%`}</span> } return null; })()}</div>)}
                           </div>
                         );
                       });
                     })()}
                   </div>
                 </div>
-                <div className="bg-amber-50 rounded-lg p-2 mt-2 border border-amber-200 flex-shrink-0"><p className="text-[7px] text-amber-700 text-center">El costo actual se calcula mediante <strong>Promedio Ponderado (CPP)</strong><br />Fórmula: ((Stock Ant × Costo Ant) + (Cantidad Nueva × Costo Nuevo)) / Stock Total</p></div>
+                <div className="bg-amber-50 rounded-lg p-2 mt-2 border border-amber-200 flex-shrink-0"><p className="text-[7px] text-amber-700 text-center font-black">El costo actual se calcula mediante <strong>Promedio Ponderado (CPP)</strong><br />Fórmula: ((Stock Ant × Costo Ant) + (Cantidad Nueva × Costo Nuevo)) / Stock Total</p></div>
               </div>
             </div>
-            <div className="bg-gray-50 p-2 border-t flex justify-end flex-shrink-0"><Button onClick={() => setViewingCostDetail(null)} variant="ghost" size="sm" className="h-7 text-xs">CERRAR</Button></div>
+            <div className="bg-gray-50 p-2 border-t flex justify-end flex-shrink-0"><Button onClick={() => setViewingCostDetail(null)} variant="ghost" size="sm" className="h-7 text-xs font-black text-black">CERRAR</Button></div>
           </DialogContent>
         </Dialog>
       )}
@@ -1566,8 +1566,8 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
               <div className="flex justify-between items-center">
                 <div>
                   <DialogTitle className="text-xl font-black flex items-center gap-2"><History size={20} /> Tarjeta Kardex</DialogTitle>
-                  <p className="text-sm font-bold opacity-90 mt-1">{viewingKardex.name}</p>
-                  <p className="text-[11px] opacity-70 font-mono">{viewingKardex.barcode}</p>
+                  <p className="text-sm font-black opacity-90 mt-1">{viewingKardex.name}</p>
+                  <p className="text-[11px] opacity-70 font-mono font-black">{viewingKardex.barcode}</p>
                 </div>
                 <div className="flex items-center gap-3">
                   <button onClick={() => exportKardexToPDF(viewingKardex)} className="text-white/70 hover:text-white p-2 transition-colors rounded-lg hover:bg-white/10" title="Exportar a PDF"><Printer size={18} /></button>
@@ -1579,7 +1579,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
             </DialogHeader>
             <div className="p-5 overflow-y-auto flex-1 bg-gray-50">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl p-4 shadow-sm border border-green-200"><p className="text-[11px] font-black uppercase text-green-700 tracking-wider">📦 STOCK ACTUAL</p><p className={cn("text-3xl font-black mt-1", viewingKardex.stock === 0 ? "text-red-600" : "text-green-700")}>{viewingKardex.stock.toLocaleString('es-VE')} <span className="text-base font-bold">UDS</span></p></div>
+                <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl p-4 shadow-sm border border-green-200"><p className="text-[11px] font-black uppercase text-green-700 tracking-wider">📦 STOCK ACTUAL</p><p className={cn("text-3xl font-black mt-1", viewingKardex.stock === 0 ? "text-red-600" : "text-green-700")}>{viewingKardex.stock.toLocaleString('es-VE')} <span className="text-base font-black">UDS</span></p></div>
                 <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-4 shadow-sm border border-blue-200"><p className="text-[11px] font-black uppercase text-blue-700 tracking-wider">💰 COSTO PROMEDIO ACTUAL</p><p className="text-3xl font-black text-blue-700 mt-1">{formatUsd(viewingKardex.costUsd || 0, 4)}</p></div>
                 <div className="bg-gradient-to-br from-amber-50 to-amber-100 rounded-xl p-4 shadow-sm border border-amber-200"><p className="text-[11px] font-black uppercase text-amber-700 tracking-wider">💵 VALOR INVENTARIO</p><p className="text-3xl font-black text-amber-700 mt-1">{formatUsd((viewingKardex.costUsd || 0) * viewingKardex.stock)}</p></div>
               </div>
@@ -1588,13 +1588,13 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                   <table className="w-full text-left min-w-[900px]">
                     <thead className="bg-gray-100 border-b-2 border-gray-300">
                       <tr>
-                        <th className="p-3 text-[12px] font-black uppercase text-gray-700 whitespace-nowrap">FECHA</th>
-                        <th className="p-3 text-[12px] font-black uppercase text-gray-700 whitespace-nowrap">TIPO</th>
-                        <th className="p-3 text-[12px] font-black uppercase text-gray-700 whitespace-nowrap">DETALLE</th>
-                        <th className="p-3 text-[12px] font-black uppercase text-gray-700 text-right whitespace-nowrap">ENTRADA</th>
-                        <th className="p-3 text-[12px] font-black uppercase text-gray-700 text-right whitespace-nowrap">SALIDA</th>
-                        <th className="p-3 text-[12px] font-black uppercase text-gray-700 text-right whitespace-nowrap">SALDO</th>
-                        <th className="p-3 text-[12px] font-black uppercase text-gray-700 text-right whitespace-nowrap">COSTO PROM.</th>
+                        <th className="p-3 text-[12px] font-black uppercase text-black whitespace-nowrap">FECHA</th>
+                        <th className="p-3 text-[12px] font-black uppercase text-black whitespace-nowrap">TIPO</th>
+                        <th className="p-3 text-[12px] font-black uppercase text-black whitespace-nowrap">DETALLE</th>
+                        <th className="p-3 text-[12px] font-black uppercase text-black text-right whitespace-nowrap">ENTRADA</th>
+                        <th className="p-3 text-[12px] font-black uppercase text-black text-right whitespace-nowrap">SALIDA</th>
+                        <th className="p-3 text-[12px] font-black uppercase text-black text-right whitespace-nowrap">SALDO</th>
+                        <th className="p-3 text-[12px] font-black uppercase text-black text-right whitespace-nowrap">COSTO PROM.</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
@@ -1613,13 +1613,13 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                           } catch(e) { formattedDate = entry.date; }
                           return (
                             <tr key={`${entry.id}_${idx}`} className="hover:bg-gray-50 transition-colors">
-                              <td className="p-3 font-mono text-[12px] font-semibold text-gray-700 whitespace-nowrap">{formattedDate}</td>
+                              <td className="p-3 font-mono text-[12px] font-black text-black whitespace-nowrap">{formattedDate}</td>
                               <td className="p-3 whitespace-nowrap"><span className={cn("px-2 py-1 rounded-full text-[10px] font-black", typeInfo.badgeColor)}>{typeInfo.label}</span></td>
-                              <td className="p-3 text-[11px] text-gray-600 max-w-[250px] truncate whitespace-nowrap">{detalle}</td>
+                              <td className="p-3 text-[11px] text-black font-black max-w-[250px] truncate whitespace-nowrap">{detalle}</td>
                               <td className="p-3 text-right font-mono text-[13px] font-black text-green-600 whitespace-nowrap">{entrada > 0 ? entrada.toLocaleString('es-VE') : '-'}</td>
                               <td className="p-3 text-right font-mono text-[13px] font-black text-red-600 whitespace-nowrap">{salida > 0 ? salida.toLocaleString('es-VE') : '-'}</td>
                               <td className="p-3 text-right font-mono text-[13px] font-black text-blue-700 whitespace-nowrap">{entry.newStock.toLocaleString('es-VE')}</td>
-                              <td className="p-3 text-right font-mono text-[12px] font-bold text-gray-800 whitespace-nowrap">{entry.costUsd ? formatUsd(entry.costUsd, 4) : '-'}</td>
+                              <td className="p-3 text-right font-mono text-[12px] font-black text-black whitespace-nowrap">{entry.costUsd ? formatUsd(entry.costUsd, 4) : '-'}</td>
                             </tr>
                           );
                         });
@@ -1627,16 +1627,16 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                       {(() => {
                         const entries = getKardexForProduct(Number(viewingKardex.id));
                         return entries.length === 0 && (
-                          <tr><td colSpan={7} className="text-center py-10 text-gray-400 italic text-sm">No hay movimientos registrados</td></tr>
+                          <tr><td colSpan={7} className="text-center py-10 text-black font-black italic text-sm">No hay movimientos registrados</td></tr>
                         );
                       })()}
                     </tbody>
                   </table>
                 </div>
               </div>
-              <div className="mt-4 text-[10px] text-gray-400 text-center border-t pt-3">Los movimientos reflejan el historial completo de inventario del producto</div>
+              <div className="mt-4 text-[10px] text-black font-black text-center border-t pt-3">Los movimientos reflejan el historial completo de inventario del producto</div>
             </div>
-            <div className="bg-gray-100 p-3 border-t flex justify-end"><Button onClick={() => setViewingKardex(null)} variant="ghost" className="text-sm font-bold px-5">CERRAR</Button></div>
+            <div className="bg-gray-100 p-3 border-t flex justify-end"><Button onClick={() => setViewingKardex(null)} variant="ghost" className="text-sm font-black px-5 text-black">CERRAR</Button></div>
           </DialogContent>
         </Dialog>
       )}
@@ -1660,11 +1660,11 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                 type="text" 
                 value={adjustmentDelta} 
                 onChange={(e) => setAdjustmentDelta(e.target.value)} 
-                className="text-sm font-mono" 
+                className="text-sm font-mono font-black text-black" 
                 placeholder="Ej: +5 o -3" 
               />
               {adjustingStock && (
-                <p className="text-[8px] text-black/50 mt-1">
+                <p className="text-[8px] text-black font-black mt-1">
                   Stock actual: {adjustingStock.stock} uds → Nuevo stock: {
                     (() => {
                       const raw = adjustmentDelta.trim();
@@ -1686,12 +1686,12 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
                 value={adjustmentReason} 
                 onChange={(e) => setAdjustmentReason(e.target.value)} 
                 rows={2} 
-                className="w-full border rounded-lg px-2 py-1 text-xs resize-none" 
+                className="w-full border rounded-lg px-2 py-1 text-xs resize-none font-black text-black" 
                 placeholder="Ej: Rotura, merma, inventario físico, sobrante..." 
               />
             </div>
             <div className="flex justify-end gap-2">
-              <Button variant="ghost" size="sm" onClick={() => setAdjustingStock(null)}>CANCELAR</Button>
+              <Button variant="ghost" size="sm" onClick={() => setAdjustingStock(null)} className="font-black text-black">CANCELAR</Button>
               <Button onClick={confirmStockAdjustmentRequest} className="bg-amber-500 text-white font-black h-7 text-xs px-4">
                 SOLICITAR AJUSTE
               </Button>
@@ -1703,7 +1703,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
       <Dialog open={showAuthCodeModal} onOpenChange={setShowAuthCodeModal}>
         <DialogContent className="bg-white max-w-md p-0 rounded-xl">
           <DialogHeader className="bg-red-600 p-3 text-white rounded-t-xl"><DialogTitle className="text-sm font-black flex items-center gap-2"><AlertTriangle size={14} /> Autorización requerida</DialogTitle></DialogHeader>
-          <div className="p-4 space-y-3"><p className="text-xs text-black/70">Ingrese el código de autorización para realizar este ajuste de inventario:</p><Input type="password" placeholder="Código de seguridad" value={authCodeInput} onChange={(e) => setAuthCodeInput(e.target.value)} className="font-mono text-center text-base" autoFocus /><div className="flex justify-end gap-2"><Button variant="ghost" onClick={() => setShowAuthCodeModal(false)}>Cancelar</Button><Button onClick={verifyAuthCode} className="bg-red-600 text-white">Verificar y Ajustar</Button></div></div>
+          <div className="p-4 space-y-3"><p className="text-xs text-black font-black">Ingrese el código de autorización para realizar este ajuste de inventario:</p><Input type="password" placeholder="Código de seguridad" value={authCodeInput} onChange={(e) => setAuthCodeInput(e.target.value)} className="font-mono text-center text-base font-black text-black" autoFocus /><div className="flex justify-end gap-2"><Button variant="ghost" onClick={() => setShowAuthCodeModal(false)} className="font-black text-black">Cancelar</Button><Button onClick={verifyAuthCode} className="bg-red-600 text-white font-black">Verificar y Ajustar</Button></div></div>
         </DialogContent>
       </Dialog>
       
@@ -1711,16 +1711,16 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
         <DialogContent className="bg-white max-w-md p-0 rounded-xl">
           <DialogHeader className="bg-[#1A2C4E] p-3 text-white rounded-t-xl"><DialogTitle className="text-xs font-black">🏷️ Gestionar Categorías</DialogTitle></DialogHeader>
           <div className="p-3">
-            <div className="flex gap-2 mb-3"><Input placeholder="Nueva categoría..." value={newCategory} onChange={(e) => setNewCategory(e.target.value)} className="flex-1 h-7 text-xs" onKeyPress={(e) => e.key === 'Enter' && addCategory()} /><Button onClick={addCategory} className="bg-primary text-black h-7 text-xs px-3">AGREGAR</Button></div>
+            <div className="flex gap-2 mb-3"><Input placeholder="Nueva categoría..." value={newCategory} onChange={(e) => setNewCategory(e.target.value)} className="flex-1 h-7 text-xs font-black text-black" onKeyPress={(e) => e.key === 'Enter' && addCategory()} /><Button onClick={addCategory} className="bg-primary text-black h-7 text-xs px-3 font-black">AGREGAR</Button></div>
             <div className="max-h-52 overflow-y-auto border rounded-lg divide-y">{Array.isArray(categories) && categories.map((cat: any, i) => (
               <div key={`${typeof cat === 'string' ? cat : cat.id}-${i}`} className="flex justify-between items-center px-2 py-1.5">
-                <span className="text-xs">{typeof cat === 'string' ? cat : cat.name}</span>
+                <span className="text-xs font-black text-black">{typeof cat === 'string' ? cat : cat.name}</span>
                 {(typeof cat === 'string' ? cat : cat.id) !== 'Otro' && (
                   <button onClick={() => deleteCategory(typeof cat === 'string' ? {id: cat, name: cat} : cat)} className="text-red-500 hover:text-red-700"><Trash2 size={12} /></button>
                 )}
               </div>
             ))}</div>
-            <p className="text-[8px] text-black/40 mt-2 text-center">* La categoría "Otro" no se puede eliminar</p>
+            <p className="text-[8px] text-black font-black mt-2 text-center">* La categoría "Otro" no se puede eliminar</p>
           </div>
         </DialogContent>
       </Dialog>
@@ -1729,9 +1729,9 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
         <DialogContent className="bg-white max-w-md p-0 rounded-xl">
           <DialogHeader className="bg-[#1A2C4E] p-3 text-white rounded-t-xl"><DialogTitle className="text-xs font-black">📁 Gestionar Departamentos</DialogTitle></DialogHeader>
           <div className="p-3">
-            <div className="flex gap-2 mb-3"><Input placeholder="Nuevo departamento..." value={newDepartment} onChange={(e) => setNewDepartment(e.target.value)} className="flex-1 h-7 text-xs" onKeyPress={(e) => e.key === 'Enter' && addDepartment()} /><Button onClick={addDepartment} className="bg-primary text-black h-7 text-xs px-3">AGREGAR</Button></div>
-            <div className="max-h-52 overflow-y-auto border rounded-lg divide-y">{Array.isArray(departments) && departments.map((dept, i) => (<div key={`${dept}-${i}`} className="flex justify-between items-center px-2 py-1.5"><span className="text-xs">{dept}</span>{dept !== 'Otros' && (<button onClick={() => deleteDepartment(dept)} className="text-red-500 hover:text-red-700"><Trash2 size={12} /></button>)}</div>))}</div>
-            <p className="text-[8px] text-black/40 mt-2 text-center">* El departamento "Otros" no se puede eliminar</p>
+            <div className="flex gap-2 mb-3"><Input placeholder="Nuevo departamento..." value={newDepartment} onChange={(e) => setNewDepartment(e.target.value)} className="flex-1 h-7 text-xs font-black text-black" onKeyPress={(e) => e.key === 'Enter' && addDepartment()} /><Button onClick={addDepartment} className="bg-primary text-black h-7 text-xs px-3 font-black">AGREGAR</Button></div>
+            <div className="max-h-52 overflow-y-auto border rounded-lg divide-y">{Array.isArray(departments) && departments.map((dept, i) => (<div key={`${dept}-${i}`} className="flex justify-between items-center px-2 py-1.5"><span className="text-xs font-black text-black">{dept}</span>{dept !== 'Otros' && (<button onClick={() => deleteDepartment(dept)} className="text-red-500 hover:text-red-700"><Trash2 size={12} /></button>)}</div>))}</div>
+            <p className="text-[8px] text-black font-black mt-2 text-center">* El departamento "Otros" no se puede eliminar</p>
           </div>
         </DialogContent>
       </Dialog>
@@ -1740,9 +1740,9 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
         <DialogContent className="bg-white max-w-md p-0 rounded-xl">
           <DialogHeader className="bg-[#1A2C4E] p-3 text-white rounded-t-xl"><DialogTitle className="text-sm font-black">Ajuste de IVA Global</DialogTitle></DialogHeader>
           <div className="p-4 space-y-4">
-            <div><label className="text-[10px] font-black uppercase text-black/60 block mb-1">Nuevo porcentaje de IVA (%)</label><Input type="number" step="0.1" value={newGlobalIva} onChange={(e) => setNewGlobalIva(Number(e.target.value))} className="font-bold" /></div>
-            <div className="bg-amber-50 p-2 rounded-lg border border-amber-200"><p className="text-[9px] text-amber-700 flex items-center gap-1"><AlertTriangle size={10} /> Esta acción actualizará TODOS los productos marcados como "Con I.V.A.".</p><p className="text-[8px] text-amber-600 mt-1">Solo se puede realizar si la caja está cerrada.</p></div>
-            <div className="flex justify-end gap-2"><Button variant="ghost" onClick={() => setShowGlobalIvaModal(false)}>CANCELAR</Button><Button onClick={applyGlobalIva} className="bg-primary text-black font-black">APLICAR CAMBIO</Button></div>
+            <div><label className="text-[10px] font-black uppercase text-black block mb-1">Nuevo porcentaje de IVA (%)</label><Input type="number" step="0.1" value={newGlobalIva} onChange={(e) => setNewGlobalIva(Number(e.target.value))} className="font-black text-black" /></div>
+            <div className="bg-amber-50 p-2 rounded-lg border border-amber-200"><p className="text-[9px] text-amber-700 flex items-center gap-1 font-black"><AlertTriangle size={10} /> Esta acción actualizará TODOS los productos marcados como "Con I.V.A.".</p><p className="text-[8px] text-amber-600 mt-1 font-black">Solo se puede realizar si la caja está cerrada.</p></div>
+            <div className="flex justify-end gap-2"><Button variant="ghost" onClick={() => setShowGlobalIvaModal(false)} className="font-black text-black">CANCELAR</Button><Button onClick={applyGlobalIva} className="bg-primary text-black font-black">APLICAR CAMBIO</Button></div>
           </div>
         </DialogContent>
       </Dialog>

@@ -130,7 +130,7 @@ export default function AccountingModule() {
       <div className="flex justify-between items-center mb-6">
         <div>
           <h2 className="text-2xl font-headline font-black text-black uppercase">Libro Diario - Contabilidad</h2>
-          <p className="text-sm text-black/60 mt-1 uppercase tracking-widest">Registro de Ingresos y Egresos en Tiempo Real</p>
+          <p className="text-sm text-black font-black mt-1 uppercase tracking-widest">Registro de Ingresos y Egresos en Tiempo Real</p>
         </div>
         <Button onClick={() => setShowExpenseModal(true)} className="bg-red-600 hover:bg-red-700 text-white font-black border-2 border-black shadow-lg h-10 px-6 text-sm">
           <Plus size={18} className="mr-2" /> REGISTRAR EGRESO
@@ -141,30 +141,30 @@ export default function AccountingModule() {
         <div className="bg-white rounded-xl border border-[#9E9E9E] p-4 shadow-sm">
           <div className="flex items-center gap-2 mb-2">
             <TrendingUp size={18} className="text-green-600" />
-            <p className="text-[10px] font-bold text-black/60 uppercase tracking-widest">Total Ingresos</p>
+            <p className="text-[10px] font-black text-black uppercase tracking-widest">Total Ingresos</p>
           </div>
           <p className="text-2xl font-black text-green-700">{formatUsd(totalIngresosUsd)}</p>
-          <p className="text-xs text-black/40 font-mono mt-0.5">{formatBs(totalIngresosBs)}</p>
+          <p className="text-xs text-black font-black font-mono mt-0.5">{formatBs(totalIngresosBs)}</p>
         </div>
         
         <div className="bg-white rounded-xl border border-[#9E9E9E] p-4 shadow-sm">
           <div className="flex items-center gap-2 mb-2">
             <TrendingDown size={18} className="text-red-600" />
-            <p className="text-[10px] font-bold text-black/60 uppercase tracking-widest">Total Egresos</p>
+            <p className="text-[10px] font-black text-black uppercase tracking-widest">Total Egresos</p>
           </div>
           <p className="text-2xl font-black text-red-700">{formatUsd(totalEgresosUsd)}</p>
-          <p className="text-xs text-black/40 font-mono mt-0.5">{formatBs(totalEgresosBs)}</p>
+          <p className="text-xs text-black font-black font-mono mt-0.5">{formatBs(totalEgresosBs)}</p>
         </div>
         
         <div className={cn("bg-white rounded-xl border-2 p-4 shadow-md", balanceUsd >= 0 ? "border-green-500" : "border-red-500")}>
           <div className="flex items-center gap-2 mb-2">
             <DollarSign size={18} className={balanceUsd >= 0 ? "text-green-600" : "text-red-600"} />
-            <p className="text-[10px] font-bold text-black/60 uppercase tracking-widest">Balance de Caja</p>
+            <p className="text-[10px] font-black text-black uppercase tracking-widest">Balance de Caja</p>
           </div>
           <p className={cn("text-3xl font-black", balanceUsd >= 0 ? "text-green-700" : "text-red-700")}>
             {formatUsd(balanceUsd)}
           </p>
-          <p className={cn("text-xs font-bold font-mono mt-1", balanceUsd >= 0 ? "text-green-600" : "text-red-600")}>
+          <p className={cn("text-xs font-black font-mono mt-1", balanceUsd >= 0 ? "text-green-600" : "text-red-600")}>
             {formatBs(balanceBs)}
           </p>
         </div>
@@ -173,8 +173,8 @@ export default function AccountingModule() {
       <div className="bg-white border border-[#9E9E9E] rounded-xl p-4 mb-6 shadow-sm">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div>
-            <label className="text-[10px] font-bold uppercase text-black/60 tracking-widest mb-1 block">Tipo de Movimiento</label>
-            <select value={filterType} onChange={(e) => { setFilterType(e.target.value as any); setFilterCategory('todas'); }} className="w-full h-9 bg-white border border-[#9E9E9E] rounded-lg px-3 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-primary/50">
+            <label className="text-[10px] font-black uppercase text-black tracking-widest mb-1 block">Tipo de Movimiento</label>
+            <select value={filterType} onChange={(e) => { setFilterType(e.target.value as any); setFilterCategory('todas'); }} className="w-full h-9 bg-white border border-[#9E9E9E] rounded-lg px-3 text-xs font-black focus:outline-none focus:ring-2 focus:ring-primary/50">
               <option value="todos">Todos los Tipos</option>
               <option value="ingreso">Solo Ingresos</option>
               <option value="egreso">Solo Egresos</option>
@@ -182,8 +182,8 @@ export default function AccountingModule() {
           </div>
 
           <div>
-            <label className="text-[10px] font-bold uppercase text-black/60 tracking-widest mb-1 block">Categoría</label>
-            <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)} className="w-full h-9 bg-white border border-[#9E9E9E] rounded-lg px-3 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-primary/50">
+            <label className="text-[10px] font-black uppercase text-black tracking-widest mb-1 block">Categoría</label>
+            <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)} className="w-full h-9 bg-white border border-[#9E9E9E] rounded-lg px-3 text-xs font-black focus:outline-none focus:ring-2 focus:ring-primary/50">
               <option value="todas">Todas las Categorías</option>
               {categoriesList.map(cat => (
                 <option key={cat.id} value={cat.id}>{cat.label.toUpperCase()}</option>
@@ -192,12 +192,12 @@ export default function AccountingModule() {
           </div>
 
           <div>
-            <label className="text-[10px] font-bold uppercase text-black/60 tracking-widest mb-1 block">Desde Fecha</label>
-            <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="h-9 border-[#9E9E9E] text-xs" />
+            <label className="text-[10px] font-black uppercase text-black tracking-widest mb-1 block">Desde Fecha</label>
+            <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="h-9 border-[#9E9E9E] text-xs font-black" />
           </div>
           <div>
-            <label className="text-[10px] font-bold uppercase text-black/60 tracking-widest mb-1 block">Hasta Fecha</label>
-            <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="h-9 border-[#9E9E9E] text-xs" />
+            <label className="text-[10px] font-black uppercase text-black tracking-widest mb-1 block">Hasta Fecha</label>
+            <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="h-9 border-[#9E9E9E] text-xs font-black" />
           </div>
         </div>
       </div>
@@ -216,7 +216,7 @@ export default function AccountingModule() {
           </TableHeader>
           <TableBody>
             {filteredEntries.length === 0 ? (
-              <TableRow><TableCell colSpan={6} className="text-center py-10 text-black/40 italic text-sm">No hay registros contables</TableCell></TableRow>
+              <TableRow><TableCell colSpan={6} className="text-center py-10 text-black font-black italic text-sm">No hay registros contables</TableCell></TableRow>
             ) : (
               filteredEntries.map((entry, idx) => (
                 <TableRow 
@@ -224,20 +224,20 @@ export default function AccountingModule() {
                   className="border-b border-[#9E9E9E]/40 hover:bg-primary/5 cursor-pointer transition-colors" 
                   onClick={() => { setSelectedEntry(entry); setShowEntryDetail(true); }}
                 >
-                  <TableCell className="text-xs font-medium text-black p-3">{formatDateFriendly(entry.date)}</TableCell>
+                  <TableCell className="text-xs font-black text-black p-3">{formatDateFriendly(entry.date)}</TableCell>
                   <TableCell className="p-3">
-                    <span className={cn("px-2 py-0.5 rounded-full text-[9px] font-bold border", entry.type === 'ingreso' ? "bg-green-50 text-green-700 border-green-200" : "bg-red-50 text-red-700 border-red-200")}>
+                    <span className={cn("px-2 py-0.5 rounded-full text-[9px] font-black border", entry.type === 'ingreso' ? "bg-green-50 text-green-700 border-green-200" : "bg-red-50 text-red-700 border-red-200")}>
                       {entry.type.toUpperCase()}
                     </span>
                   </TableCell>
                   <TableCell className="p-3">
-                    <p className="text-xs font-bold text-black uppercase">{entry.concept}</p>
-                    <p className="text-[10px] font-medium text-black/40 truncate max-w-xs">{entry.description || entry.concept}</p>
+                    <p className="text-xs font-black text-black uppercase">{entry.concept}</p>
+                    <p className="text-[10px] font-black text-black truncate max-w-xs">{entry.description || entry.concept}</p>
                   </TableCell>
                   <TableCell className={cn("text-right font-black text-sm p-3", entry.type === 'ingreso' ? "text-green-700" : "text-red-700")}>
                     {entry.type === 'ingreso' ? '+' : '-'} {formatUsd(entry.totalUsd || (entry.amount / (entry.exchangeRate || globalExchangeRate)))}
                   </TableCell>
-                  <TableCell className="text-right text-xs font-bold text-black/60 font-mono p-3">
+                  <TableCell className="text-right text-xs font-black text-black font-mono p-3">
                     {formatBs(entry.amount)}
                   </TableCell>
                   <TableCell className="text-center p-3">
@@ -271,33 +271,33 @@ export default function AccountingModule() {
               </div>
               <div className="p-6 space-y-5">
                 <div className="grid grid-cols-2 gap-4 pb-3 border-b border-black/5">
-                  <p className="text-[10px] font-bold text-black/40 uppercase tracking-widest">Fecha y Hora</p>
-                  <p className="text-sm font-bold text-black text-right">{formatDateFriendly(selectedEntry.date)}</p>
+                  <p className="text-[10px] font-black text-black uppercase tracking-widest">Fecha y Hora</p>
+                  <p className="text-sm font-black text-black text-right">{formatDateFriendly(selectedEntry.date)}</p>
                 </div>
                 <div className="grid grid-cols-2 gap-4 pb-3 border-b border-black/5">
-                  <p className="text-[10px] font-bold text-black/40 uppercase tracking-widest">Monto Divisas</p>
+                  <p className="text-[10px] font-black text-black uppercase tracking-widest">Monto Divisas</p>
                   <p className={cn("text-xl font-black text-right", selectedEntry.type === 'ingreso' ? "text-green-600" : "text-red-600")}>
                     {formatUsd(selectedEntry.totalUsd || (selectedEntry.amount / (selectedEntry.exchangeRate || globalExchangeRate)))}
                   </p>
                 </div>
                 <div className="grid grid-cols-2 gap-4 pb-3 border-b border-black/5">
-                  <p className="text-[10px] font-bold text-black/40 uppercase tracking-widest">Equivalente Bs</p>
-                  <p className="text-base font-bold font-mono text-black text-right">{formatBs(selectedEntry.amount)}</p>
+                  <p className="text-[10px] font-black text-black uppercase tracking-widest">Equivalente Bs</p>
+                  <p className="text-base font-black font-mono text-black text-right">{formatBs(selectedEntry.amount)}</p>
                 </div>
                 <div>
-                  <p className="text-[10px] font-bold text-black/40 uppercase tracking-widest mb-1.5">Descripción del Movimiento</p>
-                  <div className="bg-slate-50 p-4 rounded-xl border border-black/5 text-sm font-medium text-black leading-tight uppercase">
+                  <p className="text-[10px] font-black text-black uppercase tracking-widest mb-1.5">Descripción del Movimiento</p>
+                  <div className="bg-slate-50 p-4 rounded-xl border border-black/5 text-sm font-black text-black leading-tight uppercase">
                     {selectedEntry.description || selectedEntry.concept}
                   </div>
                 </div>
                 <div className="pt-2 text-center">
                   <div className="inline-block bg-primary/10 px-3 py-1 rounded-full">
-                    <p className="text-[10px] font-bold text-black/60 uppercase tracking-widest">Tasa BCV Aplicada: {formatBsNumber(selectedEntry.exchangeRate || globalExchangeRate)}</p>
+                    <p className="text-[10px] font-black text-black uppercase tracking-widest">Tasa BCV Aplicada: {formatBsNumber(selectedEntry.exchangeRate || globalExchangeRate)}</p>
                   </div>
                 </div>
               </div>
               <div className="bg-[#F5F5F5] p-4 border-t border-black/5 flex justify-center">
-                <Button onClick={() => setShowEntryDetail(false)} className="bg-black text-white font-bold px-8 h-10 text-xs uppercase tracking-widest hover:bg-primary hover:text-black transition-all">CERRAR DETALLE</Button>
+                <Button onClick={() => setShowEntryDetail(false)} className="bg-black text-white font-black px-8 h-10 text-xs uppercase tracking-widest hover:bg-primary hover:text-black transition-all">CERRAR DETALLE</Button>
               </div>
             </div>
           )}

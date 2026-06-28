@@ -120,7 +120,7 @@ export default function SuppliersModule() {
       <div className="flex justify-between items-center mb-6">
         <div>
           <h2 className="text-2xl font-headline font-black text-black uppercase">Gestión de Proveedores</h2>
-          <p className="text-sm text-black/60 mt-1 uppercase tracking-widest">Cuentas por pagar y registro de compras</p>
+          <p className="text-sm text-black font-black mt-1 uppercase tracking-widest">Cuentas por pagar y registro de compras</p>
         </div>
         <Button onClick={() => setShowSupplierModal(true)} className="bg-primary hover:bg-primary/90 text-black font-black shadow-lg">
           <Plus size={18} className="mr-2" /> NUEVO PROVEEDOR
@@ -128,32 +128,32 @@ export default function SuppliersModule() {
       </div>
 
       <div className="flex gap-2 mb-6 border-b border-[#9E9E9E]">
-        <button onClick={() => setActiveTab('list')} className={cn("px-4 py-2 font-bold text-sm transition-all", activeTab === 'list' ? "bg-white text-black border border-b-0 border-[#9E9E9E] rounded-t-lg" : "text-black/60 hover:text-black")}>PROVEEDORES</button>
-        <button onClick={() => setActiveTab('invoices')} className={cn("px-4 py-2 font-bold text-sm transition-all", activeTab === 'invoices' ? "bg-white text-black border border-b-0 border-[#9E9E9E] rounded-t-lg" : "text-black/60 hover:text-black")}>CUENTAS POR PAGAR</button>
-        <button onClick={() => setActiveTab('payments')} className={cn("px-4 py-2 font-bold text-sm transition-all", activeTab === 'payments' ? "bg-white text-black border border-b-0 border-[#9E9E9E] rounded-t-lg" : "text-black/60 hover:text-black")}>HISTORIAL DE PAGOS</button>
+        <button onClick={() => setActiveTab('list')} className={cn("px-4 py-2 font-black text-sm transition-all", activeTab === 'list' ? "bg-white text-black border border-b-0 border-[#9E9E9E] rounded-t-lg" : "text-black hover:text-black/80")}>PROVEEDORES</button>
+        <button onClick={() => setActiveTab('invoices')} className={cn("px-4 py-2 font-black text-sm transition-all", activeTab === 'invoices' ? "bg-white text-black border border-b-0 border-[#9E9E9E] rounded-t-lg" : "text-black hover:text-black/80")}>CUENTAS POR PAGAR</button>
+        <button onClick={() => setActiveTab('payments')} className={cn("px-4 py-2 font-black text-sm transition-all", activeTab === 'payments' ? "bg-white text-black border border-b-0 border-[#9E9E9E] rounded-t-lg" : "text-black hover:text-black/80")}>HISTORIAL DE PAGOS</button>
       </div>
 
       <div className="bg-white border border-[#9E9E9E] rounded-xl p-4 mb-6 shadow-sm">
         <div className="flex gap-4 items-end flex-wrap">
           <div className="flex-1 min-w-[200px]">
-            <label className="text-[10px] font-bold uppercase text-black/60 mb-1 block">Buscar</label>
+            <label className="text-[10px] font-black uppercase text-black mb-1 block">Buscar</label>
             <div className="relative">
-              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-black/40" />
-              <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Nombre, RIF, N° Factura..." className="pl-9 h-9 text-xs border-[#9E9E9E]" />
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-black" />
+              <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Nombre, RIF, N° Factura..." className="pl-9 h-9 text-xs border-[#9E9E9E] text-black font-black" />
             </div>
           </div>
           {activeTab === 'invoices' && (
             <>
               <div>
-                <label className="text-[10px] font-bold uppercase text-black/60 mb-1 block">Filtrar Proveedor</label>
-                <select value={filterSupplier} onChange={e => setFilterSupplier(e.target.value)} className="h-9 border border-[#9E9E9E] rounded-lg px-2 text-xs font-bold bg-white">
+                <label className="text-[10px] font-black uppercase text-black mb-1 block">Filtrar Proveedor</label>
+                <select value={filterSupplier} onChange={e => setFilterSupplier(e.target.value)} className="h-9 border border-[#9E9E9E] rounded-lg px-2 text-xs font-black bg-white text-black">
                   <option value="all">TODOS</option>
                   {suppliers.map(s => <option key={s.id} value={s.id}>{s.name.toUpperCase()}</option>)}
                 </select>
               </div>
               <div>
-                <label className="text-[10px] font-bold uppercase text-black/60 mb-1 block">Estado</label>
-                <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className="h-9 border border-[#9E9E9E] rounded-lg px-2 text-xs font-bold bg-white">
+                <label className="text-[10px] font-black uppercase text-black mb-1 block">Estado</label>
+                <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className="h-9 border border-[#9E9E9E] rounded-lg px-2 text-xs font-black bg-white text-black">
                   <option value="all">TODOS</option>
                   <option value="pendiente">PENDIENTE</option>
                   <option value="parcial">PARCIAL</option>
@@ -170,28 +170,28 @@ export default function SuppliersModule() {
           <Table>
             <TableHeader className="bg-[#E8E8E8]">
               <TableRow>
-                <TableHead className="text-[10px] font-black uppercase">Proveedor</TableHead>
-                <TableHead className="text-[10px] font-black uppercase">RIF / Cédula</TableHead>
-                <TableHead className="text-[10px] font-black uppercase">Contacto</TableHead>
-                <TableHead className="text-[10px] font-black uppercase text-right">Deuda Pendiente (USD)</TableHead>
-                <TableHead className="text-[10px] font-black uppercase text-center">Acciones</TableHead>
+                <TableHead className="text-[10px] font-black uppercase text-black">Proveedor</TableHead>
+                <TableHead className="text-[10px] font-black uppercase text-black">RIF / Cédula</TableHead>
+                <TableHead className="text-[10px] font-black uppercase text-black">Contacto</TableHead>
+                <TableHead className="text-[10px] font-black uppercase text-right text-black">Deuda Pendiente (USD)</TableHead>
+                <TableHead className="text-[10px] font-black uppercase text-center text-black">Acciones</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filteredSuppliers.length === 0 ? (
-                <TableRow><TableCell colSpan={5} className="text-center py-10 text-black/40 italic">No hay proveedores registrados</TableCell></TableRow>
+                <TableRow><TableCell colSpan={5} className="text-center py-10 text-black font-black italic">No hay proveedores registrados</TableCell></TableRow>
               ) : (
                 filteredSuppliers.map(s => (
                   <TableRow key={s.id} className="hover:bg-primary/5">
                     <TableCell>
                       <p className="font-bold text-sm text-black">{s.name.toUpperCase()}</p>
-                      <p className="text-[10px] text-black/60 flex items-center gap-1"><User size={10} /> {s.contactPerson || '—'}</p>
+                      <p className="text-[10px] text-black font-black flex items-center gap-1"><User size={10} /> {s.contactPerson || '—'}</p>
                     </TableCell>
-                    <TableCell className="font-mono text-xs text-black/60">{s.rif || s.cedula || '—'}</TableCell>
+                    <TableCell className="font-mono text-xs text-black font-black">{s.rif || s.cedula || '—'}</TableCell>
                     <TableCell>
                       <div className="space-y-0.5">
-                        <p className="text-[10px] text-black/60 flex items-center gap-1"><Phone size={10} /> {s.phone || '—'}</p>
-                        <p className="text-[10px] text-black/60 flex items-center gap-1"><Mail size={10} /> {s.email || '—'}</p>
+                        <p className="text-[10px] text-black font-black flex items-center gap-1"><Phone size={10} /> {s.phone || '—'}</p>
+                        <p className="text-[10px] text-black font-black flex items-center gap-1"><Mail size={10} /> {s.email || '—'}</p>
                       </div>
                     </TableCell>
                     <TableCell className="text-right font-black text-red-600">{formatUsd(s.totalDebt || 0)}</TableCell>
@@ -212,18 +212,18 @@ export default function SuppliersModule() {
           <Table>
             <TableHeader className="bg-[#E8E8E8]">
               <TableRow>
-                <TableHead className="text-[10px] font-black uppercase">N° Factura</TableHead>
-                <TableHead className="text-[10px] font-black uppercase">Proveedor</TableHead>
-                <TableHead className="text-[10px] font-black uppercase">Fecha</TableHead>
-                <TableHead className="text-[10px] font-black uppercase text-right">Total USD</TableHead>
-                <TableHead className="text-[10px] font-black uppercase text-right">Pendiente USD</TableHead>
-                <TableHead className="text-[10px] font-black uppercase text-center">Estado</TableHead>
-                <TableHead className="text-[10px] font-black uppercase text-center">Acciones</TableHead>
+                <TableHead className="text-[10px] font-black uppercase text-black">N° Factura</TableHead>
+                <TableHead className="text-[10px] font-black uppercase text-black">Proveedor</TableHead>
+                <TableHead className="text-[10px] font-black uppercase text-black">Fecha</TableHead>
+                <TableHead className="text-[10px] font-black uppercase text-right text-black">Total USD</TableHead>
+                <TableHead className="text-[10px] font-black uppercase text-right text-black">Pendiente USD</TableHead>
+                <TableHead className="text-[10px] font-black uppercase text-center text-black">Estado</TableHead>
+                <TableHead className="text-[10px] font-black uppercase text-center text-black">Acciones</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filteredInvoices.length === 0 ? (
-                <TableRow><TableCell colSpan={7} className="text-center py-10 text-black/40 italic">No hay facturas registradas</TableCell></TableRow>
+                <TableRow><TableCell colSpan={7} className="text-center py-10 text-black font-black italic">No hay facturas registradas</TableCell></TableRow>
               ) : (
                 filteredInvoices.map(inv => {
                   const pending = inv.total - (inv.paidAmount || 0);
@@ -231,11 +231,11 @@ export default function SuppliersModule() {
                     <TableRow key={inv.id} className="hover:bg-primary/5">
                       <TableCell className="font-bold text-xs">#{inv.invoiceNumber || inv.id}</TableCell>
                       <TableCell className="font-bold text-xs uppercase">{inv.supplierName || '—'}</TableCell>
-                      <TableCell className="text-xs text-black/60">{new Date(inv.date).toLocaleDateString('es-VE')}</TableCell>
+                      <TableCell className="text-xs text-black font-black">{new Date(inv.date).toLocaleDateString('es-VE')}</TableCell>
                       <TableCell className="text-right font-bold">{formatUsd(inv.total)}</TableCell>
                       <TableCell className="text-right font-black text-red-600">{formatUsd(pending)}</TableCell>
                       <TableCell className="text-center">
-                        <span className={cn("px-2 py-0.5 rounded-full text-[9px] font-bold border", 
+                        <span className={cn("px-2 py-0.5 rounded-full text-[9px] font-black border", 
                           inv.status === 'pagada' ? "bg-green-100 text-green-700 border-green-200" : 
                           inv.status === 'parcial' ? "bg-yellow-100 text-yellow-700 border-yellow-200" : 
                           "bg-red-100 text-red-700 border-red-200")}>
@@ -262,27 +262,27 @@ export default function SuppliersModule() {
           <Table>
             <TableHeader className="bg-[#E8E8E8]">
               <TableRow>
-                <TableHead className="text-[10px] font-black uppercase">Fecha</TableHead>
-                <TableHead className="text-[10px] font-black uppercase">Proveedor</TableHead>
-                <TableHead className="text-[10px] font-black uppercase">Método / Referencia</TableHead>
-                <TableHead className="text-[10px] font-black uppercase text-right">Monto USD</TableHead>
-                <TableHead className="text-[10px] font-black uppercase text-right">Monto Bs</TableHead>
+                <TableHead className="text-[10px] font-black uppercase text-black">Fecha</TableHead>
+                <TableHead className="text-[10px] font-black uppercase text-black">Proveedor</TableHead>
+                <TableHead className="text-[10px] font-black uppercase text-black">Método / Referencia</TableHead>
+                <TableHead className="text-[10px] font-black uppercase text-right text-black">Monto USD</TableHead>
+                <TableHead className="text-[10px] font-black uppercase text-right text-black">Monto Bs</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filteredPayments.length === 0 ? (
-                <TableRow><TableCell colSpan={5} className="text-center py-10 text-black/40 italic">No hay pagos registrados</TableCell></TableRow>
+                <TableRow><TableCell colSpan={5} className="text-center py-10 text-black font-black italic">No hay pagos registrados</TableCell></TableRow>
               ) : (
                 filteredPayments.map(p => (
                   <TableRow key={p.id} className="hover:bg-primary/5">
-                    <TableCell className="text-xs text-black/60">{new Date(p.date).toLocaleString('es-VE')}</TableCell>
+                    <TableCell className="text-xs text-black font-black">{new Date(p.date).toLocaleString('es-VE')}</TableCell>
                     <TableCell className="font-bold text-xs uppercase">{p.supplierName}</TableCell>
                     <TableCell>
                       <p className="text-xs font-bold uppercase">{p.method.replace('_', ' ')}</p>
-                      <p className="text-[10px] text-black/40">{p.reference || '—'} {p.bank ? `(${p.bank})` : ''}</p>
+                      <p className="text-[10px] text-black font-black">{p.reference || '—'} {p.bank ? `(${p.bank})` : ''}</p>
                     </TableCell>
                     <TableCell className="text-right font-black text-green-600">{formatUsd(p.amount)}</TableCell>
-                    <TableCell className="text-right font-mono text-xs text-black/60">{formatBs(p.amount * (p.exchangeRate || exchangeRate))}</TableCell>
+                    <TableCell className="text-right font-mono text-xs text-black font-black">{formatBs(p.amount * (p.exchangeRate || exchangeRate))}</TableCell>
                   </TableRow>
                 ))
               )}
@@ -297,17 +297,17 @@ export default function SuppliersModule() {
             <DialogTitle className="text-lg font-black">{editingSupplier ? 'Editar Proveedor' : 'Nuevo Proveedor'}</DialogTitle>
           </DialogHeader>
           <div className="p-5 space-y-4">
-            <div><label className="text-[10px] font-bold text-black/60 uppercase block mb-1">Nombre del Proveedor *</label><Input value={supplierForm.name} onChange={e => setSupplierForm({...supplierForm, name: e.target.value})} placeholder="Ej: Polar C.A." /></div>
+            <div><label className="text-[10px] font-black text-black uppercase block mb-1">Nombre del Proveedor *</label><Input value={supplierForm.name} onChange={e => setSupplierForm({...supplierForm, name: e.target.value})} placeholder="Ej: Polar C.A." className="font-black text-black" /></div>
             <div className="grid grid-cols-2 gap-4">
-              <div><label className="text-[10px] font-bold text-black/60 uppercase block mb-1">RIF / Cédula</label><Input value={supplierForm.rif} onChange={e => setSupplierForm({...supplierForm, rif: e.target.value})} placeholder="J-12345678-9" /></div>
-              <div><label className="text-[10px] font-bold text-black/60 uppercase block mb-1">Teléfono</label><Input value={supplierForm.phone} onChange={e => setSupplierForm({...supplierForm, phone: e.target.value})} placeholder="0412-1234567" /></div>
+              <div><label className="text-[10px] font-black text-black uppercase block mb-1">RIF / Cédula</label><Input value={supplierForm.rif} onChange={e => setSupplierForm({...supplierForm, rif: e.target.value})} placeholder="J-12345678-9" className="font-black text-black" /></div>
+              <div><label className="text-[10px] font-black text-black uppercase block mb-1">Teléfono</label><Input value={supplierForm.phone} onChange={e => setSupplierForm({...supplierForm, phone: e.target.value})} placeholder="0412-1234567" className="font-black text-black" /></div>
             </div>
-            <div><label className="text-[10px] font-bold text-black/60 uppercase block mb-1">Persona de Contacto</label><Input value={supplierForm.contactPerson} onChange={e => setSupplierForm({...supplierForm, contactPerson: e.target.value})} placeholder="Ej: Juan Pérez" /></div>
-            <div><label className="text-[10px] font-bold text-black/60 uppercase block mb-1">Correo Electrónico</label><Input type="email" value={supplierForm.email} onChange={e => setSupplierForm({...supplierForm, email: e.target.value})} placeholder="ventas@proveedor.com" /></div>
-            <div><label className="text-[10px] font-bold text-black/60 uppercase block mb-1">Dirección Física</label><Input value={supplierForm.address} onChange={e => setSupplierForm({...supplierForm, address: e.target.value})} placeholder="Dirección del depósito o local" /></div>
+            <div><label className="text-[10px] font-black text-black uppercase block mb-1">Persona de Contacto</label><Input value={supplierForm.contactPerson} onChange={e => setSupplierForm({...supplierForm, contactPerson: e.target.value})} placeholder="Ej: Juan Pérez" className="font-black text-black" /></div>
+            <div><label className="text-[10px] font-black text-black uppercase block mb-1">Correo Electrónico</label><Input type="email" value={supplierForm.email} onChange={e => setSupplierForm({...supplierForm, email: e.target.value})} placeholder="ventas@proveedor.com" className="font-black text-black" /></div>
+            <div><label className="text-[10px] font-black text-black uppercase block mb-1">Dirección Física</label><Input value={supplierForm.address} onChange={e => setSupplierForm({...supplierForm, address: e.target.value})} placeholder="Dirección del depósito o local" className="font-black text-black" /></div>
           </div>
           <div className="bg-[#F5F5F5] p-4 border-t flex justify-end gap-3">
-            <Button variant="ghost" onClick={() => setShowSupplierModal(false)}>CANCELAR</Button>
+            <Button variant="ghost" onClick={() => setShowSupplierModal(false)} className="font-black text-black">CANCELAR</Button>
             <Button onClick={handleSaveSupplier} className="bg-primary text-black font-black">GUARDAR</Button>
           </div>
         </DialogContent>

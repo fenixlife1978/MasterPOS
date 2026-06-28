@@ -55,9 +55,16 @@ export default function SupplierPaymentModal({
   const isUSD = selectedMethod?.currency === 'USD';
   const needsReference = method === 'transferencia' || method === 'pago_movil' || method === 'zelle';
 
+  // ✅ Sincronizar siempre con la tasa actual del sistema al abrir el modal
+  useEffect(() => {
+    if (open && !isSubmitting) {
+      setCustomRate(exchangeRate.toString());
+    }
+  }, [open, exchangeRate, isSubmitting]);
+
   // ✅ Resetear montos a 0 al abrir el modal o cambiar de método (pero no durante envío)
   useEffect(() => {
-    if (!isSubmitting) {
+    if (!isSubmitting && open) {
       setAmount('0');
       setUsdAmount(0);
       setReference('');

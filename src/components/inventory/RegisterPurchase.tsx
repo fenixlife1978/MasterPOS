@@ -568,7 +568,7 @@ export default function RegisterPurchase() {
             <h2 className="text-xl font-headline font-black text-black flex items-center gap-2">
               <Truck size={24} className="text-primary" /> Registrar Entrada por Compra
             </h2>
-            <p className="text-xs text-black/50">Módulo de gestión de ingresos masivos</p>
+            <p className="text-xs text-black font-black">Módulo de gestión de ingresos masivos</p>
           </div>
         </div>
 
@@ -576,12 +576,12 @@ export default function RegisterPurchase() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             <div className="lg:col-span-1 space-y-4">
               <div className="bg-white border border-[#9E9E9E] rounded-xl p-4 shadow-sm">
-                <h3 className="text-[11px] font-black uppercase text-black/60 mb-3 flex items-center gap-2">
+                <h3 className="text-[11px] font-black uppercase text-black mb-3 flex items-center gap-2">
                   <Receipt size={13} /> Datos de la Factura
                 </h3>
                 <div className="space-y-3">
                   <div>
-                    <label className="text-[9px] font-bold uppercase text-black/40">Proveedor</label>
+                    <label className="text-[9px] font-black uppercase text-black">Proveedor</label>
                     <select 
                       value={selectedSupplierId}
                       onChange={(e) => setSelectedSupplierId(Number(e.target.value))}
@@ -594,7 +594,7 @@ export default function RegisterPurchase() {
                     </select>
                   </div>
                   <div>
-                    <label className="text-[9px] font-bold uppercase text-black/40">N° Factura</label>
+                    <label className="text-[9px] font-black uppercase text-black">N° Factura</label>
                     <Input 
                       value={invoiceNumber}
                       onChange={(e) => setInvoiceNumber(e.target.value)}
@@ -603,9 +603,9 @@ export default function RegisterPurchase() {
                     />
                   </div>
                   <div>
-                    <label className="text-[9px] font-bold uppercase text-black/40">Tasa BCV Aplicada (Bs/$)</label>
+                    <label className="text-[9px] font-black uppercase text-black">Tasa BCV Aplicada (Bs/$)</label>
                     <div className="relative">
-                      <DollarSign size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-black/30" />
+                      <DollarSign size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-black" />
                       <Input 
                         type="number"
                         step="0.01"
@@ -614,7 +614,7 @@ export default function RegisterPurchase() {
                         className="pl-7 h-8 text-sm font-mono"
                       />
                     </div>
-                    <p className="text-[8px] text-black/40 mt-1">
+                    <p className="text-[8px] text-black font-black mt-1">
                       Tasa actual del sistema: {formatBs(state.exchangeRate)} — Puede modificarla según la factura
                     </p>
                   </div>
@@ -622,7 +622,7 @@ export default function RegisterPurchase() {
               </div>
 
               <div className="bg-white border border-[#9E9E9E] rounded-xl p-4 shadow-sm">
-                <h3 className="text-[11px] font-black uppercase text-black/60 mb-3 flex items-center gap-2">
+                <h3 className="text-[11px] font-black uppercase text-black mb-3 flex items-center gap-2">
                   <HandCoins size={13} /> Condiciones de Pago
                 </h3>
                 <div className="space-y-3">
@@ -636,7 +636,7 @@ export default function RegisterPurchase() {
                       }}
                       className={cn(
                         "flex-1 py-1.5 text-[10px] font-bold rounded border transition-all",
-                        paymentType === 'contado' ? "bg-primary text-black border-primary" : "bg-white text-black/60 border-gray-300"
+                        paymentType === 'contado' ? "bg-primary text-black border-primary" : "bg-white text-black font-black border-gray-300"
                       )}
                     >
                       CONTADO
@@ -650,7 +650,7 @@ export default function RegisterPurchase() {
                       }}
                       className={cn(
                         "flex-1 py-1.5 text-[10px] font-bold rounded border transition-all",
-                        paymentType === 'credito' ? "bg-primary text-black border-primary" : "bg-white text-black/60 border-gray-300"
+                        paymentType === 'credito' ? "bg-primary text-black border-primary" : "bg-white text-black font-black border-gray-300"
                       )}
                     >
                       CRÉDITO
@@ -664,7 +664,7 @@ export default function RegisterPurchase() {
                       }}
                       className={cn(
                         "flex-1 py-1.5 text-[10px] font-bold rounded border transition-all",
-                        paymentType === 'mixto' ? "bg-primary text-black border-primary" : "bg-white text-black/60 border-gray-300"
+                        paymentType === 'mixto' ? "bg-primary text-black border-primary" : "bg-white text-black font-black border-gray-300"
                       )}
                     >
                       MIXTO
@@ -673,21 +673,21 @@ export default function RegisterPurchase() {
 
                   {paymentType === 'credito' && (
                     <div className="flex items-center gap-2">
-                      <CalendarDays size={12} className="text-black/40" />
+                      <CalendarDays size={12} className="text-black" />
                       <Input
                         type="number"
                         value={creditTermDays}
                         onChange={(e) => setCreditTermDays(Number(e.target.value))}
                         className="h-7 text-xs w-20 text-center"
                       />
-                      <span className="text-[9px] text-black/60">días de plazo</span>
+                      <span className="text-[9px] text-black font-black">días de plazo</span>
                     </div>
                   )}
 
                   {paymentType === 'mixto' && (
                     <div className="grid grid-cols-2 gap-2 mt-2">
                       <div>
-                        <label className="text-[8px] font-bold uppercase text-black/40">Pago en USD</label>
+                        <label className="text-[8px] font-black uppercase text-black">Pago en USD</label>
                         <Input
                           type="number"
                           step="0.01"
@@ -698,7 +698,7 @@ export default function RegisterPurchase() {
                         />
                       </div>
                       <div>
-                        <label className="text-[8px] font-bold uppercase text-black/40">Pago en Bs</label>
+                        <label className="text-[8px] font-black uppercase text-black">Pago en Bs</label>
                         <Input
                           type="number"
                           step="0.01"
@@ -712,15 +712,15 @@ export default function RegisterPurchase() {
                   )}
 
                   <div className="bg-gray-50 p-2 rounded-md mt-2">
-                    <div className="flex justify-between text-[9px]">
+                    <div className="flex justify-between text-[9px] font-black text-black">
                       <span>Total factura USD:</span>
                       <span className="font-bold">{formatUsd(totalInvoiceUsd, 4)}</span>
                     </div>
-                    <div className="flex justify-between text-[9px]">
+                    <div className="flex justify-between text-[9px] font-black text-black">
                       <span>Total pagado USD:</span>
                       <span className="font-bold text-green-600">{formatUsd(totalPaidUsd)}</span>
                     </div>
-                    <div className="flex justify-between text-[9px] font-bold">
+                    <div className="flex justify-between text-[9px] font-black text-black">
                       <span>Saldo pendiente USD:</span>
                       <span className={remainingUsd > 0 ? "text-red-600" : "text-green-600"}>{formatUsd(remainingUsd, 4)}</span>
                     </div>
@@ -729,12 +729,12 @@ export default function RegisterPurchase() {
               </div>
 
               <div className="bg-white border border-[#9E9E9E] rounded-xl p-4 shadow-sm">
-                <h3 className="text-[11px] font-black uppercase text-black/60 mb-3 flex items-center gap-2">
+                <h3 className="text-[11px] font-black uppercase text-black mb-3 flex items-center gap-2">
                   <Package size={13} /> Añadir Productos al Lote
                 </h3>
                 <div className="space-y-3">
                   <div className="relative" ref={searchRef}>
-                    <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-black/30" />
+                    <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-black" />
                     <Input 
                       placeholder="Buscar producto..."
                       value={productQuery}
@@ -758,7 +758,7 @@ export default function RegisterPurchase() {
                             className="w-full text-left p-2 hover:bg-primary/10 transition-colors border-b border-gray-100 last:border-0 text-xs"
                           >
                             <p className="font-bold">{p.name}</p>
-                            <p className="text-[9px] text-black/40">Stock: {p.stock} | Costo: {formatUsd(p.costUsd || 0, 4)}</p>
+                            <p className="text-[9px] text-black font-black">Stock: {p.stock} | Costo: {formatUsd(p.costUsd || 0, 4)}</p>
                           </button>
                         ))}
                       </div>
@@ -769,7 +769,7 @@ export default function RegisterPurchase() {
                     <div className="bg-primary/5 border border-primary/20 rounded-lg p-3 relative">
                       <button
                         onClick={handleClearSelection}
-                        className="absolute top-2 right-2 text-black/40 hover:text-red-500"
+                        className="absolute top-2 right-2 text-black hover:text-red-500"
                         title="Limpiar selección"
                       >
                         <X size={14} />
@@ -777,11 +777,11 @@ export default function RegisterPurchase() {
                       <p className="text-[9px] font-black text-primary uppercase mb-1">Producto: {selectedProduct.name}</p>
                       <div className="grid grid-cols-2 gap-2">
                         <div>
-                          <label className="text-[8px] font-bold text-black/50 uppercase">Cant. Entrante</label>
+                          <label className="text-[8px] font-black text-black uppercase">Cant. Entrante</label>
                           <Input type="number" value={itemQty} onChange={(e) => setItemQty(e.target.value)} className="h-7 text-sm" />
                         </div>
                         <div>
-                          <label className="text-[8px] font-bold text-black/50 uppercase">Costo USD (Unit)</label>
+                          <label className="text-[8px] font-black text-black uppercase">Costo USD (Unit)</label>
                           <Input type="number" step="0.0001" value={itemCostUsd} onChange={(e) => setItemCostUsd(e.target.value)} className="h-7 text-sm font-mono" placeholder="0.0000" />
                         </div>
                       </div>
@@ -799,7 +799,7 @@ export default function RegisterPurchase() {
                 <div className="bg-[#1A2C4E] p-3 text-white flex justify-between items-center">
                   <h3 className="text-xs font-black uppercase tracking-wider">Detalle del Ingreso ({tempItems.length} items)</h3>
                   <div className="text-right">
-                    <p className="text-[9px] text-white/60">Total Factura USD</p>
+                    <p className="text-[9px] text-white font-black">Total Factura USD</p>
                     <p className="text-lg font-black text-primary">{formatUsd(totalInvoiceUsd, 4)}</p>
                   </div>
                 </div>
@@ -817,7 +817,7 @@ export default function RegisterPurchase() {
                     </TableHeader>
                     <TableBody>
                       {tempItems.length === 0 ? (
-                        <TableRow><TableCell colSpan={5} className="text-center py-12 text-black/30 italic text-xs">Añada productos para comenzar</TableCell></TableRow>
+                        <TableRow><TableCell colSpan={5} className="text-center py-12 text-black font-black italic text-xs">Añada productos para comenzar</TableCell></TableRow>
                       ) : (
                         tempItems.map((item, idx) => (
                           <TableRow key={idx}>
@@ -836,19 +836,19 @@ export default function RegisterPurchase() {
                 <div className="bg-[#F5F5F5] p-3 border-t flex justify-between items-center">
                   <div className="flex gap-3 flex-wrap">
                     <div className="bg-white border border-gray-300 rounded px-2 py-1 shadow-sm">
-                      <span className="text-[8px] block text-gray-500 uppercase font-black">Total en Bolívares</span>
+                      <span className="text-[8px] block text-black uppercase font-black">Total en Bolívares</span>
                       <span className="text-xs font-black text-secondary">{formatBs(totalInvoiceBs)}</span>
                     </div>
                     <div className="bg-white border border-gray-300 rounded px-2 py-1 shadow-sm">
-                      <span className="text-[8px] block text-gray-500 uppercase font-black">Total Factura USD</span>
+                      <span className="text-[8px] block text-black uppercase font-black">Total Factura USD</span>
                       <span className="text-xs font-black text-black">{formatUsd(totalInvoiceUsd, 4)}</span>
                     </div>
                     <div className="bg-white border border-gray-300 rounded px-2 py-1 shadow-sm">
-                      <span className="text-[8px] block text-gray-500 uppercase font-black text-green-600">Total Pagado USD</span>
+                      <span className="text-[8px] block uppercase font-black text-green-600">Total Pagado USD</span>
                       <span className="text-xs font-black text-green-600">{formatUsd(totalPaidUsd, 4)}</span>
                     </div>
                     <div className="bg-white border border-gray-300 rounded px-2 py-1 shadow-sm">
-                      <span className="text-[8px] block text-gray-500 uppercase font-black text-red-600">Saldo Pendiente USD</span>
+                      <span className="text-[8px] block uppercase font-black text-red-600">Saldo Pendiente USD</span>
                       <span className={cn("text-xs font-black", remainingUsd > 0 ? "text-red-600" : "text-green-600")}>
                         {formatUsd(remainingUsd, 4)}
                       </span>
@@ -885,7 +885,7 @@ export default function RegisterPurchase() {
                 <Package size={18} className="text-primary" />
                 <h3 className="text-sm font-black">Nuevo Producto</h3>
               </div>
-              <button onClick={() => setShowProductModal(false)} className="text-white/60 hover:text-white">
+              <button onClick={() => setShowProductModal(false)} className="text-white font-black hover:text-white">
                 <X size={18} />
               </button>
             </div>
@@ -895,48 +895,48 @@ export default function RegisterPurchase() {
                 {/* Columna izquierda - Datos del producto */}
                 <div className="space-y-2">
                   <div>
-                    <label className="text-[8px] font-black uppercase">Código de Barras</label>
+                    <label className="text-[8px] font-black uppercase text-black">Código de Barras</label>
                     <Input value={productForm.barcode} onChange={e => setProductForm({...productForm, barcode: e.target.value})} className="h-7 text-xs" />
                   </div>
                   <div>
-                    <label className="text-[8px] font-black uppercase">Nombre del Producto</label>
+                    <label className="text-[8px] font-black uppercase text-black">Nombre del Producto</label>
                     <Input value={productForm.name} onChange={e => setProductForm({...productForm, name: e.target.value})} className="h-7 text-xs" required />
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <label className="text-[8px] font-black uppercase">Departamento</label>
+                      <label className="text-[8px] font-black uppercase text-black">Departamento</label>
                       <select value={productForm.department} onChange={e => setProductForm({...productForm, department: e.target.value})} className="w-full h-7 border rounded px-2 text-xs bg-white">
                         {departments.map((d, i) => <option key={`${d}-${i}`} value={d}>{d}</option>)}
                       </select>
                     </div>
                     <div>
-                      <label className="text-[8px] font-black uppercase">Categoría</label>
+                      <label className="text-[8px] font-black uppercase text-black">Categoría</label>
                       <select value={productForm.category as any} onChange={e => setProductForm({...productForm, category: e.target.value as any})} className="w-full h-7 border rounded px-2 text-xs bg-white">
                         {categories.map((c, i) => <option key={`${c.id}-${i}`} value={c.id}>{c.name}</option>)}
                       </select>
                     </div>
                   </div>
                   <div>
-                    <label className="text-[8px] font-black uppercase">Unidad de Medida</label>
+                    <label className="text-[8px] font-black uppercase text-black">Unidad de Medida</label>
                     <Input value={productForm.unitMeasure} onChange={e => setProductForm({...productForm, unitMeasure: e.target.value})} className="h-7 text-xs" placeholder="UNID, KG, LTS..." />
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <label className="text-[8px] font-black uppercase">Stock Inicial</label>
+                      <label className="text-[8px] font-black uppercase text-black">Stock Inicial</label>
                       <Input type="text" inputMode="numeric" value={stockInput} onChange={(e) => setStockInput(e.target.value)} className="h-7 text-xs" placeholder="0" />
                     </div>
                     <div>
-                      <label className="text-[8px] font-black uppercase">Stock Mínimo</label>
+                      <label className="text-[8px] font-black uppercase text-black">Stock Mínimo</label>
                       <Input type="text" inputMode="numeric" value={minStockInput} onChange={(e) => setMinStockInput(e.target.value)} className="h-7 text-xs" placeholder="5" />
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <label className="text-[8px] font-black uppercase">Precio Mayor (USD)</label>
+                      <label className="text-[8px] font-black uppercase text-black">Precio Mayor (USD)</label>
                       <Input type="text" inputMode="decimal" value={priceWholesaleInput} onChange={(e) => setPriceWholesaleInput(e.target.value)} className="h-7 text-xs" placeholder="0.00" />
                     </div>
                     <div>
-                      <label className="text-[8px] font-black uppercase">Precio Costo (USD)</label>
+                      <label className="text-[8px] font-black uppercase text-black">Precio Costo (USD)</label>
                       <Input type="text" inputMode="decimal" value={priceCostInput} onChange={(e) => setPriceCostInput(e.target.value)} className="h-7 text-xs" placeholder="0.00" />
                     </div>
                   </div>
@@ -944,31 +944,31 @@ export default function RegisterPurchase() {
                   <div className="border-t pt-2 mt-1">
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input type="checkbox" checked={isKit} onChange={e => setIsKit(e.target.checked)} className="rounded text-primary" />
-                      <span className="text-[9px] font-black uppercase">Es kit / compuesto</span>
+                      <span className="text-[9px] font-black uppercase text-black">Es kit / compuesto</span>
                     </label>
                     {isKit && (
-                      <p className="text-[8px] text-gray-500 mt-0.5">Al vender este producto, se descontarán las cantidades de sus componentes.</p>
+                      <p className="text-[8px] text-black font-black mt-0.5">Al vender este producto, se descontarán las cantidades de sus componentes.</p>
                     )}
                   </div>
                   
                   {isKit && (
                     <div className="border border-dashed border-blue-300 rounded-lg p-2 bg-blue-50/30 space-y-2">
                       <div className="flex items-center justify-between bg-white/50 rounded p-1.5">
-                        <span className="text-[8px] font-bold uppercase">Stock del kit:</span>
+                        <span className="text-[8px] font-black uppercase text-black">Stock del kit:</span>
                         <div className="flex gap-2">
                           <button type="button" onClick={() => setKitHasOwnStock(false)} className={cn("px-2 py-0.5 rounded text-[9px] font-bold transition-all", !kitHasOwnStock ? "bg-primary text-black" : "bg-gray-200 text-gray-600")}>Sin stock propio</button>
                           <button type="button" onClick={() => setKitHasOwnStock(true)} className={cn("px-2 py-0.5 rounded text-[9px] font-bold transition-all", kitHasOwnStock ? "bg-primary text-black" : "bg-gray-200 text-gray-600")}>Con stock propio</button>
                         </div>
                       </div>
-                      <p className="text-[8px] font-bold text-blue-800 mb-1 flex items-center gap-1"><Package size={10} /> Componentes del kit</p>
+                      <p className="text-[8px] font-black text-black mb-1 flex items-center gap-1"><Package size={10} /> Componentes del kit</p>
                       <div className="space-y-2">
                         {kitComponents.length > 0 && (
                           <div className="max-h-24 overflow-y-auto space-y-1">
                             {kitComponents.map(comp => {
                               const childProd = state.products.find(p => p.id === comp.productId);
                               return (
-                                <div key={comp.productId} className="flex justify-between items-center bg-white rounded px-2 py-1 text-[10px]">
-                                  <span>{childProd?.name || 'Producto'} x{comp.quantity}</span>
+                                <div key={comp.productId} className="flex justify-between items-center bg-white rounded px-2 py-1 text-[10px] font-black">
+                                  <span className="text-black">{childProd?.name || 'Producto'} x{comp.quantity}</span>
                                   <button type="button" onClick={() => removeKitComponent(comp.productId)} className="text-red-500"><Trash2 size={10} /></button>
                                 </div>
                               );
@@ -988,7 +988,7 @@ export default function RegisterPurchase() {
                                   setSelectedChildProduct(null);
                                 }
                               }} 
-                              className="h-7 text-xs pr-7" 
+                              className="h-7 text-xs pr-7 font-black" 
                             />
                             {!hideChildResults && searchChildProduct && childProductResults.length > 0 && (
                               <div className="absolute top-full left-0 right-0 bg-white border rounded shadow z-20 mt-1 max-h-24 overflow-y-auto">
@@ -1001,7 +1001,7 @@ export default function RegisterPurchase() {
                                       setSearchChildProduct(p.name);
                                       setHideChildResults(true);
                                     }} 
-                                    className="w-full text-left px-2 py-1 text-[10px] hover:bg-primary/10"
+                                    className="w-full text-left px-2 py-1 text-[10px] hover:bg-primary/10 font-black text-black"
                                   >
                                     {p.name} ({formatUsd(p.priceUsd)})
                                   </button>
@@ -1011,8 +1011,8 @@ export default function RegisterPurchase() {
                           </div>
                           {selectedChildProduct && (
                             <div className="flex gap-1 items-center">
-                              <Input type="text" inputMode="numeric" value={childQuantity} onChange={e => setChildQuantity(e.target.value)} className="h-7 text-xs w-20 text-center" placeholder="Cant." />
-                              <Button type="button" onClick={addKitComponent} size="sm" className="h-7 text-[9px] bg-primary text-black">Agregar</Button>
+                              <Input type="text" inputMode="numeric" value={childQuantity} onChange={e => setChildQuantity(e.target.value)} className="h-7 text-xs w-20 text-center font-black" placeholder="Cant." />
+                              <Button type="button" onClick={addKitComponent} size="sm" className="h-7 text-[9px] bg-primary text-black font-black">Agregar</Button>
                             </div>
                           )}
                         </div>
@@ -1025,7 +1025,7 @@ export default function RegisterPurchase() {
                 <div className="space-y-2">
                   <div className="bg-[#F5F5F5] rounded-lg p-3 space-y-2">
                     <div>
-                      <label className="text-[7px] font-bold uppercase">Costo Unitario USD</label>
+                      <label className="text-[7px] font-black uppercase text-black">Costo Unitario USD</label>
                       <Input 
                         type="text" 
                         inputMode="decimal" 
@@ -1044,12 +1044,12 @@ export default function RegisterPurchase() {
                             setPriceRetailBs('');
                           }
                         }} 
-                        className="bg-white h-7 text-xs font-mono w-full" 
+                        className="bg-white h-7 text-xs font-mono w-full font-black" 
                       />
                     </div>
                     
                     <div>
-                      <label className="text-[7px] font-bold uppercase">% de Ganancia sobre VENTA</label>
+                      <label className="text-[7px] font-black uppercase text-black">% de Ganancia sobre VENTA</label>
                       <div className="flex items-center gap-2">
                         <Input 
                           type="text" 
@@ -1073,15 +1073,15 @@ export default function RegisterPurchase() {
                               setPriceRetailBs('');
                             }
                           }}
-                          className="bg-white h-7 text-xs font-mono w-24 text-right"
+                          className="bg-white h-7 text-xs font-mono w-24 text-right font-black"
                         />
-                        <span className="text-[9px] text-black/60">%</span>
+                        <span className="text-[9px] text-black font-black">%</span>
                       </div>
                     </div>
                     
                     <div>
-                      <label className="text-[7px] font-bold uppercase">Ganancia por Unidad (USD)</label>
-                      <div className="bg-white border rounded px-2 py-1 text-xs font-mono h-7 flex items-center">
+                      <label className="text-[7px] font-black uppercase text-black">Ganancia por Unidad (USD)</label>
+                      <div className="bg-white border rounded px-2 py-1 text-xs font-mono h-7 flex items-center font-black">
                         {(() => {
                           const cost = parseFloat(costUsdInput) || 0;
                           const price = parseFloat(localPriceUsd) || 0;
@@ -1089,12 +1089,12 @@ export default function RegisterPurchase() {
                           return profit > 0 ? formatUsd(profit) : '—';
                         })()}
                       </div>
-                      <p className="text-[6px] text-gray-400 mt-0.5">Ganancia en USD por cada unidad vendida (Precio Detal - Costo)</p>
+                      <p className="text-[6px] text-black font-black mt-0.5">Ganancia en USD por cada unidad vendida (Precio Detal - Costo)</p>
                     </div>
                     
                     <div className="grid grid-cols-2 gap-2">
                       <div>
-                        <label className="text-[7px] font-bold uppercase">Precio Detal USD</label>
+                        <label className="text-[7px] font-black uppercase text-black">Precio Detal USD</label>
                         <Input 
                           type="text" 
                           inputMode="decimal" 
@@ -1113,11 +1113,11 @@ export default function RegisterPurchase() {
                               setLocalPriceUsd(raw);
                             }
                           }}
-                          className="bg-white h-7 text-xs font-mono"
+                          className="bg-white h-7 text-xs font-mono font-black"
                         />
                       </div>
                       <div>
-                        <label className="text-[7px] font-bold uppercase">Precio Detal Bs</label>
+                        <label className="text-[7px] font-black uppercase text-black">Precio Detal Bs</label>
                         <Input 
                           type="text" 
                           inputMode="decimal" 
@@ -1136,53 +1136,53 @@ export default function RegisterPurchase() {
                               setPriceRetailBs(newValue);
                             }
                           }} 
-                          className="bg-white h-7 text-xs font-mono w-full" 
+                          className="bg-white h-7 text-xs font-mono w-full font-black" 
                         />
                       </div>
                     </div>
                   </div>
 
-                  {/* ✅ Sección de IVA y resumen - IDÉNTICA A LA IMAGEN */}
+                  {/* ✅ Sección de IVA y resumen */}
                   <div className="bg-white border border-gray-200 rounded-lg p-3 space-y-2">
-                    <p className="text-[8px] font-black uppercase text-gray-500">Configuración de I.V.A.</p>
+                    <p className="text-[8px] font-black uppercase text-black">Configuración de I.V.A.</p>
                     <div className="flex gap-4">
                       <label className="flex items-center gap-1.5 cursor-pointer">
                         <input type="radio" name="ivaType" checked={ivaType === 'con_iva'} onChange={() => setIvaType('con_iva')} className="text-primary" />
-                        <span className="text-[9px] font-bold">Con I.V.A.</span>
+                        <span className="text-[9px] font-black text-black">Con I.V.A.</span>
                       </label>
                       <label className="flex items-center gap-1.5 cursor-pointer">
                         <input type="radio" name="ivaType" checked={ivaType === 'sin_iva'} onChange={() => setIvaType('sin_iva')} className="text-primary" />
-                        <span className="text-[9px] font-bold">Sin I.V.A.</span>
+                        <span className="text-[9px] font-black text-black">Sin I.V.A.</span>
                       </label>
                     </div>
                     
                     {ivaType === 'con_iva' && (
                       <div className="flex items-center gap-2">
-                        <span className="text-[9px] font-bold">%</span>
+                        <span className="text-[9px] font-black text-black">%</span>
                         <Input 
                           type="number" 
                           value={ivaPercentage} 
                           onChange={(e) => setIvaPercentage(Number(e.target.value))} 
-                          className="h-7 w-16 text-xs text-center font-bold"
+                          className="h-7 w-16 text-xs text-center font-black"
                           min={0}
                           max={100}
                         />
-                        <span className="text-[9px] text-gray-500">% de I.V.A.</span>
+                        <span className="text-[9px] text-black font-black">% de I.V.A.</span>
                       </div>
                     )}
 
-                    <div className="bg-[#F5F5F5] rounded-lg p-2 space-y-1 text-[10px]">
+                    <div className="bg-[#F5F5F5] rounded-lg p-2 space-y-1 text-[10px] font-black">
                       <div className="flex justify-between">
-                        <span className="text-gray-600">Precio Base USD (sin IVA):</span>
-                        <span className="font-bold">USD {(() => {
+                        <span className="text-black">Precio Base USD (sin IVA):</span>
+                        <span className="font-black">USD {(() => {
                           const price = parseFloat(localPriceUsd) || 0;
                           const ivaMult = ivaType === 'con_iva' ? (1 + ivaPercentage / 100) : 1;
                           return (price / ivaMult).toFixed(2);
                         })()}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-gray-600">+ IVA ({ivaPercentage}%):</span>
-                        <span className="font-bold">USD {(() => {
+                        <span className="text-black">+ IVA ({ivaPercentage}%):</span>
+                        <span className="font-black">USD {(() => {
                           const price = parseFloat(localPriceUsd) || 0;
                           const ivaMult = ivaType === 'con_iva' ? (1 + ivaPercentage / 100) : 1;
                           const basePrice = price / ivaMult;
@@ -1191,12 +1191,12 @@ export default function RegisterPurchase() {
                       </div>
                       <div className="border-t border-gray-300 pt-1 mt-1">
                         <div className="flex justify-between">
-                          <span className="text-gray-600 font-bold">Precio Mayor USD:</span>
-                          <span className="font-bold text-black">USD {parseFloat(localPriceUsd || '0').toFixed(2)}</span>
+                          <span className="text-black font-black">Precio Mayor USD:</span>
+                          <span className="font-black text-black">USD {parseFloat(localPriceUsd || '0').toFixed(2)}</span>
                         </div>
                         <div className="flex justify-between">
-                          <span className="text-gray-600 font-bold">Precio Costo USD:</span>
-                          <span className="font-bold text-black">USD {parseFloat(costUsdInput || '0').toFixed(4)}</span>
+                          <span className="text-black font-black">Precio Costo USD:</span>
+                          <span className="font-black text-black">USD {parseFloat(costUsdInput || '0').toFixed(4)}</span>
                         </div>
                       </div>
                     </div>

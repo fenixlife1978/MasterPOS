@@ -7,16 +7,10 @@ directories:
 
 files:
   - electron/**/*
-  - .next/**/*
+  - out/**/*
   - public/**/*
   - node_modules/**/*
   - package.json
-
-extraResources:
-  - from: .next
-    to: .next
-    filter:
-      - '**/*'
 
 win:
   target:

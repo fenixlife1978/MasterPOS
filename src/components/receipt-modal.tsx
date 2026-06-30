@@ -5,6 +5,17 @@ import { Printer, X, FileText, Share2, Zap } from 'lucide-react';
 import { Transaction } from '@/lib/types';
 import { formatBs, formatUsd, formatBsNumber, formatUsdNumber } from '@/lib/currency-formatter';
 
+// ✅ Declarar el tipo de electronAPI en Window
+declare global {
+  interface Window {
+    electronAPI?: {
+      printTicket: (data: any) => Promise<void>;
+      printReceipt?: (data: any) => Promise<{ success: boolean; error?: string }>;
+      getPrinters?: () => Promise<{ success: boolean; printers?: string[]; error?: string }>;
+    };
+  }
+}
+
 interface ReceiptModalProps {
   transaction: Transaction;
   exchangeRate: number;
@@ -185,24 +196,26 @@ export default function ReceiptModal({ transaction, exchangeRate, receiptNumber,
 
   // ========== LÓGICA DE IMPRESIÓN NATIVA USB (ELECTRON) ==========
   const handleNativePrint = async () => {
+    // ✅ Verificar si electronAPI existe
     if (!window.electronAPI) {
       handlePrint();
       return;
     }
 
+    // ✅ Todos los estilos deben tener textAlign, fontSize y fontWeight completos
     const printData = [
       { type: 'text', value: 'LICORERIA CASTILLO', style: { fontWeight: "700", textAlign: 'center', fontSize: "18px" } },
-      { type: 'text', value: 'Calle Ayacucho entre Calles Occidente y La Cruz, Sector La Playita', style: { textAlign: 'center', fontSize: "10px" } },
-      { type: 'text', value: 'RIF: V-11654282-6', style: { textAlign: 'center', fontSize: "10px" } },
-      { type: 'text', value: 'TEL: 0424-5397181', style: { textAlign: 'center', fontSize: "10px" } },
-      { type: 'text', value: 'Guama - Yaracuy', style: { textAlign: 'center', fontSize: "10px" } },
-      { type: 'text', value: '--------------------------------', style: { textAlign: 'center' } },
+      { type: 'text', value: 'Calle Ayacucho entre Calles Occidente y La Cruz, Sector La Playita', style: { textAlign: 'center', fontSize: "10px", fontWeight: "400" } },
+      { type: 'text', value: 'RIF: V-11654282-6', style: { textAlign: 'center', fontSize: "10px", fontWeight: "400" } },
+      { type: 'text', value: 'TEL: 0424-5397181', style: { textAlign: 'center', fontSize: "10px", fontWeight: "400" } },
+      { type: 'text', value: 'Guama - Yaracuy', style: { textAlign: 'center', fontSize: "10px", fontWeight: "400" } },
+      { type: 'text', value: '--------------------------------', style: { textAlign: 'center', fontSize: "10px", fontWeight: "400" } },
       { type: 'text', value: getDocumentTitle().toUpperCase(), style: { textAlign: 'center', fontWeight: "700", fontSize: "14px" } },
-      { type: 'text', value: '--------------------------------', style: { textAlign: 'center' } },
-      { type: 'text', value: `${isCobroDeuda ? 'NOTA' : 'RECIBO'} N: ${formattedReceiptNumber}`, style: { textAlign: 'left' } },
-      { type: 'text', value: `FECHA: ${transactionDate}`, style: { textAlign: 'left' } },
-      { type: 'text', value: `CLIENTE: ${transactionClientName.toUpperCase()}`, style: { textAlign: 'left' } },
-      { type: 'text', value: '--------------------------------', style: { textAlign: 'center' } }
+      { type: 'text', value: '--------------------------------', style: { textAlign: 'center', fontSize: "10px", fontWeight: "400" } },
+      { type: 'text', value: `${isCobroDeuda ? 'NOTA' : 'RECIBO'} N: ${formattedReceiptNumber}`, style: { textAlign: 'left', fontSize: "10px", fontWeight: "400" } },
+      { type: 'text', value: `FECHA: ${transactionDate}`, style: { textAlign: 'left', fontSize: "10px", fontWeight: "400" } },
+      { type: 'text', value: `CLIENTE: ${transactionClientName.toUpperCase()}`, style: { textAlign: 'left', fontSize: "10px", fontWeight: "400" } },
+      { type: 'text', value: '--------------------------------', style: { textAlign: 'center', fontSize: "10px", fontWeight: "400" } }
     ];
 
     // Items
@@ -210,25 +223,25 @@ export default function ReceiptModal({ transaction, exchangeRate, receiptNumber,
       printData.push({
         type: 'text',
         value: `${item.qty}x ${item.name.toUpperCase().slice(0, 20)}`,
-        style: { fontWeight: "700" }
+        style: { fontWeight: "700", textAlign: 'left', fontSize: "10px" }
       });
       printData.push({
         type: 'text',
         value: `    Ref: ${formatBsNumber(item.priceBs)} | Total: ${formatBsNumber(item.priceBs * item.qty)}`,
-        style: { fontSize: "10px" }
+        style: { fontSize: "10px", textAlign: 'left', fontWeight: "400" }
       });
     });
 
-    printData.push({ type: 'text', value: '--------------------------------', style: { textAlign: 'center' } });
+    printData.push({ type: 'text', value: '--------------------------------', style: { textAlign: 'center', fontSize: "10px", fontWeight: "400" } });
 
     if (!isColaboracion && !isConsumoPropio) {
       if (transactionSubtotal > 0) {
-        printData.push({ type: 'text', value: `SUBTOTAL: ${formatBs(transactionSubtotal)}`, style: { textAlign: 'right' } });
+        printData.push({ type: 'text', value: `SUBTOTAL: ${formatBs(transactionSubtotal)}`, style: { textAlign: 'right', fontSize: "10px", fontWeight: "400" } });
       }
       if (transactionIva > 0) {
-        printData.push({ type: 'text', value: `IVA (16%): ${formatBs(transactionIva)}`, style: { textAlign: 'right' } });
+        printData.push({ type: 'text', value: `IVA (16%): ${formatBs(transactionIva)}`, style: { textAlign: 'right', fontSize: "10px", fontWeight: "400" } });
       }
-      printData.push({ type: 'text', value: '--------------------------------', style: { textAlign: 'center' } });
+      printData.push({ type: 'text', value: '--------------------------------', style: { textAlign: 'center', fontSize: "10px", fontWeight: "400" } });
       printData.push({ 
         type: 'text', 
         value: `TOTAL: ${formatBs(transactionTotal)}`, 
@@ -237,13 +250,13 @@ export default function ReceiptModal({ transaction, exchangeRate, receiptNumber,
       printData.push({ 
         type: 'text', 
         value: `REF: ${formatUsd(transactionTotal / transactionExchangeRate)}`, 
-        style: { textAlign: 'right', fontSize: "12px" } 
+        style: { textAlign: 'right', fontSize: "12px", fontWeight: "400" } 
       });
     }
 
-    printData.push({ type: 'text', value: '--------------------------------', style: { textAlign: 'center' } });
-    printData.push({ type: 'text', value: '¡GRACIAS POR SU PREFERENCIA!', style: { textAlign: 'center', fontWeight: "700" } });
-    printData.push({ type: 'text', value: 'Desarrollado por MasterPOS v1.0', style: { textAlign: 'center', fontSize: "8px" } });
+    printData.push({ type: 'text', value: '--------------------------------', style: { textAlign: 'center', fontSize: "10px", fontWeight: "400" } });
+    printData.push({ type: 'text', value: '¡GRACIAS POR SU PREFERENCIA!', style: { textAlign: 'center', fontWeight: "700", fontSize: "12px" } });
+    printData.push({ type: 'text', value: 'Desarrollado por MasterPOS v1.0', style: { textAlign: 'center', fontSize: "8px", fontWeight: "400" } });
 
     try {
       await window.electronAPI.printTicket(printData);

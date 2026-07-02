@@ -6,7 +6,7 @@ import {
   Search, X, CheckCircle, AlertCircle, Receipt, 
   Minus, Plus, RefreshCw, Smartphone, 
   CreditCard, Loader2, ArrowLeftRight, 
-  Package, History, Eye, DollarSign, Banknote, ShieldCheck
+  Package, History, Eye, DollarSign, Banknote, ShieldCheck, Monitor
 } from 'lucide-react';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
@@ -99,8 +99,12 @@ function formatReturnReceipt(num?: number | string): string {
 
 export default function ReturnsModule() {
   const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
   const technicalTerminalId = user?.terminalId || 'default';
-  const currentTerminalName = user?.terminalName || user?.terminalId || 'Principal';
+  
+  // Estado para la terminal seleccionada (para el admin)
+  const [selectedTerminalId, setSelectedTerminalId] = useState(user?.terminalName || user?.terminalId || 'Principal');
+  const [terminals, setTerminals] = useState<any[]>([]);
 
   const { products, register, exchangeRate } = usePOSState();
   const [activeTab, setActiveTab] = useState<'process' | 'history'>('process');
@@ -123,8 +127,15 @@ export default function ReturnsModule() {
   const [allTransactions, setAllTransactions] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
+  // Cargar terminales si es admin
+  useEffect(() => {
+    if (isAdmin) {
+      syncService.getAllTerminals().then(setTerminals).catch(console.error);
+    }
+  }, [isAdmin]);
+
   // Contador de devoluciones
-  const getReturnStorageKey = () => `last_return_number_${currentTerminalName}`;
+  const getReturnStorageKey = () => `last_return_number_${selectedTerminalId}`;
   const [nextReturnNumber, setNextReturnNumber] = useState(1);
 
   useEffect(() => {
@@ -134,7 +145,7 @@ export default function ReturnsModule() {
     } else {
       setNextReturnNumber(1);
     }
-  }, [currentTerminalName]);
+  }, [selectedTerminalId]);
 
   useEffect(() => {
     setIsLoading(true);
@@ -142,8 +153,11 @@ export default function ReturnsModule() {
     const unsubscribe = syncService.subscribeToTransactions((data: any[]) => {
       const filtered = data.filter(tx => {
         const tid = tx.terminalId || tx.terminal_id || extractTerminalIdFromSession(tx.sessionId || tx.session_id);
-        // Lógica idéntica: Filtrar solo por la terminal actual del usuario
-        const matchesTerminal = tid === currentTerminalName || tid === user?.terminalId;
+        
+        // Filtrar por la terminal actualmente seleccionada (selectedTerminalId)
+        // Comparación bivalente: nombre legible o ID técnico si corresponde
+        const matchesTerminal = tid === selectedTerminalId || (isAdmin && tid === user?.terminalId && selectedTerminalId === user?.terminalName);
+        
         const txDate = getLocalDateStr(tx.date);
         const matchesDate = txDate >= startDate && txDate <= endDate;
         
@@ -163,7 +177,7 @@ export default function ReturnsModule() {
     });
 
     return () => unsubscribe();
-  }, [currentTerminalName, startDate, endDate, user?.terminalId, searchReceipt]);
+  }, [selectedTerminalId, startDate, endDate, user?.terminalId, searchReceipt, isAdmin, user?.terminalName]);
 
   const salesTransactions = useMemo(() => {
     return allTransactions.filter(tx => {
@@ -180,9 +194,9 @@ export default function ReturnsModule() {
   const handleSearchByReceipt = useCallback(() => {
     setMessage(null);
     if (searchReceipt.trim() && allTransactions.length === 0) {
-      setMessage({ type: 'error', text: `No se encontró el registro #${formatReceipt(searchReceipt)} en los filtros actuales.` });
+      setMessage({ type: 'error', text: `No se encontró el registro #${formatReceipt(searchReceipt)} en la terminal ${selectedTerminalId}.` });
     }
-  }, [allTransactions.length, searchReceipt]);
+  }, [allTransactions.length, searchReceipt, selectedTerminalId]);
 
   const openReturnModal = (tx: any) => {
     if (tx.return_status === 'total') {
@@ -190,7 +204,7 @@ export default function ReturnsModule() {
       return;
     }
     
-    // Lógica idéntica: Ambos roles requieren caja abierta
+    // Todos los usuarios (admin y cajero) requieren caja abierta para procesar devoluciones
     if (!register?.isOpen) {
       alert('Debe abrir la caja antes de procesar una devolución.');
       return;
@@ -318,7 +332,7 @@ export default function ReturnsModule() {
         returnMethod: finalReturnMethod,
         notes: `Motivo: ${reasonLabel}. Autorizado por supervisor.`,
         authorizedBy: 'Supervisor (PIN)',
-        terminalId: currentTerminalName,
+        terminalId: selectedTerminalId,
         sessionId: selectedTransaction.sessionId || selectedTransaction.session_id,
         exchangeRate: rate,
         payments: [{
@@ -409,22 +423,40 @@ export default function ReturnsModule() {
     return viewingReturnDetail.items;
   }, [viewingReturnDetail]);
 
-  const salesTransactionsList = useMemo(() => salesTransactions, [salesTransactions]);
-
   return (
     <div className="p-6 h-full overflow-auto bg-background flex flex-col">
       <div className="flex justify-between items-start mb-6 flex-wrap gap-4 flex-shrink-0">
         <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-r-xl shadow-sm flex-1 min-w-[300px]">
-          <div className="flex items-center gap-3">
-            <div className="bg-red-100 p-2 rounded-lg">
-              <ArrowLeftRight size={24} className="text-red-600" />
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="bg-red-100 p-2 rounded-lg">
+                <ArrowLeftRight size={24} className="text-red-600" />
+              </div>
+              <div>
+                <h2 className="text-2xl font-black text-red-900 tracking-tight uppercase">Módulo de Devoluciones</h2>
+                <p className="text-[11px] font-black text-red-600 uppercase tracking-widest">
+                  Revision de Terminal: {selectedTerminalId} • {activeTab === 'process' ? 'Paso 1: Localizar Venta' : 'Historial de Operaciones'}
+                </p>
+              </div>
             </div>
-            <div>
-              <h2 className="text-2xl font-black text-red-900 tracking-tight uppercase">Módulo de Devoluciones</h2>
-              <p className="text-[11px] font-black text-red-600 uppercase tracking-widest">
-                Terminal: {currentTerminalName} • {activeTab === 'process' ? 'Paso 1: Localizar Venta' : 'Historial de Operaciones'}
-              </p>
-            </div>
+            
+            {/* ✅ SELECTOR DE TERMINALES PARA EL ADMIN */}
+            {isAdmin && terminals.length > 0 && (
+              <div className="flex items-center gap-2 bg-white border border-red-200 px-3 py-1.5 rounded-xl shadow-sm">
+                <Monitor size={16} className="text-red-600" />
+                <span className="text-[9px] font-black text-slate-500 uppercase">Cambiar Terminal:</span>
+                <select 
+                  value={selectedTerminalId} 
+                  onChange={(e) => setSelectedTerminalId(e.target.value)}
+                  className="bg-transparent border-none font-black text-xs outline-none cursor-pointer uppercase text-red-700"
+                >
+                  {terminals.map(t => (
+                    <option key={t.id} value={t.name || t.id}>Terminal {t.name || t.id}</option>
+                  ))}
+                  <option value="Principal">Terminal Principal</option>
+                </select>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -507,7 +539,7 @@ export default function ReturnsModule() {
           {isLoading ? (
             <div className="flex flex-col items-center justify-center py-20 gap-4">
               <Loader2 className="animate-spin text-red-600" size={32} />
-              <p className="text-sm font-black text-black">Actualizando datos en tiempo real...</p>
+              <p className="text-sm font-black text-black">Actualizando datos de Terminal {selectedTerminalId}...</p>
             </div>
           ) : activeTab === 'process' ? (
             <Table>
@@ -522,10 +554,10 @@ export default function ReturnsModule() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {salesTransactionsList.length === 0 ? (
-                  <TableRow><TableCell colSpan={6} className="text-center py-16 text-black font-black italic">No hay ventas registradas en el período</TableCell></TableRow>
+                {salesTransactions.length === 0 ? (
+                  <TableRow><TableCell colSpan={6} className="text-center py-16 text-black font-black italic">No hay ventas registradas en {selectedTerminalId}</TableCell></TableRow>
                 ) : (
-                  salesTransactionsList.map((tx) => {
+                  salesTransactions.map((tx) => {
                     const returned = tx.return_status === 'total' || tx.return_status === 'partial';
                     return (
                       <TableRow key={tx.id} className={cn("group hover:bg-slate-50 transition-colors", returned && "bg-red-50/30")}>
@@ -564,7 +596,7 @@ export default function ReturnsModule() {
               </TableHeader>
               <TableBody>
                 {processedReturns.length === 0 ? (
-                  <TableRow><TableCell colSpan={7} className="text-center py-16 text-black font-black italic">No hay devoluciones registradas en el período</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={7} className="text-center py-16 text-black font-black italic">No hay devoluciones en {selectedTerminalId}</TableCell></TableRow>
                 ) : (
                   processedReturns.map((tx) => (
                     <TableRow key={tx.id} className="hover:bg-slate-50 transition-colors">

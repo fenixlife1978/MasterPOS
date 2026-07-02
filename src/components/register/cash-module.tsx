@@ -6,7 +6,7 @@ import {
   Vault, Banknote, Smartphone, Fingerprint, 
   Plane, DollarSign, CreditCard, Receipt, 
   BarChart3, Clock, Percent, Eye, X,
-  RefreshCw, Search, Package, Hash, ShoppingBasket
+  RefreshCw, Search, Package, Hash, ShoppingBasket, Monitor
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -65,9 +65,13 @@ function extractTerminalIdFromSession(sessionId: string | null | undefined): str
 
 export default function CashModule({ state }: CashModuleProps) {
   const { user } = useAuth();
-  // ✅ Usar el NOMBRE legible de la terminal para los filtros de transacciones (ej: "0001")
-  const terminalId = user?.terminalName || user?.terminalId || 'default';
-  const terminalName = user?.terminalName ? `Terminal ${user.terminalName}` : 'Terminal Principal';
+  const isAdmin = user?.role === 'admin';
+  
+  // Estado para la terminal activa (permite al admin cambiar de vista)
+  const [activeTerminalId, setActiveTerminalId] = useState(user?.terminalName || user?.terminalId || 'default');
+  const [terminals, setTerminals] = useState<any[]>([]);
+  
+  const terminalName = activeTerminalId !== 'default' ? `Terminal ${activeTerminalId}` : 'Terminal Principal';
 
   const [openAmountBs, setOpenAmountBs] = useState('0.00');
   const [openAmountUsd, setOpenAmountUsd] = useState('0.00');
@@ -90,8 +94,15 @@ export default function CashModule({ state }: CashModuleProps) {
   const reg = state.register;
   const isClosed = !reg || !reg.isOpen;
 
+  // Cargar lista de terminales para el admin
+  useEffect(() => {
+    if (isAdmin) {
+      syncService.getAllTerminals().then(setTerminals).catch(console.error);
+    }
+  }, [isAdmin]);
+
   const loadTodaysTransactions = useCallback(async () => {
-    if (isClosed) {
+    if (isClosed && !isAdmin) { // El admin puede ver historial incluso si su caja está cerrada
       setIsLoading(false);
       return;
     }
@@ -112,12 +123,10 @@ export default function CashModule({ state }: CashModuleProps) {
         }));
 
         todayTx = allTx.filter(tx => {
-          // ✅ Priorizar el campo terminalId (que ahora guarda el nombre legible)
-          // ✅ Fallback al ID de sesión (que usa el ID técnico) solo si no hay terminalId guardado
           const txTerminal = tx.terminalId || tx.terminal_id || extractTerminalIdFromSession(tx.sessionId || tx.session_id);
           
-          // ✅ Comparación bivalente para asegurar compatibilidad con registros antiguos (ID técnico) y nuevos (Nombre)
-          const matchesTerminal = txTerminal === terminalId || txTerminal === user?.terminalId;
+          // Filtrar por la terminal seleccionada (activeTerminalId)
+          const matchesTerminal = txTerminal === activeTerminalId;
           
           if (!matchesTerminal) return false;
           
@@ -134,11 +143,11 @@ export default function CashModule({ state }: CashModuleProps) {
     } finally {
       setIsLoading(false);
     }
-  }, [terminalId, user?.terminalId, isClosed]);
+  }, [activeTerminalId, isClosed, isAdmin]);
 
   useEffect(() => {
     loadTodaysTransactions();
-  }, [terminalId, isClosed, loadTodaysTransactions]);
+  }, [activeTerminalId, isClosed, loadTodaysTransactions]);
 
   const paymentMethods = [
     { id: 'efectivo_bs', label: 'EFECTIVO BS', icon: Banknote, isUsd: false },
@@ -149,9 +158,7 @@ export default function CashModule({ state }: CashModuleProps) {
     { id: 'zelle', label: 'ZELLE', icon: Plane, isUsd: true },
   ];
 
-  // ✅ Calcular rango de recibos de la jornada (INCLUSIVO)
   const receiptRange = useMemo(() => {
-    // Incluir todos los tipos de transacciones que generan recibo
     const saleTxs = todaysTransactions.filter(t => 
       t.type === 'contado' || 
       t.type === 'credito' || 
@@ -232,12 +239,6 @@ export default function CashModule({ state }: CashModuleProps) {
       .reduce((sum, t) => sum + (t.total || 0), 0)
   , [todaysTransactions]);
 
-  const totalDevolucionesUsd = useMemo(() => 
-    todaysTransactions
-      .filter(t => t.type === 'devolucion')
-      .reduce((sum, t) => sum + (t.totalUsd || 0), 0)
-  , [todaysTransactions]);
-
   const totalContadoBs = useMemo(() => {
     let total = 0;
     for (const m of paymentMethods.filter(p => !p.isUsd)) {
@@ -254,9 +255,8 @@ export default function CashModule({ state }: CashModuleProps) {
     return total;
   }, [salesBreakdown]);
 
-  // ✅ CORREGIDO: El total en caja debe restar las devoluciones del periodo
   const totalEnCaja = (reg?.openAmountBs || 0) + totalContadoBs - totalDevolucionesBs;
-  const totalEnCajaUSD = (reg?.openAmountUsd || 0) + totalContadoUsd - totalDevolucionesUsd;
+  const totalEnCajaUSD = (reg?.openAmountUsd || 0) + totalContadoUsd;
 
   const handleOpenCash = async () => {
     const bsAmount = parseFloat(openAmountBs) || 0;
@@ -439,7 +439,25 @@ export default function CashModule({ state }: CashModuleProps) {
     <div className="h-full w-full overflow-y-auto overflow-x-hidden bg-[#F9F4E1]">
       <div className="min-h-full p-4 pb-8">
         <header className="bg-[#1E3A8A] text-white p-4 rounded-t-xl shadow-md text-center relative border-b-4 border-[#0284C7]">
-          <div className="absolute left-4 top-4 bg-amber-50 text-[10px] font-bold px-2 py-1 rounded text-slate-900">{terminalName}</div>
+          <div className="absolute left-4 top-4 flex items-center gap-2">
+            {isAdmin && terminals.length > 0 ? (
+              <div className="bg-amber-50 text-slate-900 px-3 py-1 rounded font-black text-sm flex items-center gap-2">
+                <Monitor size={14} />
+                <select 
+                  value={activeTerminalId} 
+                  onChange={(e) => setActiveTerminalId(e.target.value)}
+                  className="bg-transparent border-none font-black outline-none cursor-pointer uppercase"
+                >
+                  {terminals.map(t => (
+                    <option key={t.id} value={t.name || t.id}>Terminal {t.name || t.id}</option>
+                  ))}
+                  <option value="default">Terminal Principal</option>
+                </select>
+              </div>
+            ) : (
+              <div className="bg-amber-50 text-slate-900 px-3 py-1 rounded font-black text-sm">{terminalName}</div>
+            )}
+          </div>
           <h1 className="text-lg md:text-xl font-black tracking-wider uppercase">MasterPOS - Control de Caja</h1>
           <div className="flex items-center justify-center gap-2 mt-1">
             <p className="text-[10px] text-blue-200 font-mono flex items-center gap-1"><Clock size={10} /> {new Date().toLocaleDateString('es-VE')} • {new Date().toLocaleTimeString('es-VE')}</p>
@@ -514,8 +532,23 @@ export default function CashModule({ state }: CashModuleProps) {
                     {paymentMethods.map(({ id, label, icon: Icon, isUsd }) => (
                       <tr key={id} className="hover:bg-slate-50"><td className="p-2"><div className="flex items-center gap-2"><Icon size={12} className="text-[#1E3A8A]" /><span className="font-bold">{label}</span></div></td><td className="p-2 text-right font-mono font-bold">{!isUsd ? formatBs(salesBreakdown.totalsBs[id] || 0) : '—'}</td><td className="p-2 text-right font-mono font-bold">{isUsd ? formatUsd(salesBreakdown.totalsUsd[id] || 0) : '—'}</td></tr>
                     ))}
-                    <tr className="bg-blue-50/30 font-bold"><td className="p-2">VENTAS A CRÉDITO</td><td className="p-2 text-right font-mono text-blue-700">{formatBs(totalCreditoBs)}</td><td className="p-2 text-right">—</td></tr>
-                    <tr className="bg-red-50 text-red-700 font-bold"><td className="p-2">TOTAL DEVOLUCIONES</td><td className="p-2 text-right font-mono">{totalDevolucionesBs > 0 ? `-${formatBs(totalDevolucionesBs)}` : 'Bs. 0,00'}</td><td className="p-2 text-right">{totalDevolucionesUsd > 0 ? `-${formatUsd(totalDevolucionesUsd)}` : '—'}</td></tr>
+                    <tr className="bg-blue-50/30 font-bold">
+                      <td className="p-2">VENTAS A CRÉDITO</td>
+                      <td className="p-2 text-right font-mono text-blue-700">{formatBs(totalCreditoBs)}</td>
+                      <td className="p-2 text-right">—</td>
+                    </tr>
+                    {/* ✅ NUEVA FILA SOLICITADA */}
+                    <tr className="bg-amber-50/50 font-bold">
+                      <td className="p-2">TOTAL USD EFECTIVO</td>
+                      <td className="p-2 text-right">—</td>
+                      <td className="p-2 text-right font-mono text-emerald-700">{formatUsd(totalContadoUsd)}</td>
+                    </tr>
+                    {/* ✅ FILA DE DEVOLUCIONES CORREGIDA: SIN EQUIVALENCIA USD */}
+                    <tr className="bg-red-50 text-red-700 font-bold">
+                      <td className="p-2">TOTAL DEVOLUCIONES</td>
+                      <td className="p-2 text-right font-mono">{totalDevolucionesBs > 0 ? `-${formatBs(totalDevolucionesBs)}` : 'Bs. 0,00'}</td>
+                      <td className="p-2 text-right">—</td>
+                    </tr>
                   </tbody>
                 </table>
               </div>
@@ -588,7 +621,7 @@ export default function CashModule({ state }: CashModuleProps) {
 
                 {txItems.length > 0 && (
                   <div>
-                    <h4 className="text-xs font-black uppercase text-black/60 flex items-center gap-2 mb-3">
+                    <h4 className="text-xs font-black uppercase text-black/60 flex items-gap-2 mb-3">
                       <Package size={14} className="text-primary" /> 
                       {selectedTransaction.type === 'devolucion' ? 'Productos Devueltos' : 'Productos Vendidos'}
                     </h4>

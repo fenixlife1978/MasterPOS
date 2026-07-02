@@ -3,18 +3,17 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import { usePOSState } from '@/hooks/use-pos-state';
 import { 
-  Search, X, CheckCircle, AlertCircle, Receipt, User, 
-  Calendar, Banknote, Minus, Plus, RefreshCw, Smartphone, 
-  CreditCard, Monitor, Loader2, Terminal, ShieldCheck, 
-  AlertTriangle, ArrowLeftRight, Info, Package, History,
-  Eye, FileText, DollarSign
+  Search, X, CheckCircle, AlertCircle, Receipt, 
+  Minus, Plus, RefreshCw, Smartphone, 
+  CreditCard, Loader2, ArrowLeftRight, 
+  Package, History, Eye, DollarSign, Banknote, ShieldCheck
 } from 'lucide-react';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
-import { Transaction, CartItem, getCategoryById } from '@/lib/types';
+import { CartItem, getCategoryById } from '@/lib/types';
 import syncService from '@/services/syncService';
 import { formatBs, formatUsd } from '@/lib/currency-formatter';
 import { useAuth } from '@/context/AuthContext';
@@ -102,7 +101,6 @@ export default function ReturnsModule() {
   const { user } = useAuth();
   const technicalTerminalId = user?.terminalId || 'default';
   const currentTerminalName = user?.terminalName || user?.terminalId || 'Principal';
-  const isAdmin = user?.role === 'admin';
 
   const { products, register, exchangeRate } = usePOSState();
   const [activeTab, setActiveTab] = useState<'process' | 'history'>('process');
@@ -122,10 +120,6 @@ export default function ReturnsModule() {
   const [endDate, setEndDate] = useState(getTodayYMD());
   const [searchReceipt, setSearchReceipt] = useState('');
 
-  const [selectedTerminal, setSelectedTerminal] = useState<string>('all');
-  const [availableTerminals, setAvailableTerminals] = useState<{ id: string; name: string }[]>([]);
-  const [isLoadingTerminals, setIsLoadingTerminals] = useState(false);
-
   const [allTransactions, setAllTransactions] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -143,37 +137,13 @@ export default function ReturnsModule() {
   }, [currentTerminalName]);
 
   useEffect(() => {
-    if (isAdmin) {
-      const loadTerminals = async () => {
-        setIsLoadingTerminals(true);
-        try {
-          const terms = await syncService.getAllTerminals();
-          setAvailableTerminals(terms.map(t => ({ id: t.name || t.id, name: t.name || t.id })));
-        } catch (error) {
-          console.error('Error cargando terminales:', error);
-        } finally {
-          setIsLoadingTerminals(false);
-        }
-      };
-      loadTerminals();
-    }
-  }, [isAdmin]);
-
-  const getTargetTerminalName = useCallback(() => {
-    if (isAdmin) {
-      return selectedTerminal === 'all' ? null : selectedTerminal;
-    }
-    return currentTerminalName;
-  }, [isAdmin, selectedTerminal, currentTerminalName]);
-
-  useEffect(() => {
     setIsLoading(true);
-    const targetTerminalName = getTargetTerminalName();
     
     const unsubscribe = syncService.subscribeToTransactions((data: any[]) => {
       const filtered = data.filter(tx => {
         const tid = tx.terminalId || tx.terminal_id || extractTerminalIdFromSession(tx.sessionId || tx.session_id);
-        const matchesTerminal = !targetTerminalName || tid === targetTerminalName || tid === user?.terminalId;
+        // Lógica idéntica: Filtrar solo por la terminal actual del usuario
+        const matchesTerminal = tid === currentTerminalName || tid === user?.terminalId;
         const txDate = getLocalDateStr(tx.date);
         const matchesDate = txDate >= startDate && txDate <= endDate;
         
@@ -193,7 +163,7 @@ export default function ReturnsModule() {
     });
 
     return () => unsubscribe();
-  }, [getTargetTerminalName, startDate, endDate, user?.terminalId, searchReceipt]);
+  }, [currentTerminalName, startDate, endDate, user?.terminalId, searchReceipt]);
 
   const salesTransactions = useMemo(() => {
     return allTransactions.filter(tx => {
@@ -220,7 +190,8 @@ export default function ReturnsModule() {
       return;
     }
     
-    if (!isAdmin && !register?.isOpen) {
+    // Lógica idéntica: Ambos roles requieren caja abierta
+    if (!register?.isOpen) {
       alert('Debe abrir la caja antes de procesar una devolución.');
       return;
     }
@@ -323,7 +294,6 @@ export default function ReturnsModule() {
         isKit: false
       }));
 
-      // Mapeo normalizado de métodos para que coincida con el cierre final
       const finalReturnMethod = selectedMethod === 'efectivo' ? 'efectivo_bs' : 
                                 selectedMethod === 'efectivo_usd' ? 'usd_efectivo' : 
                                 selectedMethod;
@@ -359,7 +329,6 @@ export default function ReturnsModule() {
         }]
       };
 
-      // Preparar actualizaciones para la operación atómica
       const stockUpdates = new Map();
       const kardexEntries: any[] = [];
       for (const ret of returnItems.filter(i => i.returnQty > 0)) {
@@ -398,11 +367,9 @@ export default function ReturnsModule() {
         createdAt: getVenezuelaISOString()
       };
 
-      // Nuevas transacciones para el registro (balancín de caja)
       const currentTxs = register?.txs || [];
       const updatedTxs = [...currentTxs, returnTransaction];
 
-      // Ejecutar todo en un solo bloque atómico USANDO EL ID TÉCNICO para la ruta
       await syncService.runAtomicSale(technicalTerminalId, returnTransaction, {
         products: stockUpdates,
         kardexEntries: kardexEntries,
@@ -410,7 +377,6 @@ export default function ReturnsModule() {
         registerUpdate: { txs: updatedTxs }
       });
 
-      // Actualizar el estado de la venta original
       const db = getDatabase(app);
       await update(ref(db, `transactions/${saleId}`), {
         return_status: returnStatus,
@@ -460,24 +426,6 @@ export default function ReturnsModule() {
               </p>
             </div>
           </div>
-        </div>
-
-        <div className="flex gap-2">
-          {isAdmin && (
-            <div className="flex items-center gap-2 bg-white border border-[#9E9E9E] rounded-lg px-3 py-1 shadow-sm">
-              <Terminal size={14} className="text-black" />
-              <select
-                value={selectedTerminal}
-                onChange={(e) => setSelectedTerminal(e.target.value)}
-                className="bg-transparent border-none text-xs font-black text-black focus:outline-none"
-              >
-                <option value="all">TODAS LAS TERMINALES</option>
-                {availableTerminals.map((term) => (
-                  <option key={term.id} value={term.id}>{term.name}</option>
-                ))}
-              </select>
-            </div>
-          )}
         </div>
       </div>
 

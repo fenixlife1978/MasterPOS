@@ -391,8 +391,30 @@ export function usePOSState() {
       }
     }
 
+    // ✅ GENERAR ENTRADA CONTABLE AUTOMÁTICA
+    const accountingEntry: any = !isSpecial ? {
+      id: String(txId),
+      date: tx.date,
+      type: 'ingreso' as const,
+      category: type === 'cobro_deuda' ? 'cobro_deuda' : (type === 'credito' ? 'cuenta_por_cobrar' : 'ventas'),
+      concept: type === 'cobro_deuda' ? 'Cobro de Deuda' : (type === 'credito' ? 'Venta a Crédito' : 'Venta'),
+      description: `Cliente: ${tx.clientName || 'Consumidor Final'} | Recibo: #${tx.receiptNumber || txId}`,
+      amount: tx.total,
+      totalUsd: tx.totalUsd,
+      exchangeRate: tx.exchangeRate,
+      referenceId: tx.id,
+      referenceType: type === 'cobro_deuda' ? 'debt_payment' : 'sale',
+      createdAt: tx.date,
+      updatedAt: tx.date
+    } : null;
+
     const newTxs = [...(register.txs || []), tx];
-    await syncService.runAtomicSale(terminalId, tx, { products: stockUpdates, kardexEntries, registerUpdate: { txs: newTxs } });
+    await syncService.runAtomicSale(terminalId, tx, { 
+      products: stockUpdates, 
+      kardexEntries, 
+      registerUpdate: { txs: newTxs },
+      accountingEntry // ✅ Agregado a la operación atómica
+    });
 
     if (type === 'credito' && targetClientId) {
       await syncService.saveAccount({

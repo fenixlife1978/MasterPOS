@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useAccounting } from '@/hooks/use-accounting';
 import { Plus, Search, X, TrendingUp, TrendingDown, DollarSign, Filter, Eye, BarChart3 } from 'lucide-react';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
@@ -50,7 +50,7 @@ const formatDateFriendly = (dateStr: string): string => {
 };
 
 export default function AccountingModule() {
-  const { entries, addEntry, getTotalIngresos, getTotalEgresos } = useAccounting();
+  const { entries, addEntry } = useAccounting();
   const state = usePOSState();
   const globalExchangeRate = state.exchangeRate || 1;
   
@@ -80,14 +80,68 @@ export default function AccountingModule() {
     { id: 'cuenta_por_cobrar', label: 'Venta a Crédito' }
   ];
 
-  const filteredEntries = (entries || []).filter(entry => {
+  // ✅ NORMALIZACIÓN DEL LIBRO DIARIO: Cruce de asientos contables con transacciones para recuperar faltantes
+  const combinedEntries = useMemo(() => {
+    const accEntries = [...(entries || [])];
+    
+    // Identificar IDs de transacciones que ya tienen asiento contable para evitar duplicados
+    const existingTxIds = new Set(
+      accEntries
+        .filter(e => e.referenceType === 'sale' || e.referenceType === 'debt_payment' || e.referenceType === 'credit_sale' || e.referenceType === 'return' || e.referenceType === 'inventory_adjustment')
+        .map(e => String(e.referenceId))
+    );
+
+    // Barrido de transacciones para localizar las que no tienen entrada en el libro diario (como las del 02/07/26)
+    const normalizedTransactions = (state.transactions || [])
+      .filter(tx => !existingTxIds.has(String(tx.id)))
+      .map(tx => {
+        // Ignorar operaciones de inventario que no mueven dinero (colaboraciones/consumos) si se desea pureza financiera
+        const isInventoryOnly = tx.type === 'colaboracion' || tx.type === 'consumo_propio';
+        if (isInventoryOnly) return null;
+
+        return {
+          id: `tx_${tx.id}`,
+          date: tx.date,
+          type: tx.type === 'devolucion' ? 'egreso' : 'ingreso',
+          category: tx.type === 'cobro_deuda' ? 'cobro_deuda' : (tx.type === 'credito' ? 'cuenta_por_cobrar' : (tx.type === 'devolucion' ? 'devolucion' : 'ventas')),
+          concept: tx.type === 'devolucion' ? 'Devolución de Venta' : (tx.type === 'cobro_deuda' ? 'Cobro de Deuda' : (tx.type === 'credito' ? 'Venta a Crédito' : 'Venta de Mercancía')),
+          description: `Cliente: ${tx.clientName || 'Consumidor Final'} | Recibo: #${tx.receiptNumber || tx.id} | Normalización automática`,
+          amount: tx.total,
+          totalUsd: tx.totalUsd || (tx.total / (tx.exchangeRate || globalExchangeRate)),
+          exchangeRate: tx.exchangeRate || globalExchangeRate,
+          referenceId: tx.id,
+          referenceType: tx.type === 'devolucion' ? 'return' : (tx.type === 'cobro_deuda' ? 'debt_payment' : 'sale'),
+          isVirtual: true
+        };
+      })
+      .filter(Boolean);
+
+    return [...accEntries, ...normalizedTransactions];
+  }, [entries, state.transactions, globalExchangeRate]);
+
+  // Filtrado de la lista combinada
+  const filteredEntries = combinedEntries.filter(entry => {
+    if (!entry) return false;
     if (filterType !== 'todos' && entry.type !== filterType) return false;
     if (filterCategory !== 'todas' && entry.category !== filterCategory) return false;
-    if (startDate && new Date(entry.date) < new Date(startDate)) return false;
-    if (endDate && new Date(entry.date) > new Date(endDate)) return false;
+    
+    if (startDate || endDate) {
+      const entryDate = new Date(entry.date);
+      if (startDate) {
+        const sDate = new Date(startDate);
+        sDate.setHours(0, 0, 0, 0);
+        if (entryDate < sDate) return false;
+      }
+      if (endDate) {
+        const eDate = new Date(endDate);
+        eDate.setHours(23, 59, 59, 999);
+        if (entryDate > eDate) return false;
+      }
+    }
     return true;
   }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
+  // Totales basados en la lista normalizada
   const totalIngresosBs = filteredEntries.filter(e => e.type === 'ingreso').reduce((sum, e) => sum + e.amount, 0);
   const totalEgresosBs = filteredEntries.filter(e => e.type === 'egreso').reduce((sum, e) => sum + e.amount, 0);
   const balanceBs = totalIngresosBs - totalEgresosBs;
@@ -130,7 +184,7 @@ export default function AccountingModule() {
       <div className="flex justify-between items-center mb-6">
         <div>
           <h2 className="text-2xl font-headline font-black text-black uppercase">Libro Diario - Contabilidad</h2>
-          <p className="text-sm text-black font-black mt-1 uppercase tracking-widest">Registro de Ingresos y Egresos en Tiempo Real</p>
+          <p className="text-sm text-black font-black mt-1 uppercase tracking-widest">Registros de Ventas y Gastos Normalizados</p>
         </div>
         <Button onClick={() => setShowExpenseModal(true)} className="bg-red-600 hover:bg-red-700 text-white font-black border-2 border-black shadow-lg h-10 px-6 text-sm">
           <Plus size={18} className="mr-2" /> REGISTRAR EGRESO
@@ -216,7 +270,7 @@ export default function AccountingModule() {
           </TableHeader>
           <TableBody>
             {filteredEntries.length === 0 ? (
-              <TableRow><TableCell colSpan={6} className="text-center py-10 text-black font-black italic text-sm">No hay registros contables</TableCell></TableRow>
+              <TableRow><TableCell colSpan={6} className="text-center py-10 text-black font-black italic text-sm">No hay registros contables en este período</TableCell></TableRow>
             ) : (
               filteredEntries.map((entry, idx) => (
                 <TableRow 
@@ -292,7 +346,7 @@ export default function AccountingModule() {
                 </div>
                 <div className="pt-2 text-center">
                   <div className="inline-block bg-primary/10 px-3 py-1 rounded-full">
-                    <p className="text-[10px] font-black text-black uppercase tracking-widest">Tasa BCV Aplicada: {formatBsNumber(selectedEntry.exchangeRate || globalExchangeRate)}</p>
+                    <p className="text-[10px] font-black text-black uppercase tracking-widest">Tasa Aplicada: {formatBsNumber(selectedEntry.exchangeRate || globalExchangeRate)}</p>
                   </div>
                 </div>
               </div>

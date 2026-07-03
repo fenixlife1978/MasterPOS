@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useMemo, useRef, useEffect } from 'react';
+import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { usePOSState } from '@/hooks/use-pos-state';
 import { useAccounting } from '@/hooks/use-accounting';
-import { Calendar, FileText, FileSpreadsheet, Search, TrendingUp, TrendingDown, BarChart3, DollarSign, Printer, Share2, Download, Monitor, X } from 'lucide-react';
+import { Calendar, FileText, FileSpreadsheet, Search, TrendingUp, TrendingDown, BarChart3, DollarSign, Printer, Share2, Download, Monitor, X, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
@@ -11,6 +11,10 @@ import { Transaction } from '@/lib/types';
 import { getStartOfDay, getEndOfDay, formatLocalDate } from '@/lib/date-utils';
 import syncService from '@/services/syncService';
 import { formatBs, formatUsd, formatBsNumber, formatUsdNumber } from '@/lib/currency-formatter';
+
+// ✅ Importar Firebase para reconciliación
+import { collection, getDocs, query, orderBy } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 
 interface ReportsModuleProps {
   state: ReturnType<typeof usePOSState>;
@@ -30,7 +34,74 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
   const [isLoadingTerminals, setIsLoadingTerminals] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   
+  // ✅ Estados para reconciliación unificada
+  const [unifiedEntries, setUnifiedEntries] = useState<any[]>([]);
+  const [isSyncing, setIsSyncing] = useState(false);
+  
   const reportContentRef = useRef<HTMLDivElement>(null);
+
+  // ✅ FUNCIÓN DE RECONCILIACIÓN (Identica a AccountingModule para consistencia total)
+  const loadUnifiedData = useCallback(async () => {
+    setIsSyncing(true);
+    try {
+      // 1. Obtener asientos de Firestore
+      const q = query(collection(db, 'accounting_entries'), orderBy('date', 'desc'));
+      const snapshot = await getDocs(q);
+      const firestoreEntries = snapshot.docs.map(doc => {
+        const data = doc.data();
+        const dateVal = data.date?.toDate ? data.date.toDate() : new Date(data.date);
+        return {
+          id: doc.id,
+          ...data,
+          date: dateVal,
+          amount: typeof data.amount === 'number' ? data.amount : parseFloat(data.amount) || 0,
+          totalUsd: data.totalUsd || (data.amount / (data.exchangeRate || state.exchangeRate))
+        };
+      });
+
+      // 2. Obtener transacciones de RTDB
+      const rtdbTransactions = await syncService.getAllTransactions();
+
+      // 3. Normalizar transacciones faltantes
+      const missingTransactions = rtdbTransactions
+        .filter(tx => {
+          const isValidType = ['contado', 'credito', 'cobro_deuda', 'devolucion', 'colaboracion', 'consumo_propio'].includes(tx.type);
+          if (!isValidType) return false;
+          // Evitar duplicados
+          const alreadyInFirestore = firestoreEntries.some(e => String(e.referenceId) === String(tx.id));
+          return !alreadyInFirestore;
+        })
+        .map(tx => {
+          const isExpense = tx.type === 'devolucion' || tx.type === 'colaboracion' || tx.type === 'consumo_propio';
+          const rate = tx.exchangeRate || state.exchangeRate;
+          return {
+            id: `tx_${tx.id}`,
+            referenceId: tx.id,
+            date: new Date(tx.date),
+            type: isExpense ? 'egreso' : 'ingreso',
+            category: tx.type,
+            concept: tx.type === 'devolucion' ? 'DEVOLUCIÓN DE VENTA' : 
+                     tx.type === 'cobro_deuda' ? 'COBRO DE DEUDA' : 
+                     tx.type === 'credito' ? 'VENTA A CRÉDITO' : 'VENTA',
+            amount: tx.total || 0,
+            totalUsd: tx.totalUsd || (tx.total / rate),
+            exchangeRate: rate
+          };
+        });
+
+      setUnifiedEntries([...firestoreEntries, ...missingTransactions]);
+    } catch (error) {
+      console.error('Error reconciliando reportes:', error);
+      // Fallback a entries del hook si falla
+      setUnifiedEntries(entries);
+    } finally {
+      setIsSyncing(false);
+    }
+  }, [entries, state.exchangeRate]);
+
+  useEffect(() => {
+    loadUnifiedData();
+  }, [loadUnifiedData]);
 
   // ✅ Cargar terminales desde FIREBASE
   useEffect(() => {
@@ -40,7 +111,6 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
       try {
         const terminalsData = await syncService.getAllTerminals();
         if (terminalsData && terminalsData.length > 0) {
-          // ✅ El ID del dropdown ahora es el NOMBRE legible para que coincida con el campo terminalId de las transacciones
           setTerminals(terminalsData.map((t: any) => ({ id: t.name || t.id, name: t.name || t.id })));
         } else {
           setLoadError('No se encontraron terminales registradas.');
@@ -71,12 +141,9 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
       return txDate >= startLimit && txDate <= endLimit;
     });
     
-    // ✅ Filtrar por terminal (usando el nombre guardado en terminalId)
     if (selectedTerminalId !== 'all') {
       filtered = filtered.filter(t => {
-        // Coincidencia directa por el nombre (guardado ahora en terminalId)
         if (t.terminalId) return t.terminalId === selectedTerminalId;
-        // Fallback por sesión
         if (t.sessionId) {
           const parts = t.sessionId.split('_');
           const terminalFromSession = parts[0];
@@ -90,10 +157,11 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
     setHasSearched(true);
   };
 
+  // ✅ CONSOLIDADO MENSUAL UTILIZANDO FUENTE UNIFICADA
   const monthlyConsolidated = useMemo(() => {
     const consolidated: Record<string, { label: string, year: number, monthIdx: number, income: number, expense: number }> = {};
     
-    entries.forEach(entry => {
+    unifiedEntries.forEach(entry => {
       const d = new Date(entry.date);
       const year = d.getFullYear();
       const monthIdx = d.getMonth();
@@ -121,7 +189,7 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
       if (a.year !== b.year) return b.year - a.year;
       return b.monthIdx - a.monthIdx;
     });
-  }, [entries]);
+  }, [unifiedEntries, state.exchangeRate]);
 
   const totalGeneral = filteredTransactions.reduce((sum, t) => sum + t.total, 0);
   const contadoTotal = filteredTransactions.filter(t => t.type === 'contado').reduce((sum, t) => sum + t.total, 0);
@@ -134,7 +202,7 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
     const title = activeReport === 'transactions' ? 'Reporte de Transacciones' : activeReport === 'summary' ? 'Resumen de Ventas' : 'Consolidado de Ingresos/Egresos';
     const dateRange = hasSearched ? `Desde ${formatLocalDate(startDate)} hasta ${formatLocalDate(endDate)}` : 'Período histórico';
     const terminalText = selectedTerminalId !== 'all' ? ` | Terminal: ${selectedTerminalId}` : ' | Todas las terminales';
-    const companyName = 'MASTERPOS - LICORERÍA ELITE';
+    const companyName = 'MASTERPOS - LICORERÍA CASTILLO';
     
     let content = '';
     
@@ -238,8 +306,6 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
           </tfoot>
         </table>
       `;
-    } else {
-      content = '<p class="text-center">No hay datos para mostrar. Realice una búsqueda primero.</p>';
     }
     
     return `<!DOCTYPE html>
@@ -249,117 +315,21 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
       <title>${title} - MasterPOS</title>
       <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
-          font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-          background: #f5f5f5;
-          padding: 40px 20px;
-        }
-        .report-container {
-          max-width: 1200px;
-          margin: 0 auto;
-          background: white;
-          border-radius: 16px;
-          box-shadow: 0 10px 40px rgba(0,0,0,0.1);
-          overflow: hidden;
-        }
-        .report-header {
-          background: linear-gradient(135deg, #1A2C4E 0%, #2c3e50 100%);
-          color: white;
-          padding: 30px 40px;
-          text-align: center;
-        }
-        .report-header h1 {
-          font-size: 28px;
-          margin-bottom: 10px;
-          letter-spacing: 1px;
-        }
-        .report-header p {
-          opacity: 0.8;
-          font-size: 14px;
-        }
-        .report-body {
-          padding: 30px 40px;
-        }
-        .report-footer {
-          background: #f0f0f0;
-          text-align: center;
-          padding: 15px;
-          font-size: 12px;
-          color: #555;
-          border-top: 1px solid #ddd;
-        }
-        .report-table {
-          width: 100%;
-          border-collapse: collapse;
-          margin: 20px 0;
-        }
-        .report-table th, .report-table td {
-          border: 1px solid #e0e0e0;
-          padding: 12px 15px;
-          text-align: left;
-        }
-        .report-table th {
-          background: #f8f9fa;
-          font-weight: 600;
-          color: #1A2C4E;
-        }
-        .report-table tbody tr:hover {
-          background: #f9f9f9;
-        }
+        body { font-family: 'Segoe UI', sans-serif; background: #f5f5f5; padding: 40px 20px; }
+        .report-container { max-width: 1200px; margin: 0 auto; background: white; border-radius: 16px; box-shadow: 0 10px 40px rgba(0,0,0,0.1); overflow: hidden; }
+        .report-header { background: #1A2C4E; color: white; padding: 30px 40px; text-align: center; }
+        .report-header h1 { font-size: 28px; margin-bottom: 10px; }
+        .report-body { padding: 30px 40px; }
+        .report-table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+        .report-table th, .report-table td { border: 1px solid #e0e0e0; padding: 12px 15px; text-align: left; }
+        .report-table th { background: #f8f9fa; font-weight: 600; color: #1A2C4E; }
         .text-right { text-align: right; }
-        .text-center { text-align: center; }
-        .badge {
-          background: #e9ecef;
-          padding: 4px 8px;
-          border-radius: 20px;
-          font-size: 11px;
-          font-weight: bold;
-        }
-        .summary-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-          gap: 20px;
-          margin: 20px 0;
-        }
-        .summary-card {
-          background: #f9f9f9;
-          border-radius: 16px;
-          padding: 20px;
-          text-align: center;
-          box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-        }
-        .card-title {
-          font-size: 12px;
-          text-transform: uppercase;
-          color: #6c757d;
-          letter-spacing: 1px;
-        }
-        .card-value {
-          font-size: 28px;
-          font-weight: bold;
-          margin-top: 10px;
-        }
-        .card-subtitle {
-          font-size: 13px;
-          margin-top: 5px;
-          color: #333;
-        }
-        .small {
-          font-size: 10px;
-          color: #444;
-        }
-        .text-primary { color: #1A2C4E; }
+        .badge { background: #e9ecef; padding: 4px 8px; border-radius: 20px; font-size: 11px; font-weight: bold; }
+        .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin: 20px 0; }
+        .summary-card { background: #f9f9f9; border-radius: 16px; padding: 20px; text-align: center; }
+        .card-value { font-size: 28px; font-weight: bold; margin-top: 10px; }
         .text-green { color: #2ECC71; }
-        .text-orange { color: #F39C12; }
-        .text-purple { color: #9B59B6; }
         .text-red { color: #E74C3C; }
-        @media print {
-          body { background: white; padding: 0; }
-          .report-container { box-shadow: none; border-radius: 0; }
-          .report-header { background: #1A2C4E; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-          .summary-card { break-inside: avoid; }
-          .report-table th { background: #f0f0f0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-        }
       </style>
     </head>
     <body>
@@ -367,13 +337,9 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
         <div class="report-header">
           <h1>${companyName}</h1>
           <p>${title} | ${dateRange}${terminalText}</p>
-          <p>Fecha de generación: ${new Date().toLocaleString('es-VE')}</p>
         </div>
         <div class="report-body">
           ${content}
-        </div>
-        <div class="report-footer">
-          Este documento es una representación oficial de los reportes del sistema MasterPOS.
         </div>
       </div>
     </body>
@@ -395,22 +361,14 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
     const file = new File([blob], `reporte_${activeReport}.html`, { type: 'text/html' });
     if (navigator.share) {
       try {
-        await navigator.share({
-          title: `Reporte MasterPOS - ${activeReport}`,
-          text: `Reporte generado el ${new Date().toLocaleString('es-VE')}`,
-          files: [file]
-        });
-      } catch (err) {
-        console.error('Error al compartir:', err);
-        alert('No se pudo compartir el archivo');
-      }
+        await navigator.share({ title: `Reporte MasterPOS`, files: [file] });
+      } catch (err) { alert('No se pudo compartir el archivo'); }
     } else {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
       a.download = `reporte_${activeReport}.html`;
       a.click();
-      URL.revokeObjectURL(url);
     }
   };
 
@@ -429,41 +387,19 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
       csvRows.push(['Ventas Crédito', formatUsdNumber(creditoTotal / state.exchangeRate), formatBsNumber(creditoTotal)]);
       csvRows.push(['Cobros de Deuda', formatUsdNumber(cobroTotal / state.exchangeRate), formatBsNumber(cobroTotal)]);
       csvRows.push(['Colaboraciones/Consumo (Costo)', formatUsdNumber(colaboracionTotal / state.exchangeRate), formatBsNumber(colaboracionTotal)]);
-      csvRows.push(['Costo Total Operación', formatUsdNumber(costoTotalOperacion / state.exchangeRate), formatBsNumber(costoTotalOperacion)]);
     } else if (activeReport === 'consolidated') {
       csvRows.push(['Mes', 'Ingresos ($)', 'Ingresos (Bs)', 'Egresos ($)', 'Egresos (Bs)', 'Balance ($)', 'Balance (Bs)']);
       monthlyConsolidated.forEach(row => {
         const balance = row.income - row.expense;
-        csvRows.push([
-          `${row.label} ${row.year}`, 
-          formatUsdNumber(row.income / state.exchangeRate), formatBsNumber(row.income),
-          formatUsdNumber(row.expense / state.exchangeRate), formatBsNumber(row.expense),
-          formatUsdNumber(balance / state.exchangeRate), formatBsNumber(balance)
-        ]);
+        csvRows.push([`${row.label} ${row.year}`, formatUsdNumber(row.income / state.exchangeRate), formatBsNumber(row.income), formatUsdNumber(row.expense / state.exchangeRate), formatBsNumber(row.expense), formatUsdNumber(balance / state.exchangeRate), formatBsNumber(balance)]);
       });
-      const totalIncome = monthlyConsolidated.reduce((s, r) => s + r.income, 0);
-      const totalExpense = monthlyConsolidated.reduce((s, r) => s + r.expense, 0);
-      const totalBalance = totalIncome - totalExpense;
-      csvRows.push([
-        'TOTAL', 
-        formatUsdNumber(totalIncome / state.exchangeRate), formatBsNumber(totalIncome),
-        formatUsdNumber(totalExpense / state.exchangeRate), formatBsNumber(totalExpense),
-        formatUsdNumber(totalBalance / state.exchangeRate), formatBsNumber(totalBalance)
-      ]);
-    } else {
-      alert('No hay datos para exportar. Realice una búsqueda primero.');
-      return;
     }
     const csvContent = csvRows.map(row => row.join(',')).join('\n');
     const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    link.href = url;
-    link.setAttribute('download', `reporte_${activeReport}_${new Date().toISOString().slice(0,19)}.csv`);
-    document.body.appendChild(link);
+    link.href = URL.createObjectURL(blob);
+    link.setAttribute('download', `reporte_${activeReport}.csv`);
     link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
   };
 
   return (
@@ -475,6 +411,9 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
           <button onClick={() => setActiveReport('consolidated')} className={cn("px-4 py-2 rounded-lg font-black text-sm transition-all", activeReport === 'consolidated' ? "bg-primary text-black" : "text-black font-black hover:bg-black/5")}>Consolidado Ingresos/Egresos</button>
         </div>
         <div className="flex gap-2">
+          <Button onClick={loadUnifiedData} variant="outline" className="h-8 text-[10px] font-black border-[#9E9E9E] text-black">
+            <RefreshCw size={12} className={cn("mr-1", isSyncing && "animate-spin")} /> Sincronizar
+          </Button>
           <Button onClick={handlePrintPDF} variant="outline" className="h-8 text-[10px] font-black border-[#9E9E9E] text-black"><Printer size={12} className="mr-1" /> Imprimir / PDF</Button>
           <Button onClick={handleSharePDF} variant="outline" className="h-8 text-[10px] font-black border-[#9E9E9E] text-black"><Share2 size={12} className="mr-1" /> Compartir PDF</Button>
           <Button onClick={exportToExcel} variant="outline" className="h-8 text-[10px] font-black border-[#9E9E9E] text-black"><Download size={12} className="mr-1" /> Exportar Excel</Button>
@@ -482,29 +421,22 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
       </div>
 
       <div ref={reportContentRef}>
-        {activeReport === 'transactions' && (
+        {(activeReport === 'transactions' || activeReport === 'summary') && (
           <>
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
               <div><label className="text-[10px] font-black text-black uppercase tracking-widest block mb-1">Fecha Desde</label><Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="font-black text-black" /></div>
               <div><label className="text-[10px] font-black text-black uppercase tracking-widest block mb-1">Fecha Hasta</label><Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="font-black text-black" /></div>
               <div>
                 <label className="text-[10px] font-black text-black uppercase tracking-widest block mb-1 flex items-center gap-1"><Monitor size={12} /> Terminal</label>
-                <select 
-                  value={selectedTerminalId} 
-                  onChange={(e) => setSelectedTerminalId(e.target.value)}
-                  className="w-full h-10 bg-white border border-[#9E9E9E] rounded-lg px-3 text-sm font-black text-black focus:outline-none focus:ring-2 focus:ring-primary/50"
-                >
+                <select value={selectedTerminalId} onChange={(e) => setSelectedTerminalId(e.target.value)} className="w-full h-10 bg-white border border-[#9E9E9E] rounded-lg px-3 text-sm font-black text-black focus:outline-none focus:ring-2 focus:ring-primary/50">
                   <option value="all">📡 TODAS LAS TERMINALES</option>
-                  {terminals.map(term => (
-                    <option key={term.id} value={term.id}>{term.name.toUpperCase()}</option>
-                  ))}
+                  {terminals.map(term => (<option key={term.id} value={term.id}>{term.name.toUpperCase()}</option>))}
                 </select>
-                {isLoadingTerminals && <p className="text-[8px] text-black font-black uppercase mt-1">Cargando terminales...</p>}
-                {loadError && <p className="text-[8px] text-red-500 font-black uppercase mt-1">{loadError}</p>}
               </div>
               <div className="flex gap-2 items-end"><Button onClick={handleSearch} className="bg-primary text-black font-black flex-1 h-10 shadow-md"><Search size={14} className="mr-2" /> BUSCAR</Button></div>
             </div>
-            {hasSearched && (
+
+            {activeReport === 'transactions' && hasSearched && (
               <div className="overflow-x-auto border border-[#9E9E9E] rounded-xl overflow-hidden shadow-sm">
                 <table className="w-full text-sm">
                   <thead className="bg-[#E8E8E8]">
@@ -518,11 +450,10 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
                   </thead>
                   <tbody>
                     {filteredTransactions.map((t) => {
-                      // ✅ El campo terminalId ahora guarda el nombre legible
                       let terminalDisplay = t.terminalId || (t.sessionId ? t.sessionId.split('_').shift() : '—');
                       return (
                         <tr key={t.id} className="border-b border-[#9E9E9E]/40 hover:bg-[#F5F5F5] transition-colors">
-                          <td className="p-3 text-xs font-black text-black">{formatLocalDate(t.date)}</td>
+                          <td className="p-3 text-xs font-black text-black font-mono">{formatLocalDate(t.date)}</td>
                           <td className="p-3"><span className="text-[9px] font-black px-2 py-0.5 rounded-full bg-gray-100 border border-gray-200 uppercase">{t.type.toUpperCase()}</span></td>
                           <td className="p-3 text-xs font-black text-black uppercase">{t.clientName || '—'}</td>
                           <td className="p-3 text-xs font-black text-black uppercase font-mono">{terminalDisplay}</td>
@@ -534,58 +465,53 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
                 </table>
               </div>
             )}
-          </>
-        )}
 
-        {activeReport === 'summary' && (
-          <div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-              <div><label className="text-[10px] font-black text-black uppercase tracking-widest block mb-1">Fecha Desde</label><Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="font-black text-black" /></div>
-              <div><label className="text-[10px] font-black text-black uppercase tracking-widest block mb-1">Fecha Hasta</label><Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="font-black text-black" /></div>
-              <div className="flex gap-2 items-end"><Button onClick={handleSearch} className="bg-primary text-black font-black flex-1 h-10 shadow-md"><Search size={14} className="mr-2" /> BUSCAR</Button></div>
-            </div>
-            {hasSearched && (
+            {activeReport === 'summary' && hasSearched && (
               <div className="bg-gray-50 rounded-2xl p-5 border border-slate-200 space-y-3 shadow-inner">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="bg-white p-4 rounded-xl shadow-sm border-l-4 border-primary">
                     <p className="text-[10px] font-black text-black uppercase tracking-widest">Total General</p>
                     <p className="text-2xl font-black text-primary mt-1">{formatUsd(totalGeneral / state.exchangeRate)}</p>
-                    <p className="text-[11px] font-black text-black mt-0.5">{formatBs(totalGeneral)}</p>
+                    <p className="text-[11px] font-black text-black mt-0.5 font-mono">{formatBs(totalGeneral)}</p>
                   </div>
                   <div className="bg-white p-4 rounded-xl shadow-sm border-l-4 border-green-500">
                     <p className="text-[10px] font-black text-black uppercase tracking-widest">Ventas Contado</p>
                     <p className="text-2xl font-black text-green-600 mt-1">{formatUsd(contadoTotal / state.exchangeRate)}</p>
-                    <p className="text-[11px] font-black text-black mt-0.5">{formatBs(contadoTotal)}</p>
+                    <p className="text-[11px] font-black text-black mt-0.5 font-mono">{formatBs(contadoTotal)}</p>
                   </div>
                   <div className="bg-white p-4 rounded-xl shadow-sm border-l-4 border-orange-500">
                     <p className="text-[10px] font-black text-black uppercase tracking-widest">Ventas Crédito</p>
                     <p className="text-2xl font-black text-orange-600 mt-1">{formatUsd(creditoTotal / state.exchangeRate)}</p>
-                    <p className="text-[11px] font-black text-black mt-0.5">{formatBs(creditoTotal)}</p>
+                    <p className="text-[11px] font-black text-black mt-0.5 font-mono">{formatBs(creditoTotal)}</p>
                   </div>
                   <div className="bg-white p-4 rounded-xl shadow-sm border-l-4 border-purple-500">
                     <p className="text-[10px] font-black text-black uppercase tracking-widest">Cobros de Deuda</p>
                     <p className="text-2xl font-black text-purple-600 mt-1">{formatUsd(cobroTotal / state.exchangeRate)}</p>
-                    <p className="text-[11px] font-black text-black mt-0.5">{formatBs(cobroTotal)}</p>
+                    <p className="text-[11px] font-black text-black mt-0.5 font-mono">{formatBs(cobroTotal)}</p>
                   </div>
                   <div className="bg-white p-4 rounded-xl shadow-sm border-l-4 border-red-500">
                     <p className="text-[10px] font-black text-black uppercase tracking-widest">Colaboraciones/Consumo (Costo)</p>
                     <p className="text-2xl font-black text-red-600 mt-1">{formatUsd(colaboracionTotal / state.exchangeRate)}</p>
-                    <p className="text-[11px] font-black text-black mt-0.5">{formatBs(colaboracionTotal)}</p>
+                    <p className="text-[11px] font-black text-black mt-0.5 font-mono">{formatBs(colaboracionTotal * state.exchangeRate)}</p>
                   </div>
                   <div className="bg-white p-4 rounded-xl shadow-sm border-l-4 border-gray-500">
                     <p className="text-[10px] font-black text-black uppercase tracking-widest">Costo Total de Operación</p>
                     <p className="text-2xl font-black text-black mt-1">{formatUsd(costoTotalOperacion / state.exchangeRate)}</p>
-                    <p className="text-[11px] font-black text-black mt-0.5">{formatBs(costoTotalOperacion)}</p>
+                    <p className="text-[11px] font-black text-black mt-0.5 font-mono">{formatBs(costoTotalOperacion * state.exchangeRate)}</p>
                   </div>
                 </div>
               </div>
             )}
-          </div>
+          </>
         )}
 
         {activeReport === 'consolidated' && (
           <div className="space-y-6">
-            <div className="flex items-center gap-2 mb-4"><BarChart3 size={20} className="text-primary" /><h3 className="text-lg font-black text-black uppercase">Consolidado Mensual de Caja</h3></div>
+            <div className="flex items-center gap-2 mb-4">
+              <BarChart3 size={20} className="text-primary" />
+              <h3 className="text-lg font-black text-black uppercase">Consolidado Mensual de Caja (Sincronizado)</h3>
+              {isSyncing && <RefreshCw size={14} className="animate-spin text-primary" />}
+            </div>
             <div className="bg-white border border-[#9E9E9E] rounded-xl overflow-hidden shadow-md">
               <table className="w-full text-sm">
                 <thead className="bg-[#E8E8E8]"><tr className="border-b border-[#9E9E9E]"><th className="p-3 text-left text-[10px] font-black uppercase tracking-widest text-black">Mes</th><th className="p-3 text-right text-[10px] font-black uppercase tracking-widest text-black">Ingresos (+)</th><th className="p-3 text-right text-[10px] font-black uppercase tracking-widest text-black">Egresos (-)</th><th className="p-3 text-right text-[10px] font-black uppercase tracking-widest text-black">Balance</th></tr></thead>
@@ -597,34 +523,37 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
                         <td className="p-3"><p className="font-black text-black uppercase">{row.label}</p><p className="text-[10px] text-black font-black">{row.year}</p></td>
                         <td className="p-3 text-right">
                           <p className="text-green-600 font-black">{formatUsd(row.income / state.exchangeRate)}</p>
-                          <p className="text-[10px] font-black text-black">{formatBs(row.income)}</p>
+                          <p className="text-[10px] font-black text-black font-mono">{formatBs(row.income)}</p>
                         </td>
                         <td className="p-3 text-right">
                           <p className="text-red-600 font-black">{formatUsd(row.expense / state.exchangeRate)}</p>
-                          <p className="text-[10px] font-black text-black">{formatBs(row.expense)}</p>
+                          <p className="text-[10px] font-black text-black font-mono">{formatBs(row.expense)}</p>
                         </td>
                         <td className="p-3 text-right">
                           <p className={cn("font-black", balance >= 0 ? "text-green-700" : "text-red-700")}>{formatUsd(balance / state.exchangeRate)}</p>
-                          <p className="text-[10px] font-black text-black">{formatBs(balance)}</p>
+                          <p className="text-[10px] font-black text-black font-mono">{formatBs(balance)}</p>
                         </td>
                       </tr>
                     );
                   })}
+                  {monthlyConsolidated.length === 0 && (
+                    <tr><td colSpan={4} className="text-center py-10 text-black font-black italic">No hay datos consolidados para mostrar</td></tr>
+                  )}
                 </tbody>
                 <tfoot className="bg-[#F0F0F0] border-t-2 border-[#9E9E9E]">
                   <tr className="font-black text-black">
                     <td className="p-4 uppercase tracking-widest">TOTAL HISTÓRICO</td>
                     <td className="p-4 text-right">
                       <p className="text-green-700 font-black">{formatUsd(monthlyConsolidated.reduce((s, r) => s + r.income, 0) / state.exchangeRate)}</p>
-                      <p className="text-[10px] font-black text-black">{formatBs(monthlyConsolidated.reduce((s, r) => s + r.income, 0))}</p>
+                      <p className="text-[10px] font-black text-black font-mono">{formatBs(monthlyConsolidated.reduce((s, r) => s + r.income, 0))}</p>
                     </td>
                     <td className="p-4 text-right">
                       <p className="text-red-700 font-black">{formatUsd(monthlyConsolidated.reduce((s, r) => s + r.expense, 0) / state.exchangeRate)}</p>
-                      <p className="text-[10px] font-black text-black">{formatBs(monthlyConsolidated.reduce((s, r) => s + r.expense, 0))}</p>
+                      <p className="text-[10px] font-black text-black font-mono">{formatBs(monthlyConsolidated.reduce((s, r) => s + r.expense, 0))}</p>
                     </td>
                     <td className="p-4 text-right">
                       <p className="font-black">{formatUsd((monthlyConsolidated.reduce((s, r) => s + r.income, 0) - monthlyConsolidated.reduce((s, r) => s + r.expense, 0)) / state.exchangeRate)}</p>
-                      <p className="text-[10px] font-black text-black">{formatBs(monthlyConsolidated.reduce((s, r) => s + r.income, 0) - monthlyConsolidated.reduce((s, r) => s + r.expense, 0))}</p>
+                      <p className="text-[10px] font-black text-black font-mono">{formatBs(monthlyConsolidated.reduce((s, r) => s + r.income, 0) - monthlyConsolidated.reduce((s, r) => s + r.expense, 0))}</p>
                     </td>
                   </tr>
                 </tfoot>

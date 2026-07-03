@@ -40,7 +40,6 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
       try {
         const terminalsData = await syncService.getAllTerminals();
         if (terminalsData && terminalsData.length > 0) {
-          // ✅ El ID del dropdown ahora es el NOMBRE legible para que coincida con el campo terminalId de las transacciones
           setTerminals(terminalsData.map((t: any) => ({ id: t.name || t.id, name: t.name || t.id })));
         } else {
           setLoadError('No se encontraron terminales registradas.');
@@ -71,12 +70,9 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
       return txDate >= startLimit && txDate <= endLimit;
     });
     
-    // ✅ Filtrar por terminal (usando el nombre guardado en terminalId)
     if (selectedTerminalId !== 'all') {
       filtered = filtered.filter(t => {
-        // Coincidencia directa por el nombre (guardado ahora en terminalId)
         if (t.terminalId) return t.terminalId === selectedTerminalId;
-        // Fallback por sesión
         if (t.sessionId) {
           const parts = t.sessionId.split('_');
           const terminalFromSession = parts[0];
@@ -90,10 +86,43 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
     setHasSearched(true);
   };
 
+  // ✅ NORMALIZACIÓN DEL CONSOLIDADO: Cruzar asientos con transacciones para recuperar montos faltantes
+  const reconciledEntries = useMemo(() => {
+    const accEntries = [...(entries || [])];
+    
+    // Identificar IDs de transacciones ya contabilizadas
+    const existingTxIds = new Set(
+      accEntries
+        .filter(e => e.referenceType === 'sale' || e.referenceType === 'debt_payment' || e.referenceType === 'credit_sale' || e.referenceType === 'return')
+        .map(e => String(e.referenceId))
+    );
+
+    // Barrido de transacciones para localizar las que no tienen entrada en el libro diario
+    const missingEntries = (state.transactions || [])
+      .filter(tx => !existingTxIds.has(String(tx.id)))
+      .map(tx => {
+        const isInventoryOnly = tx.type === 'colaboracion' || tx.type === 'consumo_propio';
+        if (isInventoryOnly) return null;
+
+        return {
+          id: `tx_${tx.id}`,
+          date: tx.date,
+          type: tx.type === 'devolucion' ? 'egreso' : 'ingreso',
+          amount: tx.total,
+          totalUsd: tx.totalUsd || (tx.total / (tx.exchangeRate || state.exchangeRate)),
+          exchangeRate: tx.exchangeRate || state.exchangeRate,
+          referenceType: tx.type === 'devolucion' ? 'return' : 'sale'
+        };
+      })
+      .filter(Boolean);
+
+    return [...accEntries, ...missingEntries];
+  }, [entries, state.transactions, state.exchangeRate]);
+
   const monthlyConsolidated = useMemo(() => {
     const consolidated: Record<string, { label: string, year: number, monthIdx: number, income: number, expense: number }> = {};
     
-    entries.forEach(entry => {
+    reconciledEntries.forEach(entry => {
       const d = new Date(entry.date);
       const year = d.getFullYear();
       const monthIdx = d.getMonth();
@@ -121,7 +150,7 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
       if (a.year !== b.year) return b.year - a.year;
       return b.monthIdx - a.monthIdx;
     });
-  }, [entries]);
+  }, [reconciledEntries]);
 
   const totalGeneral = filteredTransactions.reduce((sum, t) => sum + t.total, 0);
   const contadoTotal = filteredTransactions.filter(t => t.type === 'contado').reduce((sum, t) => sum + t.total, 0);
@@ -518,7 +547,6 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
                   </thead>
                   <tbody>
                     {filteredTransactions.map((t) => {
-                      // ✅ El campo terminalId ahora guarda el nombre legible
                       let terminalDisplay = t.terminalId || (t.sessionId ? t.sessionId.split('_').shift() : '—');
                       return (
                         <tr key={t.id} className="border-b border-[#9E9E9E]/40 hover:bg-[#F5F5F5] transition-colors">

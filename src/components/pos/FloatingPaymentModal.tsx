@@ -40,24 +40,32 @@ export default function FloatingPaymentModal({ total, exchangeRate, onClose, onC
 
   const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
   
-  // Reconciliación bimonetaria
+  // ✅ RECONCILIACIÓN BIMONETARIA EXACTA (ESTILO BANCARIO)
+  // Redondeamos a 2 decimales para evitar el ruido de punto flotante (0.01)
   const totalUsd = Math.round((total / exchangeRate) * 100) / 100;
-  const totalPaidUsd = payments.reduce((sum, p) => sum + (p.usdAmount || (p.amount / exchangeRate)), 0);
+  const totalPaidUsd = Math.round(payments.reduce((sum, p) => sum + (p.usdAmount || (p.amount / exchangeRate)), 0) * 100) / 100;
 
-  // Una factura se considera pagada si:
-  // 1. La suma en USD cubre el total en USD (tolerancia de 0.001 para errores de punto flotante)
-  // 2. La suma en Bs cubre el total en Bs
+  // Una factura se considera pagada si la suma en USD cubre el total en USD
+  // o si la suma en Bs cubre el total en Bs
   const isPaidByUsd = totalPaidUsd >= (totalUsd - 0.001);
   const isFullyPaid = isPaidByUsd || (totalPaid >= total - 0.01);
 
   const remaining = isFullyPaid ? 0 : Math.max(0, total - totalPaid);
-  const change = Math.max(0, totalPaid - total);
+  
+  // ✅ LÓGICA DE VUELTO RECONCILIADO
+  let change = Math.max(0, totalPaid - total);
+  
+  // Si el pago en USD es IDÉNTICO al total en USD (margen 0.001), 
+  // forzamos el vuelto a 0 si la diferencia en Bs es despreciable (error de redondeo)
+  if (isPaidByUsd && Math.abs(totalPaidUsd - totalUsd) < 0.001 && change <= 0.05) {
+    change = 0;
+  }
   
   // Si está pagado por USD pero faltan céntimos en Bs, calculamos el ajuste
   const ajusteRedondeoBs = (isPaidByUsd && totalPaid < total) ? Math.round((total - totalPaid) * 100) / 100 : 0;
 
   // BLINDAJE VISUAL: Si ya se pagó exacto en USD, forzamos a la interfaz a mostrar que se pagó el 100% en Bs
-  const displayedTotalPaidBs = (isPaidByUsd && ajusteRedondeoBs > 0) ? total : totalPaid;
+  const displayedTotalPaidBs = (isPaidByUsd && (ajusteRedondeoBs > 0 || (totalPaid > total && change === 0))) ? total : totalPaid;
 
   const addPayment = () => {
     let rawAmount = parseFloat(inputValue);
@@ -110,15 +118,22 @@ export default function FloatingPaymentModal({ total, exchangeRate, onClose, onC
     if (!isFullyPaid) return;
     setIsProcessing(true);
     const mainPayment = payments[0] || { method: 'efectivo_bs' };
+    
+    // Aplicar la misma lógica de redondeo exacto al confirmar
+    let finalChange = Math.max(0, totalPaid - total);
+    if (isPaidByUsd && Math.abs(totalPaidUsd - totalUsd) < 0.001 && finalChange <= 0.05) {
+      finalChange = 0;
+    }
+
     onConfirm({ 
       payments, 
       totalPaid, 
-      change, 
+      change: finalChange, 
       method: mainPayment.method,
       ajusteRedondeoBs 
     });
     setIsProcessing(false);
-  }, [payments, totalPaid, isFullyPaid, change, ajusteRedondeoBs, onConfirm]);
+  }, [payments, totalPaid, isFullyPaid, total, isPaidByUsd, totalPaidUsd, totalUsd, ajusteRedondeoBs, onConfirm]);
 
   // Atajos de teclado
   useEffect(() => {

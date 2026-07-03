@@ -289,6 +289,7 @@ export default function RegisterPurchase() {
     setIsProcessing(true);
     
     try {
+      const supplier = suppliers.find(s => s.id === selectedSupplierId);
       const subtotal = totalInvoiceUsd / 1.16;
       const iva = totalInvoiceUsd - subtotal;
       const timestamp = getVenezuelaISOString();
@@ -299,6 +300,7 @@ export default function RegisterPurchase() {
       const newInvoice = {
         id: invoiceId,
         supplierId: selectedSupplierId,
+        supplierName: supplier?.name || 'Proveedor',
         invoiceNumber: invoiceNumber,
         date: timestamp,
         dueDate: paymentType === 'credito' 
@@ -362,8 +364,6 @@ export default function RegisterPurchase() {
         }
       }
       
-      const supplier = suppliers.find(s => s.id === selectedSupplierId);
-      
       if (paymentType !== 'credito') {
         const paymentMethod = paymentType === 'contado' ? 'efectivo' : 'mixto';
         const totalPaidUsdAmount = paymentType === 'contado' ? totalInvoiceUsd : paidUsd;
@@ -371,6 +371,7 @@ export default function RegisterPurchase() {
           await syncService.saveSupplierPayment({
             id: generateUniquePaymentId(),
             supplierId: selectedSupplierId,
+            supplierName: supplier?.name || 'Proveedor',
             invoiceId: invoiceId,
             date: getLocalDate(),
             amount: totalPaidUsdAmount,

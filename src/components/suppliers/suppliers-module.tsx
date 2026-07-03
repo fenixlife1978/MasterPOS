@@ -52,14 +52,21 @@ export default function SuppliersModule() {
   }, [suppliers, search]);
 
   const filteredInvoices = useMemo(() => {
-    return invoices.filter(inv => {
+    // ✅ Reconciliación: Enriquecer facturas con nombre de proveedor si falta
+    return invoices.map(inv => {
+      if (!inv.supplierName && inv.supplierId) {
+        const supplier = suppliers.find(s => String(s.id) === String(inv.supplierId));
+        return { ...inv, supplierName: supplier?.name || '' };
+      }
+      return inv;
+    }).filter(inv => {
       const matchSearch = inv.invoiceNumber?.toLowerCase().includes(search.toLowerCase()) || 
                           inv.supplierName?.toLowerCase().includes(search.toLowerCase());
       const matchSupplier = filterSupplier === 'all' || String(inv.supplierId) === filterSupplier;
       const matchStatus = filterStatus === 'all' || inv.status === filterStatus;
       return matchSearch && matchSupplier && matchStatus;
     }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [invoices, search, filterSupplier, filterStatus]);
+  }, [invoices, suppliers, search, filterSupplier, filterStatus]);
 
   const filteredPayments = useMemo(() => {
     return payments.filter(p => 

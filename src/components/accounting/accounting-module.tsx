@@ -174,8 +174,8 @@ export default function AccountingModule() {
       // 3. Normalizar transacciones de RTDB que NO tengan asiento en Firestore (Reconciliación)
       const missingTransactions = rtdbTransactions
         .filter(tx => {
-          // Tipos que impactan el libro diario
-          const isValidType = ['contado', 'credito', 'cobro_deuda', 'devolucion', 'colaboracion', 'consumo_propio'].includes(tx.type);
+          // ✅ REGLA: Excluir 'credito' (Venta a Crédito) del Libro Diario. Solo impactan Contado y Cobros de Deuda.
+          const isValidType = ['contado', 'cobro_deuda', 'devolucion', 'colaboracion', 'consumo_propio'].includes(tx.type);
           if (!isValidType) return false;
 
           // Evitar duplicados: verificar si ya existe un asiento con este referenceId
@@ -195,8 +195,7 @@ export default function AccountingModule() {
             type: isExpense ? 'egreso' : 'ingreso',
             category: tx.type,
             concept: tx.type === 'devolucion' ? 'DEVOLUCIÓN DE VENTA' : 
-                     tx.type === 'cobro_deuda' ? 'COBRO DE DEUDA' : 
-                     tx.type === 'credito' ? 'VENTA A CRÉDITO' : 'VENTA',
+                     tx.type === 'cobro_deuda' ? 'COBRO DE DEUDA' : 'VENTA',
             description: `Cliente: ${tx.clientName || 'Cliente Final'} - Terminal: ${tx.terminalId || 'Principal'}`,
             amount: totalBs,
             totalUsd: totalUsd,
@@ -210,6 +209,9 @@ export default function AccountingModule() {
       
       // 5. Aplicar filtros en memoria (para asegurar consistencia total)
       const finalEntries = combined.filter(entry => {
+        // ✅ REGLA ADICIONAL: Excluir cualquier asiento guardado explícitamente como venta a crédito (cuenta por cobrar)
+        if (entry.category === 'credito' || entry.category === 'cuenta_por_cobrar') return false;
+
         // Filtro de fecha
         if (startDate && endDate) {
           const start = getStartOfDayVenezuela(startDate);

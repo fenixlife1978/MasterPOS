@@ -65,7 +65,8 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
       // 3. Normalizar transacciones faltantes
       const missingTransactions = rtdbTransactions
         .filter(tx => {
-          const isValidType = ['contado', 'credito', 'cobro_deuda', 'devolucion', 'colaboracion', 'consumo_propio'].includes(tx.type);
+          // ✅ REGLA: Excluir 'credito' (Venta a Crédito). Solo impactan cobros y contado.
+          const isValidType = ['contado', 'cobro_deuda', 'devolucion', 'colaboracion', 'consumo_propio'].includes(tx.type);
           if (!isValidType) return false;
           // Evitar duplicados
           const alreadyInFirestore = firestoreEntries.some(e => String(e.referenceId) === String(tx.id));
@@ -81,19 +82,23 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
             type: isExpense ? 'egreso' : 'ingreso',
             category: tx.type,
             concept: tx.type === 'devolucion' ? 'DEVOLUCIÓN DE VENTA' : 
-                     tx.type === 'cobro_deuda' ? 'COBRO DE DEUDA' : 
-                     tx.type === 'credito' ? 'VENTA A CRÉDITO' : 'VENTA',
+                     tx.type === 'cobro_deuda' ? 'COBRO DE DEUDA' : 'VENTA',
             amount: tx.total || 0,
             totalUsd: tx.totalUsd || (tx.total / rate),
             exchangeRate: rate
           };
         });
 
-      setUnifiedEntries([...firestoreEntries, ...missingTransactions]);
+      const combined = [...firestoreEntries, ...missingTransactions];
+      
+      // ✅ FILTRO FINAL: Asegurar que no pasen créditos
+      const finalEntries = combined.filter(e => e.category !== 'credito' && e.category !== 'cuenta_por_cobrar');
+      
+      setUnifiedEntries(finalEntries);
     } catch (error) {
       console.error('Error reconciliando reportes:', error);
-      // Fallback a entries del hook si falla
-      setUnifiedEntries(entries);
+      // Fallback a entries del hook si falla, filtrando créditos
+      setUnifiedEntries(entries.filter(e => e.category !== 'credito' && e.category !== 'cuenta_por_cobrar'));
     } finally {
       setIsSyncing(false);
     }
@@ -157,7 +162,7 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
     setHasSearched(true);
   };
 
-  // ✅ CONSOLIDADO MENSUAL UTILIZANDO FUENTE UNIFICADA
+  // ✅ CONSOLIDADO MENSUAL UTILIZANDO FUENTE UNIFICADA (SIN CRÉDITOS)
   const monthlyConsolidated = useMemo(() => {
     const consolidated: Record<string, { label: string, year: number, monthIdx: number, income: number, expense: number }> = {};
     

@@ -442,13 +442,19 @@ export async function getAllSupplierPayments() {
 // ============================================================
 
 export async function saveAccountingEntry(entry: any) {
-  const id = entry.id || generateId();
-  await set(ref(rtdb, `accounting_entries/${id}`), { ...entry, id, updatedAt: new Date().toISOString() });
+  const rawId = entry.id || generateId();
+  // ✅ Sanitizar ID para evitar caracteres prohibidos en Firebase RTDB path (. # $ [ ])
+  const cleanId = String(rawId).replace(/[.#$[\]]/g, '_');
+  await set(ref(rtdb, `accounting_entries/${cleanId}`), { ...entry, id: cleanId, updatedAt: new Date().toISOString() });
 }
 
 export async function saveAccountingBatch(entries: any[]) {
   const batch: any = {};
-  entries.forEach(e => { batch[e.id || generateId()] = { ...e, updatedAt: new Date().toISOString() }; });
+  entries.forEach(e => { 
+    const rawId = e.id || generateId();
+    const cleanId = String(rawId).replace(/[.#$[\]]/g, '_');
+    batch[cleanId] = { ...e, id: cleanId, updatedAt: new Date().toISOString() }; 
+  });
   await update(ref(rtdb, 'accounting_entries'), batch);
 }
 
@@ -461,15 +467,17 @@ export async function getAllAccountingEntries() {
 }
 
 export async function saveKardexEntry(entry: any) {
-  const id = entry.id || generateId();
-  const cleanId = String(id).replace(/[.#$[\]]/g, '_');
+  const rawId = entry.id || generateId();
+  // ✅ Sanitizar ID para evitar caracteres prohibidos en Firebase RTDB path
+  const cleanId = String(rawId).replace(/[.#$[\]]/g, '_');
   await set(ref(rtdb, `kardex_entries/${cleanId}`), { ...entry, id: cleanId, updatedAt: new Date().toISOString() });
 }
 
 export async function saveKardexBatch(entries: any[]) {
   const batch: any = {};
   entries.forEach(e => {
-    const cleanId = String(e.id || generateId()).replace(/[.#$[\]]/g, '_');
+    const rawId = e.id || generateId();
+    const cleanId = String(rawId).replace(/[.#$[\]]/g, '_');
     batch[cleanId] = { ...e, id: cleanId, updatedAt: new Date().toISOString() };
   });
   await update(ref(rtdb, 'kardex_entries'), batch);

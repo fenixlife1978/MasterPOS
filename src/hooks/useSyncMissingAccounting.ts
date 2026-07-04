@@ -78,8 +78,9 @@ export function useSyncMissingAccounting() {
           }
 
           // ✅ Persistir en el Libro Diario (RTDB)
+          // ✅ Se usa un ID basado en tx.id para evitar decimales de Math.random() y asegurar unicidad
           await addEntry({
-            id: Date.now() + Math.random() * 1000 + count,
+            id: `sync_${tx.id}`,
             date: tx.date,
             type: type,
             category: category,

@@ -1,6 +1,6 @@
 "use client";
 
-import { Wallet, Handshake, X, Gift } from 'lucide-react';
+import { Wallet, Users, X, Gift } from 'lucide-react';
 
 interface SaleTypeModalProps {
   onClose: () => void;
@@ -36,7 +36,7 @@ export default function SaleTypeModal({ onClose, onSelect }: SaleTypeModalProps)
             className="group p-6 rounded-xl border-2 border-white/20 bg-[#FFE4C4] hover:bg-[#FFD8B0] hover:border-white/40 transition-all flex flex-col items-center gap-3 shadow-md hover:shadow-lg"
           >
             <div className="w-16 h-16 rounded-full bg-[#F39C12] text-white flex items-center justify-center group-hover:scale-110 transition-transform shadow-md">
-              <Handshake size={32} />
+              <Users size={32} />
             </div>
             <span className="text-sm font-bold uppercase tracking-widest text-black">Crédito</span>
           </button>

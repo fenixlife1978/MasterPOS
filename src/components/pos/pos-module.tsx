@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from 'react';
@@ -13,6 +12,8 @@ import ReceiptModal from '@/components/receipt-modal';
 import AuthorizationModal from './AuthorizationModal';
 import syncService from '@/services/syncService';
 import { useAuth } from '@/context/AuthContext';
+import { useAccounting } from '@/hooks/use-accounting';
+import { useSyncMissingAccounting } from '@/hooks/useSyncMissingAccounting';
 
 const formatBs = (amount: number): string => {
   if (isNaN(amount)) return 'Bs. 0,00';
@@ -36,6 +37,21 @@ interface POSModuleProps {
 
 export default function POSModule({ state }: POSModuleProps) {
   const { user } = useAuth();
+  const { addEntry } = useAccounting();
+
+  // ✅ Sincronizar transacciones faltantes (02/07/26 - hoy)
+  const { synced, syncing, addedCount } = useSyncMissingAccounting();
+
+  // ✅ Mostrar notificación cuando se complete la sincronización
+  useEffect(() => {
+    if (synced && addedCount > 0) {
+      console.log(`✅ Sincronización completada: ${addedCount} transacciones agregadas a contabilidad`);
+    }
+    if (synced && addedCount === 0) {
+      console.log('✅ No hay transacciones faltantes en contabilidad');
+    }
+  }, [synced, addedCount]);
+
   // ✅ Identificación bivalente: ID para sync, Nombre para registros de auditoría
   const terminalSyncId = user?.terminalId || 'default';
   const terminalName = user?.terminalName || 'Principal';
@@ -125,13 +141,138 @@ export default function POSModule({ state }: POSModuleProps) {
   const totalWithIva = state.isIvaEnabled ? subtotal + iva : subtotal;
   const totalForCredit = totalWithIva;
 
+  // ============================================================
+  // ✅ REGISTRO CONTABLE POR TIPO DE TRANSACCIÓN
+  // ============================================================
+  const registerAccountingEntry = useCallback(async (tx: any, type: string) => {
+    try {
+      // ❌ Los créditos NO se registran en contabilidad (solo en cuentas por cobrar)
+      if (type === 'credito') {
+        console.log('⏭️ Crédito omitido de contabilidad (solo cuentas por cobrar)');
+        return;
+      }
+
+      // ✅ Cobro de deuda SÍ se registra (ingreso de dinero)
+      if (type === 'cobro_deuda') {
+        await addEntry({
+          id: Date.now() + Math.random() * 1000,
+          date: tx.date || new Date().toISOString(),
+          type: 'ingreso',
+          category: 'cobro_deuda',
+          concept: `Cobro deuda #${tx.receiptNumber || tx.id}`,
+          description: tx.clientName 
+            ? `Cobro de deuda - Cliente: ${tx.clientName}` 
+            : 'Cobro de deuda',
+          amount: tx.total || 0,
+          totalUsd: tx.totalUsd || (tx.total || 0) / (tx.exchangeRate || 1),
+          exchangeRate: tx.exchangeRate || 1,
+          referenceType: 'cobro_deuda',
+          referenceId: tx.id,
+          createdAt: new Date().toISOString()
+        });
+        console.log(`✅ Cobro de deuda ${tx.id} registrado en contabilidad`);
+        return;
+      }
+
+      // ✅ Colaboración (egreso - salida de inventario)
+      if (type === 'colaboracion') {
+        await addEntry({
+          id: Date.now() + Math.random() * 1000,
+          date: tx.date || new Date().toISOString(),
+          type: 'egreso',
+          category: 'otros',
+          concept: `Colaboración #${tx.receiptNumber || tx.id}`,
+          description: tx.notes || 'Salida por colaboración/donación',
+          amount: tx.total || 0,
+          totalUsd: tx.totalUsd || (tx.total || 0) / (tx.exchangeRate || 1),
+          exchangeRate: tx.exchangeRate || 1,
+          referenceType: 'colaboracion',
+          referenceId: tx.id,
+          createdAt: new Date().toISOString()
+        });
+        console.log(`✅ Colaboración ${tx.id} registrada en contabilidad`);
+        return;
+      }
+
+      // ✅ Consumo propio (egreso - salida de inventario)
+      if (type === 'consumo_propio') {
+        await addEntry({
+          id: Date.now() + Math.random() * 1000,
+          date: tx.date || new Date().toISOString(),
+          type: 'egreso',
+          category: 'otros',
+          concept: `Consumo propio #${tx.receiptNumber || tx.id}`,
+          description: tx.notes || 'Consumo interno',
+          amount: tx.total || 0,
+          totalUsd: tx.totalUsd || (tx.total || 0) / (tx.exchangeRate || 1),
+          exchangeRate: tx.exchangeRate || 1,
+          referenceType: 'consumo_propio',
+          referenceId: tx.id,
+          createdAt: new Date().toISOString()
+        });
+        console.log(`✅ Consumo propio ${tx.id} registrado en contabilidad`);
+        return;
+      }
+
+      // ✅ Devolución (egreso)
+      if (type === 'devolucion') {
+        await addEntry({
+          id: Date.now() + Math.random() * 1000,
+          date: tx.date || new Date().toISOString(),
+          type: 'egreso',
+          category: 'devolucion',
+          concept: `Devolución #${tx.receiptNumber || tx.id}`,
+          description: tx.clientName 
+            ? `Devolución - Cliente: ${tx.clientName}` 
+            : 'Devolución de producto',
+          amount: tx.total || 0,
+          totalUsd: tx.totalUsd || (tx.total || 0) / (tx.exchangeRate || 1),
+          exchangeRate: tx.exchangeRate || 1,
+          referenceType: 'devolucion',
+          referenceId: tx.id,
+          createdAt: new Date().toISOString()
+        });
+        console.log(`✅ Devolución ${tx.id} registrada en contabilidad`);
+        return;
+      }
+
+      // ✅ Contado (ingreso - entrada de dinero)
+      if (type === 'contado') {
+        await addEntry({
+          id: Date.now() + Math.random() * 1000,
+          date: tx.date || new Date().toISOString(),
+          type: 'ingreso',
+          category: 'ventas',
+          concept: `Venta POS #${tx.receiptNumber || tx.id}`,
+          description: tx.clientName 
+            ? `Venta al contado - Cliente: ${tx.clientName}` 
+            : `Venta de ${tx.items?.length || 0} productos`,
+          amount: tx.total || 0,
+          totalUsd: tx.totalUsd || (tx.total || 0) / (tx.exchangeRate || 1),
+          exchangeRate: tx.exchangeRate || 1,
+          referenceType: 'venta',
+          referenceId: tx.id,
+          createdAt: new Date().toISOString()
+        });
+        console.log(`✅ Venta contado ${tx.id} registrada en contabilidad`);
+        return;
+      }
+
+    } catch (error) {
+      console.error(`❌ Error registrando ${type} en contabilidad:`, error);
+    }
+  }, [addEntry]);
+
+  // ============================================================
+  // HANDLERS DE PAGO
+  // ============================================================
+
   const handlePaymentConfirm = async (data: any) => {
     if (isProcessingContado || !canExecuteOperation()) return;
     setIsProcessingContado(true);
     
     try {
       const safeReceiptNum = await checkAndGetNextTicketNumber();
-      // ✅ Guardar terminalName como terminalId en la transacción
       const tx = await state.finalizeSale('contado', { 
         ...data, 
         receiptNumber: safeReceiptNum,
@@ -139,6 +280,9 @@ export default function POSModule({ state }: POSModuleProps) {
       });
       
       if (tx) {
+        // ✅ Registrar en contabilidad (contado = ingreso)
+        await registerAccountingEntry(tx, 'contado');
+        
         lastReceiptNumberRef.current = safeReceiptNum;
         setLastTransaction(tx);
         localStorage.setItem(getStorageKey(), safeReceiptNum.toString());
@@ -160,7 +304,6 @@ export default function POSModule({ state }: POSModuleProps) {
     
     try {
       const safeReceiptNum = await checkAndGetNextTicketNumber();
-      // ✅ Guardar terminalName como terminalId en la transacción
       const tx = await state.finalizeSale('credito', {
         clientId: data.clientId,
         clientName: data.clientName,
@@ -176,6 +319,10 @@ export default function POSModule({ state }: POSModuleProps) {
       });
       
       if (tx) {
+        // ❌ Los créditos NO se registran en contabilidad
+        // Solo se guardan en cuentas por cobrar (ya está en la transacción)
+        console.log(`⏭️ Crédito #${safeReceiptNum} - Solo cuentas por cobrar (sin contabilidad)`);
+        
         lastReceiptNumberRef.current = safeReceiptNum;
         setLastTransaction(tx);
         localStorage.setItem(getStorageKey(), safeReceiptNum.toString());
@@ -206,7 +353,6 @@ export default function POSModule({ state }: POSModuleProps) {
       }
 
       const safeReceiptNum = await checkAndGetNextTicketNumber();
-      // ✅ Guardar terminalName como terminalId en la transacción
       const tx = await state.finalizeSale(type, {
         receiptNumber: safeReceiptNum,
         notes: motivo,
@@ -215,6 +361,9 @@ export default function POSModule({ state }: POSModuleProps) {
       });
       
       if (tx) {
+        // ✅ Registrar en contabilidad (colaboración o consumo propio = egreso)
+        await registerAccountingEntry(tx, type);
+        
         lastReceiptNumberRef.current = safeReceiptNum;
         setLastTransaction(tx);
         localStorage.setItem(getStorageKey(), safeReceiptNum.toString());

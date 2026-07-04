@@ -35,14 +35,15 @@ const STORAGE_KEYS = {
 
 export function usePOSState() {
   const { user, activeSession: authActiveSession, setActiveSession } = useAuth();
+  // ✅ Identificador técnico para rutas de base de datos
   const terminalId = user?.terminalId || 'default';
+  // ✅ Identificador legible para registros de auditoría y transacciones
   const terminalNameId = user?.terminalName || user?.terminalId || 'default';
   
   const registerRef = useRef<CashRegister | null>(null);
   const stockUnsubscribeRef = useRef<(() => void) | null>(null);
   
   const [products, setProducts] = useState<Product[]>([]);
-  const [rawProducts, setRawProducts] = useState<Product[]>([]); // ✅ Almacén de datos puros de la DB
   const [clients, setClients] = useState<Client[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -68,7 +69,39 @@ export function usePOSState() {
     }
   }, [terminalId]);
 
-  // ✅ Limpieza en logout
+  const recalcAllPricesWithNewRate = useCallback((newRate: number) => {
+    if (products.length === 0) return;
+    
+    setProducts(prevProducts => 
+      prevProducts.map(product => {
+        if (product.isPriceFixed) {
+          return {
+            ...product,
+            costBs: product.costUsd ? roundTo2(product.costUsd * newRate) : product.costBs,
+          };
+        }
+        return {
+          ...product,
+          priceBs: roundTo2(product.priceUsd * newRate),
+          costBs: product.costUsd ? roundTo2(product.costUsd * newRate) : undefined,
+        };
+      })
+    );
+    
+    setCart(prevCart =>
+      prevCart.map(item => {
+        const product = products.find(p => p.id === item.productId);
+        if (product?.isPriceFixed) {
+          return item;
+        }
+        return {
+          ...item,
+          priceBs: roundTo2(item.priceUsd * newRate),
+        };
+      })
+    );
+  }, [products]);
+
   useEffect(() => {
     if (!user) {
       if (stockUnsubscribeRef.current) {
@@ -77,7 +110,6 @@ export function usePOSState() {
       }
       syncService.unsubscribeAll();
       setProducts([]);
-      setRawProducts([]);
       setClients([]);
       setTransactions([]);
       setAccounts([]);
@@ -89,7 +121,6 @@ export function usePOSState() {
     }
   }, [user, terminalId]);
 
-  // ✅ Hidratación inicial (Caché local)
   useEffect(() => {
     if (isUpdatingRef.current) return;
     isUpdatingRef.current = true;
@@ -111,14 +142,13 @@ export function usePOSState() {
     isUpdatingRef.current = false;
   }, [terminalId]);
 
-  // ✅ Suscripción a Caja y Sesión Realtime
+  useEffect(() => {
+    setCurrentSession(authActiveSession);
+  }, [authActiveSession]);
+
   useEffect(() => {
     if (!user?.terminalId) return;
     const unsubscribe = syncService.subscribeToRegisterRealtime(terminalId, (registerData) => {
-      setRegister(registerData);
-      registerRef.current = registerData;
-      saveRegisterToLocalStorage(registerData);
-      
       if (registerData && registerData.isOpen) {
         const session = {
           id: `${terminalId}_${registerData.openTime}`,
@@ -139,55 +169,79 @@ export function usePOSState() {
       }
     });
     return () => unsubscribe();
-  }, [user?.terminalId, terminalId, user?.uid, exchangeRate, setActiveSession, saveRegisterToLocalStorage]);
+  }, [user?.terminalId, terminalId, user?.uid, exchangeRate, setActiveSession]);
 
-  // ✅ SUSCRIPCIONES CENTRALES (Independientes de la tasa para evitar bucles)
+  useEffect(() => {
+    if (!user) return;
+    const unsubRegister = syncService.subscribeToRegisterRealtime(terminalId, (registerData) => {
+      setRegister(registerData);
+      registerRef.current = registerData;
+      saveRegisterToLocalStorage(registerData);
+    });
+    return () => unsubRegister();
+  }, [user, terminalId, saveRegisterToLocalStorage]);
+
   useEffect(() => {
     if (!user) return;
 
-    // Suscripción a datos brutos
     const unsubProducts = syncService.subscribeToProducts((data: Product[]) => {
-      setRawProducts(data);
+      const currentRate = exchangeRate;
+      const productsWithFixed = data.map(product => {
+        if (product.isPriceFixed) return product;
+        return {
+          ...product,
+          priceBs: roundTo2(product.priceUsd * currentRate),
+          costBs: product.costUsd ? roundTo2(product.costUsd * currentRate) : undefined,
+        };
+      });
+      setProducts(productsWithFixed);
     });
     
     const unsubClients = syncService.subscribeToClients(setClients);
     const unsubTransactions = syncService.subscribeToTransactions(setTransactions as any);
     const unsubAccounts = syncService.subscribeToAccounts(setAccounts as any);
     
-    // Suscripción a configuración global (Tasa BCV) en tiempo real
     const unsubSettings = syncService.subscribeToGlobalSettings?.((settings: any) => {
       if (settings) {
         if (typeof settings.defaultIvaPercentage === 'number') {
           setGlobalIvaPercentage(settings.defaultIvaPercentage);
         }
-        if (typeof settings.exchangeRate === 'number') {
-          setExchangeRate(prev => {
-            if (prev !== settings.exchangeRate) {
-              localStorage.setItem(STORAGE_KEYS.EXCHANGE_RATE, settings.exchangeRate.toString());
-              return settings.exchangeRate;
-            }
-            return prev;
-          });
+        if (typeof settings.exchangeRate === 'number' && settings.exchangeRate !== exchangeRate) {
+          if (!isUpdatingRef.current) {
+            isUpdatingRef.current = true;
+            setExchangeRate(settings.exchangeRate);
+            localStorage.setItem(STORAGE_KEYS.EXCHANGE_RATE, settings.exchangeRate.toString());
+            isUpdatingRef.current = false;
+          }
         }
-        if (settings.adminCode) setAdminCode(String(settings.adminCode));
       }
     }) || (() => {});
     
-    const loadInitialSettings = async () => {
+    const loadGlobalSettings = async () => {
       try {
         const settings = await syncService.getGlobalSettings();
         if (settings) {
-          if (typeof settings.defaultIvaPercentage === 'number') setGlobalIvaPercentage(settings.defaultIvaPercentage);
-          if (typeof settings.exchangeRate === 'number') setExchangeRate(settings.exchangeRate);
-          if (settings.adminCode) setAdminCode(String(settings.adminCode));
+          if (typeof settings.defaultIvaPercentage === 'number') {
+            setGlobalIvaPercentage(settings.defaultIvaPercentage);
+          }
+          if (typeof settings.exchangeRate === 'number' && settings.exchangeRate !== exchangeRate) {
+            if (!isUpdatingRef.current) {
+              isUpdatingRef.current = true;
+              setExchangeRate(settings.exchangeRate);
+              localStorage.setItem(STORAGE_KEYS.EXCHANGE_RATE, settings.exchangeRate.toString());
+              isUpdatingRef.current = false;
+            }
+          }
         }
+        const code = await syncService.getAdminCode();
+        if (code) setAdminCode(code.code);
         setIsHydrated(true);
       } catch (error) {
-        console.error('Error loading initial global settings:', error);
+        console.error('Error loading global settings:', error);
         setIsHydrated(true);
       }
     };
-    loadInitialSettings();
+    loadGlobalSettings();
 
     return () => {
       unsubProducts(); 
@@ -196,25 +250,41 @@ export function usePOSState() {
       unsubAccounts(); 
       if (typeof unsubSettings === 'function') unsubSettings();
     };
+  }, [user, exchangeRate]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    if (stockUnsubscribeRef.current) {
+      stockUnsubscribeRef.current();
+      stockUnsubscribeRef.current = null;
+    }
+
+    const unsubscribe = syncService.subscribeToStockRTDB((stockData: Record<string, number>) => {
+      setProducts(prevProducts => 
+        prevProducts.map(product => {
+          const newStock = stockData[product.id.toString()];
+          if (newStock !== undefined && product.stock !== newStock) {
+            return { ...product, stock: newStock };
+          }
+          return product;
+        })
+      );
+    });
+
+    stockUnsubscribeRef.current = unsubscribe;
+
+    return () => {
+      if (stockUnsubscribeRef.current) {
+        stockUnsubscribeRef.current();
+        stockUnsubscribeRef.current = null;
+      }
+    };
   }, [user]);
 
-  // ✅ MAPEO DINÁMICO DE PRECIOS (Se dispara al cambiar la Tasa o los datos de DB)
+  // ✅ Sincronización de precios en tiempo real para el carrito
   useEffect(() => {
-    const rate = exchangeRate;
-    const updated = rawProducts.map(p => {
-      if (p.isPriceFixed) return p;
-      return {
-        ...p,
-        priceBs: roundTo2(p.priceUsd * rate),
-        costBs: p.costUsd ? roundTo2(p.costUsd * rate) : p.costBs,
-      };
-    });
-    setProducts(updated);
-  }, [rawProducts, exchangeRate]);
-
-  // ✅ SINCRO DEL CARRITO EN TIEMPO REAL (Recalcula el total incluso con el carrito abierto)
-  useEffect(() => {
-    if (!isHydrated || cart.length === 0) return;
+    if (!isHydrated || products.length === 0 || cart.length === 0) return;
 
     setCart(prevCart => {
       let hasChanges = false;
@@ -222,15 +292,15 @@ export function usePOSState() {
         const product = products.find(p => p.id === item.productId);
         if (product) {
           const masterPriceUsd = product.priceUsd;
-          // El precio en Bs siempre se deriva de la tasa actual a menos que el producto sea de precio fijo
-          const targetPriceBs = product.isPriceFixed ? item.priceBs : roundTo2(masterPriceUsd * exchangeRate);
+          const masterPriceBs = product.priceBs;
           
-          if (item.priceUsd !== masterPriceUsd || item.priceBs !== targetPriceBs) {
+          // Solo actualizamos si el precio maestro ha cambiado respecto al que tiene el item en el carrito
+          if (item.priceUsd !== masterPriceUsd || item.priceBs !== masterPriceBs) {
             hasChanges = true;
             return {
               ...item,
               priceUsd: masterPriceUsd,
-              priceBs: targetPriceBs
+              priceBs: masterPriceBs
             };
           }
         }
@@ -239,36 +309,78 @@ export function usePOSState() {
 
       return hasChanges ? updatedCart : prevCart;
     });
-  }, [products, exchangeRate, isHydrated]);
+  }, [products, isHydrated]); // Se dispara cada vez que el catálogo de productos cambie
 
-  // ✅ Suscripción a stock físico (RTDB)
   useEffect(() => {
-    if (!user) return;
-    if (stockUnsubscribeRef.current) stockUnsubscribeRef.current();
+    if (products.length > 0 && !isUpdatingRef.current) {
+      const sampleProduct = products[0];
+      if (sampleProduct && sampleProduct.priceBs !== roundTo2(sampleProduct.priceUsd * exchangeRate)) {
+        recalcAllPricesWithNewRate(exchangeRate);
+      }
+    }
+  }, [exchangeRate, products.length]);
 
-    stockUnsubscribeRef.current = syncService.subscribeToStockRTDB((stockData: Record<string, number>) => {
-      setRawProducts(prev => prev.map(p => {
-        const s = stockData[p.id.toString()];
-        return (s !== undefined && p.stock !== s) ? { ...p, stock: s } : p;
-      }));
+  const refreshAllData = useCallback(async () => {
+    const [newProducts, newClients, newTransactions, newAccounts] = await Promise.all([
+      syncService.getProducts(),
+      syncService.getClients(),
+      syncService.getTransactions(),
+      syncService.getAccounts(),
+    ]);
+    setProducts(newProducts);
+    setClients(newClients);
+    setTransactions(newTransactions);
+    setAccounts(newAccounts);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleSyncComplete = () => {
+      refreshAllData();
+    };
+    window.addEventListener('sync-complete', handleSyncComplete);
+    return () => window.removeEventListener('sync-complete', handleSyncComplete);
+  }, [refreshAllData]);
+
+  useEffect(() => {
+    if (!terminalId || terminalId === 'default') return;
+    const unsubscribe = syncService.listenForSyncCommands(terminalId, async () => {
+      await syncService.syncAllPending();
+      await refreshAllData();
     });
+    return () => unsubscribe();
+  }, [terminalId, refreshAllData]);
 
-    return () => { if (stockUnsubscribeRef.current) stockUnsubscribeRef.current(); };
-  }, [user]);
+  const addProduct = useCallback((p: Product) => {
+    setProducts(prev => {
+      if (prev.some(prod => prod.id === p.id)) return prev;
+      return [...prev, p];
+    });
+    return syncService.saveProduct(p);
+  }, []);
 
-  const addProduct = useCallback((p: Product) => syncService.saveProduct(p), []);
-  const updateProduct = useCallback((p: Product) => syncService.saveProduct(p), []);
-  const deleteProduct = useCallback((id: number) => syncService.deleteProduct(id), []);
+  const updateProduct = useCallback(async (p: Product) => {
+    setProducts(prev => prev.map(prod => prod.id === p.id ? p : prod));
+    return syncService.saveProduct(p);
+  }, []);
+
+  const deleteProduct = useCallback((id: number) => {
+    setProducts(prev => prev.filter(p => p.id !== id));
+    return syncService.deleteProduct(id);
+  }, []);
+
   const saveClient = useCallback((c: Client) => syncService.saveClient(c), []);
   const deleteClient = useCallback((id: number) => syncService.deleteClient(id), []);
+
+  const refreshProducts = useCallback(async () => products, [products]);
 
   const checkProductStock = useCallback((productId: number, quantity: number): boolean => {
     const product = products.find(p => p.id === productId);
     if (!product) return false;
     if (product.isKit && product.kitComponents?.length) {
       for (const component of product.kitComponents) {
-        const comp = products.find(p => p.id === component.productId);
-        if (!comp || comp.stock < (component.quantity * quantity)) return false;
+        const componentProduct = products.find(p => p.id === component.productId);
+        if (!componentProduct || componentProduct.stock < (component.quantity * quantity)) return false;
       }
       return true;
     }
@@ -315,6 +427,67 @@ export function usePOSState() {
     setCart(prevCart => prevCart.map(item => item.productId === productId ? { ...item, priceUsd: roundTo2(newPriceUsd), priceBs: roundTo2(newPriceBs) } : item));
   }, []);
 
+  const createCashSession = useCallback(async (initialAmountUsd: number): Promise<any> => {
+    if (!user || !terminalId) throw new Error('Usuario o Terminal no autenticado');
+    
+    const registerData = await syncService.getRegisterByTerminal(terminalId);
+    if (registerData && registerData.isOpen) {
+      const session = {
+        id: `${terminalId}_${registerData.openTime}`,
+        terminalId: terminalId,
+        userId: user.uid,
+        startTime: registerData.openTime,
+        initialAmountUsd: registerData.openAmountUsd || 0,
+        finalAmountUsd: 0,
+        status: 'open',
+        totalSales: registerData.txs?.length || 0,
+        exchangeRate: registerData.exchangeRate || exchangeRate,
+      };
+      setCurrentSession(session);
+      if (setActiveSession) setActiveSession(session);
+      return session;
+    }
+    return null;
+  }, [user, terminalId, exchangeRate, setActiveSession]);
+
+  const closeCashSession = useCallback(async (finalAmountUsd: number): Promise<any> => {
+    if (!currentSession) throw new Error('No hay sesión activa');
+    
+    const closed = {
+      ...currentSession,
+      finalAmountUsd: finalAmountUsd,
+      status: 'closed',
+      closeTime: new Date().toISOString(),
+    };
+    
+    setCurrentSession(null);
+    if (setActiveSession) setActiveSession(null);
+    return closed;
+  }, [currentSession, setActiveSession]);
+
+  const reloadSession = useCallback(async () => {
+    if (!terminalId) return;
+    const registerData = await syncService.getRegisterByTerminal(terminalId);
+    if (registerData && registerData.isOpen) {
+      const session = {
+        id: `${terminalId}_${registerData.openTime}`,
+        terminalId: terminalId,
+        userId: user?.uid || 'unknown',
+        startTime: registerData.openTime,
+        initialAmountUsd: registerData.openAmountUsd || 0,
+        finalAmountUsd: 0,
+        status: 'open',
+        totalSales: registerData.txs?.length || 0,
+        exchangeRate: registerData.exchangeRate || exchangeRate,
+      };
+      setCurrentSession(session);
+      if (setActiveSession) setActiveSession(session);
+    } else {
+      setCurrentSession(null);
+      if (setActiveSession) setActiveSession(null);
+    }
+  }, [terminalId, user?.uid, exchangeRate, setActiveSession]);
+
   const openCashRegister = useCallback(async (bsAmount: number, usdAmount: number, rate: number) => {
     const registerData: CashRegister = {
       isOpen: true, openTime: getVenezuelaISOString(), openAmount: bsAmount + (usdAmount * rate),
@@ -324,24 +497,51 @@ export function usePOSState() {
     setRegister(registerData);
     registerRef.current = registerData;
     saveRegisterToLocalStorage(registerData);
-  }, [terminalId, saveRegisterToLocalStorage]);
+    try { await createCashSession(usdAmount); } catch (e) { console.error('Error session:', e); }
+  }, [terminalId, saveRegisterToLocalStorage, createCashSession]);
 
   const closeCashRegister = useCallback(() => {
+    if (currentSession) closeCashSession(0).catch(console.error);
     syncService.saveRegisterByTerminal(terminalId, { isOpen: false, openTime: null, openAmountBs: 0, openAmountUsd: 0, txs: [], exchangeRate: null });
     setRegister(null);
     registerRef.current = null;
     saveRegisterToLocalStorage(null);
-  }, [terminalId, saveRegisterToLocalStorage]);
+  }, [terminalId, saveRegisterToLocalStorage, currentSession, closeCashSession]);
 
-  const finalizeSale = useCallback(async (type: any, paymentData: any) => {
+  const getItemsToDiscount = useCallback((cartItems: CartItem[]): { productId: number; quantity: number; product: Product }[] => {
+    const result: { productId: number; quantity: number; product: Product }[] = [];
+    for (const item of cartItems) {
+      const product = products.find(p => p.id === item.productId);
+      if (!product) continue;
+      if (product.isKit && product.kitComponents?.length) {
+        for (const component of product.kitComponents) {
+          const componentProduct = products.find(p => p.id === component.productId);
+          if (componentProduct) {
+            const existing = result.find(r => r.productId === component.productId);
+            if (existing) existing.quantity += component.quantity * item.qty;
+            else result.push({ productId: component.productId, quantity: component.quantity * item.qty, product: componentProduct });
+          }
+        }
+      } else {
+        const existing = result.find(r => r.productId === item.productId);
+        if (existing) existing.quantity += item.qty;
+        else result.push({ productId: item.productId, quantity: item.qty, product: product });
+      }
+    }
+    return result;
+  }, [products]);
+
+  const finalizeSale = useCallback(async (type: 'contado' | 'credito' | 'cobro_deuda' | 'colaboracion' | 'consumo_propio' | 'devolucion', paymentData: any) => {
     if (!register?.isOpen) throw new Error('Caja no abierta');
+
     const isSpecial = type === 'colaboracion' || type === 'consumo_propio';
-    let subtotal = 0, iva = 0, total = 0, costoTotalOperacion = 0;
+    let subtotal = 0, iva = 0, total = 0, finalTotal = 0, costoTotalOperacion = 0;
     
     if (!isSpecial) {
       subtotal = cart.reduce((acc, item) => acc + (item.priceBs * item.qty), 0);
       iva = cart.reduce((total, item) => item.ivaType === 'con_iva' ? total + (item.priceBs * item.qty * 0.16) : total, 0);
       total = subtotal + iva;
+      finalTotal = type === 'cobro_deuda' ? (paymentData.totalPaid || paymentData.amount) : total;
     } else {
       for (const item of cart) {
         const p = products.find(p => p.id === item.productId);
@@ -350,97 +550,327 @@ export function usePOSState() {
       costoTotalOperacion = roundTo2(costoTotalOperacion);
     }
 
-    let targetClientId: number | undefined = paymentData.clientId ? Number(paymentData.clientId) : undefined;
+    let targetClientId: number | undefined = undefined;
     if (type === 'credito' && paymentData.isNewClient) {
       const nextClientId = getVenezuelaTimestamp();
       const newClient: Client = { 
-        id: nextClientId, name: paymentData.clientName, cedula: paymentData.clientCedula, 
-        phone: paymentData.clientPhone || '', address: paymentData.clientAddress || '', debt: 0,
+        id: nextClientId, 
+        name: paymentData.clientName, 
+        cedula: paymentData.clientCedula, 
+        phone: paymentData.clientPhone || '', 
+        address: paymentData.clientAddress || '', 
+        debt: 0,
       };
       await syncService.saveClient(newClient);
       targetClientId = nextClientId;
       setClients(prev => [...prev, newClient]);
+    } else if (paymentData.clientId) {
+      targetClientId = Number(paymentData.clientId);
     }
 
     const txId = getVenezuelaTimestamp();
     const tx: Transaction = {
-      id: txId, date: getVenezuelaISOString(), type, items: type === 'cobro_deuda' ? [] : [...cart],
-      subtotal: isSpecial ? 0 : (type === 'cobro_deuda' ? (paymentData.totalPaid || total) : subtotal),
-      iva: isSpecial ? 0 : iva, total: isSpecial ? 0 : (type === 'cobro_deuda' ? (paymentData.totalPaid || total) : total),
-      totalUsd: isSpecial ? costoTotalOperacion : roundTo2(total / exchangeRate),
-      payMethod: paymentData.method || 'efectivo_bs', paidBs: isSpecial ? 0 : (paymentData.totalPaid || total),
-      change: isSpecial ? 0 : (paymentData.change || 0), clientId: targetClientId, 
-      clientName: paymentData.clientName || undefined, exchangeRate, 
-      receiptNumber: paymentData.receiptNumber || undefined, terminalId: terminalNameId,
+      id: txId, 
+      date: getVenezuelaISOString(), 
+      type: type as any, 
+      items: type === 'cobro_deuda' ? [] : [...cart],
+      subtotal: isSpecial ? 0 : (type === 'cobro_deuda' ? finalTotal : subtotal),
+      iva: isSpecial ? 0 : iva, 
+      total: isSpecial ? 0 : finalTotal,
+      totalUsd: isSpecial ? costoTotalOperacion : roundTo2(finalTotal / exchangeRate),
+      payMethod: paymentData.method || 'efectivo_bs', 
+      paidBs: isSpecial ? 0 : (paymentData.totalPaid || paymentData.amount || finalTotal),
+      change: isSpecial ? 0 : (paymentData.change || 0), 
+      clientId: targetClientId, 
+      clientName: paymentData.clientName || undefined,
+      exchangeRate, 
+      receiptNumber: paymentData.receiptNumber || undefined,
+      costoTotalOperacion: isSpecial ? costoTotalOperacion : undefined,
+      notes: isSpecial ? paymentData.notes : undefined, 
+      authorizedBy: isSpecial ? paymentData.authorizedBy : undefined,
+      sessionId: currentSession?.id || undefined, 
+      ajusteRedondeoBs: paymentData.ajusteRedondeoBs || 0,
+      terminalId: terminalNameId, // ✅ Guardar Nombre como TerminalId principal
     };
     if (type === 'contado' && paymentData.payments) tx.payments = paymentData.payments;
 
-    const stockUpdates = new Map();
-    const kardexEntries = [];
+    const stockUpdates: Map<number, { newStock: number }> = new Map();
+    const kardexEntries: any[] = [];
     if (type !== 'cobro_deuda' && type !== 'devolucion') {
-      for (const item of cart) {
-        const p = products.find(prod => prod.id === item.productId);
-        if (p) {
-          const newStock = p.stock - item.qty;
-          stockUpdates.set(p.id, { newStock });
-          kardexEntries.push({
-            id: `${Date.now()}_${p.id}`, productId: p.id, date: tx.date, type: isSpecial ? 'consumo' : 'venta',
-            quantity: -item.qty, previousStock: p.stock, newStock, reference: `Venta #${txId}`, costUsd: p.costUsd,
-          });
+      const itemsToDiscountList = getItemsToDiscount(cart);
+      for (const discountItem of itemsToDiscountList) {
+        const product = discountItem.product;
+        if (!product) continue;
+        const newStock = product.stock - discountItem.quantity;
+        stockUpdates.set(product.id, { newStock });
+        
+        let kardexType: any = 'venta';
+        if (isSpecial) {
+          if (type === 'colaboracion') kardexType = 'colaboracion';
+          else if (type === 'consumo_propio') kardexType = 'consumo';
         }
+        
+        kardexEntries.push({
+          id: `${Date.now()}_${Math.random()}`,
+          productId: product.id,
+          date: tx.date,
+          type: kardexType,
+          quantity: -discountItem.quantity,
+          previousStock: product.stock,
+          newStock,
+          reference: isSpecial ? `[${type}] ${paymentData.notes || 'Sin motivo'}` : `Venta #${tx.id}`,
+          note: isSpecial ? paymentData.notes || 'Sin motivo' : `Venta #${tx.id}`,
+          costUsd: product.costUsd,
+        });
       }
     }
 
+    let accountingEntry: any = null;
+    if (isSpecial && costoTotalOperacion > 0) {
+      accountingEntry = {
+        id: getVenezuelaTimestamp(),
+        date: getVenezuelaISOString(),
+        type: 'egreso',
+        category: 'otros',
+        subcategory: type === 'colaboracion' ? 'Donaciones' : 'Consumo Interno',
+        concept: `Salida por ${type}`,
+        description: paymentData.notes || 'Sin motivo',
+        amount: roundTo2(costoTotalOperacion * exchangeRate),
+        totalUsd: costoTotalOperacion, // ✅ Añadido para precisión en divisas
+        exchangeRate: exchangeRate,
+        referenceId: tx.id,
+        referenceType: type,
+        createdAt: getVenezuelaISOString(),
+      };
+    } else if (type === 'contado' || type === 'cobro_deuda') { // ✅ CORREGIDO: Se excluye 'credito' de la contabilidad real
+      accountingEntry = {
+        id: getVenezuelaTimestamp() + 1,
+        date: getVenezuelaISOString(),
+        type: 'ingreso',
+        category: type === 'cobro_deuda' ? 'cobro_deuda' : 'ventas',
+        concept: type === 'cobro_deuda' ? 'Cobro de deuda' : 'Venta',
+        description: `Cliente: ${tx.clientName || 'Cliente Final'} - Pago: ${tx.payMethod}`,
+        amount: tx.total,
+        totalUsd: tx.totalUsd, // ✅ Añadido para precisión en divisas
+        exchangeRate: exchangeRate,
+        referenceId: tx.id,
+        referenceType: type,
+        createdAt: getVenezuelaISOString(),
+      };
+    }
+
     const newTxs = [...(register.txs || []), tx];
-    await syncService.runAtomicSale(terminalId, tx, { products: stockUpdates, kardexEntries, registerUpdate: { txs: newTxs } });
+    
+    await syncService.runAtomicSale(terminalId, tx, { 
+      products: stockUpdates, 
+      kardexEntries,
+      accountingEntry: accountingEntry,
+      registerUpdate: { txs: newTxs } 
+    });
 
     if (type === 'credito' && targetClientId) {
-      await syncService.saveAccount({
-        id: getVenezuelaTimestamp(), txId: tx.id, date: tx.date, clientId: targetClientId,
-        clientName: tx.clientName, amountBs: total, amountUsd: roundTo2(total / exchangeRate), 
-        paidAmount: 0, status: 'pendiente', exchangeRate, products: cart.map(i => `${i.name} x${i.qty}`).join(', ')
-      });
+      const newAcc: Account = {
+        id: getVenezuelaTimestamp(), 
+        txId: tx.id, 
+        date: tx.date, 
+        clientId: targetClientId,
+        clientName: paymentData.clientName || 'Cliente', 
+        clientCedula: paymentData.clientCedula || '',
+        products: cart.map(i => `${i.name} x${i.qty}`).join(', '),
+        amountBs: total, 
+        amountUsd: roundTo2(total / exchangeRate), 
+        paidAmount: 0, 
+        paidAmountUsd: 0,
+        status: 'pendiente', 
+        exchangeRate,
+      };
+      await syncService.saveAccount(newAcc);
+      
       const c = clients.find(cl => cl.id === targetClientId);
-      if (c) await syncService.saveClient({ ...c, debt: (c.debt || 0) + total });
+      if (c) {
+        const updatedClient = { ...c, debt: (c.debt || 0) + total };
+        await syncService.saveClient(updatedClient);
+      }
     }
 
     if (type !== 'cobro_deuda') setCart([]);
     return tx;
-  }, [cart, register, exchangeRate, clients, products, terminalId, terminalNameId]);
+  }, [cart, register, exchangeRate, clients, products, terminalId, terminalNameId, getItemsToDiscount, currentSession, user?.uid]);
 
-  const applyAbono = useCallback(async (clientId: number, amount: number) => {
-    if (!register?.isOpen) return null;
+  const applyAbono = useCallback(async (clientId: number, amount: number, method: string = 'efectivo_bs') => {
+    if (!register?.isOpen) {
+      console.warn("Caja no abierta, no se puede registrar el pago");
+      return null;
+    }
     const client = clients.find(c => c.id === clientId);
-    if (!client) return null;
-    const tx = await finalizeSale('cobro_deuda', { clientId, totalPaid: amount, clientName: client.name });
+    if (!client) {
+      console.warn("Cliente no encontrado");
+      return null;
+    }
+
+    let remaining = amount;
+    const paidAccountRefs: string[] = [];
+    const clientAccounts = accounts
+      .filter(a => Number(a.clientId) === Number(clientId) && a.status !== 'pagada')
+      .sort((a, b) => new Date(a.date).getTime() - new Date(a.date).getTime());
+
+    for (const acc of clientAccounts) {
+      if (remaining <= 0) break;
+      const owed = acc.amountBs - (acc.paidAmount || 0);
+      const pay = Math.min(remaining, owed);
+      const newPaid = (acc.paidAmount || 0) + pay;
+      const newPaidUsd = (acc.paidAmountUsd || 0) + (pay / exchangeRate);
+      const newStatus: 'pagada' | 'parcial' = newPaid >= acc.amountBs ? 'pagada' : 'parcial';
+      const updatedAcc = { ...acc, paidAmount: newPaid, paidAmountUsd: newPaidUsd, status: newStatus };
+      await syncService.saveAccount(updatedAcc);
+      paidAccountRefs.push(String(acc.txId));
+      remaining -= pay;
+    }
+
+    const isLiquidacion = remaining === 0 && amount >= (client.debt || 0);
+    const note = `${isLiquidacion ? 'LIQUIDACIÓN DE DEUDA' : 'ABONO DE DEUDA'} - Ref Credits: [${paidAccountRefs.join(',')}]`;
+
+    const txId = getVenezuelaTimestamp();
+    const tx: Transaction = {
+      id: txId,
+      date: getVenezuelaISOString(),
+      type: 'cobro_deuda',
+      items: [],
+      subtotal: amount,
+      iva: 0,
+      total: amount,
+      totalUsd: roundTo2(amount / exchangeRate),
+      payMethod: method,
+      paidBs: amount,
+      change: 0,
+      clientId: Number(clientId),
+      clientName: client.name,
+      exchangeRate,
+      sessionId: currentSession?.id || undefined,
+      notes: note,
+      terminalId: terminalNameId, // ✅ Guardar Nombre como TerminalId
+    };
+
+    const accountingEntry = {
+      id: getVenezuelaTimestamp() + 2,
+      date: getVenezuelaISOString(),
+      type: 'ingreso',
+      category: 'cobro_deuda',
+      concept: 'Cobro de deuda',
+      description: `Abono Cliente: ${client.name} - ${method}`,
+      amount: amount,
+      totalUsd: tx.totalUsd, // ✅ Añadido para precisión
+      exchangeRate: exchangeRate,
+      referenceId: tx.id,
+      referenceType: 'cobro_deuda',
+      createdAt: getVenezuelaISOString(),
+    };
+
+    const newTxs = [...(register.txs || []), tx];
+    await syncService.runAtomicSale(terminalId, tx, {
+      products: new Map(),
+      kardexEntries: [],
+      accountingEntry: accountingEntry,
+      registerUpdate: { txs: newTxs }
+    });
+
     const newDebt = Math.max(0, (client.debt || 0) - amount);
-    await syncService.saveClient({ ...client, debt: newDebt });
+    const updatedClient = { ...client, debt: newDebt };
+    await syncService.saveClient(updatedClient);
+    
     return tx;
-  }, [register, clients, finalizeSale]);
+  }, [register, clients, accounts, exchangeRate, terminalId, terminalNameId, currentSession]);
+
+  const registerCashEgress = useCallback(async (
+    amount: number,
+    reason: string,
+    referenceId: number,
+    payMethod: string = 'efectivo_bs',
+    usdAmount?: number
+  ) => {
+    if (!register?.isOpen) throw new Error('Caja no abierta');
+
+    const isUsd = payMethod === 'usd_efectivo' || payMethod === 'zelle';
+    const totalBs = isUsd ? (usdAmount || 0) * exchangeRate : amount;
+    const totalUsd = isUsd ? (usdAmount || 0) : amount / exchangeRate;
+
+    const tx: Transaction = {
+      id: getVenezuelaTimestamp(),
+      date: getVenezuelaISOString(),
+      type: 'devolucion',
+      items: [],
+      subtotal: totalBs,
+      iva: 0,
+      total: totalBs,
+      totalUsd: roundTo2(totalUsd),
+      payMethod: payMethod,
+      paidBs: totalBs,
+      change: 0,
+      clientId: undefined,
+      clientName: 'DEVOLUCIÓN',
+      exchangeRate,
+      notes: reason,
+      sessionId: currentSession?.id || undefined,
+      terminalId: terminalNameId, // ✅ Guardar Nombre como TerminalId
+      payments: [{
+        id: crypto.randomUUID(),
+        method: payMethod,
+        amount: isUsd ? (usdAmount || 0) : amount,
+        usdAmount: isUsd ? (usdAmount || 0) : undefined,
+      }],
+    };
+
+    const accountingEntry = {
+      id: getVenezuelaTimestamp() + 3,
+      date: getVenezuelaISOString(),
+      type: 'egreso',
+      category: 'devolucion',
+      concept: 'Devolución de venta',
+      description: reason,
+      amount: totalBs,
+      totalUsd: tx.totalUsd, // ✅ Añadido para precisión
+      exchangeRate: exchangeRate,
+      referenceId: tx.id,
+      referenceType: 'return',
+      createdAt: getVenezuelaISOString(),
+    };
+
+    const newTxs = [...(register.txs || []), tx];
+    await syncService.runAtomicSale(terminalId, tx, {
+      products: new Map(),
+      kardexEntries: [],
+      accountingEntry: accountingEntry,
+      registerUpdate: { txs: newTxs }
+    });
+    return tx;
+  }, [register, exchangeRate, terminalId, terminalNameId, currentSession]);
 
   const setExchangeRateProxy = useCallback(async (newRate: number) => {
-    // ✅ Actualización local optimista
     setExchangeRate(newRate);
     localStorage.setItem(STORAGE_KEYS.EXCHANGE_RATE, newRate.toString());
-    
-    // ✅ Persistencia en la nube (esto disparará la suscripción para todos los usuarios)
+    recalcAllPricesWithNewRate(newRate);
     try {
       await syncService.saveGlobalSettings({ exchangeRate: newRate });
     } catch (error) {
-      console.warn("Error persistiendo tasa en la nube:", error);
+      console.warn("No se pudo sincronizar la tasa con la nube (modo offline o error)", error);
     }
+  }, [recalcAllPricesWithNewRate]);
+
+  const refreshProductsList = useCallback(async () => {
+    const newProducts = await syncService.getProducts();
+    setProducts(newProducts);
   }, []);
 
   return {
-    products, addProduct, updateProduct, deleteProduct,
-    clients, saveClient, deleteClient, transactions, accounts,
-    register, openCashRegister, closeCashRegister,
+    products, setProducts, addProduct, updateProduct, deleteProduct,
+    clients, setClients, saveClient, deleteClient, transactions, setTransactions, accounts, setAccounts,
+    register, setRegister, openCashRegister, closeCashRegister,
     exchangeRate, setExchangeRate: setExchangeRateProxy,
     cart, addToCart, removeFromCart, updateCartQty, updateCartItemPrice,
     isIvaEnabled, setIsIvaEnabled, currentPage, setCurrentPage,
-    finalizeSale, applyAbono, isHydrated, globalIvaPercentage, adminCode,
-    currentSession, createCashSession: (amt: number) => syncService.saveRegisterByTerminal(terminalId, { ...register, isOpen: true, openAmountUsd: amt }),
-    closeCashSession: (amt: number) => syncService.saveRegisterByTerminal(terminalId, { ...register, isOpen: false }),
-    refreshAllData: () => syncService.loadAllDataToCache(),
+    finalizeSale, applyAbono, registerCashEgress,
+    isHydrated, globalIvaPercentage, adminCode, checkProductStock, refreshProducts,
+    currentSession, setCurrentSession, reloadSession, createCashSession, closeCashSession,
+    refreshAllData,
   };
 }

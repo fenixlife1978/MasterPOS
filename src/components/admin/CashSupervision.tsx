@@ -7,7 +7,7 @@ import { getLocalDateString, formatLocalDate } from '@/lib/date-utils';
 import { 
   Computer, DollarSign, CreditCard, Smartphone, Fingerprint, 
   Plane, Receipt, TrendingUp, TrendingDown, Eye, Loader2,
-  Banknote, Clock, AlertCircle, CloudUpload, X
+  Banknote, Clock, AlertCircle, Upload, X
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -273,7 +273,7 @@ export default function CashSupervision() {
               </>
             ) : (
               <>
-                <CloudUpload size={14} className="mr-2" />
+                <Upload size={14} className="mr-2" />
                 SINCRONIZAR TODAS LAS CAJAS
               </>
             )}

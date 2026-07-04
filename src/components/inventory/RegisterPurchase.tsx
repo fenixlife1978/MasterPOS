@@ -4,7 +4,7 @@ import { useState, useMemo, useRef, useEffect } from 'react';
 import { usePOSState } from '@/hooks/use-pos-state';
 import { useSuppliers } from '@/hooks/use-suppliers';
 import { useToast } from '@/hooks/use-toast';
-import { Search, Plus, Trash2, Package, Truck, Receipt, DollarSign, Loader2, Save, CalendarDays, HandCoins, X, PlusCircle, Percent } from 'lucide-react';
+import { Search, Plus, Trash2, Package, Truck, Receipt, DollarSign, Loader2, Save, CalendarDays, Coins, X, PlusCircle, Percent } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
@@ -624,7 +624,7 @@ export default function RegisterPurchase() {
 
               <div className="bg-white border border-[#9E9E9E] rounded-xl p-4 shadow-sm">
                 <h3 className="text-[11px] font-black uppercase text-black mb-3 flex items-center gap-2">
-                  <HandCoins size={13} /> Condiciones de Pago
+                  <Coins size={13} /> Condiciones de Pago
                 </h3>
                 <div className="space-y-3">
                   <div className="flex gap-2">

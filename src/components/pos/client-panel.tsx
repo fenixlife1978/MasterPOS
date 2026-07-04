@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Client, CartItem, Transaction } from '@/lib/types';
-import { UserCircle, X, CheckCircle, HandCoins, Eye, History, DollarSign, RefreshCw } from 'lucide-react';
+import { UserCircle, X, CheckCircle, Coins, Eye, History, DollarSign, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { usePOSState } from '@/hooks/use-pos-state';
 import FloatingPaymentModal from './FloatingPaymentModal';
@@ -270,7 +270,7 @@ export default function ClientPanel({ client, state, onClose }: ClientPanelProps
                   onClick={() => document.getElementById('abono-input')?.focus()}
                   className="flex-1 py-2.5 bg-primary text-black text-[11px] font-bold rounded-lg hover:brightness-110 transition-all uppercase shadow-md"
                 >
-                  <HandCoins size={12} className="inline mr-1 text-black" /> Abonar
+                  <Coins size={12} className="inline mr-1 text-black" /> Abonar
                 </button>
               </div>
               
@@ -400,7 +400,7 @@ export default function ClientPanel({ client, state, onClose }: ClientPanelProps
                 </button>
                 <div className="flex items-center gap-3">
                   <div className="w-12 h-12 bg-primary/20 rounded-xl flex items-center justify-center">
-                    <HandCoins size={24} className="text-primary" />
+                    <Coins size={24} className="text-primary" />
                   </div>
                   <div>
                     <h3 className="text-xl font-black">Detalle del Crédito</h3>

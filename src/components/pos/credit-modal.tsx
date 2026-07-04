@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { Client, CartItem } from '@/lib/types';
-import { Handshake, X, Search, UserPlus, UserCheck, DollarSign } from 'lucide-react';
+import { Users, X, Search, UserPlus, UserCheck, DollarSign } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatBs, formatUsd, formatBsNumber, formatUsdNumber } from '@/lib/currency-formatter';
 
@@ -108,7 +108,7 @@ export default function CreditModal({ cart, clients, exchangeRate, total, onClos
       <div className="bg-[#1A2C4E] border border-white/20 rounded-2xl w-full max-w-xl p-6 shadow-2xl animate-in zoom-in-95">
         <div className="flex justify-between items-center mb-6">
           <h3 className="text-xl font-headline font-black flex items-center gap-2 text-white">
-            <Handshake size={24} className="text-primary" /> Venta a Crédito
+            <Users size={24} className="text-primary" /> Venta a Crédito
           </h3>
           <button 
             onClick={onClose} 

@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { Page } from '@/lib/types';
-import { Store, Boxes, ReceiptText, Vault, LayoutDashboard, Truck, BookOpen, ArrowLeftRight, ChevronLeft, ChevronRight, ShoppingBag } from 'lucide-react';
+import { Store, Boxes, Receipt, Vault, LayoutDashboard, Truck, BookOpen, ArrowLeftRight, ChevronLeft, ChevronRight, ShoppingBag } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import LogoutButton from './LogoutButton';
 import Image from 'next/image';
@@ -24,7 +24,7 @@ export default function Sidebar({ currentPage, onPageChange, userRole }: Sidebar
     { id: 'pos' as Page, icon: Store, label: 'VENTA (POS)', adminOnly: false },
     { id: 'inventario' as Page, icon: Boxes, label: 'INVENTARIO', adminOnly: true },
     { id: 'registrar_compra' as Page, icon: ShoppingBag, label: 'ENTRADA COMPRA', adminOnly: true },
-    { id: 'cuentas' as Page, icon: ReceiptText, label: 'CUENTAS', adminOnly: true },
+    { id: 'cuentas' as Page, icon: Receipt, label: 'CUENTAS', adminOnly: true },
     { id: 'proveedores' as Page, icon: Truck, label: 'PROVEEDORES', adminOnly: true },
     { id: 'contabilidad' as Page, icon: BookOpen, label: 'CONTABILIDAD', adminOnly: true },
     { id: 'devoluciones' as Page, icon: ArrowLeftRight, label: 'DEVOLUCIONES', adminOnly: false },

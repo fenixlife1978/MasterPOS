@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { usePOSState } from '@/hooks/use-pos-state';
-import { Download, ChevronDown, ChevronRight, Wallet, Eye, X, HandCoins, History, DollarSign, Trash2, PlusCircle, AlertCircle } from 'lucide-react';
+import { Download, ChevronDown, ChevronRight, Wallet, Eye, X, Coins, History, DollarSign, Trash2, PlusCircle, AlertCircle } from 'lucide-react';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -481,7 +481,7 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
               <div className="bg-[#1A2C4E] p-5 text-white sticky top-0 z-10">
                 <button onClick={() => setShowDetailModal(false)} className="absolute top-4 right-4 hover:opacity-70"><X size={20} /></button>
                 <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 bg-primary/20 rounded-xl flex items-center justify-center"><HandCoins size={24} className="text-primary" /></div>
+                  <div className="w-12 h-12 bg-primary/20 rounded-xl flex items-center justify-center"><Coins size={24} className="text-primary" /></div>
                   <div>
                     <h3 className="text-xl font-black">Detalle del Crédito</h3>
                     <p className="text-white font-black text-sm">#{selectedTransaction.accountInfo.txId} • {selectedTransaction.accountInfo.clientName}</p>

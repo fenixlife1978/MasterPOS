@@ -47,9 +47,37 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
   });
   const [isSubmittingInitial, setIsSubmittingInitial] = useState(false);
 
-  // ✅ LÓGICA CORREGIDA: USD como fuente de verdad fija, Bs dinámico
+  // ✅ LÓGICA REFORZADA: USD como fuente de verdad fija, Bs dinámico + RECONCILIACIÓN TOTAL (SIN EXCEPCIÓN)
   const groupedAccounts = useMemo(() => {
-    return state.accounts.reduce((acc, account) => {
+    // 1. Obtener IDs de transacciones ya registradas en la colección de cuentas
+    const registeredTxIds = new Set(state.accounts.map(a => String(a.txId)));
+
+    // 2. Localizar transacciones de crédito que NO tengan registro en la colección de cuentas (Fugas de datos)
+    const missingFromTransactions = state.transactions
+      .filter(tx => tx.type === 'credito' && !registeredTxIds.has(String(tx.id)))
+      .map(tx => {
+        const client = state.clients.find(c => String(c.id) === String(tx.clientId));
+        return {
+          id: `recovered_${tx.id}`,
+          txId: tx.id,
+          date: tx.date,
+          clientId: tx.clientId || 0,
+          clientName: tx.clientName || client?.name || 'Cliente Desconocido',
+          clientCedula: client?.cedula || 'S/N',
+          products: tx.notes || 'Venta a crédito (recuperada del historial)',
+          amountBs: tx.total || 0,
+          amountUsd: tx.totalUsd || (tx.total / (tx.exchangeRate || state.exchangeRate)),
+          paidAmount: 0,
+          status: 'pendiente' as const,
+          exchangeRate: tx.exchangeRate || state.exchangeRate,
+          isRecovered: true
+        };
+      });
+
+    // 3. Unificar cuentas reales con recuperadas
+    const unifiedAccounts = [...state.accounts, ...missingFromTransactions];
+
+    return unifiedAccounts.reduce((acc, account) => {
       const clientIdKey = String(account.clientId);
       if (!acc[clientIdKey]) {
         acc[clientIdKey] = {
@@ -68,7 +96,7 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
       
       // El monto USD es el valor ancla que no cambia
       const originalUsd = account.amountUsd || (account.amountBs / accountRate);
-      // Calculamos cuánto de ese USD se ha pagado (usando la tasa a la que se registró la cuenta o la actual si no hay)
+      // Calculamos cuánto de ese USD se ha pagado
       const paidUsd = (account.paidAmount || 0) / accountRate;
       const remainingUsd = Math.max(0, originalUsd - paidUsd);
       
@@ -79,7 +107,7 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
       
       return acc;
     }, {} as Record<string, any>);
-  }, [state.accounts, state.exchangeRate]);
+  }, [state.accounts, state.transactions, state.clients, state.exchangeRate]);
 
   const clientsList = Object.values(groupedAccounts);
   const totalGeneralDebtUsd = clientsList.reduce((sum, c) => sum + c.totalDebtUsd, 0);
@@ -434,7 +462,10 @@ export default function AccountsModule({ state }: AccountsModuleProps) {
                                   return (
                                     <TableRow key={account.id} className="border-b border-[#9E9E9E]/50 hover:bg-[#F5F5F5]">
                                       <TableCell className="text-[11px] text-black font-black">{new Date(account.date).toLocaleDateString('es-VE')}</TableCell>
-                                      <TableCell className="text-[11px] text-black font-black max-w-[250px] truncate">{account.products}</TableCell>
+                                      <TableCell className="text-[11px] text-black font-black max-w-[250px] truncate">
+                                        {account.products}
+                                        {account.isRecovered && <span className="ml-2 text-[8px] bg-blue-100 text-blue-700 px-1 rounded">POS SYNC</span>}
+                                      </TableCell>
                                       <TableCell className="text-right font-black">{formatUsd(originalUsd)}</TableCell>
                                       <TableCell className="text-right font-black text-[#E74C3C]">{formatBs(remainingBsAtCurrentRate)}</TableCell>
                                       <TableCell className="text-center">

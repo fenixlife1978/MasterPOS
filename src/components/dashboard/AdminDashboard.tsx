@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { usePOSState } from '@/hooks/use-pos-state';
 import { useSuppliers } from '@/hooks/use-suppliers';
 import InvoiceNotifications from '@/components/ui/InvoiceNotifications';
@@ -63,6 +63,51 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
   const [isResetting, setIsResetting] = useState(false);
 
   const [showHistoryModal, setShowHistoryModal] = useState(false);
+
+  // ✅ LÓGICA DE RECONCILIACIÓN IDÉNTICA A ACCOUNTS-MODULE PARA SINCRONIZACIÓN TOTAL
+  const accountsData = useMemo(() => {
+    const registeredTxIds = new Set(state.accounts.map(a => String(a.txId)));
+
+    const missingFromTransactions = state.transactions
+      .filter(tx => tx.type === 'credito' && !registeredTxIds.has(String(tx.id)))
+      .map(tx => {
+        const client = state.clients.find(c => String(c.id) === String(tx.clientId));
+        return {
+          id: `recovered_${tx.id}`,
+          txId: tx.id,
+          clientId: tx.clientId || 0,
+          amountBs: tx.total || 0,
+          amountUsd: tx.totalUsd || (tx.total / (tx.exchangeRate || state.exchangeRate)),
+          paidAmount: 0,
+          exchangeRate: tx.exchangeRate || state.exchangeRate,
+        };
+      });
+
+    const unifiedAccounts = [...state.accounts, ...missingFromTransactions];
+
+    const grouped = unifiedAccounts.reduce((acc, account) => {
+      const clientIdKey = String(account.clientId);
+      if (!acc[clientIdKey]) {
+        acc[clientIdKey] = { totalDebtUsd: 0 };
+      }
+      
+      const accountRate = account.exchangeRate || state.exchangeRate || 36.50;
+      const originalUsd = account.amountUsd || (account.amountBs / accountRate);
+      const paidUsd = (account.paidAmount || 0) / accountRate;
+      const remainingUsd = Math.max(0, originalUsd - paidUsd);
+      
+      acc[clientIdKey].totalDebtUsd += remainingUsd;
+      return acc;
+    }, {} as Record<string, any>);
+
+    const clientsWithDebtCount = Object.keys(grouped).length;
+    const totalDebtUsd = Object.values(grouped).reduce((sum, c: any) => sum + c.totalDebtUsd, 0);
+
+    return {
+      clientsCount: clientsWithDebtCount,
+      totalDebtUsd
+    };
+  }, [state.accounts, state.transactions, state.clients, state.exchangeRate]);
 
   useEffect(() => {
     const loadAdminCode = async () => {
@@ -300,11 +345,11 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
   };
 
   const totalProducts = state.products.length;
-  const totalClients = state.clients.length;
+  // ✅ Usar el conteo de clientes del módulo de Cuentas
+  const totalClientsInAccounts = accountsData.clientsCount;
   const totalSales = state.transactions.filter(t => t.type === 'contado').length;
-  const totalRevenue = state.transactions.filter(t => t.type === 'contado').reduce((sum, t) => sum + t.total, 0);
-  const totalCreditBs = state.accounts.reduce((sum, acc) => sum + (acc.amountBs - (acc.paidAmount || 0)), 0);
-  const totalCreditUsd = totalCreditBs / state.exchangeRate;
+  const totalCreditUsd = accountsData.totalDebtUsd;
+  
   const totalPayable = invoices.reduce((sum, inv) => sum + (inv.total - inv.paidAmount), 0);
   const outOfStock = state.products.filter(p => p.stock === 0).length;
   const lowStock = state.products.filter(p => p.stock > 0 && p.stock <= 5).length;
@@ -479,7 +524,7 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
               </div>
               <div className="bg-white rounded-xl border border-[#9E9E9E] p-4 shadow-sm">
                 <p className="text-xs font-black text-black uppercase tracking-widest">Clientes</p>
-                <p className="text-2xl font-black text-black mt-1">{totalClients}</p>
+                <p className="text-2xl font-black text-black mt-1">{totalClientsInAccounts}</p>
               </div>
               <div className="bg-white rounded-xl border border-[#9E9E9E] p-4 shadow-sm">
                 <p className="text-xs font-black text-black uppercase tracking-widest">Ventas</p>

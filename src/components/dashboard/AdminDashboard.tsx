@@ -1,7 +1,6 @@
-
 "use client";
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { usePOSState } from '@/hooks/use-pos-state';
 import { useSuppliers } from '@/hooks/use-suppliers';
 import InvoiceNotifications from '@/components/ui/InvoiceNotifications';

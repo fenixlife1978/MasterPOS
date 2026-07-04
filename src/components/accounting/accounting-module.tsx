@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useMemo, useEffect } from 'react';
@@ -128,10 +129,7 @@ export default function AccountingModule() {
     return true;
   }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-  const totalIngresosBs = filteredEntries.filter(e => e.type === 'ingreso').reduce((sum, e) => sum + e.amount, 0);
-  const totalEgresosBs = filteredEntries.filter(e => e.type === 'egreso').reduce((sum, e) => sum + e.amount, 0);
-  const balanceBs = totalIngresosBs - totalEgresosBs;
-  
+  // ✅ Cálculos de totales usando USD como ancla absoluta (Requerimiento de estabilidad ante cambio de tasa)
   const totalIngresosUsd = filteredEntries
     .filter(e => e.type === 'ingreso')
     .reduce((sum, e) => sum + (e.totalUsd || (e.amount / (e.exchangeRate || globalExchangeRate))), 0);
@@ -141,6 +139,11 @@ export default function AccountingModule() {
     .reduce((sum, e) => sum + (e.totalUsd || (e.amount / (e.exchangeRate || globalExchangeRate))), 0);
     
   const balanceUsd = totalIngresosUsd - totalEgresosUsd;
+
+  // Los bolívares ahora son representativos de la tasa actual según el total de dólares anclados
+  const totalIngresosBs = totalIngresosUsd * globalExchangeRate;
+  const totalEgresosBs = totalEgresosUsd * globalExchangeRate;
+  const balanceBs = totalIngresosBs - totalEgresosBs;
 
   const handleExpenseConfirm = async (data: any) => {
     if (!addEntry) return;

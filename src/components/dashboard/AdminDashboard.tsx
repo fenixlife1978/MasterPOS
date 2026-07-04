@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, useMemo } from 'react';
@@ -119,29 +120,31 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
     loadAdminCode();
   }, []);
 
-  const calculateMonthlyRevenue = () => {
+  // ✅ Calcular ingresos del mes usando USD como ancla fija (estabilidad requerida)
+  const calculateMonthlyRevenue = useCallback(() => {
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    const revenueBs = state.transactions
+    
+    const revenueUsd = state.transactions
       .filter(t => t.type === 'contado' && new Date(t.date) >= startOfMonth)
-      .reduce((sum, t) => sum + (t.total || 0), 0);
-    const revenueUsd = revenueBs / state.exchangeRate;
+      .reduce((sum, t) => sum + (t.totalUsd || (t.total / (t.exchangeRate || state.exchangeRate))), 0);
+      
     setMonthlyRevenue(roundTo2(revenueUsd));
-  };
+  }, [state.transactions, state.exchangeRate]);
 
-  const calculateMonthlyExpenses = () => {
+  const calculateMonthlyExpenses = useCallback(() => {
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const expenses = invoices
       .filter(inv => inv.paidAmount > 0 && new Date(inv.date) >= startOfMonth)
       .reduce((sum, inv) => sum + inv.paidAmount, 0);
     setMonthlyExpenses(expenses);
-  };
+  }, [invoices]);
 
   useEffect(() => {
     calculateMonthlyRevenue();
     calculateMonthlyExpenses();
-  }, [state.transactions, invoices, state.exchangeRate]);
+  }, [calculateMonthlyRevenue, calculateMonthlyExpenses]);
 
   const roundTo2 = (num: number) => Math.round(num * 100) / 100;
 
@@ -533,7 +536,7 @@ export default function AdminDashboard({ state }: AdminDashboardProps) {
               <div className="bg-white rounded-xl border border-[#9E9E9E] p-4 shadow-sm">
                 <p className="text-xs font-black text-black uppercase tracking-widest">Ingresos del Mes</p>
                 <p className="text-2xl font-black text-green-600 mt-1">{formatUsd(monthlyRevenue)}</p>
-                <p className="text-[10px] font-black text-black uppercase mt-1">Reinicia cada 1ro del mes</p>
+                <p className="text-[10px] font-black text-black uppercase mt-1">Ref: {formatBs(monthlyRevenue * state.exchangeRate)}</p>
               </div>
               <div className="bg-white rounded-xl border border-[#9E9E9E] p-4 shadow-sm">
                 <p className="text-xs font-black text-black uppercase tracking-widest">Gastos del Mes</p>

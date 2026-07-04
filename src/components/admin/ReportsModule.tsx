@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
@@ -129,9 +130,9 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
     setHasSearched(true);
   };
 
-  // ✅ CONSOLIDADO MENSUAL UNIFICADO (TRUTH = RTDB)
+  // ✅ CONSOLIDADO MENSUAL UNIFICADO CON USD COMO ANCLA
   const monthlyConsolidated = useMemo(() => {
-    const consolidated: Record<string, { label: string, year: number, monthIdx: number, income: number, expense: number }> = {};
+    const consolidated: Record<string, { label: string, year: number, monthIdx: number, incomeUsd: number, expenseUsd: number }> = {};
     
     unifiedEntries.forEach(entry => {
       const d = new Date(entry.date);
@@ -141,31 +142,22 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
       
       if (!consolidated[key]) {
         const monthName = d.toLocaleDateString('es-VE', { month: 'long' });
-        consolidated[key] = { label: monthName.toUpperCase(), year, monthIdx, income: 0, expense: 0 };
+        consolidated[key] = { label: monthName.toUpperCase(), year, monthIdx, incomeUsd: 0, expenseUsd: 0 };
       }
       
-      if (entry.type === 'ingreso') consolidated[key].income += entry.amount;
-      else consolidated[key].expense += entry.amount;
+      const entryUsd = entry.totalUsd || (entry.amount / (entry.exchangeRate || state.exchangeRate));
+      if (entry.type === 'ingreso') consolidated[key].incomeUsd += entryUsd;
+      else consolidated[key].expenseUsd += entryUsd;
     });
     
     return Object.values(consolidated).sort((a, b) => (a.year !== b.year ? a.year - b.year : a.monthIdx - b.monthIdx)).reverse();
-  }, [unifiedEntries]);
+  }, [unifiedEntries, state.exchangeRate]);
 
-  // Cálculos para resumen de ventas
-  const totalGeneral = filteredTransactions.reduce((sum, t) => sum + t.total, 0);
-  const contadoTotal = filteredTransactions.filter(t => t.type === 'contado').reduce((sum, t) => sum + t.total, 0);
-  const creditoTotal = filteredTransactions.filter(t => t.type === 'credito').reduce((sum, t) => sum + t.total, 0);
-  const cobroTotal = filteredTransactions.filter(t => t.type === 'cobro_deuda').reduce((sum, t) => sum + t.total, 0);
-  const colaboracionTotal = filteredTransactions.filter(t => t.type === 'colaboracion' || t.type === 'consumo_propio').reduce((sum, t) => sum + (t.costoTotalOperacion || 0), 0);
-
-  const generateReportHTML = () => {
-    // ... logic for HTML remains same
-    return "HTML generated"; 
-  };
-
-  const handlePrintPDF = () => { /* Logic... */ };
-  const handleSharePDF = async () => { /* Logic... */ };
-  const exportToExcel = () => { /* Logic... */ };
+  // ✅ Cálculos para resumen de ventas usando USD como ANCLA ABSOLUTA (Requerimiento de estabilidad)
+  const contadoTotalUsd = useMemo(() => filteredTransactions.filter(t => t.type === 'contado').reduce((sum, t) => sum + (t.totalUsd || (t.total / (t.exchangeRate || state.exchangeRate))), 0), [filteredTransactions, state.exchangeRate]);
+  const creditoTotalUsd = useMemo(() => filteredTransactions.filter(t => t.type === 'credito').reduce((sum, t) => sum + (t.totalUsd || (t.total / (t.exchangeRate || state.exchangeRate))), 0), [filteredTransactions, state.exchangeRate]);
+  const cobroTotalUsd = useMemo(() => filteredTransactions.filter(t => t.type === 'cobro_deuda').reduce((sum, t) => sum + (t.totalUsd || (t.total / (t.exchangeRate || state.exchangeRate))), 0), [filteredTransactions, state.exchangeRate]);
+  const colaboracionTotalUsd = useMemo(() => filteredTransactions.filter(t => t.type === 'colaboracion' || t.type === 'consumo_propio').reduce((sum, t) => sum + (t.totalUsd || t.costoTotalOperacion || 0), 0), [filteredTransactions]);
 
   return (
     <div className="bg-white border-2 border-black rounded-xl p-5 shadow-md">
@@ -226,7 +218,7 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
                   <tfoot className="bg-[#F0F0F0] border-t-2 border-black">
                     <tr className="font-black text-black">
                       <td colSpan={4} className="p-3 text-right text-[10px] uppercase">Total General Filtrado:</td>
-                      <td className="p-3 text-right text-base">{formatBs(totalGeneral)}</td>
+                      <td className="p-3 text-right text-base">{formatBs(filteredTransactions.reduce((s, t) => s + t.total, 0))}</td>
                     </tr>
                   </tfoot>
                 </table>
@@ -237,23 +229,23 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="bg-white p-4 rounded-xl shadow-md border-2 border-black border-l-8 border-l-primary">
                   <p className="text-[10px] font-black text-black uppercase tracking-widest">Ventas Contado (Ingresos)</p>
-                  <p className="text-2xl font-black text-green-700 mt-1">{formatUsd(contadoTotal / state.exchangeRate)}</p>
-                  <p className="text-[11px] font-black text-black mt-0.5 font-mono">{formatBs(contadoTotal)}</p>
+                  <p className="text-2xl font-black text-green-700 mt-1">{formatUsd(contadoTotalUsd)}</p>
+                  <p className="text-[11px] font-black text-black mt-0.5 font-mono">{formatBs(contadoTotalUsd * state.exchangeRate)}</p>
                 </div>
                 <div className="bg-white p-4 rounded-xl shadow-md border-2 border-black border-l-8 border-l-purple-600">
                   <p className="text-[10px] font-black text-black uppercase tracking-widest">Cobros de Crédito (Ingresos)</p>
-                  <p className="text-2xl font-black text-purple-700 mt-1">{formatUsd(cobroTotal / state.exchangeRate)}</p>
-                  <p className="text-[11px] font-black text-black mt-0.5 font-mono">{formatBs(cobroTotal)}</p>
+                  <p className="text-2xl font-black text-purple-700 mt-1">{formatUsd(cobroTotalUsd)}</p>
+                  <p className="text-[11px] font-black text-black mt-0.5 font-mono">{formatBs(cobroTotalUsd * state.exchangeRate)}</p>
                 </div>
                 <div className="bg-white p-4 rounded-xl shadow-md border-2 border-black border-l-8 border-l-orange-500 opacity-80">
                   <p className="text-[10px] font-black text-black uppercase tracking-widest">Ventas a Crédito (Informativo)</p>
-                  <p className="text-2xl font-black text-orange-600 mt-1">{formatUsd(creditoTotal / state.exchangeRate)}</p>
-                  <p className="text-[11px] font-black text-black mt-0.5 font-mono">{formatBs(creditoTotal)}</p>
+                  <p className="text-2xl font-black text-orange-600 mt-1">{formatUsd(creditoTotalUsd)}</p>
+                  <p className="text-[11px] font-black text-black mt-0.5 font-mono">{formatBs(creditoTotalUsd * state.exchangeRate)}</p>
                 </div>
                 <div className="bg-white p-4 rounded-xl shadow-md border-2 border-black border-l-8 border-l-red-600">
                   <p className="text-[10px] font-black text-black uppercase tracking-widest">Colaboraciones (Costo)</p>
-                  <p className="text-2xl font-black text-red-700 mt-1">{formatUsd(colaboracionTotal / state.exchangeRate)}</p>
-                  <p className="text-[11px] font-black text-black mt-0.5 font-mono">{formatBs(colaboracionTotal * state.exchangeRate)}</p>
+                  <p className="text-2xl font-black text-red-700 mt-1">{formatUsd(colaboracionTotalUsd)}</p>
+                  <p className="text-[11px] font-black text-black mt-0.5 font-mono">{formatBs(colaboracionTotalUsd * state.exchangeRate)}</p>
                 </div>
               </div>
             )}
@@ -279,21 +271,21 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
                 </thead>
                 <tbody className="divide-y-2 divide-black/5">
                   {monthlyConsolidated.map((row, idx) => {
-                    const balance = row.income - row.expense;
+                    const balanceUsd = row.incomeUsd - row.expenseUsd;
                     return (
                       <tr key={idx} className="hover:bg-[#F5F5F5] transition-colors">
                         <td className="p-3"><p className="font-black text-black uppercase">{row.label}</p><p className="text-[10px] text-black font-black">{row.year}</p></td>
                         <td className="p-3 text-right">
-                          <p className="text-green-700 font-black">{formatUsd(row.income / state.exchangeRate)}</p>
-                          <p className="text-[10px] font-black text-black font-mono">{formatBs(row.income)}</p>
+                          <p className="text-green-700 font-black">{formatUsd(row.incomeUsd)}</p>
+                          <p className="text-[10px] font-black text-black font-mono">{formatBs(row.incomeUsd * state.exchangeRate)}</p>
                         </td>
                         <td className="p-3 text-right">
-                          <p className="text-red-700 font-black">{formatUsd(row.expense / state.exchangeRate)}</p>
-                          <p className="text-[10px] font-black text-black font-mono">{formatBs(row.expense)}</p>
+                          <p className="text-red-700 font-black">{formatUsd(row.expenseUsd)}</p>
+                          <p className="text-[10px] font-black text-black font-mono">{formatBs(row.expenseUsd * state.exchangeRate)}</p>
                         </td>
                         <td className="p-3 text-right">
-                          <p className={cn("font-black", balance >= 0 ? "text-green-800" : "text-red-800")}>{formatUsd(balance / state.exchangeRate)}</p>
-                          <p className="text-[10px] font-black text-black font-mono">{formatBs(balance)}</p>
+                          <p className={cn("font-black", balanceUsd >= 0 ? "text-green-800" : "text-red-800")}>{formatUsd(balanceUsd)}</p>
+                          <p className="text-[10px] font-black text-black font-mono">{formatBs(balanceUsd * state.exchangeRate)}</p>
                         </td>
                       </tr>
                     );
@@ -303,16 +295,16 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
                   <tr className="font-black text-black">
                     <td className="p-4 uppercase tracking-widest">TOTAL HISTÓRICO</td>
                     <td className="p-4 text-right">
-                      <p className="text-green-800 font-black">{formatUsd(monthlyConsolidated.reduce((s, r) => s + r.income, 0) / state.exchangeRate)}</p>
-                      <p className="text-[10px] font-black text-black font-mono">{formatBs(monthlyConsolidated.reduce((s, r) => s + r.income, 0))}</p>
+                      <p className="text-green-800 font-black">{formatUsd(monthlyConsolidated.reduce((s, r) => s + r.incomeUsd, 0))}</p>
+                      <p className="text-[10px] font-black text-black font-mono">{formatBs(monthlyConsolidated.reduce((s, r) => s + r.incomeUsd, 0) * state.exchangeRate)}</p>
                     </td>
                     <td className="p-4 text-right">
-                      <p className="text-red-800 font-black">{formatUsd(monthlyConsolidated.reduce((s, r) => s + r.expense, 0) / state.exchangeRate)}</p>
-                      <p className="text-[10px] font-black text-black font-mono">{formatBs(monthlyConsolidated.reduce((s, r) => s + r.expense, 0))}</p>
+                      <p className="text-red-800 font-black">{formatUsd(monthlyConsolidated.reduce((s, r) => s + r.expenseUsd, 0))}</p>
+                      <p className="text-[10px] font-black text-black font-mono">{formatBs(monthlyConsolidated.reduce((s, r) => s + r.expenseUsd, 0) * state.exchangeRate)}</p>
                     </td>
                     <td className="p-4 text-right">
-                      <p className="font-black text-lg">{formatUsd((monthlyConsolidated.reduce((s, r) => s + r.income, 0) - monthlyConsolidated.reduce((s, r) => s + r.expense, 0)) / state.exchangeRate)}</p>
-                      <p className="text-[11px] font-black text-black font-mono">{formatBs(monthlyConsolidated.reduce((s, r) => s + r.income, 0) - monthlyConsolidated.reduce((s, r) => s + r.expense, 0))}</p>
+                      <p className="font-black text-lg">{formatUsd((monthlyConsolidated.reduce((s, r) => s + r.incomeUsd, 0) - monthlyConsolidated.reduce((s, r) => s + r.expenseUsd, 0)))}</p>
+                      <p className="text-[11px] font-black text-black font-mono">{formatBs((monthlyConsolidated.reduce((s, r) => s + r.incomeUsd, 0) - monthlyConsolidated.reduce((s, r) => s + r.expenseUsd, 0)) * state.exchangeRate)}</p>
                     </td>
                   </tr>
                 </tfoot>

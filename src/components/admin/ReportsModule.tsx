@@ -111,6 +111,7 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
       return;
     }
     
+    // ✅ CORRECCIÓN DE RANGOS DE FECHA CON TIMEZONE VENEZUELA
     const startLimit = getStartOfDay(startDate);
     const endLimit = getEndOfDay(endDate);
     

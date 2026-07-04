@@ -81,24 +81,22 @@ export const getLocalDateString = (date: Date | string = new Date()): string => 
 
 /**
  * Obtiene fecha inicio del día en la zona horaria local (Venezuela)
+ * Devuelve un objeto Date que representa las 00:00:00 de ese día en Caracas.
  */
 export const getStartOfDay = (dateStr: string): Date => {
-  // Crea una fecha a las 00:00:00 en hora local de Venezuela
-  const [year, month, day] = dateStr.split('-').map(Number);
-  // Crear fecha en UTC ajustando manualmente la hora a medianoche UTC-4
-  // Es más confiable usar Date.UTC con el offset
-  const dateLocal = new Date(Date.UTC(year, month - 1, day, 4, 0, 0));
-  return dateLocal;
+  if (!dateStr) return new Date(0);
+  // Forzar la interpretación como fecha local de Venezuela al inicio del día
+  return new Date(`${dateStr}T00:00:00-04:00`);
 };
 
 /**
  * Obtiene fecha fin del día en la zona horaria local (Venezuela)
+ * Devuelve un objeto Date que representa las 23:59:59 de ese día en Caracas.
  */
 export const getEndOfDay = (dateStr: string): Date => {
-  const [year, month, day] = dateStr.split('-').map(Number);
-  // 23:59:59.999 en UTC-4 -> UTC+0 son las 03:59:59.999 del día siguiente
-  const dateLocal = new Date(Date.UTC(year, month - 1, day, 27, 59, 59, 999));
-  return dateLocal;
+  if (!dateStr) return new Date();
+  // Forzar la interpretación como fecha local de Venezuela al final del día
+  return new Date(`${dateStr}T23:59:59.999-04:00`);
 };
 
 /**

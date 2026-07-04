@@ -13,6 +13,7 @@ import ExpenseModal from './expense-modal';
 import { formatBs, formatUsd, formatBsNumber, formatUsdNumber } from '@/lib/currency-formatter';
 import { usePOSState } from '@/hooks/use-pos-state';
 import { useSyncMissingAccounting } from '@/hooks/useSyncMissingAccounting';
+import { getStartOfDay, getEndOfDay } from '@/lib/date-utils';
 
 // ✅ Función para obtener timestamp único
 const getTimestamp = (): number => Date.now();
@@ -124,8 +125,17 @@ export default function AccountingModule() {
   const filteredEntries = unifiedEntries.filter(entry => {
     if (filterType !== 'todos' && entry.type !== filterType) return false;
     if (filterCategory !== 'todas' && entry.category !== filterCategory) return false;
-    if (startDate && new Date(entry.date) < new Date(startDate)) return false;
-    if (endDate && new Date(entry.date) > new Date(endDate)) return false;
+    
+    // ✅ CORRECCIÓN DE RANGOS DE FECHA CON TIMEZONE VENEZUELA
+    if (startDate) {
+      const startLimit = getStartOfDay(startDate);
+      if (new Date(entry.date) < startLimit) return false;
+    }
+    if (endDate) {
+      const endLimit = getEndOfDay(endDate);
+      if (new Date(entry.date) > endLimit) return false;
+    }
+    
     return true;
   }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
@@ -279,7 +289,7 @@ export default function AccountingModule() {
                   <TableCell className="p-3">
                     <p className="text-xs font-black text-black uppercase flex items-center gap-2">
                       {entry.concept}
-                      {entry.source === 'RTDB' && <span className="text-[8px] bg-blue-100 text-blue-700 px-1 rounded">AUTO</span>}
+                      {entry.source === 'RTDB' && <span className="text-[8px] font-black bg-blue-100 text-blue-700 px-1 rounded">AUTO</span>}
                     </p>
                     <p className="text-[10px] font-black text-black truncate max-w-xs">{entry.description || entry.concept}</p>
                   </TableCell>

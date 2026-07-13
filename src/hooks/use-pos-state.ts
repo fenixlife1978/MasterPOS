@@ -377,7 +377,15 @@ export function usePOSState() {
   const checkProductStock = useCallback((productId: number, quantity: number): boolean => {
     const product = products.find(p => p.id === productId);
     if (!product) return false;
+    
+    // Si es un kit, debemos verificar los componentes
     if (product.isKit && product.kitComponents?.length) {
+      // ✅ REGLA: Si tiene stock propio, verificar el kit mismo primero
+      if (product.kitHasOwnStock && product.stock < quantity) {
+        return false;
+      }
+      
+      // Siempre verificar disponibilidad de componentes
       for (const component of product.kitComponents) {
         const componentProduct = products.find(p => p.id === component.productId);
         if (!componentProduct || componentProduct.stock < (component.quantity * quantity)) return false;
@@ -510,22 +518,33 @@ export function usePOSState() {
 
   const getItemsToDiscount = useCallback((cartItems: CartItem[]): { productId: number; quantity: number; product: Product }[] => {
     const result: { productId: number; quantity: number; product: Product }[] = [];
+    
+    const addOrUpdate = (p: Product, q: number) => {
+      const existing = result.find(r => r.productId === p.id);
+      if (existing) existing.quantity += q;
+      else result.push({ productId: p.id, quantity: q, product: p });
+    };
+
     for (const item of cartItems) {
       const product = products.find(p => p.id === item.productId);
       if (!product) continue;
+
       if (product.isKit && product.kitComponents?.length) {
+        // ✅ REGLA: Si el kit tiene stock propio, incluimos el kit en el descuento (tendrá Kardex)
+        if (product.kitHasOwnStock) {
+          addOrUpdate(product, item.qty);
+        }
+        
+        // Siempre se descuentan los componentes (tendrán Kardex con la cantidad multiplicada)
         for (const component of product.kitComponents) {
           const componentProduct = products.find(p => p.id === component.productId);
           if (componentProduct) {
-            const existing = result.find(r => r.productId === component.productId);
-            if (existing) existing.quantity += component.quantity * item.qty;
-            else result.push({ productId: component.productId, quantity: component.quantity * item.qty, product: componentProduct });
+            addOrUpdate(componentProduct, component.quantity * item.qty);
           }
         }
       } else {
-        const existing = result.find(r => r.productId === item.productId);
-        if (existing) existing.quantity += item.qty;
-        else result.push({ productId: item.productId, quantity: item.qty, product: product });
+        // Producto normal
+        addOrUpdate(product, item.qty);
       }
     }
     return result;

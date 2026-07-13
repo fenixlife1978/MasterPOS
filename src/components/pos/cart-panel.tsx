@@ -78,6 +78,11 @@ export default function CartPanel({
     const fullProduct = getFullProduct(item.productId);
     if (!fullProduct?.isKit || !fullProduct?.kitComponents?.length) return true;
     
+    // ✅ REGLA: Si tiene stock propio, verificar primero el kit mismo
+    if (fullProduct.kitHasOwnStock && fullProduct.stock < item.qty) {
+      return false;
+    }
+
     for (const component of fullProduct.kitComponents) {
       const componentProduct = products.find(p => p.id === component.productId);
       if (!componentProduct) return false;

@@ -1,9 +1,8 @@
-
 "use client";
 
 import { useState, useMemo, useEffect } from 'react';
 import { useAccounting } from '@/hooks/use-accounting';
-import { Plus, Search, X, TrendingUp, TrendingDown, DollarSign, Filter, Eye, BarChart3, RefreshCw } from 'lucide-react';
+import { Plus, Search, X, TrendingUp, TrendingDown, DollarSign, Filter, Eye, BarChart3, RefreshCw, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -66,6 +65,10 @@ export default function AccountingModule() {
   const [showEntryDetail, setShowEntryDetail] = useState(false);
   const [selectedEntry, setSelectedEntry] = useState<any>(null);
 
+  // ✅ Estados para paginación
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
+
   const categoriesList = [
     { id: 'ventas', label: 'Ventas' },
     { id: 'compra_mercancia', label: 'Compra de Mercancía' },
@@ -122,22 +125,37 @@ export default function AccountingModule() {
     return [...base, ...missingFromTx];
   }, [entries, state.transactions, globalExchangeRate]);
 
-  const filteredEntries = unifiedEntries.filter(entry => {
-    if (filterType !== 'todos' && entry.type !== filterType) return false;
-    if (filterCategory !== 'todas' && entry.category !== filterCategory) return false;
-    
-    // ✅ CORRECCIÓN DE RANGOS DE FECHA CON TIMEZONE VENEZUELA
-    if (startDate) {
-      const startLimit = getStartOfDay(startDate);
-      if (new Date(entry.date) < startLimit) return false;
-    }
-    if (endDate) {
-      const endLimit = getEndOfDay(endDate);
-      if (new Date(entry.date) > endLimit) return false;
-    }
-    
-    return true;
-  }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  const filteredEntries = useMemo(() => {
+    return unifiedEntries.filter(entry => {
+      if (filterType !== 'todos' && entry.type !== filterType) return false;
+      if (filterCategory !== 'todas' && entry.category !== filterCategory) return false;
+      
+      // ✅ CORRECCIÓN DE RANGOS DE FECHA CON TIMEZONE VENEZUELA
+      if (startDate) {
+        const startLimit = getStartOfDay(startDate);
+        if (new Date(entry.date) < startLimit) return false;
+      }
+      if (endDate) {
+        const endLimit = getEndOfDay(endDate);
+        if (new Date(entry.date) > endLimit) return false;
+      }
+      
+      return true;
+    }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [unifiedEntries, filterType, filterCategory, startDate, endDate]);
+
+  // ✅ Reiniciar a página 1 cuando cambian los filtros
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filterType, filterCategory, startDate, endDate]);
+
+  // ✅ Segmentación para paginación
+  const paginatedEntries = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    return filteredEntries.slice(startIndex, startIndex + itemsPerPage);
+  }, [filteredEntries, currentPage]);
+
+  const totalPages = Math.ceil(filteredEntries.length / itemsPerPage);
 
   // ✅ Cálculos de totales usando USD como ancla absoluta (Requerimiento de estabilidad ante cambio de tasa)
   const totalIngresosUsd = filteredEntries
@@ -258,55 +276,89 @@ export default function AccountingModule() {
         </div>
       </div>
 
-      <div className="bg-white border-2 border-black rounded-xl overflow-hidden shadow-md flex-1">
-        <Table>
-          <TableHeader className="bg-[#E8E8E8]">
-            <TableRow className="border-b-2 border-black">
-              <TableHead className="text-[10px] font-black text-black uppercase tracking-widest p-3">Fecha</TableHead>
-              <TableHead className="text-[10px] font-black text-black uppercase tracking-widest p-3">Tipo</TableHead>
-              <TableHead className="text-[10px] font-black text-black uppercase tracking-widest p-3">Concepto / Descripción</TableHead>
-              <TableHead className="text-[10px] font-black text-black uppercase tracking-widest p-3 text-right">Monto USD</TableHead>
-              <TableHead className="text-[10px] font-black text-black uppercase tracking-widest p-3 text-right">Monto Bs</TableHead>
-              <TableHead className="text-[10px] font-black text-black uppercase tracking-widest p-3 text-center">Acciones</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filteredEntries.length === 0 ? (
-              <TableRow><TableCell colSpan={6} className="text-center py-10 text-black font-black italic text-sm">No hay registros contables en este período</TableCell></TableRow>
-            ) : (
-              filteredEntries.map((entry, idx) => (
-                <TableRow 
-                  key={`${entry.id}_${idx}`} 
-                  className="border-b border-black/10 hover:bg-primary/5 cursor-pointer transition-colors" 
-                  onClick={() => { setSelectedEntry(entry); setShowEntryDetail(true); }}
-                >
-                  <TableCell className="text-xs font-black text-black p-3">{formatDateFriendly(entry.date)}</TableCell>
-                  <TableCell className="p-3">
-                    <span className={cn("px-2 py-0.5 rounded-full text-[9px] font-black border-2", entry.type === 'ingreso' ? "bg-green-50 text-green-700 border-green-200" : "bg-red-50 text-red-700 border-red-200")}>
-                      {entry.type.toUpperCase()}
-                    </span>
-                  </TableCell>
-                  <TableCell className="p-3">
-                    <p className="text-xs font-black text-black uppercase flex items-center gap-2">
-                      {entry.concept}
-                      {entry.source === 'RTDB' && <span className="text-[8px] font-black bg-blue-100 text-blue-700 px-1 rounded">AUTO</span>}
-                    </p>
-                    <p className="text-[10px] font-black text-black truncate max-w-xs">{entry.description || entry.concept}</p>
-                  </TableCell>
-                  <TableCell className={cn("text-right font-black text-sm p-3", entry.type === 'ingreso' ? "text-green-700" : "text-red-700")}>
-                    {entry.type === 'ingreso' ? '+' : '-'} {formatUsd(entry.totalUsd || (entry.amount / (entry.exchangeRate || globalExchangeRate)))}
-                  </TableCell>
-                  <TableCell className="text-right text-xs font-black text-black font-mono p-3">
-                    {formatBs(entry.amount)}
-                  </TableCell>
-                  <TableCell className="text-center p-3">
-                    <button className="text-blue-600 hover:scale-110 p-1 rounded-lg transition-transform"><Eye size={16} /></button>
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
+      <div className="bg-white border-2 border-black rounded-xl overflow-hidden shadow-md flex-1 flex flex-col">
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader className="bg-[#E8E8E8]">
+              <TableRow className="border-b-2 border-black">
+                <TableHead className="text-[10px] font-black text-black uppercase tracking-widest p-3">Fecha</TableHead>
+                <TableHead className="text-[10px] font-black text-black uppercase tracking-widest p-3">Tipo</TableHead>
+                <TableHead className="text-[10px] font-black text-black uppercase tracking-widest p-3">Concepto / Descripción</TableHead>
+                <TableHead className="text-[10px] font-black text-black uppercase tracking-widest p-3 text-right">Monto USD</TableHead>
+                <TableHead className="text-[10px] font-black text-black uppercase tracking-widest p-3 text-right">Monto Bs</TableHead>
+                <TableHead className="text-[10px] font-black text-black uppercase tracking-widest p-3 text-center">Acciones</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {paginatedEntries.length === 0 ? (
+                <TableRow><TableCell colSpan={6} className="text-center py-10 text-black font-black italic text-sm">No hay registros contables en este período</TableCell></TableRow>
+              ) : (
+                paginatedEntries.map((entry, idx) => (
+                  <TableRow 
+                    key={`${entry.id}_${idx}`} 
+                    className="border-b border-black/10 hover:bg-primary/5 cursor-pointer transition-colors" 
+                    onClick={() => { setSelectedEntry(entry); setShowEntryDetail(true); }}
+                  >
+                    <TableCell className="text-xs font-black text-black p-3">{formatDateFriendly(entry.date)}</TableCell>
+                    <TableCell className="p-3">
+                      <span className={cn("px-2 py-0.5 rounded-full text-[9px] font-black border-2", entry.type === 'ingreso' ? "bg-green-50 text-green-700 border-green-200" : "bg-red-50 text-red-700 border-red-200")}>
+                        {entry.type.toUpperCase()}
+                      </span>
+                    </TableCell>
+                    <TableCell className="p-3">
+                      <p className="text-xs font-black text-black uppercase flex items-center gap-2">
+                        {entry.concept}
+                        {entry.source === 'RTDB' && <span className="text-[8px] font-black bg-blue-100 text-blue-700 px-1 rounded">AUTO</span>}
+                      </p>
+                      <p className="text-[10px] font-black text-black truncate max-w-xs">{entry.description || entry.concept}</p>
+                    </TableCell>
+                    <TableCell className={cn("text-right font-black text-sm p-3", entry.type === 'ingreso' ? "text-green-700" : "text-red-700")}>
+                      {entry.type === 'ingreso' ? '+' : '-'} {formatUsd(entry.totalUsd || (entry.amount / (entry.exchangeRate || globalExchangeRate)))}
+                    </TableCell>
+                    <TableCell className="text-right text-xs font-black text-black font-mono p-3">
+                      {formatBs(entry.amount)}
+                    </TableCell>
+                    <TableCell className="text-center p-3">
+                      <button className="text-blue-600 hover:scale-110 p-1 rounded-lg transition-transform"><Eye size={16} /></button>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
+
+        {/* ✅ Controles de Paginación */}
+        {totalPages > 1 && (
+          <div className="bg-[#F5F5F5] border-t-2 border-black p-3 flex justify-between items-center flex-shrink-0">
+            <p className="text-[10px] font-black uppercase text-black tracking-widest">
+              Mostrando {Math.min(filteredEntries.length, (currentPage - 1) * itemsPerPage + 1)} - {Math.min(filteredEntries.length, currentPage * itemsPerPage)} de {filteredEntries.length} registros
+            </p>
+            <div className="flex items-center gap-2">
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                disabled={currentPage === 1}
+                className="h-8 w-8 p-0 border-2 border-black bg-white"
+              >
+                <ChevronLeft size={16} />
+              </Button>
+              <div className="bg-white border-2 border-black rounded-lg px-3 py-1 text-xs font-black text-black">
+                PÁGINA {currentPage} DE {totalPages}
+              </div>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                disabled={currentPage === totalPages}
+                className="h-8 w-8 p-0 border-2 border-black bg-white"
+              >
+                <ChevronRight size={16} />
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
 
       <ExpenseModal 

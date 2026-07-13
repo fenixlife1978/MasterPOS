@@ -96,11 +96,12 @@ export default function AccountingModule() {
       const txDate = new Date(tx.date);
       const startLimit = new Date('2026-07-02T00:00:00-04:00');
       
-      // Reglas: Desde el 02/07, no duplicar, y NO créditos
-      return txDate >= startLimit && !registeredIds.has(String(tx.id)) && tx.type !== 'credito' && 
-             ['contado', 'cobro_deuda', 'devolucion', 'colaboracion', 'consumo_propio'].includes(tx.type);
+      // ✅ Reglas actualizadas: Excluir 'credito', 'colaboracion' y 'consumo_propio' de la contabilidad monetaria
+      return txDate >= startLimit && 
+             !registeredIds.has(String(tx.id)) && 
+             ['contado', 'cobro_deuda', 'devolucion'].includes(tx.type);
     }).map(tx => {
-      const isExpense = ['devolucion', 'colaboracion', 'consumo_propio'].includes(tx.type);
+      const isExpense = tx.type === 'devolucion';
       const rate = tx.exchangeRate || globalExchangeRate;
       return {
         id: `tx_${tx.id}`,
@@ -108,12 +109,9 @@ export default function AccountingModule() {
         date: tx.date,
         type: isExpense ? 'egreso' : 'ingreso',
         category: tx.type === 'cobro_deuda' ? 'cobro_deuda' : 
-                  tx.type === 'devolucion' ? 'devolucion' : 
-                  (tx.type === 'colaboracion' || tx.type === 'consumo_propio') ? 'otros' : 'ventas',
+                  tx.type === 'devolucion' ? 'devolucion' : 'ventas',
         concept: (tx.type === 'cobro_deuda' ? 'COBRO DE DEUDA' : 
-                 tx.type === 'devolucion' ? 'DEVOLUCIÓN' : 
-                 tx.type === 'colaboracion' ? 'COLABORACIÓN' : 
-                 tx.type === 'consumo_propio' ? 'CONSUMO PROPIO' : 'VENTA') + ` #${tx.receiptNumber || tx.id}`,
+                 tx.type === 'devolucion' ? 'DEVOLUCIÓN' : 'VENTA') + ` #${tx.receiptNumber || tx.id}`,
         description: tx.clientName ? `Cliente: ${tx.clientName}` : (tx.notes || 'Venta POS'),
         amount: tx.total || 0,
         totalUsd: tx.totalUsd || (tx.total / rate),

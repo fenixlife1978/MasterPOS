@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
@@ -50,11 +49,12 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
       const missingFromTx = rtdbTransactions.filter(tx => {
         const txDate = new Date(tx.date);
         const startLimit = new Date('2026-07-02T00:00:00-04:00');
-        // Filtros: Fecha >= 02/07, no duplicar, NO créditos
-        return txDate >= startLimit && !registeredIds.has(String(tx.id)) && tx.type !== 'credito' &&
-               ['contado', 'cobro_deuda', 'devolucion', 'colaboracion', 'consumo_propio'].includes(tx.type);
+        // ✅ Filtros actualizados: Fecha >= 02/07, no duplicar, NO créditos, NO consumos, NO colaboraciones
+        return txDate >= startLimit && 
+               !registeredIds.has(String(tx.id)) && 
+               ['contado', 'cobro_deuda', 'devolucion'].includes(tx.type);
       }).map(tx => {
-        const isExpense = ['devolucion', 'colaboracion', 'consumo_propio'].includes(tx.type);
+        const isExpense = tx.type === 'devolucion';
         const rate = tx.exchangeRate || state.exchangeRate;
         return {
           id: `tx_${tx.id}`,
@@ -62,12 +62,9 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
           date: tx.date,
           type: isExpense ? 'egreso' : 'ingreso',
           category: tx.type === 'cobro_deuda' ? 'cobro_deuda' : 
-                    tx.type === 'devolucion' ? 'devolucion' : 
-                    (tx.type === 'colaboracion' || tx.type === 'consumo_propio') ? 'otros' : 'ventas',
+                    tx.type === 'devolucion' ? 'devolucion' : 'ventas',
           concept: (tx.type === 'cobro_deuda' ? 'COBRO DE DEUDA' : 
-                   tx.type === 'devolucion' ? 'DEVOLUCIÓN' : 
-                   tx.type === 'colaboracion' ? 'COLABORACIÓN' : 
-                   tx.type === 'consumo_propio' ? 'CONSUMO PROPIO' : 'VENTA') + ` #${tx.receiptNumber || tx.id}`,
+                   tx.type === 'devolucion' ? 'DEVOLUCIÓN' : 'VENTA') + ` #${tx.receiptNumber || tx.id}`,
           amount: tx.total || 0,
           totalUsd: tx.totalUsd || (tx.total / rate),
           exchangeRate: rate
@@ -77,7 +74,7 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
       setUnifiedEntries([...baseEntries, ...missingFromTx]);
     } catch (error) {
       console.error('Error reconciliando reportes:', error);
-      setUnifiedEntries(entries.filter(e => e.type !== 'credito'));
+      setUnifiedEntries(entries.filter(e => ['contado', 'cobro_deuda', 'devolucion'].includes(e.referenceType || '')));
     } finally {
       setIsSyncing(false);
     }
@@ -156,9 +153,7 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
 
   // ✅ Cálculos para resumen de ventas usando USD como ANCLA ABSOLUTA (Requerimiento de estabilidad)
   const contadoTotalUsd = useMemo(() => filteredTransactions.filter(t => t.type === 'contado').reduce((sum, t) => sum + (t.totalUsd || (t.total / (t.exchangeRate || state.exchangeRate))), 0), [filteredTransactions, state.exchangeRate]);
-  const creditoTotalUsd = useMemo(() => filteredTransactions.filter(t => t.type === 'credito').reduce((sum, t) => sum + (t.totalUsd || (t.total / (t.exchangeRate || state.exchangeRate))), 0), [filteredTransactions, state.exchangeRate]);
   const cobroTotalUsd = useMemo(() => filteredTransactions.filter(t => t.type === 'cobro_deuda').reduce((sum, t) => sum + (t.totalUsd || (t.total / (t.exchangeRate || state.exchangeRate))), 0), [filteredTransactions, state.exchangeRate]);
-  const colaboracionTotalUsd = useMemo(() => filteredTransactions.filter(t => t.type === 'colaboracion' || t.type === 'consumo_propio').reduce((sum, t) => sum + (t.totalUsd || t.costoTotalOperacion || 0), 0), [filteredTransactions]);
 
   return (
     <div className="bg-white border-2 border-black rounded-xl p-5 shadow-md">
@@ -237,16 +232,6 @@ export default function ReportsModule({ state, userRole = 'cashier' }: ReportsMo
                   <p className="text-[10px] font-black text-black uppercase tracking-widest">Cobros de Crédito (Ingresos)</p>
                   <p className="text-2xl font-black text-purple-700 mt-1">{formatUsd(cobroTotalUsd)}</p>
                   <p className="text-[11px] font-black text-black mt-0.5 font-mono">{formatBs(cobroTotalUsd * state.exchangeRate)}</p>
-                </div>
-                <div className="bg-white p-4 rounded-xl shadow-md border-2 border-black border-l-8 border-l-orange-500 opacity-80">
-                  <p className="text-[10px] font-black text-black uppercase tracking-widest">Ventas a Crédito (Informativo)</p>
-                  <p className="text-2xl font-black text-orange-600 mt-1">{formatUsd(creditoTotalUsd)}</p>
-                  <p className="text-[11px] font-black text-black mt-0.5 font-mono">{formatBs(creditoTotalUsd * state.exchangeRate)}</p>
-                </div>
-                <div className="bg-white p-4 rounded-xl shadow-md border-2 border-black border-l-8 border-l-red-600">
-                  <p className="text-[10px] font-black text-black uppercase tracking-widest">Colaboraciones (Costo)</p>
-                  <p className="text-2xl font-black text-red-700 mt-1">{formatUsd(colaboracionTotalUsd)}</p>
-                  <p className="text-[11px] font-black text-black mt-0.5 font-mono">{formatBs(colaboracionTotalUsd * state.exchangeRate)}</p>
                 </div>
               </div>
             )}

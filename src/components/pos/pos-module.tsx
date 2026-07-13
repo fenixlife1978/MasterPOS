@@ -147,8 +147,9 @@ export default function POSModule({ state }: POSModuleProps) {
   const registerAccountingEntry = useCallback(async (tx: any, type: string) => {
     try {
       // ❌ Los créditos NO se registran en contabilidad (solo en cuentas por cobrar)
-      if (type === 'credito') {
-        console.log('⏭️ Crédito omitido de contabilidad (solo cuentas por cobrar)');
+      // ❌ Colaboraciones y Consumos NO se registran en contabilidad (solo Kardex)
+      if (['credito', 'colaboracion', 'consumo_propio'].includes(type)) {
+        console.log(`⏭️ Operación ${type} omitida de contabilidad financiera`);
         return;
       }
 
@@ -171,46 +172,6 @@ export default function POSModule({ state }: POSModuleProps) {
           createdAt: new Date().toISOString()
         });
         console.log(`✅ Cobro de deuda ${tx.id} registrado en contabilidad`);
-        return;
-      }
-
-      // ✅ Colaboración (egreso - salida de inventario)
-      if (type === 'colaboracion') {
-        await addEntry({
-          id: Date.now() + Math.random() * 1000,
-          date: tx.date || new Date().toISOString(),
-          type: 'egreso',
-          category: 'otros',
-          concept: `Colaboración #${tx.receiptNumber || tx.id}`,
-          description: tx.notes || 'Salida por colaboración/donación',
-          amount: tx.total || 0,
-          totalUsd: tx.totalUsd || (tx.total || 0) / (tx.exchangeRate || 1),
-          exchangeRate: tx.exchangeRate || 1,
-          referenceType: 'colaboracion',
-          referenceId: tx.id,
-          createdAt: new Date().toISOString()
-        });
-        console.log(`✅ Colaboración ${tx.id} registrada en contabilidad`);
-        return;
-      }
-
-      // ✅ Consumo propio (egreso - salida de inventario)
-      if (type === 'consumo_propio') {
-        await addEntry({
-          id: Date.now() + Math.random() * 1000,
-          date: tx.date || new Date().toISOString(),
-          type: 'egreso',
-          category: 'otros',
-          concept: `Consumo propio #${tx.receiptNumber || tx.id}`,
-          description: tx.notes || 'Consumo interno',
-          amount: tx.total || 0,
-          totalUsd: tx.totalUsd || (tx.total || 0) / (tx.exchangeRate || 1),
-          exchangeRate: tx.exchangeRate || 1,
-          referenceType: 'consumo_propio',
-          referenceId: tx.id,
-          createdAt: new Date().toISOString()
-        });
-        console.log(`✅ Consumo propio ${tx.id} registrado en contabilidad`);
         return;
       }
 
@@ -320,7 +281,6 @@ export default function POSModule({ state }: POSModuleProps) {
       
       if (tx) {
         // ❌ Los créditos NO se registran en contabilidad
-        // Solo se guardan en cuentas por cobrar (ya está en la transacción)
         console.log(`⏭️ Crédito #${safeReceiptNum} - Solo cuentas por cobrar (sin contabilidad)`);
         
         lastReceiptNumberRef.current = safeReceiptNum;
@@ -361,8 +321,8 @@ export default function POSModule({ state }: POSModuleProps) {
       });
       
       if (tx) {
-        // ✅ Registrar en contabilidad (colaboración o consumo propio = egreso)
-        await registerAccountingEntry(tx, type);
+        // ❌ Colaboraciones y Consumos NO se registran en contabilidad financiera (solo Kardex)
+        console.log(`⏭️ Operación ${type} #${safeReceiptNum} - Solo salida de inventario (sin contabilidad)`);
         
         lastReceiptNumberRef.current = safeReceiptNum;
         setLastTransaction(tx);

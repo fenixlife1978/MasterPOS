@@ -6,7 +6,7 @@ import { usePOSState } from './use-pos-state';
 /**
  * Hook para sincronizar transacciones del POS con el Libro Diario de Contabilidad.
  * Garantiza que todas las ventas y cobros desde el 02/07/2026 tengan un asiento contable.
- * Excluye explícitamente las Ventas a Crédito del registro de ingresos.
+ * Excluye explícitamente las Ventas a Crédito, Consumos y Colaboraciones del registro financiero.
  */
 export function useSyncMissingAccounting() {
   const { entries, addEntry } = useAccounting();
@@ -40,8 +40,8 @@ export function useSyncMissingAccounting() {
       const isCorrectDate = txDate >= startDate;
       const isNotRegistered = !registeredIds.has(String(tx.id));
       
-      // Regla de Oro: NO registrar ventas a crédito en el libro diario de ingresos
-      const isValidType = ['contado', 'cobro_deuda', 'devolucion', 'colaboracion', 'consumo_propio'].includes(tx.type);
+      // ✅ Regla de Oro: NO registrar ventas a crédito, consumos ni colaboraciones en el libro diario de ingresos
+      const isValidType = ['contado', 'cobro_deuda', 'devolucion'].includes(tx.type);
       
       return isCorrectDate && isNotRegistered && isValidType;
     });
@@ -67,14 +67,10 @@ export function useSyncMissingAccounting() {
             category = 'cobro_deuda';
             concept = `Cobro deuda #${tx.receiptNumber || tx.id}`;
             type = 'ingreso';
-          } else if (tx.type === 'colaboracion' || tx.type === 'consumo_propio') {
-            category = 'otros';
-            type = 'egreso';
-            concept = `${tx.type.toUpperCase()} #${tx.receiptNumber || tx.id}`;
           } else if (tx.type === 'devolucion') {
             category = 'devolucion';
-            type = 'egreso';
             concept = `Devolución #${tx.receiptNumber || tx.id}`;
+            type = 'egreso';
           }
 
           // ✅ Persistir en el Libro Diario (RTDB)

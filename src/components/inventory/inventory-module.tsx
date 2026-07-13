@@ -663,33 +663,6 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
     return kardexEntries[productId] || [];
   };
   
-  const registerAdjustmentAccountingEntry = async (product: Product, delta: number, reason: string, exchangeRate: number) => {
-    const absDelta = Math.abs(delta);
-    const valorBs = absDelta * (product.costUsd || 0) * exchangeRate;
-    const entryType = delta > 0 ? 'ingreso' : 'egreso';
-    const category = 'Inventario';
-    const subcategory = delta > 0 ? 'Sobrante' : 'Merma / Rotura';
-    const concept = delta > 0 ? 'Ajuste positivo de inventario' : 'Ajuste negativo de inventario';
-    const description = `${reason} | Producto: ${product.name} (${product.barcode}) | Cantidad: ${absDelta} uds | Costo USD: ${formatUsd(product.costUsd || 0, 4)}`;
-    
-    const accountingEntry = {
-      id: String(Date.now()),
-      date: new Date().toISOString(),
-      type: entryType as any,
-      category,
-      subcategory,
-      concept,
-      description,
-      amount: roundTo2(valorBs),
-      referenceId: String(product.id),
-      referenceType: 'inventory_adjustment',
-      createdAt: new Date().toISOString(),
-    };
-    
-    await syncService.saveAccountingEntry(accountingEntry);
-    toast({ title: "Asiento contable registrado", description: `${entryType === 'ingreso' ? 'Ingreso' : 'Egreso'} por ${formatBs(valorBs)}` });
-  };
-  
   const requestStockAdjust = (product: Product) => {
     setAdjustingStock(product);
     setAdjustmentDelta('');
@@ -794,7 +767,6 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
         await syncService.saveKardexEntry(kardexEntry);
         addKardexEntryLocal(Number(product.id), kardexEntry);
         await syncService.syncAllPending();
-        await registerAdjustmentAccountingEntry(product, delta, reason, state.exchangeRate);
         toast({ title: "Ajuste Realizado", description: `${delta > 0 ? 'Agregadas' : 'Quitadas'} ${Math.abs(delta)} unidades. Nuevo stock: ${newQty}` });
         setAdjustingStock(null);
         setPendingAdjustment(null);
@@ -1513,7 +1485,7 @@ export default function InventoryModule({ state }: { state: ReturnType<typeof us
             </div>
             <div className="bg-gray-50 p-2 border-t text-[10px] text-black font-black flex justify-between">
               <span>{filteredAdjustments.length} registros</span>
-              <span>Los ajustes generan automáticamente asientos contables (ingresos/egresos)</span>
+              <span>Los ajustes generan automáticamente registros en el Kardex de inventario</span>
             </div>
           </div>
         </div>
